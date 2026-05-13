@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: v2bot-postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -9,13 +10,47 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d v2bot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
+    container_name: v2bot-redis
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api/Dockerfile
+      target: base
+    container_name: v2bot-api
+    command: sh -c "pnpm install --frozen-lockfile=false && pnpm --filter @v2bot/api prisma:generate && pnpm --filter @v2bot/api dev"
+    env_file:
+      - .env
+    ports:
+      - "4000:4000"
+    volumes:
+      - .:/app
+      - pnpm-store:/pnpm
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   postgres-data:
   redis-data:
+  pnpm-store:

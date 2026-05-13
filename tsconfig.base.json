@@ -5,11 +5,25 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
+    "noImplicitAny": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "useUnknownInCatchVariables": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true
-  }
+    "incremental": true,
+    "baseUrl": ".",
+    "paths": {
+      "@v2bot/shared": ["packages/shared/src/index.ts"],
+      "@v2bot/shared/*": ["packages/shared/src/*"],
+      "@v2bot/types": ["packages/types/src/index.ts"],
+      "@v2bot/types/*": ["packages/types/src/*"],
+      "@v2bot/ui": ["packages/ui/src/index.ts"],
+      "@v2bot/ui/*": ["packages/ui/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", ".next"]
 }

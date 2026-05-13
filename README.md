@@ -1,28 +1,91 @@
-# V2 Bot Platform
+# V2 Bot Platform — Phase 1 Foundation
 
-A production-oriented modular monolith for a Persian Telegram commerce bot that sells Xray/V2Ray proxy subscriptions.
+Production-grade modular monorepo foundation for a Persian Telegram platform that will sell Xray/V2Ray proxy subscriptions in later phases.
 
-## Architecture
+> Phase 1 intentionally contains infrastructure, architecture, persistence, observability, queue, API, bot, and admin foundations only. Business flows, Telegram commerce flows, and admin pages are not implemented yet.
 
-- `apps/api`: Fastify API, Telegram bot, queues, domain services, Prisma repositories.
-- `apps/admin`: Next.js admin dashboard with TailwindCSS and shadcn-style components.
-- `packages/shared`: Shared DTOs, Persian UI copy, domain constants, and validators.
-- `prisma`: PostgreSQL schema and migrations owned by the API package.
+## Architecture decisions
 
-The backend follows Clean Architecture boundaries: domain entities and ports are isolated from infrastructure adapters such as Prisma, Redis, BullMQ, Telegram, and Xray panel APIs.
+### Clean modular monolith
+
+The backend starts as a modular monolith because wallet, purchase, referral, support, and Xray provisioning will need strong transactional boundaries. Code is organized by feature modules while infrastructure adapters (Prisma, Redis, BullMQ, Telegram, Xray API) stay behind ports and factories.
+
+### Monorepo packages
+
+- `apps/api` — Fastify API bootstrap, plugins, config, Prisma, Redis, queues, modules.
+- `apps/bot` — Telegraf bootstrap with sessions, middleware, command loader, and scene registry.
+- `apps/admin-panel` — Next.js App Router, TailwindCSS, shadcn configuration, Framer Motion dependency foundation.
+- `packages/shared` — constants, Zod schemas, response helpers, Persian utilities.
+- `packages/configs` — shared ESLint and TypeScript configuration.
+- `packages/types` — cross-package type contracts.
+- `packages/ui` — shared UI primitives/utilities for future admin components.
+- `infra/docker` — production-oriented Docker build assets.
+
+### Package choices
+
+Fastify is used for a fast plugin-oriented API runtime. Prisma gives typed PostgreSQL access and migrations. Redis + BullMQ provide retryable background processing. Zod validates environment variables and DTO boundaries. Pino provides structured logging with redaction and request correlation. Telegraf is installed only as a bot foundation. Next.js, TailwindCSS, shadcn configuration, and Framer Motion prepare the admin application without implementing pages.
+
+### Scalability considerations
+
+The platform uses feature modules, repository interfaces, service classes, dependency injection by constructor, append-only wallet transactions, UUID identifiers, idempotency keys, explicit indexes, and queue factories. This keeps the codebase easy to split into services later while preserving simple deployment for Phase 1.
+
+### Security considerations
+
+Secrets are validated centrally and never read directly outside the config layer. The API registers Helmet, CORS, rate limiting, signed cookie preparation, JWT setup, password hashing with Argon2id plus pepper, structured error responses, correlation IDs, and audit-log ports for future sensitive operations.
+
+## Folder structure
+
+```text
+apps/
+  api/
+    prisma/
+      migrations/
+      schema.prisma
+    src/
+      config/
+      core/
+      infrastructure/
+      modules/
+      plugins/
+      routes/
+  bot/
+    src/
+      commands/
+      config/
+      core/
+      loaders/
+      middlewares/
+      scenes/
+      sessions/
+  admin-panel/
+    app/
+    components/
+    lib/
+packages/
+  shared/
+  configs/
+  types/
+  ui/
+infra/
+  docker/
+```
 
 ## Getting started
 
 ```bash
 cp .env.example .env
-npm install
-npm run typecheck
-npm run lint
+corepack enable
+pnpm install
 docker compose up -d postgres redis
-npm --workspace apps/api run prisma:migrate
-npm run dev --workspaces --if-present
+pnpm --filter @v2bot/api prisma:migrate
+pnpm dev
 ```
 
-## Xray panel flow
+## Quality gates
 
-Products map to existing inbound IDs. Purchases only add clients to selected inbounds; this platform never creates inbounds.
+```bash
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm build
+```
