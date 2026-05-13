@@ -3,34 +3,40 @@
   "version": "0.1.0",
   "private": true,
   "description": "Production-grade Persian Telegram bot platform for selling Xray/V2Ray subscriptions.",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "packageManager": "pnpm@10.11.0",
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky || true"
   },
   "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
+    "@v2bot/configs": "workspace:*",
     "eslint": "^8.57.1",
     "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import-x": "^4.11.1",
     "husky": "^9.1.7",
     "lint-staged": "^15.5.2",
     "prettier": "^3.5.3",
     "typescript": "^5.8.3"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,json,md,css}": [
+    "*.{ts,tsx,js,mjs,cjs,json,md,css,scss,yml,yaml}": [
       "prettier --write"
+    ],
+    "*.{ts,tsx}": [
+      "eslint --fix"
     ]
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
   }
 }

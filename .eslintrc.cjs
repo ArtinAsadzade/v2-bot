@@ -1,11 +1,5 @@
 module.exports = {
   root: true,
-  parser: '@typescript-eslint/parser',
-  plugins: ['@typescript-eslint'],
-  extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended', 'prettier'],
-  ignorePatterns: ['dist', '.next', 'node_modules'],
-  rules: {
-    '@typescript-eslint/no-explicit-any': 'error',
-    '@typescript-eslint/consistent-type-imports': 'error'
-  }
+  extends: ['./packages/configs/eslint/base.cjs'],
+  ignorePatterns: ['dist', '.next', 'node_modules', 'coverage', 'apps/api/prisma/generated']
 };

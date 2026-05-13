@@ -1,31 +1,21 @@
-import { env } from './config/env.js';
-import { createBot } from './infrastructure/telegram/bot.js';
-import { startWorkers } from './infrastructure/queue/queues.js';
-import { buildServer } from './presentation/http/server.js';
-import { logger } from './shared/logger.js';
+import { config } from './config/index.js';
+import { logger } from './core/logger/logger.js';
+import { bootstrapSchedulers } from './infrastructure/queue/schedulers/bootstrap.js';
+import { bootstrapWorkers } from './infrastructure/queue/workers/bootstrap.js';
+import { buildApp } from './app.js';
 
-const bootstrap = async () => {
-  const server = await buildServer();
-  startWorkers();
+const app = await buildApp();
+const workers = bootstrapWorkers();
+bootstrapSchedulers();
 
-  const bot = createBot();
-  await bot.launch();
-
-  await server.listen({ port: env.API_PORT, host: '0.0.0.0' });
-  logger.info({ port: env.API_PORT }, 'API and Telegram bot started');
-
-  const shutdown = async () => {
-    logger.info('shutting down');
-    bot.stop();
-    await server.close();
-    process.exit(0);
-  };
-
-  process.once('SIGINT', shutdown);
-  process.once('SIGTERM', shutdown);
+const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+  logger.info({ signal }, 'Graceful shutdown started');
+  await Promise.all(workers.map((worker) => worker.close()));
+  await app.close();
+  logger.info('Graceful shutdown completed');
 };
 
-bootstrap().catch((error) => {
-  logger.fatal(error);
-  process.exit(1);
-});
+process.on('SIGTERM', (signal) => void shutdown(signal));
+process.on('SIGINT', (signal) => void shutdown(signal));
+
+await app.listen({ host: config.api.host, port: config.api.port });

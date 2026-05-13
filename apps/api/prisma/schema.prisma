@@ -10,18 +10,19 @@ datasource db {
 enum UserStatus {
   ACTIVE
   BANNED
+  DELETED
 }
 
-enum LedgerDirection {
+enum WalletTransactionDirection {
   CREDIT
   DEBIT
 }
 
-enum TransactionStatus {
+enum WalletTransactionStatus {
   PENDING
-  SUCCEEDED
+  SETTLED
   FAILED
-  REFUNDED
+  REVERSED
 }
 
 enum ProductStatus {
@@ -30,211 +31,308 @@ enum ProductStatus {
   ARCHIVED
 }
 
-enum ServiceStatus {
-  ACTIVE
-  PAUSED
-  EXPIRED
-  DELETED
+enum PurchaseStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
 }
 
-enum TicketStatus {
+enum ReferralStatus {
+  PENDING
+  REWARDED
+  CANCELED
+}
+
+enum AdminRole {
+  OWNER
+  ADMIN
+  SUPPORT
+  FINANCE
+  OPERATOR
+}
+
+enum NotificationChannel {
+  TELEGRAM
+  EMAIL
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum SupportTicketStatus {
   OPEN
   WAITING_ADMIN
   WAITING_USER
   CLOSED
 }
 
-enum AdminRole {
-  OWNER
-  SUPPORT
-  FINANCE
-  OPERATOR
+enum XrayClientStatus {
+  ACTIVE
+  PAUSED
+  EXPIRED
+  DELETED
+}
+
+enum AuditActorType {
+  USER
+  ADMIN
+  SYSTEM
 }
 
 model User {
-  id                String          @id @default(uuid())
-  telegramId        String          @unique
-  username          String?
-  firstName         String?
-  lastName          String?
-  status            UserStatus      @default(ACTIVE)
-  referralCode      String          @unique
-  referredById      String?
-  referredBy        User?           @relation("UserReferrals", fields: [referredById], references: [id])
-  referrals         User[]          @relation("UserReferrals")
-  wallet            Wallet?
-  transactions      Transaction[]
-  purchases         Purchase[]
-  services          XrayClient[]
-  tickets           Ticket[]
-  notifications     Notification[]
-  auditLogs         AuditLog[]
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  id              String          @id @default(uuid()) @db.Uuid
+  telegramId      String          @unique @map("telegram_id") @db.VarChar(32)
+  username        String?         @db.VarChar(64)
+  firstName       String?         @map("first_name") @db.VarChar(128)
+  lastName        String?         @map("last_name") @db.VarChar(128)
+  languageCode    String?         @map("language_code") @db.VarChar(16)
+  status          UserStatus      @default(ACTIVE)
+  referralCode    String          @unique @map("referral_code") @db.VarChar(32)
+  referredById    String?         @map("referred_by_id") @db.Uuid
+  referredBy      User?           @relation("UserReferrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals       User[]          @relation("UserReferrals")
+  wallet          Wallet?
+  purchases       Purchase[]
+  referralRewards Referral[]      @relation("ReferralReferrer")
+  referredRewards Referral[]      @relation("ReferralReferee")
+  notifications   Notification[]
+  supportTickets  SupportTicket[]
+  xrayClients     XrayClient[]
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime?       @map("deleted_at") @db.Timestamptz(3)
 
-  @@index([telegramId])
-  @@index([referralCode])
+  @@index([status, createdAt])
+  @@index([referredById])
+  @@map("users")
 }
 
 model Wallet {
-  id           String        @id @default(uuid())
-  userId       String        @unique
-  user         User          @relation(fields: [userId], references: [id])
-  balanceToman BigInt        @default(0)
-  ledger       WalletLedger[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id           String              @id @default(uuid()) @db.Uuid
+  userId       String              @unique @map("user_id") @db.Uuid
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balanceToman BigInt              @default(0) @map("balance_toman")
+  transactions WalletTransaction[]
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("wallets")
 }
 
-model WalletLedger {
-  id             String              @id @default(uuid())
-  walletId       String
-  wallet         Wallet              @relation(fields: [walletId], references: [id])
-  direction      LedgerDirection
-  amountToman    BigInt
-  balanceAfter   BigInt
-  reason         String
-  idempotencyKey String              @unique
-  createdAt      DateTime            @default(now())
-}
-
-model Transaction {
-  id             String            @id @default(uuid())
-  userId         String
-  user           User              @relation(fields: [userId], references: [id])
-  amountToman    BigInt
-  provider       String
-  providerRef    String?
-  status         TransactionStatus @default(PENDING)
-  idempotencyKey String            @unique
+model WalletTransaction {
+  id             String                     @id @default(uuid()) @db.Uuid
+  walletId       String                     @map("wallet_id") @db.Uuid
+  wallet         Wallet                     @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  direction      WalletTransactionDirection
+  status         WalletTransactionStatus    @default(PENDING)
+  amountToman    BigInt                     @map("amount_toman")
+  balanceAfter   BigInt                     @map("balance_after")
+  reason         String                     @db.VarChar(160)
+  provider       String?                    @db.VarChar(64)
+  providerRef    String?                    @map("provider_ref") @db.VarChar(128)
+  idempotencyKey String                     @unique @map("idempotency_key") @db.VarChar(128)
   metadata       Json?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  createdAt      DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([walletId, createdAt])
+  @@index([status, createdAt])
+  @@map("wallet_transactions")
 }
 
 model Product {
-  id            String        @id @default(uuid())
-  name          String
-  description   String?
-  inboundId     Int
-  category      String
-  pricePerGb    BigInt
-  protocol      String
-  minTrafficGb  Int           @default(1)
-  maxTrafficGb  Int           @default(500)
-  durationDays  Int           @default(30)
-  status        ProductStatus @default(ACTIVE)
-  purchases     Purchase[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String        @db.VarChar(160)
+  slug         String        @unique @db.VarChar(180)
+  description  String?
+  inboundId    Int           @map("inbound_id")
+  protocol     String        @db.VarChar(32)
+  priceToman   BigInt        @map("price_toman")
+  trafficGb    Int           @map("traffic_gb")
+  durationDays Int           @map("duration_days")
+  status       ProductStatus @default(ACTIVE)
+  metadata     Json?
+  purchases    Purchase[]
+  xrayClients  XrayClient[]
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt    DateTime?     @map("deleted_at") @db.Timestamptz(3)
 
-  @@index([status, category])
+  @@index([status, protocol])
+  @@index([inboundId])
+  @@map("products")
 }
 
 model Purchase {
-  id             String      @id @default(uuid())
-  userId         String
-  user           User        @relation(fields: [userId], references: [id])
-  productId      String
-  product        Product     @relation(fields: [productId], references: [id])
-  trafficGb      Int
-  amountToman    BigInt
-  idempotencyKey String      @unique
+  id             String         @id @default(uuid()) @db.Uuid
+  userId         String         @map("user_id") @db.Uuid
+  user           User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  productId      String         @map("product_id") @db.Uuid
+  product        Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  status         PurchaseStatus @default(PENDING)
+  amountToman    BigInt         @map("amount_toman")
+  trafficGb      Int            @map("traffic_gb")
+  idempotencyKey String         @unique @map("idempotency_key") @db.VarChar(128)
+  metadata       Json?
   xrayClient     XrayClient?
-  createdAt      DateTime    @default(now())
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt      DateTime?      @map("deleted_at") @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  @@index([productId, status])
+  @@map("purchases")
 }
 
-model XrayClient {
-  id              String        @id @default(uuid())
-  userId          String
-  user            User          @relation(fields: [userId], references: [id])
-  purchaseId      String        @unique
-  purchase        Purchase      @relation(fields: [purchaseId], references: [id])
-  productId       String
-  inboundId       Int
-  clientId        String
-  email           String        @unique
-  subId           String        @unique
-  configLinks     String[]
-  subscriptionUrl String
-  trafficGb       Int
-  usedBytes       BigInt        @default(0)
-  expiresAt       DateTime
-  status          ServiceStatus @default(ACTIVE)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+model Referral {
+  id          String         @id @default(uuid()) @db.Uuid
+  referrerId  String         @map("referrer_id") @db.Uuid
+  referrer    User           @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Restrict)
+  refereeId   String         @map("referee_id") @db.Uuid
+  referee     User           @relation("ReferralReferee", fields: [refereeId], references: [id], onDelete: Restrict)
+  purchaseId  String?        @map("purchase_id") @db.Uuid
+  rewardToman BigInt         @default(0) @map("reward_toman")
+  status      ReferralStatus @default(PENDING)
+  metadata    Json?
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  @@index([userId, status])
-  @@index([email])
-}
-
-model ReferralReward {
-  id          String   @id @default(uuid())
-  referrerId  String
-  refereeId   String
-  amountToman BigInt
-  purchaseId  String?
-  createdAt   DateTime @default(now())
-
-  @@index([referrerId])
-}
-
-model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  title     String
-  body      String
-  readAt    DateTime?
-  createdAt DateTime @default(now())
-}
-
-model Ticket {
-  id        String          @id @default(uuid())
-  userId    String
-  user      User            @relation(fields: [userId], references: [id])
-  subject   String
-  status    TicketStatus    @default(OPEN)
-  messages  TicketMessage[]
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
-}
-
-model TicketMessage {
-  id        String   @id @default(uuid())
-  ticketId  String
-  ticket    Ticket   @relation(fields: [ticketId], references: [id])
-  authorId  String
-  body      String
-  isAdmin   Boolean  @default(false)
-  createdAt DateTime @default(now())
+  @@unique([referrerId, refereeId])
+  @@index([referrerId, status])
+  @@index([refereeId])
+  @@map("referrals")
 }
 
 model Admin {
-  id           String    @id @default(uuid())
-  email        String    @unique
-  passwordHash String
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique @db.VarChar(255)
+  passwordHash String     @map("password_hash")
+  displayName  String     @map("display_name") @db.VarChar(160)
   role         AdminRole
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  isActive     Boolean    @default(true) @map("is_active")
+  lastLoginAt  DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt    DateTime?  @map("deleted_at") @db.Timestamptz(3)
+  auditLogs    AuditLog[]
+
+  @@index([role, isActive])
+  @@map("admins")
 }
 
 model Setting {
-  key       String   @id
-  value     Json
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique @db.VarChar(120)
+  value       Json
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("settings")
+}
+
+model Notification {
+  id          String             @id @default(uuid()) @db.Uuid
+  userId      String             @map("user_id") @db.Uuid
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel     NotificationChannel
+  status      NotificationStatus @default(PENDING)
+  title       String             @db.VarChar(180)
+  body        String
+  payload     Json?
+  scheduledAt DateTime?          @map("scheduled_at") @db.Timestamptz(3)
+  sentAt      DateTime?          @map("sent_at") @db.Timestamptz(3)
+  readAt      DateTime?          @map("read_at") @db.Timestamptz(3)
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([userId, status])
+  @@index([channel, scheduledAt])
+  @@map("notifications")
+}
+
+model SupportTicket {
+  id        String              @id @default(uuid()) @db.Uuid
+  userId    String              @map("user_id") @db.Uuid
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject   String              @db.VarChar(180)
+  status    SupportTicketStatus @default(OPEN)
+  priority  Int                 @default(0)
+  messages  SupportTicketMessage[]
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  closedAt  DateTime?           @map("closed_at") @db.Timestamptz(3)
+  deletedAt DateTime?           @map("deleted_at") @db.Timestamptz(3)
+
+  @@index([userId, status])
+  @@index([status, priority, createdAt])
+  @@map("support_tickets")
+}
+
+model SupportTicketMessage {
+  id        String        @id @default(uuid()) @db.Uuid
+  ticketId  String        @map("ticket_id") @db.Uuid
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId  String        @map("author_id") @db.Uuid
+  isAdmin   Boolean       @default(false) @map("is_admin")
+  body      String
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([ticketId, createdAt])
+  @@map("support_ticket_messages")
+}
+
+model XrayClient {
+  id              String           @id @default(uuid()) @db.Uuid
+  userId          String           @map("user_id") @db.Uuid
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId       String           @map("product_id") @db.Uuid
+  product         Product          @relation(fields: [productId], references: [id], onDelete: Restrict)
+  purchaseId      String           @unique @map("purchase_id") @db.Uuid
+  purchase        Purchase         @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  inboundId       Int              @map("inbound_id")
+  clientUuid      String           @unique @map("client_uuid") @db.Uuid
+  email           String           @unique @db.VarChar(255)
+  subscriptionId  String           @unique @map("subscription_id") @db.VarChar(128)
+  subscriptionUrl String           @map("subscription_url")
+  configLinks     String[]         @map("config_links")
+  trafficLimitGb  Int              @map("traffic_limit_gb")
+  usedBytes       BigInt           @default(0) @map("used_bytes")
+  status          XrayClientStatus @default(ACTIVE)
+  expiresAt       DateTime         @map("expires_at") @db.Timestamptz(3)
+  lastSyncedAt    DateTime?        @map("last_synced_at") @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime?        @map("deleted_at") @db.Timestamptz(3)
+
+  @@index([userId, status])
+  @@index([inboundId, status])
+  @@index([expiresAt])
+  @@map("xray_clients")
 }
 
 model AuditLog {
-  id        String   @id @default(uuid())
-  actorId   String?
-  actor     User?    @relation(fields: [actorId], references: [id])
-  action    String
-  entity    String
-  entityId  String?
-  metadata  Json?
-  createdAt DateTime @default(now())
+  id          String         @id @default(uuid()) @db.Uuid
+  actorType   AuditActorType @map("actor_type")
+  actorUserId String?        @map("actor_user_id") @db.Uuid
+  actorAdminId String?       @map("actor_admin_id") @db.Uuid
+  actorAdmin  Admin?         @relation(fields: [actorAdminId], references: [id], onDelete: SetNull)
+  action      String         @db.VarChar(120)
+  entity      String         @db.VarChar(120)
+  entityId    String?        @map("entity_id") @db.VarChar(120)
+  ipAddress   String?        @map("ip_address") @db.Inet
+  userAgent   String?        @map("user_agent")
+  metadata    Json?
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
 
+  @@index([actorType, createdAt])
   @@index([action, createdAt])
+  @@index([entity, entityId])
+  @@map("audit_logs")
 }
