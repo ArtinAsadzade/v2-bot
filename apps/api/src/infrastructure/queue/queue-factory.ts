@@ -3,7 +3,14 @@ import { Queue, type JobsOptions, type QueueOptions } from 'bullmq';
 import { config } from '../../config/index.js';
 import { createRedisConnection } from '../redis/client.js';
 
-export type QueueName = 'notifications' | 'xray-sync' | 'audit';
+export type QueueName =
+  | 'notifications'
+  | 'xray-sync'
+  | 'audit'
+  | 'payment-verification'
+  | 'deposit-expiration'
+  | 'financial-reconciliation'
+  | 'financial-notifications';
 
 const defaultJobOptions: JobsOptions = {
   attempts: 3,
