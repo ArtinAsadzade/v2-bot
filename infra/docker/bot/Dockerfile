@@ -35,13 +35,12 @@ RUN addgroup -S app && adduser -S app -G app
 
 WORKDIR /app
 
-COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/apps/bot/dist ./apps/bot/dist
 
 USER app
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-CMD pgrep -f "apps/bot/dist/main.js" >/dev/null || exit 1
+CMD pgrep -f "dist/main.js" >/dev/null || exit 1
 
 CMD ["node", "apps/bot/dist/main.js"]

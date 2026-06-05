@@ -39,6 +39,7 @@ ENV PORT=3000
 RUN addgroup -S app && adduser -S app -G app
 WORKDIR /app
 
+# IMPORTANT: standalone root files
 COPY --from=build /app/apps/admin-panel/.next/standalone ./
 COPY --from=build /app/apps/admin-panel/.next/static ./apps/admin-panel/.next/static
 COPY --from=build /app/apps/admin-panel/public ./apps/admin-panel/public
@@ -50,4 +51,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
 CMD node -e "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", "apps/admin-panel/server.js"]
+# FIX: standalone entrypoint
+CMD ["node", "server.js"]
