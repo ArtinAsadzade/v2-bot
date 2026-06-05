@@ -1,21 +1,47 @@
 import { bot } from "../../bot";
 
+const pendingDeposits = new Map<number, boolean>();
+
+export { pendingDeposits };
+
 bot.action("deposit", async (ctx) => {
   await ctx.answerCbQuery();
 
+  pendingDeposits.set(ctx.from.id, true);
+
   await ctx.reply("💰 مقدار شارژ (تومان) را وارد کنید:");
+});
 
-  bot.once("text", async (ctx2) => {
-    const amount = Number(ctx2.message.text);
+bot.on("text", async (ctx, next) => {
+  if (!pendingDeposits.has(ctx.from.id)) {
+    return next();
+  }
 
-    if (isNaN(amount)) {
-      return ctx2.reply("❌ عدد معتبر وارد کنید");
-    }
+  const amount = Number(ctx.message.text);
 
-    await ctx2.reply("💱 انتخاب ارز:", {
-      reply_markup: {
-        inline_keyboard: [[{ text: "USDT (TRC20)", callback_data: `dep_usdt_${amount}` }], [{ text: "BTC", callback_data: `dep_btc_${amount}` }]],
-      },
-    });
+  if (isNaN(amount) || amount <= 0) {
+    await ctx.reply("❌ مبلغ معتبر وارد کنید");
+    return;
+  }
+
+  pendingDeposits.delete(ctx.from.id);
+
+  await ctx.reply("💱 انتخاب ارز:", {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: "USDT (TRC20)",
+            callback_data: `dep_usdt_${amount}`,
+          },
+        ],
+        [
+          {
+            text: "BTC",
+            callback_data: `dep_btc_${amount}`,
+          },
+        ],
+      ],
+    },
   });
 });
