@@ -5,6 +5,9 @@ ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 ENV HUSKY=0
 
+ENV PNPM_CONFIG_MINIMUM_RELEASE_AGE=0
+ENV COREPACK_ENABLE_STRICT=0
+
 RUN corepack enable && corepack prepare pnpm@11.5.2 --activate
 WORKDIR /app
 
