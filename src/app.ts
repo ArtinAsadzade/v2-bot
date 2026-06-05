@@ -2,6 +2,8 @@ import dotenv from "dotenv";
 import { bot } from "./bot/bot";
 import "./bot/handlers/start";
 import { logger } from "./services/logger";
+import "./bot/handlers/start";
+import "./bot/handlers/wallet";
 
 dotenv.config();
 
