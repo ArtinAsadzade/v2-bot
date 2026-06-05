@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1.7
+FROM node:22-alpine AS base
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable
+WORKDIR /app
+
+FROM base AS deps
+COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages/ui/package.json ./packages/ui/package.json
+COPY packages/configs/package.json ./packages/configs/package.json
+COPY apps/admin-panel/package.json ./apps/admin-panel/package.json
+COPY packages/ui ./packages/ui
+COPY packages/configs ./packages/configs
+RUN pnpm install --filter @v2bot/admin-panel... --frozen-lockfile=false
+
+FROM deps AS build
+ARG NEXT_PUBLIC_API_URL=http://localhost:4000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+COPY apps/admin-panel ./apps/admin-panel
+RUN pnpm --filter @v2bot/ui build \
+  && pnpm --filter @v2bot/admin-panel build
+
+FROM node:22-alpine AS production
+ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+RUN addgroup -S app && adduser -S app -G app
+WORKDIR /app
+
+COPY --from=build /app/apps/admin-panel/.next/standalone ./
+COPY --from=build /app/apps/admin-panel/.next/static ./apps/admin-panel/.next/static
+COPY --from=build /app/apps/admin-panel/public ./apps/admin-panel/public
+
+USER app
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "apps/admin-panel/server.js"]

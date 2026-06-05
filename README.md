@@ -72,12 +72,33 @@ infra/
 
 ## Getting started
 
+### Full stack with Docker (recommended)
+
+```bash
+cp .env.example .env
+# Edit .env and set TELEGRAM_BOT_TOKEN (required) plus JWT/crypto secrets
+
+docker compose up --build
+```
+
+This starts PostgreSQL, Redis, API, Telegram bot, and admin panel. On first boot the API container automatically runs Prisma migrations and seed.
+
+| Service      | URL                        |
+| ------------ | -------------------------- |
+| API health   | http://localhost:4000/health |
+| Admin panel  | http://localhost:3000      |
+
+Verify the bot by sending `/start` in Telegram after the stack is healthy.
+
+### Local development (without Docker for apps)
+
 ```bash
 cp .env.example .env
 corepack enable
 pnpm install
 docker compose up -d postgres redis
 pnpm --filter @v2bot/api prisma:migrate
+pnpm --filter @v2bot/api prisma:seed
 pnpm dev
 ```
 

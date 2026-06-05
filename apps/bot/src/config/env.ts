@@ -1,11 +1,32 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
+
+const loadEnvFile = (): void => {
+  const candidates = [
+    resolve(process.cwd(), '.env'),
+    resolve(process.cwd(), '../../.env'),
+    resolve(process.cwd(), '../../../.env'),
+  ];
+
+  for (const path of candidates) {
+    if (existsSync(path)) {
+      loadDotenv({ path });
+      return;
+    }
+  }
+};
+
+loadEnvFile();
 
 const botEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   TELEGRAM_BOT_TOKEN: z.string().min(1),
   TELEGRAM_BOT_USERNAME: z.string().min(1).default('v2bot'),
   REDIS_URL: z.string().url(),
-  API_BASE_URL: z.string().url().default('http://localhost:3000/v1'),
+  API_BASE_URL: z.string().url().default('http://localhost:4000/v1'),
   BOT_ADMIN_IDS: z
     .string()
     .default('')

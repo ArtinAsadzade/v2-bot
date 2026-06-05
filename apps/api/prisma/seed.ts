@@ -5,7 +5,10 @@ const prisma = new PrismaClient();
 async function main() {
   const node = await prisma.xrayNode.upsert({
     where: { id: '00000000-0000-4000-8000-000000000001' },
-    update: {},
+    update: {
+      baseUrl: process.env.XRAY_API_BASE_URL ?? 'https://xray.example.com',
+      isActive: true,
+    },
     create: {
       id: '00000000-0000-4000-8000-000000000001',
       name: 'Default Panel',
@@ -18,7 +21,10 @@ async function main() {
 
   await prisma.product.upsert({
     where: { slug: 'premium-vless' },
-    update: {},
+    update: {
+      nodeId: node.id,
+      status: ProductStatus.ACTIVE,
+    },
     create: {
       name: 'پریمیوم VLESS',
       slug: 'premium-vless',
@@ -35,9 +41,12 @@ async function main() {
     },
   });
 
-  console.log('Seed completed: default node + sample product (inbound_id=1)');
+  console.log('Seed completed (idempotent): default node + sample product');
 }
 
 main()
-  .catch(console.error)
+  .catch((error) => {
+    console.error('Seed failed:', error);
+    process.exit(1);
+  })
   .finally(() => prisma.$disconnect());

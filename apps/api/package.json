@@ -11,7 +11,11 @@
     "lint": "eslint src --ext .ts",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",
-    "prisma:deploy": "prisma migrate deploy --schema prisma/schema.prisma"
+    "prisma:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "prisma:seed": "prisma db seed --schema prisma/schema.prisma"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^10.0.1",
@@ -25,6 +29,7 @@
     "axios": "^1.9.0",
     "bullmq": "^5.52.2",
     "decimal.js": "^10.5.0",
+    "dotenv": "^16.5.0",
     "fastify": "^5.3.3",
     "fastify-plugin": "^5.0.1",
     "ioredis": "^5.6.1",

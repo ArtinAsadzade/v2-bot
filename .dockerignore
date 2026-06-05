@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+**/dist
+**/.next
+.git
+.env
+.env.*
+!.env.example
+*.md
+.husky
+.cursor
+**/*.log
+coverage
+.turbo
