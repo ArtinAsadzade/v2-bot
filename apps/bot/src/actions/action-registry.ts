@@ -1,5 +1,7 @@
 import { parseCallbackData } from '../callbacks/callback-data.js';
+import { handleBuyAction } from '../navigation/buy-flow.js';
 import { navigation } from '../navigation/navigation-manager.js';
+import { handleServiceAction } from '../navigation/services-flow.js';
 import { errorState } from '../ui/components.js';
 
 import type { BotContext } from '../sessions/session.js';
@@ -44,6 +46,17 @@ export const actionRegistry = new ActionRegistry()
     const data = 'data' in ctx.callbackQuery! ? ctx.callbackQuery.data : '';
     const parsed = parseCallbackData(data);
     await navigation.go(ctx, parsed?.action ?? 'menu', parsed?.value ? { page: parsed.value } : undefined);
+  })
+  .register('buy', '*', async (ctx, value) => {
+    const data = 'data' in ctx.callbackQuery! ? ctx.callbackQuery.data : '';
+    const parsed = parseCallbackData(data);
+    await handleBuyAction(ctx, parsed?.action ?? 'noop', value ?? parsed?.value);
+  })
+  .register('confirm', 'confirm', async (ctx) => handleBuyAction(ctx, 'confirm'))
+  .register('service', '*', async (ctx, value) => {
+    const data = 'data' in ctx.callbackQuery! ? ctx.callbackQuery.data : '';
+    const parsed = parseCallbackData(data);
+    await handleServiceAction(ctx, parsed?.action ?? 'view', value ?? parsed?.value);
   })
   .register('noop', '*', async (ctx) => ctx.replyOrEdit(errorState(ctx.t('placeholder.body'))));
 

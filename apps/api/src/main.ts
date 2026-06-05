@@ -1,9 +1,11 @@
 import { config } from './config/index.js';
 import { logger } from './core/logger/logger.js';
+import { registerEventHandlers } from './infrastructure/events/register-handlers.js';
 import { bootstrapSchedulers } from './infrastructure/queue/schedulers/bootstrap.js';
 import { bootstrapWorkers } from './infrastructure/queue/workers/bootstrap.js';
 import { buildApp } from './app.js';
 
+registerEventHandlers();
 const app = await buildApp();
 const workers = bootstrapWorkers();
 bootstrapSchedulers();

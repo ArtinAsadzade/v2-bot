@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const callbackSchema = z.object({
   version: z.literal('v1'),
-  namespace: z.enum(['nav', 'confirm', 'toggle', 'noop', 'wizard']),
+  namespace: z.enum(['nav', 'confirm', 'toggle', 'noop', 'wizard', 'buy', 'service']),
   action: z.string().min(1).max(24).regex(/^[a-z0-9_-]+$/u),
   value: z.string().max(28).optional(),
 });

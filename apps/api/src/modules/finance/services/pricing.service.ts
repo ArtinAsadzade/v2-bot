@@ -62,6 +62,7 @@ export class PricingService {
 
   public async createPurchaseDraft(input: {
     userId: string;
+    productId: string;
     trafficGb: number;
     couponCode?: string | undefined;
     region?: string | undefined;
@@ -73,6 +74,11 @@ export class PricingService {
       where: { idempotencyKey: input.idempotencyKey },
     });
     if (existing) return existing;
+    const product = await this.prisma.product.findFirst({
+      where: { id: input.productId, status: 'ACTIVE', deletedAt: null },
+    });
+    if (!product) throw new AppError('Product is not available', 'PRODUCT_UNAVAILABLE', 409);
+
     const quote = await this.calculate(input);
     const expiresAt = new Date(Date.now() + 15 * 60_000);
     return this.prisma.$transaction(async (tx) => {
@@ -94,6 +100,7 @@ export class PricingService {
       const draft = await tx.purchaseDraft.create({
         data: {
           userId: input.userId,
+          productId: product.id,
           status: input.reserveFunds
             ? PurchaseDraftStatus.FUNDS_RESERVED
             : PurchaseDraftStatus.DRAFT,

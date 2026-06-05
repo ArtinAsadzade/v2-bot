@@ -1,6 +1,9 @@
 import { Scenes } from 'telegraf';
 import { z } from 'zod';
 
+import { randomUUID } from 'node:crypto';
+
+import { apiClient } from '../services/api-client.js';
 import { createWizard, validateWizardInput } from './wizard-factory.js';
 
 import type { BotContext } from '../sessions/session.js';
@@ -30,8 +33,28 @@ const supportDraftWizard = createWizard({
         await ctx.reply('متن پیام باید حداقل ۱۰ کاراکتر باشد.');
         return;
       }
-      ctx.session.flows.supportDraft = { ...ctx.session.flows.supportDraft, step: 'ready', data: { ...ctx.session.flows.supportDraft?.data, body } };
-      await ctx.reply('پیش‌نویس پشتیبانی ذخیره شد. ارسال واقعی در فاز بعدی اضافه می‌شود.');
+      const draft = ctx.session.flows.supportDraft?.data as { subject?: string } | undefined;
+      const subject = draft?.subject ?? 'پشتیبانی';
+      if (!ctx.session.user?.id) {
+        await ctx.reply('ابتدا از منو وارد شوید.');
+        await ctx.scene.leave();
+        return;
+      }
+      try {
+        const ticket = await apiClient.createTicket(
+          {
+            userId: ctx.session.user.id,
+            subject,
+            body,
+            category: 'GENERAL',
+            idempotencyKey: randomUUID(),
+          },
+          ctx.session.correlationId,
+        );
+        await ctx.reply(`✅ تیکت شما ثبت شد.\nشناسه: ${ticket.id.slice(0, 8)}…`);
+      } catch {
+        await ctx.reply('ثبت تیکت ناموفق بود. کمی بعد دوباره تلاش کنید.');
+      }
       await ctx.scene.leave();
     },
   ],

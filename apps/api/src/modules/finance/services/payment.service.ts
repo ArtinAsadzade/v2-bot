@@ -12,6 +12,9 @@ import {
 
 import { AppError, NotFoundError } from '../../../core/errors/app-error.js';
 import { logger } from '../../../core/logger/logger.js';
+import { SystemEventType } from '@prisma/client';
+
+import { eventBus } from '../../../infrastructure/events/event-bus.js';
 import { enqueueDepositExpiration, enqueuePaymentVerification } from '../queues/payment.queues.js';
 import { parseTomanInput } from './money.js';
 import { WalletService } from './wallet.service.js';
@@ -183,6 +186,17 @@ export class PaymentService {
       { invoiceId: invoice.id, transactionId: transaction.id },
       'payment invoice credited',
     );
+    await eventBus.emit({
+      type: SystemEventType.PAYMENT_SUCCESS,
+      idempotencyKey: `payment-success:${invoice.id}`,
+      aggregateType: 'invoice',
+      aggregateId: invoice.id,
+      payload: {
+        userId: invoice.userId,
+        invoiceId: invoice.id,
+        amountToman: invoice.requestedToman.toString(),
+      },
+    });
     return updated;
   }
 

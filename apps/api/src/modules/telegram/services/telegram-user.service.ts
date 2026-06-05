@@ -1,5 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto';
 
+import { ReferralAttributionSource, SystemEventType } from '@prisma/client';
+
+import { eventBus } from '../../../infrastructure/events/event-bus.js';
+import { EngagementService } from '../../engagement/services/engagement.service.js';
+import { ReferralService } from '../../referrals/services/referral.service.js';
+
 import type { PrismaClient } from '@prisma/client';
 import type { TelegramUserSyncBody } from '../validators/telegram-user.validators.js';
 
@@ -53,12 +59,30 @@ export class TelegramUserService {
     });
 
     if (!existing && referrer) {
-      await this.prisma.referral.upsert({
-        where: { referrerId_refereeId: { referrerId: referrer.id, refereeId: user.id } },
-        update: {},
-        create: { referrerId: referrer.id, refereeId: user.id, metadata: { source: 'telegram_start' } },
+      const referrerUser = await this.prisma.user.findUniqueOrThrow({
+        where: { id: referrer.id },
+        select: { telegramId: true },
+      });
+      await new ReferralService(this.prisma).recordAttribution({
+        inviterId: referrer.id,
+        invitedId: user.id,
+        source: ReferralAttributionSource.TELEGRAM_START,
+        inviterTelegramId: referrerUser.telegramId,
+        invitedTelegramId: input.telegramId,
       });
     }
+
+    if (!existing) {
+      await eventBus.emit({
+        type: SystemEventType.USER_CREATED,
+        idempotencyKey: `user-created:${user.id}`,
+        aggregateType: 'user',
+        aggregateId: user.id,
+        payload: { userId: user.id, telegramId: input.telegramId },
+      });
+    }
+
+    await new EngagementService(this.prisma).recordDailyLogin(user.id);
 
     return {
       ...user,

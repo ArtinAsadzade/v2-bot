@@ -1,15 +1,25 @@
-import { botConfig } from '../config/env.js';
 import { backHomeKeyboard, mainMenuKeyboard } from '../keyboards/main-menu.keyboard.js';
-import { mainMenuTemplate, placeholderTemplate, profileTemplate, referralTemplate } from '../templates/messages.js';
-import { emptyState } from '../ui/components.js';
+import { walletCardTemplate } from '../templates/financial-messages.js';
+import {
+  notificationsTemplate,
+  referralDashboardTemplate,
+  supportHubTemplate,
+  ticketListTemplate,
+} from '../templates/engagement-messages.js';
+import { mainMenuTemplate, profileTemplate } from '../templates/messages.js';
+import { apiClient } from '../services/api-client.js';
+import { renderBuyScreen } from './buy-flow.js';
+import { renderServicesScreen } from './services-flow.js';
+import { emptyState, errorState } from '../ui/components.js';
 
 import type { BotContext, NavigationEntry } from '../sessions/session.js';
 import type { InlineKeyboardMarkup } from 'telegraf/types';
 
 type ScreenResult = { text: string; reply_markup: InlineKeyboardMarkup };
-type ScreenHandler = (ctx: BotContext, params?: Record<string, string>) => ScreenResult;
-
-const inviteLink = (ctx: BotContext): string => `https://t.me/${botConfig.TELEGRAM_BOT_USERNAME}?start=${ctx.session.user?.referralCode ?? ''}`;
+type ScreenHandler = (
+  ctx: BotContext,
+  params?: Record<string, string>,
+) => ScreenResult | Promise<ScreenResult>;
 
 export class NavigationManager {
   private readonly screens = new Map<string, ScreenHandler>();
@@ -23,7 +33,7 @@ export class NavigationManager {
     const current: NavigationEntry = { screen, params, enteredAt: Date.now(), messageId: ctx.callbackQuery?.message && 'message_id' in ctx.callbackQuery.message ? ctx.callbackQuery.message.message_id : undefined };
     if (push && ctx.session.navigation.current) ctx.session.navigation.stack.push(ctx.session.navigation.current);
     ctx.session.navigation.current = current;
-    const rendered = this.render(ctx, screen, params);
+    const rendered = await this.render(ctx, screen, params);
     await ctx.replyOrEdit(rendered.text, { reply_markup: rendered.reply_markup });
   }
 
@@ -31,11 +41,15 @@ export class NavigationManager {
     const previous = ctx.session.navigation.stack.pop();
     if (!previous) return this.go(ctx, fallback, undefined, false);
     ctx.session.navigation.current = previous;
-    const rendered = this.render(ctx, previous.screen, previous.params);
+    const rendered = await this.render(ctx, previous.screen, previous.params);
     await ctx.replyOrEdit(rendered.text, { reply_markup: rendered.reply_markup });
   }
 
-  public render(ctx: BotContext, screen: string, params?: Record<string, string>): ScreenResult {
+  public async render(
+    ctx: BotContext,
+    screen: string,
+    params?: Record<string, string>,
+  ): Promise<ScreenResult> {
     const handler = this.screens.get(screen) ?? this.screens.get('menu');
     if (!handler) throw new Error(`Navigation screen is not registered: ${screen}`);
     return handler(ctx, params);
@@ -45,9 +59,57 @@ export class NavigationManager {
 export const navigation = new NavigationManager()
   .register('menu', (ctx) => ({ text: mainMenuTemplate(ctx), reply_markup: mainMenuKeyboard(ctx) }))
   .register('profile', (ctx) => ({ text: profileTemplate(ctx), reply_markup: backHomeKeyboard(ctx) }))
-  .register('referral', (ctx) => ({ text: referralTemplate(ctx, inviteLink(ctx)), reply_markup: backHomeKeyboard(ctx) }))
+  .register('referral', async (ctx) => {
+    if (!ctx.session.user?.id) {
+      return { text: emptyState(ctx.t('menu.referral'), 'ابتدا وارد شوید.'), reply_markup: backHomeKeyboard(ctx) };
+    }
+    try {
+      const stats = await apiClient.getReferralStats(ctx.session.user.id, ctx.session.correlationId);
+      return {
+        text: referralDashboardTemplate(ctx, stats),
+        reply_markup: backHomeKeyboard(ctx),
+      };
+    } catch {
+      return { text: errorState('خطا در بارگذاری دعوت'), reply_markup: backHomeKeyboard(ctx) };
+    }
+  })
   .register('settings', (ctx) => ({ text: `${ctx.t('settings.title')}\n\n${ctx.t('settings.body')}`, reply_markup: backHomeKeyboard(ctx) }))
-  .register('services', (ctx) => ({ text: emptyState(ctx.t('menu.services'), ctx.t('empty.services')), reply_markup: backHomeKeyboard(ctx) }))
-  .register('buy', (ctx) => ({ text: placeholderTemplate(ctx, ctx.t('menu.buy')), reply_markup: backHomeKeyboard(ctx) }))
-  .register('wallet', (ctx) => ({ text: placeholderTemplate(ctx, ctx.t('menu.wallet')), reply_markup: backHomeKeyboard(ctx) }))
-  .register('support', (ctx) => ({ text: placeholderTemplate(ctx, ctx.t('menu.support')), reply_markup: backHomeKeyboard(ctx) }));
+  .register('services', (ctx) => renderServicesScreen(ctx))
+  .register('buy', (ctx) => renderBuyScreen(ctx))
+  .register('wallet', async (ctx) => {
+    if (!ctx.session.user?.id) {
+      return { text: emptyState(ctx.t('menu.wallet'), ctx.t('empty.wallet')), reply_markup: backHomeKeyboard(ctx) };
+    }
+    try {
+      const wallet = await apiClient.getWallet(ctx.session.user.id, ctx.session.correlationId);
+      return { text: walletCardTemplate(wallet), reply_markup: backHomeKeyboard(ctx) };
+    } catch {
+      return { text: errorState('خطا در دریافت کیف پول'), reply_markup: backHomeKeyboard(ctx) };
+    }
+  })
+  .register('support', async (ctx) => {
+    if (!ctx.session.user?.id) {
+      return { text: emptyState(ctx.t('menu.support'), 'ابتدا وارد شوید.'), reply_markup: backHomeKeyboard(ctx) };
+    }
+    try {
+      const tickets = await apiClient.listTickets(ctx.session.user.id, ctx.session.correlationId);
+      const text = [supportHubTemplate(ctx), '', ticketListTemplate(tickets)].join('\n');
+      return { text, reply_markup: backHomeKeyboard(ctx) };
+    } catch {
+      return { text: errorState('خطا در پشتیبانی'), reply_markup: backHomeKeyboard(ctx) };
+    }
+  })
+  .register('notifications', async (ctx) => {
+    if (!ctx.session.user?.id) {
+      return { text: emptyState('اعلان‌ها', 'ابتدا وارد شوید.'), reply_markup: backHomeKeyboard(ctx) };
+    }
+    try {
+      const items = await apiClient.listNotifications(ctx.session.user.id, ctx.session.correlationId);
+      return {
+        text: notificationsTemplate(items),
+        reply_markup: backHomeKeyboard(ctx),
+      };
+    } catch {
+      return { text: errorState('خطا در اعلان‌ها'), reply_markup: backHomeKeyboard(ctx) };
+    }
+  });

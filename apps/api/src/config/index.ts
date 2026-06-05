@@ -1,4 +1,5 @@
 import { createCryptoPaymentsConfig } from './crypto-payments.js';
+import { createEngagementConfig } from './engagement.js';
 import { createDatabaseConfig } from './database.js';
 import { loadEnv } from './env.js';
 import { createJwtConfig } from './jwt.js';
@@ -21,6 +22,7 @@ export const config = {
   security: { passwordPepper: env.PASSWORD_PEPPER },
   xray: createXrayConfig(env),
   cryptoPayments: createCryptoPaymentsConfig(env),
+  engagement: createEngagementConfig(env),
 } as const;
 
 export type AppConfig = typeof config;

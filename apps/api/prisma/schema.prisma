@@ -107,6 +107,8 @@ enum FinancialAuditAction {
   REFERRAL_REWARD_APPLIED
   PURCHASE_DRAFT_CREATED
   RECONCILIATION_CHECKED
+  PURCHASE_COMPLETED
+  PROVISION_ROLLBACK
 }
 
 enum ProductStatus {
@@ -156,11 +158,119 @@ enum SupportTicketStatus {
   CLOSED
 }
 
+enum TicketCategory {
+  PAYMENT
+  TECHNICAL
+  ACCOUNT
+  GENERAL
+}
+
+enum NotificationType {
+  SERVICE_EXPIRING
+  SERVICE_EXPIRED
+  TRAFFIC_WARNING
+  DEPOSIT_SUCCESS
+  PURCHASE_CONFIRMATION
+  REFERRAL_REWARD
+  SYSTEM_ANNOUNCEMENT
+  ADMIN_BROADCAST
+  INACTIVITY_REMINDER
+}
+
+enum ReferralAttributionSource {
+  TELEGRAM_START
+  LINK
+  MANUAL
+  OTHER
+}
+
+enum SystemEventType {
+  USER_CREATED
+  REFERRAL_ACTIVATED
+  PURCHASE_COMPLETED
+  SERVICE_EXPIRING
+  SERVICE_EXPIRED
+  PAYMENT_SUCCESS
+  TICKET_CREATED
+  NOTIFICATION_SENT
+}
+
+enum SystemEventStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+enum UserActivityType {
+  DAILY_LOGIN
+  COMMAND
+  PURCHASE
+  TICKET_CREATED
+  REFERRAL_SHARED
+  NOTIFICATION_OPENED
+}
+
+enum AnalyticsMetricKey {
+  ACTIVE_USERS
+  PURCHASES
+  REFERRAL_CONVERSIONS
+  RENEWALS
+  NOTIFICATIONS_SENT
+  TICKETS_CREATED
+}
+
 enum XrayClientStatus {
   ACTIVE
   PAUSED
   EXPIRED
   DELETED
+}
+
+enum ProductCategory {
+  STANDARD
+  PREMIUM
+  TRIAL
+  ENTERPRISE
+}
+
+enum PricingStrategy {
+  FIXED
+  PER_GB
+  HYBRID
+}
+
+enum ServiceInstanceStatus {
+  PROVISIONING
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  DISABLED
+  DELETED
+  FAILED
+}
+
+enum ProvisioningJobStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum ProvisioningLogLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+enum LinkProtocol {
+  VLESS
+  VMESS
+  TROJAN
+  SHADOWSOCKS
+  HYSTERIA
+  HYSTERIA2
+  OTHER
 }
 
 enum AuditActorType {
@@ -190,9 +300,15 @@ model User {
   referralPayouts ReferralReward[] @relation("ReferralRewardReferrer")
   referredPayouts ReferralReward[] @relation("ReferralRewardReferee")
   notifications   Notification[]
+  notificationLogs NotificationLog[]
   supportTickets  SupportTicket[]
-  xrayClients     XrayClient[]
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  activityLogs    UserActivityLog[]
+  engagementScore EngagementScore?
+  referralAttributions ReferralAttributionLog[] @relation("ReferralAttributionInviter")
+  invitedAttributions ReferralAttributionLog[] @relation("ReferralAttributionInvitee")
+  xrayClients      XrayClient[]
+  serviceInstances ServiceInstance[]
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt       DateTime?        @map("deleted_at") @db.Timestamptz(3)
 
@@ -253,25 +369,32 @@ model WalletTransaction {
 }
 
 model Product {
-  id           String        @id @default(uuid()) @db.Uuid
-  name         String        @db.VarChar(160)
-  slug         String        @unique @db.VarChar(180)
-  description  String?
-  inboundId    Int           @map("inbound_id")
-  protocol     String        @db.VarChar(32)
-  priceToman   BigInt        @map("price_toman")
-  trafficGb    Int           @map("traffic_gb")
-  durationDays Int           @map("duration_days")
-  status       ProductStatus @default(ACTIVE)
-  metadata     Json?
-  purchases    Purchase[]
-  xrayClients  XrayClient[]
-  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
-  deletedAt    DateTime?     @map("deleted_at") @db.Timestamptz(3)
+  id              String          @id @default(uuid()) @db.Uuid
+  name            String          @db.VarChar(160)
+  slug            String          @unique @db.VarChar(180)
+  description     String?
+  inboundId       Int             @map("inbound_id")
+  protocol        String          @db.VarChar(32)
+  category        ProductCategory @default(STANDARD)
+  nodeId          String?         @map("node_id") @db.Uuid
+  node            XrayNode?       @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  priceToman      BigInt          @map("price_toman")
+  trafficGb       Int             @map("traffic_gb")
+  durationDays    Int             @map("duration_days")
+  pricingStrategy PricingStrategy @default(FIXED) @map("pricing_strategy")
+  status          ProductStatus   @default(ACTIVE)
+  metadata        Json?
+  purchases       Purchase[]
+  purchaseDrafts  PurchaseDraft[]
+  xrayClients     XrayClient[]
+  serviceInstances ServiceInstance[]
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime?       @map("deleted_at") @db.Timestamptz(3)
 
   @@index([status, protocol])
   @@index([inboundId])
+  @@index([nodeId, status])
   @@map("products")
 }
 
@@ -286,8 +409,9 @@ model Purchase {
   trafficGb      Int            @map("traffic_gb")
   idempotencyKey String         @unique @map("idempotency_key") @db.VarChar(128)
   metadata       Json?
-  xrayClient     XrayClient?
-  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  xrayClient       XrayClient?
+  serviceInstance  ServiceInstance?
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt      DateTime?      @map("deleted_at") @db.Timestamptz(3)
 
@@ -305,6 +429,7 @@ model Referral {
   purchaseId  String?        @map("purchase_id") @db.Uuid
   rewardToman BigInt         @default(0) @map("reward_toman")
   status      ReferralStatus @default(PENDING)
+  source      ReferralAttributionSource @default(TELEGRAM_START)
   metadata    Json?
   createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -313,6 +438,22 @@ model Referral {
   @@index([referrerId, status])
   @@index([refereeId])
   @@map("referrals")
+}
+
+model ReferralAttributionLog {
+  id         String                  @id @default(uuid()) @db.Uuid
+  inviterId  String                  @map("inviter_id") @db.Uuid
+  inviter    User                    @relation("ReferralAttributionInviter", fields: [inviterId], references: [id], onDelete: Restrict)
+  invitedId  String                  @map("invited_id") @db.Uuid
+  invited    User                    @relation("ReferralAttributionInvitee", fields: [invitedId], references: [id], onDelete: Restrict)
+  source     ReferralAttributionSource
+  metadata   Json?
+  createdAt  DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([inviterId, invitedId])
+  @@index([inviterId, createdAt])
+  @@index([invitedId])
+  @@map("referral_attribution_logs")
 }
 
 model Admin {
@@ -345,23 +486,50 @@ model Setting {
 }
 
 model Notification {
-  id          String              @id @default(uuid()) @db.Uuid
-  userId      String              @map("user_id") @db.Uuid
-  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  channel     NotificationChannel
-  status      NotificationStatus  @default(PENDING)
-  title       String              @db.VarChar(180)
-  body        String
-  payload     Json?
-  scheduledAt DateTime?           @map("scheduled_at") @db.Timestamptz(3)
-  sentAt      DateTime?           @map("sent_at") @db.Timestamptz(3)
-  readAt      DateTime?           @map("read_at") @db.Timestamptz(3)
-  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                String              @id @default(uuid()) @db.Uuid
+  userId            String              @map("user_id") @db.Uuid
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel           NotificationChannel
+  type              NotificationType
+  status            NotificationStatus  @default(PENDING)
+  title             String              @db.VarChar(180)
+  body              String
+  templateKey       String?             @map("template_key") @db.VarChar(80)
+  deduplicationKey  String?             @map("deduplication_key") @db.VarChar(160)
+  referenceType     String?             @map("reference_type") @db.VarChar(80)
+  referenceId       String?             @map("reference_id") @db.VarChar(160)
+  payload           Json?
+  scheduledAt       DateTime?           @map("scheduled_at") @db.Timestamptz(3)
+  sentAt            DateTime?           @map("sent_at") @db.Timestamptz(3)
+  readAt            DateTime?           @map("read_at") @db.Timestamptz(3)
+  logs              NotificationLog[]
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  @@unique([userId, deduplicationKey])
   @@index([userId, status])
   @@index([channel, scheduledAt])
+  @@index([type, status, createdAt])
   @@map("notifications")
+}
+
+model NotificationLog {
+  id             String       @id @default(uuid()) @db.Uuid
+  notificationId String       @map("notification_id") @db.Uuid
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  userId         String       @map("user_id") @db.Uuid
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel        NotificationChannel
+  attempt        Int          @default(1)
+  status         NotificationStatus
+  errorMessage   String?      @map("error_message")
+  providerRef    String?      @map("provider_ref") @db.VarChar(160)
+  metadata       Json?
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([notificationId, createdAt])
+  @@index([userId, createdAt])
+  @@map("notification_logs")
 }
 
 model PaymentInvoice {
@@ -428,10 +596,12 @@ model ReferralReward {
   sourceTransactionId String?              @map("source_transaction_id") @db.Uuid
   rewardTransactionId String?              @map("reward_transaction_id") @db.Uuid
   percentageBps       Int                  @map("percentage_bps")
+  fixedBonusToman     BigInt               @default(0) @map("fixed_bonus_toman")
   baseAmountToman     BigInt               @map("base_amount_toman")
   rewardAmountToman   BigInt               @map("reward_amount_toman")
   level               Int                  @default(1)
   status              ReferralRewardStatus @default(PENDING)
+  releaseAt           DateTime?            @map("release_at") @db.Timestamptz(3)
   idempotencyKey      String               @unique @map("idempotency_key") @db.VarChar(160)
   metadata            Json?
   createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -439,6 +609,7 @@ model ReferralReward {
 
   @@index([referrerId, status])
   @@index([refereeId, createdAt])
+  @@index([status, releaseAt])
   @@map("referral_rewards")
 }
 
@@ -484,6 +655,8 @@ model PurchaseDraft {
   id               String              @id @default(uuid()) @db.Uuid
   userId           String              @map("user_id") @db.Uuid
   user             User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  productId        String              @map("product_id") @db.Uuid
+  product          Product             @relation(fields: [productId], references: [id], onDelete: Restrict)
   status           PurchaseDraftStatus @default(DRAFT)
   trafficGb        Int                 @map("traffic_gb")
   baseAmountToman  BigInt              @map("base_amount_toman")
@@ -501,6 +674,7 @@ model PurchaseDraft {
 
   @@index([userId, status, createdAt])
   @@index([status, expiresAt])
+  @@index([productId])
   @@map("purchase_drafts")
 }
 
@@ -529,63 +703,269 @@ model FinancialAuditLog {
 }
 
 model SupportTicket {
-  id        String                 @id @default(uuid()) @db.Uuid
-  userId    String                 @map("user_id") @db.Uuid
-  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject   String                 @db.VarChar(180)
-  status    SupportTicketStatus    @default(OPEN)
-  priority  Int                    @default(0)
-  messages  SupportTicketMessage[]
-  createdAt DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
-  closedAt  DateTime?              @map("closed_at") @db.Timestamptz(3)
-  deletedAt DateTime?              @map("deleted_at") @db.Timestamptz(3)
+  id           String                 @id @default(uuid()) @db.Uuid
+  userId       String                 @map("user_id") @db.Uuid
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject      String                 @db.VarChar(180)
+  category     TicketCategory         @default(GENERAL)
+  status       SupportTicketStatus    @default(OPEN)
+  priority     Int                    @default(0)
+  slaDueAt     DateTime?              @map("sla_due_at") @db.Timestamptz(3)
+  messages     SupportTicketMessage[]
+  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  closedAt     DateTime?              @map("closed_at") @db.Timestamptz(3)
+  deletedAt    DateTime?              @map("deleted_at") @db.Timestamptz(3)
 
   @@index([userId, status])
   @@index([status, priority, createdAt])
+  @@index([category, status])
   @@map("support_tickets")
 }
 
 model SupportTicketMessage {
-  id        String        @id @default(uuid()) @db.Uuid
-  ticketId  String        @map("ticket_id") @db.Uuid
-  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  authorId  String        @map("author_id") @db.Uuid
-  isAdmin   Boolean       @default(false) @map("is_admin")
-  body      String
-  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  id           String        @id @default(uuid()) @db.Uuid
+  ticketId     String        @map("ticket_id") @db.Uuid
+  ticket       SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId     String        @map("author_id") @db.Uuid
+  isAdmin      Boolean       @default(false) @map("is_admin")
+  body         String
+  attachmentUrl String?      @map("attachment_url") @db.VarChar(512)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([ticketId, createdAt])
   @@map("support_ticket_messages")
 }
 
+model UserActivityLog {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activity  UserActivityType
+  scoreDelta Int             @default(0) @map("score_delta")
+  metadata  Json?
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([userId, activity, createdAt])
+  @@index([activity, createdAt])
+  @@map("user_activity_logs")
+}
+
+model EngagementScore {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activityScore   Int      @default(0) @map("activity_score")
+  level           Int      @default(1)
+  streakDays      Int      @default(0) @map("streak_days")
+  lastLoginAt     DateTime? @map("last_login_at") @db.Timestamptz(3)
+  lastStreakAt    DateTime? @map("last_streak_at") @db.Timestamptz(3)
+  rewardPlaceholder Json?  @map("reward_placeholder")
+  metadata        Json?
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([level, activityScore])
+  @@map("engagement_scores")
+}
+
+model SystemEvent {
+  id              String            @id @default(uuid()) @db.Uuid
+  type            SystemEventType
+  status          SystemEventStatus @default(PENDING)
+  idempotencyKey  String            @unique @map("idempotency_key") @db.VarChar(160)
+  aggregateType   String?           @map("aggregate_type") @db.VarChar(80)
+  aggregateId     String?           @map("aggregate_id") @db.VarChar(160)
+  payload         Json
+  processedAt     DateTime?         @map("processed_at") @db.Timestamptz(3)
+  failureReason   String?           @map("failure_reason")
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([type, status, createdAt])
+  @@index([aggregateType, aggregateId])
+  @@map("system_events")
+}
+
+model AnalyticsDaily {
+  id        String             @id @default(uuid()) @db.Uuid
+  bucketDate DateTime          @map("bucket_date") @db.Date
+  metric    AnalyticsMetricKey
+  value     BigInt             @default(0)
+  metadata  Json?
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([bucketDate, metric])
+  @@index([bucketDate])
+  @@map("analytics_daily")
+}
+
+model XrayNode {
+  id               String            @id @default(uuid()) @db.Uuid
+  name             String            @db.VarChar(120)
+  region           String?           @db.VarChar(80)
+  baseUrl          String            @map("base_url")
+  isActive         Boolean           @default(true) @map("is_active")
+  priority         Int               @default(100)
+  maxClients       Int?              @map("max_clients")
+  metadata         Json?
+  products         Product[]
+  xrayClients      XrayClient[]
+  serviceInstances ServiceInstance[]
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([isActive, priority])
+  @@index([region])
+  @@map("xray_nodes")
+}
+
 model XrayClient {
-  id              String           @id @default(uuid()) @db.Uuid
-  userId          String           @map("user_id") @db.Uuid
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  productId       String           @map("product_id") @db.Uuid
-  product         Product          @relation(fields: [productId], references: [id], onDelete: Restrict)
-  purchaseId      String           @unique @map("purchase_id") @db.Uuid
-  purchase        Purchase         @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
-  inboundId       Int              @map("inbound_id")
-  clientUuid      String           @unique @map("client_uuid") @db.Uuid
-  email           String           @unique @db.VarChar(255)
-  subscriptionId  String           @unique @map("subscription_id") @db.VarChar(128)
-  subscriptionUrl String           @map("subscription_url")
-  configLinks     String[]         @map("config_links")
-  trafficLimitGb  Int              @map("traffic_limit_gb")
-  usedBytes       BigInt           @default(0) @map("used_bytes")
-  status          XrayClientStatus @default(ACTIVE)
-  expiresAt       DateTime         @map("expires_at") @db.Timestamptz(3)
-  lastSyncedAt    DateTime?        @map("last_synced_at") @db.Timestamptz(3)
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
-  deletedAt       DateTime?        @map("deleted_at") @db.Timestamptz(3)
+  id               String           @id @default(uuid()) @db.Uuid
+  userId           String           @map("user_id") @db.Uuid
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId        String           @map("product_id") @db.Uuid
+  product          Product          @relation(fields: [productId], references: [id], onDelete: Restrict)
+  purchaseId       String           @unique @map("purchase_id") @db.Uuid
+  purchase         Purchase         @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  nodeId           String?          @map("node_id") @db.Uuid
+  node             XrayNode?        @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  serviceInstance  ServiceInstance?
+  inboundId        Int              @map("inbound_id")
+  panelClientId    String?          @map("panel_client_id") @db.VarChar(128)
+  clientUuid       String           @unique @map("client_uuid") @db.Uuid
+  email            String           @unique @db.VarChar(255)
+  subscriptionId   String           @unique @map("subscription_id") @db.VarChar(128)
+  subscriptionUrl  String           @map("subscription_url")
+  configLinks      String[]         @map("config_links")
+  subscriptionLinks SubscriptionLink[]
+  configLinkRows   ConfigLink[]
+  trafficLimitGb   Int              @map("traffic_limit_gb")
+  usedBytes        BigInt           @default(0) @map("used_bytes")
+  status           XrayClientStatus @default(ACTIVE)
+  expiresAt        DateTime         @map("expires_at") @db.Timestamptz(3)
+  lastSyncedAt     DateTime?        @map("last_synced_at") @db.Timestamptz(3)
+  metadata         Json?
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt        DateTime?        @map("deleted_at") @db.Timestamptz(3)
 
   @@index([userId, status])
   @@index([inboundId, status])
   @@index([expiresAt])
+  @@index([nodeId, status])
   @@map("xray_clients")
+}
+
+model ServiceInstance {
+  id               String                @id @default(uuid()) @db.Uuid
+  userId           String                @map("user_id") @db.Uuid
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId        String                @map("product_id") @db.Uuid
+  product          Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  purchaseId       String                @unique @map("purchase_id") @db.Uuid
+  purchase         Purchase              @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  xrayClientId     String?               @unique @map("xray_client_id") @db.Uuid
+  xrayClient       XrayClient?           @relation(fields: [xrayClientId], references: [id], onDelete: SetNull)
+  nodeId           String?               @map("node_id") @db.Uuid
+  node             XrayNode?             @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  inboundId        Int                   @map("inbound_id")
+  status           ServiceInstanceStatus @default(PROVISIONING)
+  trafficLimitGb   Int                   @map("traffic_limit_gb")
+  usedBytes        BigInt                @default(0) @map("used_bytes")
+  expiresAt        DateTime              @map("expires_at") @db.Timestamptz(3)
+  idempotencyKey   String                @unique @map("idempotency_key") @db.VarChar(160)
+  lastSyncedAt     DateTime?             @map("last_synced_at") @db.Timestamptz(3)
+  metadata         Json?
+  usageSnapshots   ServiceUsageSnapshot[]
+  provisioningJobs ProvisioningJob[]
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt        DateTime?             @map("deleted_at") @db.Timestamptz(3)
+
+  @@index([userId, status])
+  @@index([status, expiresAt])
+  @@index([nodeId, status])
+  @@map("service_instances")
+}
+
+model ServiceUsageSnapshot {
+  id                String          @id @default(uuid()) @db.Uuid
+  serviceInstanceId String          @map("service_instance_id") @db.Uuid
+  serviceInstance   ServiceInstance @relation(fields: [serviceInstanceId], references: [id], onDelete: Cascade)
+  usedBytes         BigInt          @map("used_bytes")
+  uploadBytes       BigInt          @default(0) @map("upload_bytes")
+  downloadBytes     BigInt          @default(0) @map("download_bytes")
+  remainingBytes    BigInt?         @map("remaining_bytes")
+  syncedAt          DateTime        @default(now()) @map("synced_at") @db.Timestamptz(3)
+  metadata          Json?
+
+  @@index([serviceInstanceId, syncedAt])
+  @@map("service_usage_snapshots")
+}
+
+model ProvisioningJob {
+  id                String                @id @default(uuid()) @db.Uuid
+  serviceInstanceId String                @map("service_instance_id") @db.Uuid
+  serviceInstance   ServiceInstance       @relation(fields: [serviceInstanceId], references: [id], onDelete: Cascade)
+  status            ProvisioningJobStatus @default(PENDING)
+  attempt           Int                   @default(0)
+  maxAttempts       Int                   @default(5) @map("max_attempts")
+  idempotencyKey    String                @unique @map("idempotency_key") @db.VarChar(160)
+  lastError         String?               @map("last_error")
+  nextRetryAt       DateTime?             @map("next_retry_at") @db.Timestamptz(3)
+  completedAt       DateTime?             @map("completed_at") @db.Timestamptz(3)
+  metadata          Json?
+  logs              ProvisioningLog[]
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status, nextRetryAt])
+  @@index([serviceInstanceId, status])
+  @@map("provisioning_jobs")
+}
+
+model ProvisioningLog {
+  id                String              @id @default(uuid()) @db.Uuid
+  provisioningJobId String              @map("provisioning_job_id") @db.Uuid
+  provisioningJob   ProvisioningJob     @relation(fields: [provisioningJobId], references: [id], onDelete: Cascade)
+  level             ProvisioningLogLevel @default(INFO)
+  message           String              @db.VarChar(500)
+  metadata          Json?
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([provisioningJobId, createdAt])
+  @@map("provisioning_logs")
+}
+
+model SubscriptionLink {
+  id           String     @id @default(uuid()) @db.Uuid
+  xrayClientId String     @map("xray_client_id") @db.Uuid
+  xrayClient   XrayClient @relation(fields: [xrayClientId], references: [id], onDelete: Cascade)
+  protocol     LinkProtocol @default(OTHER)
+  url          String
+  isPrimary    Boolean    @default(false) @map("is_primary")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([xrayClientId, url])
+  @@index([xrayClientId, protocol])
+  @@map("subscription_links")
+}
+
+model ConfigLink {
+  id           String     @id @default(uuid()) @db.Uuid
+  xrayClientId String     @map("xray_client_id") @db.Uuid
+  xrayClient   XrayClient @relation(fields: [xrayClientId], references: [id], onDelete: Cascade)
+  protocol     LinkProtocol @default(OTHER)
+  url          String
+  label        String?    @db.VarChar(120)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([xrayClientId, url])
+  @@index([xrayClientId, protocol])
+  @@map("config_links")
 }
 
 model AuditLog {

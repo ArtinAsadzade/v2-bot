@@ -36,6 +36,7 @@ export const pricingSchema = z.object({
 
 export const purchaseDraftSchema = pricingSchema.extend({
   userId: uuid,
+  productId: uuid,
   reserveFunds: z.boolean().default(false),
   idempotencyKey: z.string().min(12).max(160),
 });

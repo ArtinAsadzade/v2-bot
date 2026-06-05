@@ -5,6 +5,10 @@ import { createRedisConnection } from '../redis/client.js';
 
 export type QueueName =
   | 'notifications'
+  | 'referral-rewards'
+  | 'analytics-aggregation'
+  | 'service-lifecycle'
+  | 'ticket-processing'
   | 'xray-sync'
   | 'audit'
   | 'payment-verification'
