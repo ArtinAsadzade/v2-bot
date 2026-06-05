@@ -4,6 +4,16 @@ import "./bot/handlers/start";
 import { logger } from "./services/logger";
 import "./bot/handlers/start";
 import "./bot/handlers/wallet";
+import "./bot/handlers/deposit/start";
+import "./bot/handlers/deposit/create";
+import "./bot/handlers/deposit/receipt";
+import "./bot/handlers/admin/deposit.admin";
+import "./bot/handlers/support/start";
+import "./bot/handlers/support/messages";
+import "./bot/handlers/admin/support.admin";
+import "./bot/handlers/coupon/apply";
+import "./bot/handlers/admin/panel";
+import "./bot/handlers/admin/coupon.admin";
 
 dotenv.config();
 

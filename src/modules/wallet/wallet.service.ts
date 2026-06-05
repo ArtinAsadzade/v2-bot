@@ -64,4 +64,26 @@ export class WalletService {
       return updated;
     });
   }
+
+  static async creditFromDeposit(userId: string, amount: number, reason: string) {
+    return prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          balance: {
+            increment: amount,
+          },
+        },
+      });
+
+      await tx.transaction.create({
+        data: {
+          userId,
+          amount,
+          type: "credit",
+          reason,
+        },
+      });
+    });
+  }
 }

@@ -16,6 +16,8 @@ model User {
   balance     Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  role String @default("user")
+  isBanned Boolean @default(false)
 }
 
 model Transaction {
@@ -24,5 +26,102 @@ model Transaction {
   amount      Int
   type        String   // credit | debit
   reason      String
+  createdAt   DateTime @default(now())
+}
+
+model Product {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  category    String
+  price       Int
+  duration    Int      // days
+  createdAt   DateTime @default(now())
+
+  items       ProductItem[]
+}
+
+model ProductItem {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  productId   String
+  configLink  String
+  isSold      Boolean  @default(false)
+
+  soldTo      String?
+  soldAt      DateTime?
+
+  product     Product  @relation(fields: [productId], references: [id])
+}
+
+model Deposit {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String
+  amount      Int
+  cryptoType  String   // USDT, BTC, etc.
+  wallet      String
+  status      String   // pending | submitted | approved | rejected
+
+  receipt     String?
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+}
+
+model Ticket {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String
+  status    String   // open | closed
+
+  createdAt DateTime @default(now())
+}
+
+model TicketMessage {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  ticketId  String
+  senderId  String
+  message   String
+
+  createdAt DateTime @default(now())
+}
+
+model Coupon {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  code        String   @unique
+  discount    Int      // percentage
+  maxUses     Int
+  usedCount   Int      @default(0)
+
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+
+  actorId     String
+  action      String
+
+  metadata    String?
+
+  createdAt   DateTime @default(now())
+}
+
+model DailyStats {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+
+  date        DateTime
+
+  users       Int
+  deposits    Int
+  purchases   Int
+  revenue     Int
+}
+
+model SecurityFlag {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+
+  userId      String
+
+  type        String
+  reason      String
+
   createdAt   DateTime @default(now())
 }
