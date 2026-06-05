@@ -58,6 +58,8 @@ export const actionRegistry = new ActionRegistry()
     const parsed = parseCallbackData(data);
     await handleServiceAction(ctx, parsed?.action ?? 'view', value ?? parsed?.value);
   })
-  .register('noop', '*', async (ctx) => ctx.replyOrEdit(errorState(ctx.t('placeholder.body'))));
+  .register('noop', '*', async (ctx) => {
+    await ctx.replyOrEdit(errorState(ctx.t('placeholder.body')));
+  });
 
 export const registerActions = (bot: Telegraf<BotContext>): void => actionRegistry.attach(bot);

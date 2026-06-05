@@ -23,7 +23,7 @@ export const enqueueAnalyticsIncrement = async (
 export const enqueueAnalyticsAggregate = async (bucketDate?: string): Promise<void> => {
   await analyticsQueue.add(
     'aggregate-day',
-    { bucketDate },
+    bucketDate !== undefined ? { bucketDate } : {},
     { jobId: `analytics:aggregate:${bucketDate ?? 'today'}` },
   );
 };

@@ -3,7 +3,7 @@ import { Worker } from 'bullmq';
 import { config } from '../../../config/index.js';
 import { logger } from '../../../core/logger/logger.js';
 import { prisma } from '../../../infrastructure/prisma/client.js';
-import { createRedisConnection } from '../../../infrastructure/redis/client.js';
+import { createBullmqConnection } from '../../../infrastructure/redis/client.js';
 import { createPaymentProvider } from '../providers/provider-factory.js';
 import { PaymentService } from '../services/payment.service.js';
 
@@ -15,7 +15,7 @@ import type {
 
 const worker = <T>(queueName: string, processor: (job: T) => Promise<void>) =>
   new Worker(queueName, async (job) => processor(job.data as T), {
-    connection: createRedisConnection(),
+    connection: createBullmqConnection(),
     prefix: config.queue.prefix,
   });
 

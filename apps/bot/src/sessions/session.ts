@@ -1,9 +1,10 @@
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import { Scenes, session } from 'telegraf';
 
 import { botConfig } from '../config/env.js';
 
-import type { Context, MiddlewareFn, SessionStore } from 'telegraf';
+import type { Context, MiddlewareFn } from 'telegraf';
+import type { AsyncSessionStore } from 'telegraf/session';
 
 export type LocaleCode = 'fa' | 'en';
 
@@ -70,10 +71,10 @@ export const defaultSession = (): BotSession & Scenes.SceneSession<BotSceneSessi
   navigation: { stack: [] },
   flows: {},
   settings: { language: 'fa', notifications: true, compactUi: false },
-  __scenes: {},
+  __scenes: { cursor: 0 },
 });
 
-class RedisSessionStore implements SessionStore<BotSession & Scenes.SceneSession<BotSceneSessionData>> {
+class RedisSessionStore implements AsyncSessionStore<BotSession & Scenes.SceneSession<BotSceneSessionData>> {
   public constructor(
     private readonly redis: Redis,
     private readonly ttlSeconds: number,
@@ -94,7 +95,7 @@ class RedisSessionStore implements SessionStore<BotSession & Scenes.SceneSession
   }
 }
 
-export const createSessionStore = (): SessionStore<BotSession & Scenes.SceneSession<BotSceneSessionData>> => {
+export const createSessionStore = (): AsyncSessionStore<BotSession & Scenes.SceneSession<BotSceneSessionData>> => {
   const redis = new Redis(botConfig.REDIS_URL, { lazyConnect: false, maxRetriesPerRequest: 3 });
   return new RedisSessionStore(redis, botConfig.SESSION_TTL_SECONDS);
 };
@@ -106,4 +107,4 @@ export const updateSession = (ctx: BotContext, updater: (session: BotContext['se
   updater(ctx.session);
 };
 
-export type ExternalSessionStore = SessionStore<BotSession & Scenes.SceneSession<BotSceneSessionData>>;
+export type ExternalSessionStore = AsyncSessionStore<BotSession & Scenes.SceneSession<BotSceneSessionData>>;

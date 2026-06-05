@@ -143,7 +143,7 @@ export class PurchaseProvisionService {
             userId: input.userId,
             productId: product.id,
             purchaseId: createdPurchase.id,
-            nodeId: node?.id,
+            nodeId: node?.id ?? null,
             inboundId: product.inboundId,
             status: ServiceInstanceStatus.PROVISIONING,
             trafficLimitGb: trafficGb,
@@ -188,7 +188,7 @@ export class PurchaseProvisionService {
         userId: input.userId,
         productSlug: product.slug,
         purchaseId: purchase.purchase.id,
-        telegramId: input.telegramId,
+        ...(input.telegramId !== undefined ? { telegramId: input.telegramId } : {}),
       });
 
       const provisioned = await this.xrayProvision.createClient({
@@ -196,7 +196,7 @@ export class PurchaseProvisionService {
         identity,
         trafficGb,
         durationDays,
-        baseUrl: panelBaseUrl,
+        ...(panelBaseUrl !== undefined ? { baseUrl: panelBaseUrl } : {}),
       });
 
       const result = await this.prisma.$transaction(async (tx) => {
@@ -206,7 +206,7 @@ export class PurchaseProvisionService {
             userId: input.userId,
             productId: product.id,
             purchaseId: purchase.purchase.id,
-            nodeId: node?.id,
+            nodeId: node?.id ?? null,
             inboundId: product.inboundId,
             panelClientId: provisioned.panelClientId,
             clientUuid: identity.clientUuid,
@@ -297,7 +297,7 @@ export class PurchaseProvisionService {
         purchaseId: purchase.purchase.id,
         amountToman: draft.finalAmountToman.toString(),
         idempotencyKey: input.idempotencyKey,
-        referrerId: user?.referredById ?? undefined,
+        ...(user?.referredById ? { referrerId: user.referredById } : {}),
       });
 
       logger.info(
@@ -309,7 +309,7 @@ export class PurchaseProvisionService {
       await this.handleFailure({
         error,
         userId: input.userId,
-        purchaseId,
+        ...(purchaseId !== undefined ? { purchaseId } : {}),
         draftId: draft.id,
         idempotencyKey: input.idempotencyKey,
         amountToman: draft.finalAmountToman,
@@ -365,7 +365,7 @@ export class PurchaseProvisionService {
             action: FinancialAuditAction.PROVISION_ROLLBACK,
             actorType: AuditActorType.SYSTEM,
             userId: input.userId,
-            referenceId: input.purchaseId,
+            referenceId: input.purchaseId ?? null,
             metadata: { draftId: input.draftId },
           },
         });

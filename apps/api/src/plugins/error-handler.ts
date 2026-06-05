@@ -17,7 +17,14 @@ export const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
       return reply.status(400).send(toFailure('VALIDATION_ERROR', 'Validation failed', request.id, error.flatten()));
     }
 
-    const statusCode = error.statusCode && error.statusCode >= 400 ? error.statusCode : 500;
+    const statusCode =
+      typeof error === 'object' &&
+      error !== null &&
+      'statusCode' in error &&
+      typeof (error as { statusCode: unknown }).statusCode === 'number' &&
+      (error as { statusCode: number }).statusCode >= 400
+        ? (error as { statusCode: number }).statusCode
+        : 500;
     return reply.status(statusCode).send(toFailure('INTERNAL_SERVER_ERROR', 'Unexpected server error', request.id));
   });
 };

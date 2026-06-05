@@ -3,7 +3,7 @@ import { Worker, type Job } from 'bullmq';
 
 import { config } from '../../../config/index.js';
 import { logger } from '../../../core/logger/logger.js';
-import { createRedisConnection } from '../../../infrastructure/redis/client.js';
+import { createBullmqConnection, createRedisConnection } from '../../../infrastructure/redis/client.js';
 import { prisma } from '../../../infrastructure/prisma/client.js';
 import { NotificationSpamGuard } from '../services/notification-spam-guard.js';
 import { NotificationService } from '../services/notification.service.js';
@@ -80,7 +80,7 @@ export const createNotificationWorkers = (): Worker[] => {
 
   return [
     new Worker<NotificationDispatchJob>('notifications', processor, {
-      connection: createRedisConnection(),
+      connection: createBullmqConnection(),
       prefix: config.queue.prefix,
     }),
   ];

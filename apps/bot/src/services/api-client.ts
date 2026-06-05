@@ -136,7 +136,7 @@ export class ApiClient {
         'content-type': 'application/json',
         ...(correlationId ? { 'x-request-id': correlationId } : {}),
       },
-      body: body ? JSON.stringify(body) : undefined,
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
     const payload = (await response.json()) as ApiEnvelope<T> | ApiFailure;
     if (!response.ok) {

@@ -33,7 +33,7 @@ export class ProvisioningRepository {
   public findServiceForUser(serviceId: string, userId: string) {
     return this.db.serviceInstance.findFirst({
       where: { id: serviceId, userId, deletedAt: null },
-      include: { xrayClient: { include: { configLinkRows: true, subscriptionLinks: true } }, product: true },
+      include: { xrayClient: { include: { configLinkRows: true, subscriptionLinks: true } }, product: { include: { node: true } } },
     });
   }
 

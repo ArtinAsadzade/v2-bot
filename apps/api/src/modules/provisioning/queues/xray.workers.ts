@@ -4,7 +4,7 @@ import { Worker, type Job } from 'bullmq';
 import { config } from '../../../config/index.js';
 import { logger } from '../../../core/logger/logger.js';
 import { prisma } from '../../../infrastructure/prisma/client.js';
-import { createRedisConnection } from '../../../infrastructure/redis/client.js';
+import { createBullmqConnection } from '../../../infrastructure/redis/client.js';
 import { ServiceLifecycleService } from '../services/service-lifecycle.service.js';
 
 import type {
@@ -76,7 +76,7 @@ export const createXrayWorkers = (): Worker[] => {
 
   return [
     new Worker<XrayJobData>('xray-sync', processor, {
-      connection: createRedisConnection(),
+      connection: createBullmqConnection(),
       prefix: config.queue.prefix,
     }),
   ];

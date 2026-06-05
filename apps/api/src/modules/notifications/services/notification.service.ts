@@ -49,9 +49,9 @@ export class NotificationService {
         body: rendered.body,
         templateKey,
         deduplicationKey: input.deduplicationKey,
-        referenceType: input.referenceType,
-        referenceId: input.referenceId,
-        scheduledAt: input.scheduledAt,
+        referenceType: input.referenceType ?? null,
+        referenceId: input.referenceId ?? null,
+        ...(input.scheduledAt !== undefined ? { scheduledAt: input.scheduledAt } : {}),
         payload: input.variables as never,
       },
     });

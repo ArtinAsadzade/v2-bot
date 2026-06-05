@@ -1,6 +1,6 @@
 import { config } from '../../../config/index.js';
 
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 
 export class NotificationSpamGuard {
   public constructor(private readonly redis: Redis) {}

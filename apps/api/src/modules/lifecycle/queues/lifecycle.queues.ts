@@ -41,7 +41,7 @@ export const enqueuePurchaseNotification = async (input: {
       purchaseId: input.purchaseId,
       amountToman: input.amountToman,
       idempotencyKey: input.idempotencyKey,
-      referrerId: input.referrerId,
+      ...(input.referrerId !== undefined ? { referrerId: input.referrerId } : {}),
     } as LifecycleJob,
     { jobId: `purchase-notify:${input.idempotencyKey}` },
   );

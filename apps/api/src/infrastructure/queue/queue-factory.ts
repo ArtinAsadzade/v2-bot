@@ -1,7 +1,7 @@
 import { Queue, type JobsOptions, type QueueOptions } from 'bullmq';
 
 import { config } from '../../config/index.js';
-import { createRedisConnection } from '../redis/client.js';
+import { createBullmqConnection } from '../redis/client.js';
 
 export type QueueName =
   | 'notifications'
@@ -25,7 +25,7 @@ const defaultJobOptions: JobsOptions = {
 
 export const createQueue = <T = unknown>(name: QueueName, options?: QueueOptions): Queue<T> =>
   new Queue<T>(name, {
-    connection: createRedisConnection(),
+    connection: createBullmqConnection(),
     prefix: config.queue.prefix,
     defaultJobOptions,
     ...options,

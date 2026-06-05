@@ -56,7 +56,11 @@ export const provisioningRoutes: FastifyPluginAsync = async (app) => {
   app.post('/purchases/finalize', async (request) => {
     const parsed = finalizePurchaseSchema.safeParse(request.body);
     if (!parsed.success) throw new ValidationAppError(parsed.error.flatten());
-    const result = await new PurchaseProvisionService(app.prisma).finalize(parsed.data);
+    const { telegramId, ...finalizeInput } = parsed.data;
+    const result = await new PurchaseProvisionService(app.prisma).finalize({
+      ...finalizeInput,
+      ...(telegramId !== undefined ? { telegramId } : {}),
+    });
     return ok(serializeFinancial(result));
   });
 
@@ -92,10 +96,12 @@ export const provisioningRoutes: FastifyPluginAsync = async (app) => {
         params: params.success ? undefined : params.error.flatten(),
         body: body.success ? undefined : body.error.flatten(),
       });
+    const { extraTrafficGb, extraDays } = body.data;
     const updated = await new ServiceLifecycleService(app.prisma).renew({
       serviceId: params.data.serviceId,
       userId: params.data.userId,
-      ...body.data,
+      extraDays,
+      ...(extraTrafficGb !== undefined ? { extraTrafficGb } : {}),
     });
     return ok(serializeFinancial(updated));
   });

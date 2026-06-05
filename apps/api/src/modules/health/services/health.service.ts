@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 
 export class HealthService {
   public constructor(

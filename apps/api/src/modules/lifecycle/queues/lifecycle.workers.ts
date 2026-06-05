@@ -2,7 +2,7 @@ import { SystemEventType } from '@prisma/client';
 import { Worker, type Job } from 'bullmq';
 
 import { config } from '../../../config/index.js';
-import { createRedisConnection } from '../../../infrastructure/redis/client.js';
+import { createBullmqConnection } from '../../../infrastructure/redis/client.js';
 import { prisma } from '../../../infrastructure/prisma/client.js';
 import { eventBus } from '../../../infrastructure/events/event-bus.js';
 import { NotificationService } from '../../notifications/services/notification.service.js';
@@ -69,7 +69,7 @@ export const createLifecycleWorkers = (): Worker[] => {
   };
   return [
     new Worker<LifecycleJob>('service-lifecycle', processor, {
-      connection: createRedisConnection(),
+      connection: createBullmqConnection(),
       prefix: config.queue.prefix,
     }),
   ];

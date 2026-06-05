@@ -1,7 +1,7 @@
 import { Worker, type Job } from 'bullmq';
 
 import { config } from '../../../config/index.js';
-import { createRedisConnection } from '../../../infrastructure/redis/client.js';
+import { createBullmqConnection } from '../../../infrastructure/redis/client.js';
 import { prisma } from '../../../infrastructure/prisma/client.js';
 import { AnalyticsService } from '../services/analytics.service.js';
 
@@ -24,7 +24,7 @@ export const createAnalyticsWorkers = (): Worker[] => {
   };
   return [
     new Worker('analytics-aggregation', processor, {
-      connection: createRedisConnection(),
+      connection: createBullmqConnection(),
       prefix: config.queue.prefix,
     }),
   ];

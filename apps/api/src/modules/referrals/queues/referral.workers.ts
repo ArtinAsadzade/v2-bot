@@ -2,7 +2,7 @@ import { Worker, type Job } from 'bullmq';
 
 import { config } from '../../../config/index.js';
 import { logger } from '../../../core/logger/logger.js';
-import { createRedisConnection } from '../../../infrastructure/redis/client.js';
+import { createBullmqConnection } from '../../../infrastructure/redis/client.js';
 import { prisma } from '../../../infrastructure/prisma/client.js';
 import { ReferralRewardEngineService } from '../services/referral-reward-engine.service.js';
 
@@ -25,7 +25,7 @@ export const createReferralWorkers = (): Worker[] => {
           refereeId: row.refereeId,
           baseAmountToman: row.baseAmountToman.toString(),
           idempotencyKey: row.idempotencyKey,
-          sourceTransactionId: row.sourceTransactionId ?? undefined,
+          ...(row.sourceTransactionId !== null ? { sourceTransactionId: row.sourceTransactionId } : {}),
         });
       }
       return;
@@ -36,7 +36,7 @@ export const createReferralWorkers = (): Worker[] => {
   };
   return [
     new Worker<ReferralRewardJob>('referral-rewards', processor, {
-      connection: createRedisConnection(),
+      connection: createBullmqConnection(),
       prefix: config.queue.prefix,
     }),
   ];

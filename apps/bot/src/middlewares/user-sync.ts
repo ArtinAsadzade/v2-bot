@@ -17,11 +17,11 @@ export const userSyncMiddleware = (): MiddlewareFn<BotContext> => async (ctx, ne
   const user = await apiClient.syncTelegramUser(
     {
       telegramId: String(ctx.from.id),
-      username: ctx.from.username,
+      ...(ctx.from.username !== undefined ? { username: ctx.from.username } : {}),
       firstName: ctx.from.first_name,
-      lastName: ctx.from.last_name,
-      languageCode: ctx.from.language_code,
-      referralCode,
+      ...(ctx.from.last_name !== undefined ? { lastName: ctx.from.last_name } : {}),
+      ...(ctx.from.language_code !== undefined ? { languageCode: ctx.from.language_code } : {}),
+      ...(referralCode !== undefined ? { referralCode } : {}),
     },
     ctx.session.correlationId,
   );

@@ -9,7 +9,7 @@ import { createXrayWorkers } from '../../../modules/provisioning/queues/xray.wor
 import { createTicketWorkers } from '../../../modules/support/queues/ticket.workers.js';
 import { config } from '../../../config/index.js';
 import { logger } from '../../../core/logger/logger.js';
-import { createRedisConnection } from '../../redis/client.js';
+import { createBullmqConnection } from '../../redis/client.js';
 
 export const bootstrapWorkers = (): Worker[] => {
   const workers = [
@@ -27,6 +27,6 @@ export const bootstrapWorkers = (): Worker[] => {
 
 export const createWorker = <T>(queueName: string, processor: (job: T) => Promise<void>): Worker =>
   new Worker(queueName, async (job) => processor(job.data as T), {
-    connection: createRedisConnection(),
+    connection: createBullmqConnection(),
     prefix: config.queue.prefix,
   });

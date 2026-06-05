@@ -2,11 +2,12 @@
 FROM node:22-alpine AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable
+ENV HUSKY=0
+RUN corepack enable && corepack prepare pnpm@10.11.0 --activate
 WORKDIR /app
 
 FROM base AS deps
-COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/configs/package.json ./packages/configs/package.json
 COPY packages/types/package.json ./packages/types/package.json
@@ -14,7 +15,7 @@ COPY apps/bot/package.json ./apps/bot/package.json
 COPY packages/shared ./packages/shared
 COPY packages/configs ./packages/configs
 COPY packages/types ./packages/types
-RUN pnpm install --filter @v2bot/bot... --frozen-lockfile=false
+RUN pnpm install --filter @v2bot/bot... --frozen-lockfile
 
 FROM deps AS build
 COPY apps/bot ./apps/bot

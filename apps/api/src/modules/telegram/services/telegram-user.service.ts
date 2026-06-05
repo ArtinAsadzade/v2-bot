@@ -42,7 +42,7 @@ export class TelegramUserService {
         lastName: input.lastName ?? null,
         languageCode: input.languageCode ?? null,
         referralCode: await this.generateReferralCode(input.telegramId),
-        referredById: referrer?.id,
+        ...(referrer ? { referredById: referrer.id } : {}),
         wallet: { create: { balanceToman: 0 } },
       },
       select: {

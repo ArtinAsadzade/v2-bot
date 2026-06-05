@@ -5,12 +5,28 @@
     "allowJs": true,
     "noEmit": true,
     "incremental": true,
-    "plugins": [{ "name": "next" }],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
     "paths": {
-      "@/*": ["./*"],
-      "@v2bot/ui": ["../../packages/ui/src/index.ts"]
-    }
+      "@/*": [
+        "./*"
+      ],
+      "@v2bot/ui": [
+        "../../packages/ui/src/index.ts"
+      ]
+    },
+    "isolatedModules": true
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

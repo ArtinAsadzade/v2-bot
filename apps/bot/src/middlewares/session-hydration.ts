@@ -10,6 +10,6 @@ export const sessionHydrationMiddleware = (): MiddlewareFn<BotContext> => async 
   ctx.session.navigation.stack ??= [];
   ctx.session.flows ??= defaults.flows;
   ctx.session.settings ??= defaults.settings;
-  ctx.session.__scenes ??= defaults.__scenes;
+  ctx.session.__scenes ??= { cursor: 0 };
   await next();
 };

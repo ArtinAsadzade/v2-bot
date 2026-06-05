@@ -11,7 +11,7 @@
     "typecheck": "pnpm -r typecheck",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky || true"
+    "prepare": "node -e \"const{execSync}=require('child_process');if(process.env.CI||process.env.HUSKY==='0')process.exit(0);try{execSync('husky',{stdio:'inherit'})}catch{}\""
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.1",

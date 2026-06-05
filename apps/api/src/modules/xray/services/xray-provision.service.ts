@@ -27,7 +27,10 @@ export class XrayProvisionService {
   public constructor(private readonly clientFactory = createXrayHttpClient) {}
 
   public async createClient(input: ProvisionClientInput): Promise<ProvisionedClient> {
-    const client = this.clientFactory({ baseUrl: input.baseUrl, token: input.token });
+    const client = this.clientFactory({
+      ...(input.baseUrl !== undefined ? { baseUrl: input.baseUrl } : {}),
+      ...(input.token !== undefined ? { token: input.token } : {}),
+    });
     const expiryTime = Date.now() + input.durationDays * 86_400_000;
     const settings = JSON.stringify({
       clients: [
@@ -74,7 +77,10 @@ export class XrayProvisionService {
     baseUrl?: string;
     token?: string;
   }): Promise<void> {
-    const client = this.clientFactory({ baseUrl: input.baseUrl, token: input.token });
+    const client = this.clientFactory({
+      ...(input.baseUrl !== undefined ? { baseUrl: input.baseUrl } : {}),
+      ...(input.token !== undefined ? { token: input.token } : {}),
+    });
     const expiryTime = Date.now() + input.durationDays * 86_400_000;
     const settings = JSON.stringify({
       clients: [
@@ -102,7 +108,10 @@ export class XrayProvisionService {
     baseUrl?: string;
     token?: string;
   }): Promise<void> {
-    const client = this.clientFactory({ baseUrl: input.baseUrl, token: input.token });
+    const client = this.clientFactory({
+      ...(input.baseUrl !== undefined ? { baseUrl: input.baseUrl } : {}),
+      ...(input.token !== undefined ? { token: input.token } : {}),
+    });
     await this.withRetry(() =>
       client.post(`/panel/api/inbounds/${input.inboundId}/delClient/${input.panelClientId}`, {}),
     );

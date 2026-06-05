@@ -74,7 +74,10 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
       });
     const message = await new TicketService(app.prisma).reply({
       ticketId: params.data.ticketId,
-      ...body.data,
+      authorId: body.data.authorId,
+      body: body.data.body,
+      isAdmin: body.data.isAdmin,
+      ...(body.data.attachmentUrl !== undefined ? { attachmentUrl: body.data.attachmentUrl } : {}),
     });
     return ok({ id: message.id, createdAt: message.createdAt.toISOString() });
   });

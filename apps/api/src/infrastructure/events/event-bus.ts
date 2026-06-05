@@ -25,8 +25,8 @@ export class EventBus {
       create: {
         type: event.type,
         idempotencyKey: event.idempotencyKey,
-        aggregateType: event.aggregateType,
-        aggregateId: event.aggregateId,
+        aggregateType: event.aggregateType ?? null,
+        aggregateId: event.aggregateId ?? null,
         payload: event.payload as never,
         status: SystemEventStatus.PENDING,
       },

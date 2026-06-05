@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import fastify from 'fastify';
 
-import { logger } from './core/logger/logger.js';
+import { config } from './config/index.js';
 import { correlationIdPlugin } from './plugins/correlation-id.js';
 import { errorHandlerPlugin } from './plugins/error-handler.js';
 import { prismaPlugin } from './plugins/prisma.js';
@@ -12,7 +12,13 @@ import { registerRoutes } from './routes/register-routes.js';
 
 export const buildApp = async () => {
   const app = fastify({
-    loggerInstance: logger,
+    logger: {
+      level: config.logger.level,
+      redact: ['req.headers.authorization', 'req.headers.cookie', 'telegram.botToken', '*.passwordHash'],
+      ...(config.app.isDev
+        ? { transport: { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:standard' } } }
+        : {}),
+    },
     genReqId: (request) => String(request.headers['x-request-id'] ?? randomUUID()),
   });
 

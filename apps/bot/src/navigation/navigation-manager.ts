@@ -30,7 +30,14 @@ export class NavigationManager {
   }
 
   public async go(ctx: BotContext, screen: string, params?: Record<string, string>, push = true): Promise<void> {
-    const current: NavigationEntry = { screen, params, enteredAt: Date.now(), messageId: ctx.callbackQuery?.message && 'message_id' in ctx.callbackQuery.message ? ctx.callbackQuery.message.message_id : undefined };
+    const current: NavigationEntry = {
+      screen,
+      enteredAt: Date.now(),
+      ...(params !== undefined ? { params } : {}),
+      ...(ctx.callbackQuery?.message && 'message_id' in ctx.callbackQuery.message
+        ? { messageId: ctx.callbackQuery.message.message_id }
+        : {}),
+    };
     if (push && ctx.session.navigation.current) ctx.session.navigation.stack.push(ctx.session.navigation.current);
     ctx.session.navigation.current = current;
     const rendered = await this.render(ctx, screen, params);

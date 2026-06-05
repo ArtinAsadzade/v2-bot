@@ -1,5 +1,5 @@
 import fp from 'fastify-plugin';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 
 import { createRedisConnection } from '../infrastructure/redis/client.js';
 

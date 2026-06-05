@@ -12,9 +12,13 @@ export class XrayApiError extends Error {
     super(message);
     this.name = 'XrayApiError';
     this.code = code;
-    this.statusCode = options?.statusCode;
+    if (options?.statusCode !== undefined) {
+      this.statusCode = options.statusCode;
+    }
     this.retryable = options?.retryable ?? false;
-    this.details = options?.details;
+    if (options?.details !== undefined) {
+      this.details = options.details;
+    }
   }
 }
 

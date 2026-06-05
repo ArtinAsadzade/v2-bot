@@ -91,7 +91,7 @@ export class XrayHttpClient {
       'xray api request failed',
     );
     return new XrayApiError(axiosError.message || 'Xray API request failed', 'XRAY_HTTP_ERROR', {
-      statusCode: status,
+      ...(status !== undefined ? { statusCode: status } : {}),
       retryable,
       details: axiosError.response?.data,
     });

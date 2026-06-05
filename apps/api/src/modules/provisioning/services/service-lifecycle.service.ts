@@ -53,7 +53,7 @@ export class ServiceLifecycleService {
     const snapshot = await this.xrayTraffic.fetchTraffic(
       service.xrayClient.email,
       service.trafficLimitGb,
-      { baseUrl: service.product.node?.baseUrl },
+      service.product.node?.baseUrl !== undefined ? { baseUrl: service.product.node.baseUrl } : {},
     );
     const status =
       snapshot.expiresAt && snapshot.expiresAt < new Date()
@@ -121,7 +121,7 @@ export class ServiceLifecycleService {
       identity,
       trafficGb,
       durationDays: Math.ceil((newExpires.getTime() - Date.now()) / 86_400_000),
-      baseUrl: service.product.node?.baseUrl,
+      ...(service.product.node?.baseUrl !== undefined ? { baseUrl: service.product.node.baseUrl } : {}),
     });
     return this.prisma.serviceInstance.update({
       where: { id: service.id },
@@ -152,7 +152,7 @@ export class ServiceLifecycleService {
       await this.xrayProvision.deleteClient({
         inboundId: service.inboundId,
         panelClientId: service.xrayClient.panelClientId,
-        baseUrl: service.product.node?.baseUrl,
+        ...(service.product.node?.baseUrl !== undefined ? { baseUrl: service.product.node.baseUrl } : {}),
       });
     }
     await this.prisma.$transaction([
@@ -174,7 +174,8 @@ export class ServiceLifecycleService {
       userId,
     );
     if (!service?.xrayClient) throw new NotFoundError('Service');
-    const panelOpts = { baseUrl: service.product.node?.baseUrl };
+    const panelOpts =
+      service.product.node?.baseUrl !== undefined ? { baseUrl: service.product.node.baseUrl } : {};
     const configLinks = await this.xraySubscription.fetchConfigLinks(
       service.inboundId,
       service.xrayClient.email,
@@ -241,7 +242,7 @@ export class ServiceLifecycleService {
         Math.ceil((service.expiresAt.getTime() - Date.now()) / 86_400_000),
       ),
       enable,
-      baseUrl: service.product.node?.baseUrl,
+      ...(service.product.node?.baseUrl !== undefined ? { baseUrl: service.product.node.baseUrl } : {}),
     });
     await this.prisma.serviceInstance.update({
       where: { id: serviceId },

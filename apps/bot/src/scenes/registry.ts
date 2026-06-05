@@ -13,7 +13,7 @@ const supportDraftWizard = createWizard({
   steps: [
     async (ctx) => {
       await ctx.reply('موضوع پیام پشتیبانی را کوتاه بنویسید. برای خروج /cancel را بفرستید.');
-      return ctx.wizard.next();
+      ctx.wizard.next();
     },
     async (ctx) => {
       const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
@@ -24,7 +24,7 @@ const supportDraftWizard = createWizard({
       }
       ctx.session.flows.supportDraft = { name: 'supportDraft', step: 'body', data: { subject }, expiresAt: Date.now() + 10 * 60_000, retries: 0 };
       await ctx.reply('متن پیام را بنویسید. ثبت نهایی در فازهای بعدی فعال می‌شود.');
-      return ctx.wizard.next();
+      ctx.wizard.next();
     },
     async (ctx) => {
       const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';

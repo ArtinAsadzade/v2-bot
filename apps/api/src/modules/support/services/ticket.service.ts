@@ -96,7 +96,7 @@ export class TicketService {
         authorId: input.authorId,
         body: input.body,
         isAdmin: input.isAdmin,
-        attachmentUrl: input.attachmentUrl,
+        attachmentUrl: input.attachmentUrl ?? null,
       },
     });
 

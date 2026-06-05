@@ -23,9 +23,11 @@ export type ReferralStats = {
 };
 
 export class ReferralService {
-  private readonly abuse = new ReferralAbuseService(this.prisma);
+  private readonly abuse: ReferralAbuseService;
 
-  public constructor(private readonly prisma: PrismaClient) {}
+  public constructor(private readonly prisma: PrismaClient) {
+    this.abuse = new ReferralAbuseService(prisma);
+  }
 
   public buildInviteLink(botUsername: string, referralCode: string): string {
     return `https://t.me/${botUsername}?start=${referralCode}`;

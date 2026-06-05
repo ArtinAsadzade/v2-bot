@@ -119,12 +119,13 @@ export const handleBuyAction = async (ctx: BotContext, action: string, value?: s
       },
       ctx.session.correlationId,
     );
+    const telegramId = ctx.from?.id?.toString();
     const result = await apiClient.finalizePurchase(
       {
         userId,
         draftId: draft.id,
         idempotencyKey,
-        telegramId: ctx.from?.id?.toString(),
+        ...(telegramId !== undefined ? { telegramId } : {}),
       },
       ctx.session.correlationId,
     );
