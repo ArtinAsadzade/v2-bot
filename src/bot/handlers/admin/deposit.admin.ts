@@ -1,26 +1,42 @@
-import { bot } from "../../bot";
 import { prisma } from "../../../services/prisma";
-import { WalletService } from "../../../modules/wallet/wallet.service";
 
-const ADMINS = ["123456789"];
+export class WalletService {
+  static async credit(userId: string, amount: number, reason?: string) {
+    return prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        balance: {
+          increment: amount,
+        },
+      },
+    });
+  }
 
-bot.action(/approve_dep_(.+)/, async (ctx) => {
-  if (!ADMINS.includes(String(ctx.from?.id))) return;
+  static async debit(userId: string, amount: number, reason?: string) {
+    return prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        balance: {
+          decrement: amount,
+        },
+      },
+    });
+  }
 
-  const depositId = ctx.match[1];
+  static async getBalance(userId: string) {
+    const user = await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: {
+        balance: true,
+      },
+    });
 
-  const deposit = await prisma.deposit.findUnique({
-    where: { id: depositId },
-  });
-
-  if (!deposit || deposit.status !== "submitted") return;
-
-  await WalletService.credit(deposit.userId, deposit.amount, "Crypto Deposit");
-
-  await prisma.deposit.update({
-    where: { id: depositId },
-    data: { status: "approved" },
-  });
-
-  await ctx.reply("✅ شارژ تایید شد");
-});
+    return user?.balance ?? 0;
+  }
+}
