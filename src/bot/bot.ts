@@ -2,7 +2,7 @@ import { session, Telegraf } from "telegraf";
 import type { AppContext } from "../types/bot";
 import { logger } from "../services/logger";
 import { UserService } from "../modules/user/user.service";
-import { handleAdminFlow } from "../admin/admin.flow.handler";
+import { handleAdminFlow } from "./handlers/admin/admin.flow.handler";
 
 if (!process.env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN is missing");

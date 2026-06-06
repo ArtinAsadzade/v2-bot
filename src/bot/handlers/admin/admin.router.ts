@@ -1,7 +1,7 @@
 import { Markup } from "telegraf";
-import { prisma } from "../services/prisma";
 import { requireAdmin } from "./admin.guard";
 import { setFlow } from "./admin.flow";
+import { prisma } from "../../../services/prisma";
 
 export function registerAdminHandlers(bot: any) {
   bot.action("admin:dashboard", async (ctx) => {

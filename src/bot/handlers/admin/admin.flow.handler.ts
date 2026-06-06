@@ -1,4 +1,4 @@
-import { prisma } from "../services/prisma";
+import { prisma } from "../../../services/prisma";
 import { resetFlow, getFlow } from "./admin.flow";
 
 export async function handleAdminFlow(ctx: any) {
