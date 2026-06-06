@@ -12,7 +12,34 @@ class ProductService {
         });
     }
     static async getProductsByCategory(categoryId) {
-        return prisma_1.prisma.product.findMany({ where: { categoryId, isActive: true, accounts: { some: { status: "available" } } }, orderBy: { title: "asc" } });
+        return prisma_1.prisma.product.findMany({
+            where: { categoryId, isActive: true, accounts: { some: { status: "available" } } },
+            include: { _count: { select: { accounts: { where: { status: "available" } } } } },
+            orderBy: { title: "asc" },
+        });
+    }
+    static async listFeaturedProducts(take = 6) {
+        return prisma_1.prisma.product.findMany({
+            where: { isActive: true, accounts: { some: { status: "available" } } },
+            include: { category: true, _count: { select: { accounts: { where: { status: "available" } } } } },
+            orderBy: [{ orders: { _count: "desc" } }, { price: "asc" }],
+            take,
+        });
+    }
+    static async searchActiveProducts(query, take = 10) {
+        const normalized = query.trim();
+        if (normalized.length < 2)
+            return [];
+        return prisma_1.prisma.product.findMany({
+            where: {
+                isActive: true,
+                accounts: { some: { status: "available" } },
+                OR: [{ title: { contains: normalized } }, { category: { is: { name: { contains: normalized } } } }],
+            },
+            include: { category: true, _count: { select: { accounts: { where: { status: "available" } } } } },
+            orderBy: [{ price: "asc" }, { title: "asc" }],
+            take,
+        });
     }
     static async getProduct(productId) {
         return prisma_1.prisma.product.findUnique({ where: { id: productId }, include: { category: true } });

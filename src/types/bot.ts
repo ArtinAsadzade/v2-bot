@@ -10,7 +10,7 @@ export type ConversationState =
   | { name: "admin_user_search" }
   | { name: "admin_product_search" };
 
-export type FlowName = "product_create" | "account_create" | "coupon_create" | "deposit_submit" | "ticket_reply" | "coupon_code" | "wallet_adjust" | "free_account_create" | "product_price" | "crypto_wallet_create" | "minimum_topup" | "referral_tier_create" | "store_status";
+export type FlowName = "product_create" | "account_create" | "coupon_create" | "deposit_submit" | "ticket_reply" | "coupon_code" | "product_search" | "wallet_adjust" | "free_account_create" | "product_price" | "crypto_wallet_create" | "minimum_topup" | "referral_tier_create" | "store_status";
 
 export interface ActiveFlow {
   name: FlowName;
@@ -22,6 +22,9 @@ export interface ActiveFlow {
 export interface SessionData {
   state?: ConversationState;
   selectedCoupons?: Record<string, string>;
+  favoriteProducts?: Record<string, true>;
+  recentlyViewedProductIds?: string[];
+  productSearchQuery?: string;
   adminFlow?: { flow: string; step: string; data: Record<string, unknown> };
   liveTicketId?: string;
   flow?: ActiveFlow;

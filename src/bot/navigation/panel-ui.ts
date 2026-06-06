@@ -10,10 +10,12 @@ export type PanelViewId =
   | "shop.products"
   | "shop.product"
   | "shop.checkout"
+  | "shop.searchResults"
   | "wallet"
   | "account"
   | "account.details"
   | "account.history"
+  | "wallet.history"
   | "deposit"
   | "support"
   | "referral"
@@ -75,10 +77,12 @@ const PANEL_VIEW_IDS = new Set<string>([
   "shop.products",
   "shop.product",
   "shop.checkout",
+  "shop.searchResults",
   "wallet",
   "account",
   "account.details",
   "account.history",
+  "wallet.history",
   "deposit",
   "support",
   "referral",

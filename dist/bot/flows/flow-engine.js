@@ -35,7 +35,7 @@ const definitions = {
         firstStep: "amount",
         prompt: async () => {
             const setting = await deposit_service_1.FinancialSettingsService.get();
-            return `💳 مبلغ شارژ را به تومان وارد کنید:\n\nحداقل شارژ: ${money(setting.minimumTopupAmount)}`;
+            return `💳 مبلغ شارژ را به تومان وارد کنید:\n\nحداقل شارژ: ${money(setting.minimumTopupAmount)}\n\nفقط عدد را ارسال کنید؛ مثال: 250000`;
         },
         async handleText(ctx, text) {
             if (ctx.session.flow?.step === "amount") {
@@ -65,17 +65,17 @@ const definitions = {
             if (!depositId)
                 return { text: "ابتدا مبلغ شارژ را وارد کنید." };
             await deposit_service_1.DepositService.submitReceipt(depositId, user.id, fileId);
-            return { done: true, text: "✅ رسید شما ثبت شد و پس از بررسی، کیف پول به‌روزرسانی می‌شود.", returnTo: { id: "wallet" } };
+            return { done: true, text: "✅ رسید شما ثبت شد. تیم مالی در کوتاه‌ترین زمان پرداخت را بررسی می‌کند و نتیجه از همین ربات اطلاع‌رسانی می‌شود.", returnTo: { id: "wallet" } };
         },
     },
     ticket_reply: {
         firstStep: "message",
-        prompt: "🎧 متن پیام پشتیبانی را وارد کنید:",
+        prompt: "🎧 پیام خود را برای پشتیبانی بنویسید:\n\nاگر درباره خرید یا شارژ است، مبلغ یا شماره سفارش را هم ارسال کنید.",
         async handleText(ctx, text) {
             const user = await requireUser(ctx);
             const ticketId = ctx.session.flow?.data.ticketId ? String(ctx.session.flow.data.ticketId) : (await support_service_1.SupportService.createTicket(user.id)).id;
             await support_service_1.SupportService.addUserMessage(ticketId, user.id, text.trim());
-            return { done: true, text: "✅ پیام شما ثبت شد. پاسخ پشتیبانی در همین ربات ارسال می‌شود.", returnTo: { id: "support" } };
+            return { done: true, text: "✅ تیکت شما ثبت شد. پاسخ پشتیبانی در همین گفتگو برایتان ارسال می‌شود.", returnTo: { id: "support" } };
         },
     },
     coupon_code: {
@@ -89,6 +89,17 @@ const definitions = {
             (_a = ctx.session).selectedCoupons ?? (_a.selectedCoupons = {});
             ctx.session.selectedCoupons[productId] = text.trim().toUpperCase();
             return { done: true, text: "✅ کد تخفیف روی پیش‌فاکتور اعمال شد.", returnTo: { id: "shop.checkout", params: { productId } } };
+        },
+    },
+    product_search: {
+        firstStep: "query",
+        prompt: "🔎 نام سرویس یا دسته‌بندی موردنظر را وارد کنید:\n\nمثلاً: Premium، یک‌ماهه، نام کشور یا نام دسته‌بندی",
+        async handleText(ctx, text) {
+            const query = text.trim();
+            if (query.length < 2)
+                return { text: "برای جستجوی دقیق‌تر، حداقل دو حرف وارد کنید:" };
+            ctx.session.productSearchQuery = query;
+            return { done: true, text: "✅ نتایج جستجو آماده شد.", returnTo: { id: "shop.searchResults", params: { q: query } } };
         },
     },
     product_create: {
