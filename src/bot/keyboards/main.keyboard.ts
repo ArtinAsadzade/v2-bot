@@ -2,10 +2,13 @@ import { Markup } from "telegraf";
 
 export function homeKeyboard(isAdmin = false) {
   const rows = [
-    [Markup.button.callback("🛒 خرید سرویس", "shop")],
-    [Markup.button.callback("💰 کیف پول", "wallet"), Markup.button.callback("➕ شارژ کیف پول", "deposit")],
-    [Markup.button.callback("🎧 پشتیبانی", "support")],
-    [Markup.button.callback("🎁 زیرمجموعه‌گیری", "referral"), Markup.button.callback("🆓 کانفیگ رایگان", "free_config")],
+    [Markup.button.callback("🏪 فروشگاه", "shop")],
+    [Markup.button.callback("💰 کیف پول", "wallet")],
+    [Markup.button.callback("📦 اکانت‌های من", "account")],
+    [Markup.button.callback("🆓 دریافت اکانت تست", "freeAccount")],
+    [Markup.button.callback("🎁 دعوت دوستان", "referral")],
+    [Markup.button.callback("🎫 پشتیبانی", "support")],
+    [Markup.button.callback("⚙️ حساب کاربری", "account")],
   ];
 
   if (isAdmin) {

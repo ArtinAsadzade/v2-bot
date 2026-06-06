@@ -18,6 +18,46 @@ export function registerModernHandlers(bot: AppBot) {
   registerFlowEngine(bot);
   registerFreeAccountEvents();
 
+  const legacyViews = new Map<string, Parameters<typeof renderPanel>[1]>([
+    ["home", { id: "home" }],
+    ["shop", { id: "shop.categories" }],
+    ["wallet", { id: "wallet" }],
+    ["deposit", { id: "deposit" }],
+    ["support", { id: "support" }],
+    ["referral", { id: "referral" }],
+    ["account", { id: "account" }],
+    ["freeAccount", { id: "freeAccount" }],
+    ["admin:dashboard", { id: "admin.dashboard" }],
+    ["admin:deposits", { id: "admin.deposits" }],
+    ["admin:tickets", { id: "admin.tickets" }],
+    ["admin:users", { id: "admin.users" }],
+    ["admin:coupons", { id: "admin.coupons" }],
+  ]);
+
+  for (const [action, state] of legacyViews.entries()) {
+    bot.action(action, async (ctx) => {
+      await ctx.answerCbQuery();
+      if (state.id.startsWith("admin") && (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))) {
+        await ctx.answerCbQuery("دسترسی غیرمجاز");
+        return;
+      }
+      ctx.session.flow = undefined;
+      if (action === "home") {
+        ctx.session.liveTicketId = undefined;
+        ctx.session.liveTicketRole = undefined;
+      }
+      await renderPanel(ctx, state, "replace");
+    });
+  }
+
+  bot.action("cancel", async (ctx) => {
+    ctx.session.flow = undefined;
+    ctx.session.liveTicketId = undefined;
+    ctx.session.liveTicketRole = undefined;
+    await ctx.answerCbQuery("لغو شد");
+    await renderPanel(ctx, { id: "home" }, "replace");
+  });
+
   bot.start(async (ctx) => {
     if (!ctx.from) return;
     const user = await UserService.findOrCreateUser(ctx);
@@ -170,6 +210,74 @@ ${quote.wallet.walletAddress}
   });
 
 
+
+  bot.action("forced_join:verify", async (ctx) => {
+    await ctx.answerCbQuery("عضویت شما تایید شد ✅");
+    await renderPanel(ctx, { id: "home" }, "replace");
+  });
+
+  bot.action("support:chat:start", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from) return;
+    const user = await UserService.getByTelegramId(ctx.from.id);
+    if (!user) return;
+    const ticket = await SupportService.getOrCreateOpenTicket(user.id);
+    ctx.session.liveTicketId = ticket.id;
+    ctx.session.liveTicketRole = "user";
+    await ctx.reply(`💬 گفتگوی پشتیبانی فعال شد
+
+تیکت: #${ticket.id.slice(-6).toUpperCase()}
+
+پیام خود را ارسال کنید. محدودیتی در تعداد پیام‌ها وجود ندارد.`, { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: `support:close:${ticket.id}` }], [{ text: "🏠 خانه", callback_data: callbackFor("home") }]] } });
+  });
+
+  bot.action(/^support:chat:([^:]+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from) return;
+    const user = await UserService.getByTelegramId(ctx.from.id);
+    if (!user) return;
+    const ticket = await SupportService.getTicketWithUser(ctx.match[1]);
+    if (!ticket || ticket.userId !== user.id) {
+      await ctx.reply("⚠️ تیکت پیدا نشد.");
+      return;
+    }
+    if (ticket.status === "closed") await SupportService.reopenTicket(ticket.id, user.id);
+    ctx.session.liveTicketId = ticket.id;
+    ctx.session.liveTicketRole = "user";
+    await ctx.reply(`💬 گفتگو باز شد
+
+تیکت: #${ticket.id.slice(-6).toUpperCase()}
+پیام بعدی خود را ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: `support:close:${ticket.id}` }], [{ text: "📜 مشاهده تاریخچه", callback_data: callbackFor("support") }]] } });
+  });
+
+  bot.action(/^support:close:([^:]+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from) return;
+    const user = await UserService.getByTelegramId(ctx.from.id);
+    if (!user) return;
+    const ticket = await SupportService.getTicketWithUser(ctx.match[1]);
+    if (!ticket || ticket.userId !== user.id) return ctx.reply("⚠️ تیکت پیدا نشد.");
+    await SupportService.closeTicket(ticket.id, user.id, "user");
+    ctx.session.liveTicketId = undefined;
+    ctx.session.liveTicketRole = undefined;
+    await renderPanel(ctx, { id: "support" }, "replace");
+  });
+
+  bot.action(/^support:admin:chat:([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    const ticket = await SupportService.getTicketWithUser(ctx.match[1]);
+    if (!ticket) return ctx.reply("⚠️ تیکت پیدا نشد.");
+    ctx.session.liveTicketId = ticket.id;
+    ctx.session.liveTicketRole = "admin";
+    await ctx.reply(`💬 چت ادمین فعال شد
+
+تیکت: #${ticket.id.slice(-6).toUpperCase()}
+کاربر: ${ticket.user.telegramId}
+
+پاسخ خود را ارسال کنید. هر پیام جداگانه برای کاربر ارسال می‌شود.`, { reply_markup: { inline_keyboard: [[{ text: "👁 مشاهده تاریخچه", callback_data: callbackFor("admin.ticket", { ticketId: ticket.id }) }, { text: "✅ بستن", callback_data: `admin:ticket:close:${ticket.id}` }], [{ text: "🏠 پنل مدیریت", callback_data: callbackFor("admin.dashboard") }]] } });
+  });
+
   bot.action(/^admin:store:status:(active|inactive)$/, async (ctx) => {
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
     await ctx.answerCbQuery();
@@ -269,10 +377,20 @@ ${quote.wallet.walletAddress}
     await renderPanel(ctx, { id: "admin.deposits" }, "replace");
   });
 
+  bot.action(/^admin:ticket:([a-f\d]{24})$/i, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await renderPanel(ctx, { id: "admin.ticket", params: { ticketId: ctx.match[1] } }, "push");
+  });
+
   bot.action(/^admin:ticket:close:(.+)$/, async (ctx) => {
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
     await ctx.answerCbQuery();
-    await SupportService.closeTicket(ctx.match[1], String(ctx.from.id));
+    await SupportService.closeTicket(ctx.match[1], String(ctx.from.id), "admin");
+    if (ctx.session.liveTicketId === ctx.match[1]) {
+      ctx.session.liveTicketId = undefined;
+      ctx.session.liveTicketRole = undefined;
+    }
     await renderPanel(ctx, { id: "admin.tickets" }, "replace");
   });
 
@@ -283,7 +401,26 @@ ${quote.wallet.walletAddress}
   });
 
   bot.on("text", async (ctx, next) => {
-    if (await handleActiveFlowText(ctx, ctx.message.text.trim())) return;
+    const text = ctx.message.text.trim();
+    if (await handleActiveFlowText(ctx, text)) return;
+    if (ctx.session.liveTicketId && ctx.session.liveTicketRole) {
+      try {
+        if (ctx.session.liveTicketRole === "admin") {
+          if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return next();
+          await SupportService.addAdminReply(ctx.session.liveTicketId, String(ctx.from.id), text);
+          await ctx.reply("✅ پاسخ ارسال شد. برای ادامه گفتگو، پیام بعدی را ارسال کنید.", { reply_markup: { inline_keyboard: [[{ text: "👁 مشاهده تیکت", callback_data: callbackFor("admin.ticket", { ticketId: ctx.session.liveTicketId }) }, { text: "✅ بستن", callback_data: `admin:ticket:close:${ctx.session.liveTicketId}` }]] } });
+          return;
+        }
+        const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+        if (!user) return next();
+        await SupportService.addUserMessage(ctx.session.liveTicketId, user.id, text);
+        await ctx.reply("📩 پیام شما ارسال شد. برای ادامه گفتگو، پیام بعدی را ارسال کنید.", { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: `support:close:${ctx.session.liveTicketId}` }], [{ text: "🏠 خانه", callback_data: callbackFor("home") }]] } });
+        return;
+      } catch (error) {
+        await ctx.reply(`⚠️ ${error instanceof Error ? error.message : "ارسال پیام ناموفق بود."}`);
+        return;
+      }
+    }
     return next();
   });
 }

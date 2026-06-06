@@ -13,6 +13,7 @@ const support_service_1 = require("../../modules/support/support.service");
 const admin_service_1 = require("../../modules/admin/admin.service");
 const free_account_service_1 = require("../../modules/free-account/free-account.service");
 const referral_service_1 = require("../../modules/referral/referral.service");
+const admin_middleware_1 = require("../middlewares/admin.middleware");
 const money = (value) => `${value.toLocaleString("fa-IR")} تومان`;
 function currentReturnTo(ctx) {
     const stack = ctx.session.navigation?.stack ?? [];
@@ -72,8 +73,13 @@ const definitions = {
         firstStep: "message",
         prompt: "🎧 پیام خود را برای پشتیبانی بنویسید:\n\nاگر درباره خرید یا شارژ است، مبلغ یا شماره سفارش را هم ارسال کنید.",
         async handleText(ctx, text) {
+            const ticketIdFromFlow = ctx.session.flow?.data.ticketId ? String(ctx.session.flow.data.ticketId) : undefined;
+            if (ticketIdFromFlow && ctx.from && (await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id))) {
+                await support_service_1.SupportService.addAdminReply(ticketIdFromFlow, String(ctx.from.id), text.trim());
+                return { done: true, text: "✅ پاسخ پشتیبانی ارسال شد.", returnTo: { id: "admin.ticket", params: { ticketId: ticketIdFromFlow } } };
+            }
             const user = await requireUser(ctx);
-            const ticketId = ctx.session.flow?.data.ticketId ? String(ctx.session.flow.data.ticketId) : (await support_service_1.SupportService.createTicket(user.id)).id;
+            const ticketId = ticketIdFromFlow ?? (await support_service_1.SupportService.createTicket(user.id)).id;
             await support_service_1.SupportService.addUserMessage(ticketId, user.id, text.trim());
             return { done: true, text: "✅ تیکت شما ثبت شد. پاسخ پشتیبانی در همین گفتگو برایتان ارسال می‌شود.", returnTo: { id: "support" } };
         },

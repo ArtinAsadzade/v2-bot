@@ -5,10 +5,13 @@ exports.navigationKeyboard = navigationKeyboard;
 const telegraf_1 = require("telegraf");
 function homeKeyboard(isAdmin = false) {
     const rows = [
-        [telegraf_1.Markup.button.callback("🛒 خرید سرویس", "shop")],
-        [telegraf_1.Markup.button.callback("💰 کیف پول", "wallet"), telegraf_1.Markup.button.callback("➕ شارژ کیف پول", "deposit")],
-        [telegraf_1.Markup.button.callback("🎧 پشتیبانی", "support")],
-        [telegraf_1.Markup.button.callback("🎁 زیرمجموعه‌گیری", "referral"), telegraf_1.Markup.button.callback("🆓 کانفیگ رایگان", "free_config")],
+        [telegraf_1.Markup.button.callback("🏪 فروشگاه", "shop")],
+        [telegraf_1.Markup.button.callback("💰 کیف پول", "wallet")],
+        [telegraf_1.Markup.button.callback("📦 اکانت‌های من", "account")],
+        [telegraf_1.Markup.button.callback("🆓 دریافت اکانت تست", "freeAccount")],
+        [telegraf_1.Markup.button.callback("🎁 دعوت دوستان", "referral")],
+        [telegraf_1.Markup.button.callback("🎫 پشتیبانی", "support")],
+        [telegraf_1.Markup.button.callback("⚙️ حساب کاربری", "account")],
     ];
     if (isAdmin) {
         rows.push([telegraf_1.Markup.button.callback("👨‍💼 پنل مدیریت", "admin:dashboard")]);
