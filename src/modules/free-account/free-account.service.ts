@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../services/prisma";
 import { eventBus } from "../../services/event-bus.service";
+import { logger } from "../../services/logger";
 
 const COOLDOWN_DAYS = 30;
 const DAY_MS = 86_400_000;
@@ -39,6 +40,10 @@ export function freeAccountExpiresAt(assignedAt: Date, durationDays: number) {
   return new Date(assignedAt.getTime() + durationDays * DAY_MS);
 }
 
+export function formatFreeAccountDate(date?: Date) {
+  return date ? date.toLocaleDateString("fa-IR") : "ثبت نشده";
+}
+
 export function formatRemainingTime(target: Date, now = new Date()) {
   const remaining = Math.max(target.getTime() - now.getTime(), 0);
   const days = Math.floor(remaining / DAY_MS);
@@ -48,21 +53,56 @@ export function formatRemainingTime(target: Date, now = new Date()) {
 }
 
 export function formatFreeAccountError(error: unknown) {
-  if (!(error instanceof FreeAccountError)) return error instanceof Error ? error.message : "دریافت اکانت تست ناموفق بود. لطفاً دوباره تلاش کنید.";
+  if (!(error instanceof FreeAccountError)) return "دریافت اکانت تست ناموفق بود. لطفاً چند لحظه دیگر دوباره تلاش کنید.";
   if (error.code === "ACTIVE_ACCOUNT") {
-    return "⚠️ شما در حال حاضر یک اکانت تست فعال دارید.\n\n📦 برای مشاهده اطلاعات اکانت از بخش «اکانت‌های من» استفاده کنید.";
+    return `⚠️ اکانت تست فعال دارید
+
+━━━━━━━━━━━━━━
+
+شما در حال حاضر یک اکانت تست فعال در اختیار دارید.
+
+برای مشاهده اطلاعات اکانت از بخش «اکانت‌های من» استفاده کنید.
+
+━━━━━━━━━━━━━━`;
   }
   if (error.code === "COOLDOWN") {
     const lastClaimAt = error.details.lastClaimAt instanceof Date ? error.details.lastClaimAt : undefined;
     const nextAvailableAt = error.details.nextAvailableAt instanceof Date ? error.details.nextAvailableAt : undefined;
-    return `⚠️ شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید.\n\n📅 تاریخ دریافت قبلی:\n${lastClaimAt ? lastClaimAt.toLocaleString("fa-IR") : "ثبت نشده"}\n\n⏳ زمان باقی‌مانده تا دریافت مجدد:\n${nextAvailableAt ? formatRemainingTime(nextAvailableAt) : "پس از تکمیل دوره ۳۰ روزه"}`;
+    return `⏳ محدودیت دریافت اکانت تست
+
+━━━━━━━━━━━━━━
+
+شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید.
+
+📅 دریافت قبلی:
+${formatFreeAccountDate(lastClaimAt)}
+
+⏳ امکان دریافت مجدد:
+${formatFreeAccountDate(nextAvailableAt)}
+
+━━━━━━━━━━━━━━`;
   }
-  return `⚠️ ${error.message}`;
+  if (error.code === "NO_INVENTORY") {
+    return `🚫 موجودی اکانت تست تکمیل شده است
+
+━━━━━━━━━━━━━━
+
+در حال حاضر تمامی اکانت‌های تست تخصیص داده شده‌اند.
+
+لطفاً بعداً مجدداً مراجعه کنید.
+
+━━━━━━━━━━━━━━`;
+  }
+  if (error.code === "USER_BLOCKED") return "دسترسی حساب شما در حال حاضر محدود شده است. لطفاً با پشتیبانی تماس بگیرید.";
+  return "دریافت اکانت تست ناموفق بود. لطفاً چند لحظه دیگر دوباره تلاش کنید.";
 }
+
 
 function isUniqueConstraint(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
+
+const availableInventoryWhere = { status: "available" as const, assignment: { is: null } };
 
 export class FreeAccountService {
   static cooldownDays() {
@@ -78,8 +118,11 @@ export class FreeAccountService {
         configLink: data.configLink.trim(),
         durationDays: data.durationDays,
         status: "available",
+        assignedTo: null,
+        assignedAt: null,
       },
     });
+    logger.info("Free test account inventory created", { accountId: account.id, actorId, username: account.username, durationDays: account.durationDays });
     if (actorId) await prisma.auditLog.create({ data: { actorId, action: "free_account.create", metadata: JSON.stringify({ accountId: account.id }) } });
     return account;
   }
@@ -93,8 +136,15 @@ export class FreeAccountService {
       if (!Number.isInteger(data.durationDays) || data.durationDays <= 0) throw new FreeAccountError("INVALID_INPUT", "مدت اعتبار معتبر نیست");
       normalized.durationDays = data.durationDays;
     }
-    if (data.status !== undefined) normalized.status = data.status;
+    if (data.status !== undefined) {
+      normalized.status = data.status;
+      if (data.status === "available") {
+        normalized.assignedTo = null;
+        normalized.assignedAt = null;
+      }
+    }
     const account = await prisma.freeAccount.update({ where: { id: accountId }, data: normalized });
+    logger.info("Free test account inventory updated", { accountId, actorId, fields: Object.keys(normalized), status: account.status });
     await prisma.auditLog.create({ data: { actorId, action: "free_account.update", metadata: JSON.stringify({ accountId, fields: Object.keys(normalized) }) } });
     return account;
   }
@@ -114,7 +164,7 @@ export class FreeAccountService {
     const monthStart = new Date(now.getTime() - COOLDOWN_DAYS * DAY_MS);
     const [total, available, assigned, expired, monthlyAssignments, uniqueUsers, recentAssignments, inventory] = await Promise.all([
       prisma.freeAccount.count(),
-      prisma.freeAccount.count({ where: { status: "available" } }),
+      prisma.freeAccount.count({ where: availableInventoryWhere }),
       prisma.freeAccount.count({ where: { status: "assigned" } }),
       prisma.freeAccount.count({ where: { status: "expired" } }),
       prisma.freeAccountAssignment.count({ where: { createdAt: { gte: monthStart } } }),
@@ -127,7 +177,7 @@ export class FreeAccountService {
 
   static async listInventory(page = 1, take = 10, status?: FreeAccountStatus, query?: string) {
     const skip = (page - 1) * take;
-    const where = { ...(status ? { status } : {}), ...(query ? { username: { contains: query } } : {}) };
+    const where = { ...(status === "available" ? availableInventoryWhere : status ? { status } : {}), ...(query ? { username: { contains: query } } : {}) };
     return Promise.all([
       prisma.freeAccount.findMany({ where, orderBy: [{ status: "asc" }, { createdAt: "desc" }], skip, take }),
       prisma.freeAccount.count({ where }),
@@ -155,33 +205,39 @@ export class FreeAccountService {
 
   static async eligibility(userId: string) {
     const now = new Date();
-    const [user, activeAccount, last] = await Promise.all([
+    await this.expireDueAccounts(now);
+    const [user, activeAccount, last, available] = await Promise.all([
       prisma.user.findUnique({ where: { id: userId }, select: { isBanned: true } }),
       this.activeForUser(userId).then((items) => items[0]),
       prisma.freeAccountAssignment.findFirst({ where: { userId }, orderBy: { createdAt: "desc" }, include: { account: true } }),
+      prisma.freeAccount.count({ where: availableInventoryWhere }),
     ]);
-    if (user?.isBanned) return { eligible: false, reason: "blocked" as const, activeAccount, last, nextAvailableAt: undefined };
-    if (activeAccount) return { eligible: false, reason: "active" as const, activeAccount, last, nextAvailableAt: undefined };
-    if (!last) return { eligible: true, activeAccount, last, nextAvailableAt: undefined };
+    logger.info("Free test account eligibility checked", { userId, isBanned: Boolean(user?.isBanned), hasActiveAccount: Boolean(activeAccount), lastClaimAt: last?.assignedAt ?? last?.createdAt, available });
+    if (user?.isBanned) return { eligible: false, reason: "blocked" as const, activeAccount, last, nextAvailableAt: undefined, available };
+    if (activeAccount) return { eligible: false, reason: "active" as const, activeAccount, last, nextAvailableAt: undefined, available };
+    if (!last) return { eligible: true, activeAccount, last, nextAvailableAt: undefined, available };
     const lastClaimAt = last.assignedAt ?? last.createdAt;
     const nextAvailableAt = new Date(lastClaimAt.getTime() + COOLDOWN_DAYS * DAY_MS);
-    return { eligible: nextAvailableAt <= now, reason: nextAvailableAt <= now ? undefined : ("cooldown" as const), activeAccount, last, nextAvailableAt };
+    return { eligible: nextAvailableAt <= now, reason: nextAvailableAt <= now ? undefined : ("cooldown" as const), activeAccount, last, nextAvailableAt, available };
   }
 
   static async assertEligible(userId: string) {
     const status = await this.eligibility(userId);
     if (status.reason === "blocked") throw new FreeAccountError("USER_BLOCKED", "حساب شما مسدود است و امکان دریافت اکانت تست وجود ندارد");
     if (status.reason === "active") throw new FreeAccountError("ACTIVE_ACCOUNT", "شما در حال حاضر یک اکانت تست فعال دارید", { accountId: status.activeAccount?.accountId });
-    if (status.reason === "cooldown") throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", { lastClaimAt: status.last?.assignedAt, nextAvailableAt: status.nextAvailableAt });
+    if (status.reason === "cooldown") throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", { lastClaimAt: status.last?.assignedAt ?? status.last?.createdAt, nextAvailableAt: status.nextAvailableAt });
     return status;
   }
 
   static async assign(userId: string, reason = "user_claim") {
     try {
+      logger.info("Free test account assignment requested", { userId, reason });
+      await this.expireDueAccounts();
       const assigned = await prisma.$transaction(async (tx) => {
         const now = new Date();
         const cutoff = new Date(now.getTime() - COOLDOWN_DAYS * DAY_MS);
         const user = await tx.user.findUnique({ where: { id: userId }, select: { isBanned: true } });
+        logger.info("Free test account assignment user check", { userId, userFound: Boolean(user), isBanned: Boolean(user?.isBanned) });
         if (!user || user.isBanned) throw new FreeAccountError("USER_BLOCKED", "حساب شما مسدود است و امکان دریافت اکانت تست وجود ندارد");
 
         const assignedAccounts = await tx.freeAccountAssignment.findMany({ where: { userId, account: { is: { status: "assigned" } } }, include: { account: true }, orderBy: { createdAt: "desc" }, take: 20 });
@@ -190,33 +246,51 @@ export class FreeAccountService {
           const expiresAt = item.expiresAt ?? freeAccountExpiresAt(assignedAt, item.account.durationDays);
           return expiresAt > now;
         });
+        logger.info("Free test account assignment active-account check", { userId, assignedAccountCount: assignedAccounts.length, activeAccountId: active?.accountId });
         if (active) throw new FreeAccountError("ACTIVE_ACCOUNT", "شما در حال حاضر یک اکانت تست فعال دارید", { accountId: active.accountId });
 
         const last = await tx.freeAccountAssignment.findFirst({ where: { userId }, orderBy: { createdAt: "desc" } });
         const lastClaimAt = last ? last.assignedAt ?? last.createdAt : undefined;
+        logger.info("Free test account assignment cooldown check", { userId, lastClaimAt, cooldownCutoff: cutoff });
         if (lastClaimAt && lastClaimAt > cutoff) throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", { lastClaimAt, nextAvailableAt: new Date(lastClaimAt.getTime() + COOLDOWN_DAYS * DAY_MS) });
 
         const lock = await tx.freeAccountUserLock.findUnique({ where: { userId } });
+        logger.info("Free test account assignment lock check", { userId, hasLock: Boolean(lock), lockLastClaimAt: lock?.lastClaimAt });
         if (!lock) {
           await tx.freeAccountUserLock.create({ data: { userId, lastClaimAt: now } });
         } else {
           if (lock.lastClaimAt > cutoff) throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", { lastClaimAt: lock.lastClaimAt, nextAvailableAt: new Date(lock.lastClaimAt.getTime() + COOLDOWN_DAYS * DAY_MS) });
           const locked = await tx.freeAccountUserLock.updateMany({ where: { userId, lastClaimAt: { lte: cutoff } }, data: { lastClaimAt: now } });
+          logger.info("Free test account assignment lock acquired", { userId, updatedLocks: locked.count });
           if (locked.count !== 1) throw new FreeAccountError("RACE_CONDITION", "درخواست شما در حال پردازش است. لطفاً چند لحظه دیگر دوباره تلاش کنید");
         }
 
-        const candidate = await tx.freeAccount.findFirst({ where: { status: "available", assignedTo: null }, orderBy: { createdAt: "asc" } });
-        if (!candidate) throw new FreeAccountError("NO_INVENTORY", "در حال حاضر موجودی اکانت تست تمام شده است");
-        const updated = await tx.freeAccount.updateMany({ where: { id: candidate.id, status: "available", assignedTo: null }, data: { status: "assigned", assignedTo: userId, assignedAt: now } });
-        if (updated.count !== 1) throw new FreeAccountError("RACE_CONDITION", "این اکانت هم‌زمان تخصیص داده شد؛ لطفاً دوباره تلاش کنید");
-        const assignment = await tx.freeAccountAssignment.create({ data: { userId, accountId: candidate.id, reason, assignedAt: now, expiresAt: freeAccountExpiresAt(now, candidate.durationDays) } });
-        await tx.freeAccountUserLock.update({ where: { userId }, data: { lastAssignmentId: assignment.id, lastClaimAt: now } });
-        return { ...candidate, status: "assigned" as const, assignedTo: userId, assignedAt: now, assignment };
+        const available = await tx.freeAccount.count({ where: availableInventoryWhere });
+        const staleAvailable = await tx.freeAccount.count({ where: { status: "available", assignedTo: { not: null }, assignment: { is: null } } });
+        logger.info("Free test account assignment availability check", { userId, available, staleAvailable });
+        const candidates = await tx.freeAccount.findMany({ where: availableInventoryWhere, orderBy: { createdAt: "asc" }, take: 10 });
+        if (!candidates.length) throw new FreeAccountError("NO_INVENTORY", "در حال حاضر موجودی اکانت تست تکمیل شده است");
+
+        for (const candidate of candidates) {
+          const updated = await tx.freeAccount.updateMany({ where: { id: candidate.id, status: "available" }, data: { status: "assigned", assignedTo: userId, assignedAt: now } });
+          logger.info("Free test account assignment candidate update", { userId, accountId: candidate.id, updated: updated.count });
+          if (updated.count !== 1) continue;
+          const assignment = await tx.freeAccountAssignment.create({ data: { userId, accountId: candidate.id, reason, assignedAt: now, expiresAt: freeAccountExpiresAt(now, candidate.durationDays) } });
+          await tx.freeAccountUserLock.update({ where: { userId }, data: { lastAssignmentId: assignment.id, lastClaimAt: now } });
+          return { ...candidate, status: "assigned" as const, assignedTo: userId, assignedAt: now, assignment };
+        }
+
+        throw new FreeAccountError("RACE_CONDITION", "درخواست شما در حال پردازش است. لطفاً چند لحظه دیگر دوباره تلاش کنید");
       });
+      logger.info("Free test account assigned", { userId, accountId: assigned.id, assignmentId: assigned.assignment.id, reason });
       eventBus.emit("free_account.assigned", { userId, accountId: assigned.id, reason });
       return assigned;
     } catch (error) {
-      if (isUniqueConstraint(error)) throw new FreeAccountError("RACE_CONDITION", "درخواست شما در حال پردازش است. لطفاً چند لحظه دیگر دوباره تلاش کنید");
+      if (isUniqueConstraint(error)) {
+        logger.warn("Free test account assignment unique constraint", { userId, reason, error: error instanceof Error ? error.message : String(error) });
+        throw new FreeAccountError("RACE_CONDITION", "درخواست شما در حال پردازش است. لطفاً چند لحظه دیگر دوباره تلاش کنید");
+      }
+      logger.warn("Free test account assignment failed", { userId, reason, error: error instanceof Error ? error.message : String(error) });
       throw error;
     }
   }
@@ -228,9 +302,13 @@ export class FreeAccountService {
       const expiresAt = item.expiresAt ?? freeAccountExpiresAt(assignedAt, item.account.durationDays);
       return expiresAt <= now;
     });
-    if (!due.length) return { count: 0 };
+    if (!due.length) {
+      logger.info("Free test account expiration checked", { checked: assigned.length, expired: 0 });
+      return { count: 0 };
+    }
     const ids = due.map((item) => item.accountId);
     const result = await prisma.freeAccount.updateMany({ where: { id: { in: ids }, status: "assigned" }, data: { status: "expired" } });
+    logger.info("Free test account expiration checked", { checked: assigned.length, expired: result.count });
     if (result.count > 0) eventBus.emit("free_account.expired", { count: result.count });
     return result;
   }
