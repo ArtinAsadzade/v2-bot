@@ -3,28 +3,41 @@ import { prisma } from "../../../services/prisma";
 
 bot.on("photo", async (ctx) => {
   const user = await prisma.user.findUnique({
-    where: { telegramId: String(ctx.from?.id) },
+    where: {
+      telegramId: String(ctx.from.id),
+    },
   });
+
+  if (!user) {
+    return ctx.reply("❌ کاربر یافت نشد");
+  }
 
   const deposit = await prisma.deposit.findFirst({
     where: {
-      userId: user!.id,
+      userId: user.id,
       status: "pending",
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: {
+      createdAt: "desc",
+    },
   });
 
-  if (!deposit) return;
+  if (!deposit) {
+    return ctx.reply("❌ درخواست شارژ فعالی پیدا نشد");
+  }
 
-  const fileId = ctx.message.photo.at(-1)!.file_id;
+  const photos = ctx.message.photo;
+  const fileId = photos[photos.length - 1].file_id;
 
   await prisma.deposit.update({
-    where: { id: deposit.id },
+    where: {
+      id: deposit.id,
+    },
     data: {
       receipt: fileId,
       status: "submitted",
     },
   });
 
-  await ctx.reply("⏳ رسید ارسال شد و در انتظار تایید ادمین است.");
+  await ctx.reply("⏳ رسید شما ثبت شد و در انتظار تایید ادمین است.");
 });
