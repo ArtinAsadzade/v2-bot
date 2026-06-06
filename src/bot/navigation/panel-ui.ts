@@ -35,11 +35,11 @@ export type ViewRenderer = (ctx: AppContext, params: Record<string, string>) => 
 
 const registry = new Map<PanelViewId, ViewRenderer>();
 
-export function registerView(id: PanelViewId, renderer: ViewRenderer) {
+export function registerView(id: PanelViewId, renderer: ViewRenderer): void {
   registry.set(id, renderer);
 }
 
-export function callbackFor(view: PanelViewId, params: Record<string, string | number | boolean | undefined> = {}) {
+export function callbackFor(view: PanelViewId, params: Record<string, string | number | boolean | undefined> = {}): string {
   const query = Object.entries(params)
     .filter(([, value]) => value !== undefined)
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
@@ -47,19 +47,52 @@ export function callbackFor(view: PanelViewId, params: Record<string, string | n
   return query ? `nav:${view}?${query}` : `nav:${view}`;
 }
 
-function parseParams(raw?: string) {
+function parseParams(raw?: string): Record<string, string> {
   if (!raw) return {};
-  return Object.fromEntries(raw.split("&").filter(Boolean).map((part) => {
+  const params: Record<string, string> = {};
+  for (const part of raw.split("&").filter(Boolean)) {
     const [key, value = ""] = part.split("=");
-    return [decodeURIComponent(key), decodeURIComponent(value)];
-  }));
+    params[decodeURIComponent(key)] = decodeURIComponent(value);
+  }
+  return params;
 }
+
+function isPanelViewId(value: string): value is PanelViewId {
+  return PANEL_VIEW_IDS.has(value);
+}
+
+const PANEL_VIEW_IDS = new Set<string>([
+  "home",
+  "shop.categories",
+  "shop.products",
+  "shop.product",
+  "shop.checkout",
+  "wallet",
+  "deposit",
+  "support",
+  "referral",
+  "freeAccount",
+  "admin.dashboard",
+  "admin.users",
+  "admin.user",
+  "admin.products",
+  "admin.product",
+  "admin.accounts",
+  "admin.freeAccounts",
+  "admin.coupons",
+  "admin.deposits",
+  "admin.deposit",
+  "admin.orders",
+  "admin.tickets",
+  "admin.ticket",
+]);
 
 export function parseNavAction(action: string): ViewState | undefined {
   if (!action.startsWith("nav:")) return undefined;
   const raw = action.slice(4);
   const [id, params] = raw.split("?");
-  return { id: id as PanelViewId, params: parseParams(params) };
+  if (!isPanelViewId(id)) return undefined;
+  return { id, params: parseParams(params) };
 }
 
 export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?: boolean; cancel?: boolean } = { back: true, home: true }) {
@@ -72,17 +105,20 @@ export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?
   return Markup.inlineKeyboard(normalized);
 }
 
-export async function renderPanel(ctx: AppContext, state: ViewState, mode: "push" | "replace" | "back" = "push") {
+export async function renderPanel(ctx: AppContext, state: ViewState, mode: "push" | "replace" | "back" = "push"): Promise<void> {
   const renderer = registry.get(state.id);
   if (!renderer) throw new Error(`View is not registered: ${state.id}`);
-  const params = Object.fromEntries(Object.entries(state.params ?? {}).map(([key, value]) => [key, String(value ?? "")])) as Record<string, string>;
+  const params: Record<string, string> = {};
+  for (const [key, value] of Object.entries(state.params ?? {})) {
+    params[key] = String(value ?? "");
+  }
   const result = await renderer(ctx, params);
 
   ctx.session.navigation ??= { stack: [] };
   if (mode === "push") ctx.session.navigation.stack.push(state);
   if (mode === "replace") ctx.session.navigation.stack = [state];
 
-  const extra = { parse_mode: result.parseMode, ...panelKeyboard(result.keyboard, { back: state.id !== "home", home: state.id !== "home" }) } as any;
+  const extra = { parse_mode: result.parseMode, ...panelKeyboard(result.keyboard, { back: state.id !== "home", home: state.id !== "home" }) };
   if (ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message) {
     await ctx.editMessageText(result.text, extra).catch(async () => {
       await ctx.editMessageReplyMarkup(panelKeyboard(result.keyboard, { back: state.id !== "home", home: state.id !== "home" }).reply_markup).catch(() => undefined);
@@ -94,9 +130,9 @@ export async function renderPanel(ctx: AppContext, state: ViewState, mode: "push
   ctx.session.navigation.panelMessageId = sent.message_id;
 }
 
-export async function goBack(ctx: AppContext) {
+export async function goBack(ctx: AppContext): Promise<void> {
   const stack = ctx.session.navigation?.stack ?? [];
   stack.pop();
-  const previous = stack.pop() ?? { id: "home" as PanelViewId };
+  const previous = stack.pop() ?? { id: "home" };
   await renderPanel(ctx, previous, "push");
 }

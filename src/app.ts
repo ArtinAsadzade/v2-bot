@@ -13,7 +13,7 @@ async function bootstrap() {
     logger.info("Bot starting...");
     registerHandlers(bot);
 
-    await cleanExpiredDeposits();
+    await cleanExpiredDeposits().catch((error) => logger.error("Initial deposit cleaner failed", { error: error instanceof Error ? error.message : String(error) }));
     setInterval(() => {
       cleanExpiredDeposits().catch((error) => logger.error("Deposit cleaner failed", { error: error instanceof Error ? error.message : String(error) }));
     }, 60_000);

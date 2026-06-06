@@ -45,7 +45,7 @@ const definitions = {
             }
             if (ctx.session.flow?.step === "currency") {
                 const cryptoType = text.trim().toLowerCase();
-                if (cryptoType !== "usdt" && cryptoType !== "btc")
+                if (!(0, deposit_service_1.isDepositCurrency)(cryptoType))
                     return { text: "ارز معتبر نیست. فقط usdt یا btc را وارد کنید:" };
                 const deposit = await deposit_service_1.DepositService.createDeposit(user.id, Number(ctx.session.flow.data.amount), cryptoType);
                 ctx.session.flow.step = "receipt";
@@ -214,6 +214,9 @@ const definitions = {
         },
     },
 };
+function isFlowName(value) {
+    return Object.prototype.hasOwnProperty.call(definitions, value);
+}
 async function startFlow(ctx, name, data = {}) {
     const definition = definitions[name];
     if (!definition)
@@ -262,6 +265,10 @@ function registerFlowEngine(bot) {
     bot.action(/^flow:start:([^:]+)(?::([^:]+))?(?::([^:]+))?$/, async (ctx) => {
         await ctx.answerCbQuery();
         const name = ctx.match[1];
+        if (!isFlowName(name)) {
+            await ctx.answerCbQuery("جریان نامعتبر است");
+            return;
+        }
         if (name === "coupon_code")
             return startFlow(ctx, "coupon_code", { productId: ctx.match[2] });
         if (name === "account_create")

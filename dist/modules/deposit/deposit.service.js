@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DepositService = exports.DEPOSIT_WALLETS = void 0;
+exports.isDepositCurrency = isDepositCurrency;
 const prisma_1 = require("../../services/prisma");
 const wallet_service_1 = require("../wallet/wallet.service");
 const notification_service_1 = require("../../services/notification.service");
@@ -9,6 +10,9 @@ exports.DEPOSIT_WALLETS = {
     usdt: process.env.USDT_WALLET_ADDRESS ?? "TRC20_WALLET_ADDRESS",
     btc: process.env.BTC_WALLET_ADDRESS ?? "BTC_WALLET_ADDRESS",
 };
+function isDepositCurrency(value) {
+    return value === "usdt" || value === "btc";
+}
 class DepositService {
     static async createDeposit(userId, amount, cryptoType) {
         if (!Number.isInteger(amount) || amount <= 0) {

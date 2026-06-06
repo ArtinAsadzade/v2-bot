@@ -21,17 +21,49 @@ function callbackFor(view, params = {}) {
 function parseParams(raw) {
     if (!raw)
         return {};
-    return Object.fromEntries(raw.split("&").filter(Boolean).map((part) => {
+    const params = {};
+    for (const part of raw.split("&").filter(Boolean)) {
         const [key, value = ""] = part.split("=");
-        return [decodeURIComponent(key), decodeURIComponent(value)];
-    }));
+        params[decodeURIComponent(key)] = decodeURIComponent(value);
+    }
+    return params;
 }
+function isPanelViewId(value) {
+    return PANEL_VIEW_IDS.has(value);
+}
+const PANEL_VIEW_IDS = new Set([
+    "home",
+    "shop.categories",
+    "shop.products",
+    "shop.product",
+    "shop.checkout",
+    "wallet",
+    "deposit",
+    "support",
+    "referral",
+    "freeAccount",
+    "admin.dashboard",
+    "admin.users",
+    "admin.user",
+    "admin.products",
+    "admin.product",
+    "admin.accounts",
+    "admin.freeAccounts",
+    "admin.coupons",
+    "admin.deposits",
+    "admin.deposit",
+    "admin.orders",
+    "admin.tickets",
+    "admin.ticket",
+]);
 function parseNavAction(action) {
     if (!action.startsWith("nav:"))
         return undefined;
     const raw = action.slice(4);
     const [id, params] = raw.split("?");
-    return { id: id, params: parseParams(params) };
+    if (!isPanelViewId(id))
+        return undefined;
+    return { id, params: parseParams(params) };
 }
 function panelKeyboard(rows, options = { back: true, home: true }) {
     const normalized = rows.map((row) => row.map((button) => telegraf_1.Markup.button.callback(button.text, button.action)));
@@ -51,7 +83,10 @@ async function renderPanel(ctx, state, mode = "push") {
     const renderer = registry.get(state.id);
     if (!renderer)
         throw new Error(`View is not registered: ${state.id}`);
-    const params = Object.fromEntries(Object.entries(state.params ?? {}).map(([key, value]) => [key, String(value ?? "")]));
+    const params = {};
+    for (const [key, value] of Object.entries(state.params ?? {})) {
+        params[key] = String(value ?? "");
+    }
     const result = await renderer(ctx, params);
     (_a = ctx.session).navigation ?? (_a.navigation = { stack: [] });
     if (mode === "push")
