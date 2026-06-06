@@ -16,7 +16,6 @@ const admin_middleware_1 = require("../middlewares/admin.middleware");
 function registerModernHandlers(bot) {
     (0, modern_views_1.registerModernViews)();
     (0, flow_engine_1.registerFlowEngine)(bot);
-    (0, free_account_service_1.registerFreeAccountEvents)();
     const legacyViews = new Map([
         ["home", { id: "home" }],
         ["shop", { id: "shop.categories" }],
@@ -184,20 +183,47 @@ ${quote.wallet.walletAddress}
         }
     });
     bot.action("freeAccount:claim", async (ctx) => {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("⏳ در حال بررسی موجودی...");
         if (!ctx.from)
             return;
         const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
         if (!user)
             return;
         try {
+            await free_account_service_1.FreeAccountService.assertEligible(user.id);
+            await ctx.answerCbQuery("⏳ در حال تخصیص اکانت تست...");
             const account = await free_account_service_1.FreeAccountService.assign(user.id, "user_claim");
-            await ctx.reply(`✅ اکانت تست رایگان اختصاص یافت.\n\nنام کاربری: ${account.username}\nلینک اشتراک: ${account.subscriptionLink}\nلینک کانفیگ: ${account.configLink}\nمدت: ${account.durationDays.toLocaleString("fa-IR")} روز`);
+            await ctx.reply(`✅ اکانت تست با موفقیت برای شما فعال شد.
+
+━━━━━━━━━━━━━━
+
+🆓 اکانت تست
+
+👤 نام کاربری:
+${account.username}
+
+🔗 لینک اشتراک:
+${account.subscriptionLink}
+
+⚙️ لینک کانفیگ:
+${account.configLink}
+
+📅 تاریخ دریافت:
+${account.assignedAt.toLocaleString("fa-IR")}
+
+⏳ مدت اعتبار:
+${account.durationDays.toLocaleString("fa-IR")} روز
+
+📌 وضعیت:
+فعال
+
+━━━━━━━━━━━━━━`);
+            await (0, panel_ui_1.renderPanel)(ctx, { id: "account.details" }, "replace");
         }
         catch (error) {
-            await ctx.answerCbQuery(error instanceof Error ? error.message : "دریافت اکانت رایگان ناموفق بود");
+            await ctx.reply((0, free_account_service_1.formatFreeAccountError)(error));
+            await (0, panel_ui_1.renderPanel)(ctx, { id: "freeAccount" }, "replace");
         }
-        await (0, panel_ui_1.renderPanel)(ctx, { id: "freeAccount" }, "replace");
     });
     bot.action("referral:claim", async (ctx) => {
         await ctx.answerCbQuery();

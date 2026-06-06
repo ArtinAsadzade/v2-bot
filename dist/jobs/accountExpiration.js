@@ -4,6 +4,7 @@ exports.deactivateExpiredAccounts = deactivateExpiredAccounts;
 const prisma_1 = require("../services/prisma");
 const logger_1 = require("../services/logger");
 const notification_service_1 = require("../services/notification.service");
+const free_account_service_1 = require("../modules/free-account/free-account.service");
 let isRunning = false;
 const DAY_MS = 86400000;
 const REMINDER_DAYS = [7, 3, 1, 0];
@@ -15,13 +16,18 @@ async function deactivateExpiredAccounts() {
     isRunning = true;
     try {
         await sendExpirationReminders();
-        const result = await prisma_1.prisma.orderItem.updateMany({
-            where: { isActive: true, expiresAt: { lte: new Date() } },
-            data: { isActive: false },
-        });
+        const [result, freeResult] = await Promise.all([
+            prisma_1.prisma.orderItem.updateMany({
+                where: { isActive: true, expiresAt: { lte: new Date() } },
+                data: { isActive: false },
+            }),
+            free_account_service_1.FreeAccountService.expireDueAccounts(),
+        ]);
         if (result.count > 0)
             logger_1.logger.info("Expired purchased accounts deactivated", { count: result.count });
-        return result;
+        if (freeResult.count > 0)
+            logger_1.logger.info("Expired free test accounts archived", { count: freeResult.count });
+        return { count: result.count + freeResult.count };
     }
     finally {
         isRunning = false;
