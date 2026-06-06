@@ -10,10 +10,7 @@ class EventBusService {
     on(eventName, handler) {
         this.emitter.on(eventName, (payload) => {
             Promise.resolve(handler(payload)).catch((error) => {
-                logger_1.logger.error("Event handler failed", {
-                    eventName,
-                    error: error instanceof Error ? error.message : String(error),
-                });
+                logger_1.logger.error("Event handler failed", { eventName, error: error instanceof Error ? error.message : String(error) });
             });
         });
     }

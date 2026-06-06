@@ -1,0 +1,124 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerModernHandlers = registerModernHandlers;
+const modern_views_1 = require("../views/modern.views");
+const panel_ui_1 = require("../navigation/panel-ui");
+const flow_engine_1 = require("../flows/flow-engine");
+const user_service_1 = require("../../modules/user/user.service");
+const referral_service_1 = require("../../modules/referral/referral.service");
+const purchase_service_1 = require("../../modules/product/purchase.service");
+const deposit_service_1 = require("../../modules/deposit/deposit.service");
+const admin_service_1 = require("../../modules/admin/admin.service");
+const support_service_1 = require("../../modules/support/support.service");
+const free_account_service_1 = require("../../modules/free-account/free-account.service");
+const admin_middleware_1 = require("../middlewares/admin.middleware");
+function registerModernHandlers(bot) {
+    (0, modern_views_1.registerModernViews)();
+    (0, flow_engine_1.registerFlowEngine)(bot);
+    (0, free_account_service_1.registerFreeAccountEvents)();
+    bot.start(async (ctx) => {
+        if (!ctx.from)
+            return;
+        const user = await user_service_1.UserService.findOrCreateUser(ctx);
+        const payload = ctx.startPayload;
+        if (payload)
+            await referral_service_1.ReferralService.linkReferral(user.id, payload);
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "home" }, "replace");
+    });
+    bot.action(/^nav:(.+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        if (ctx.match[1] === "back")
+            return (0, panel_ui_1.goBack)(ctx);
+        const state = (0, panel_ui_1.parseNavAction)(`nav:${ctx.match[1]}`);
+        if (!state)
+            return;
+        if (state.id.startsWith("admin") && (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))) {
+            await ctx.answerCbQuery("دسترسی غیرمجاز");
+            return;
+        }
+        await (0, panel_ui_1.renderPanel)(ctx, state, "push");
+    });
+    bot.action(/^buy:confirm:(.+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from)
+            return;
+        const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
+        if (!user)
+            return;
+        try {
+            const productId = ctx.match[1];
+            const coupon = ctx.session.selectedCoupons?.[productId];
+            const result = await purchase_service_1.PurchaseService.buyProduct(user.id, productId, coupon);
+            delete ctx.session.selectedCoupons?.[productId];
+            await ctx.editMessageText(`✅ خرید با موفقیت انجام شد.\n\nمحصول: ${result.product.title}\nمبلغ پرداختی: ${result.totalAmount.toLocaleString("fa-IR")} تومان\n\nنام کاربری: ${result.account.username}\nرمز عبور: ${result.account.password}\nکانفیگ:\n${result.account.config}`, { reply_markup: { inline_keyboard: [[{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+        }
+        catch (error) {
+            await ctx.editMessageText(`❌ ${error instanceof Error ? error.message : "خرید ناموفق بود"}`, { reply_markup: { inline_keyboard: [[{ text: "⬅️ بازگشت", callback_data: "nav:back" }, { text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+        }
+    });
+    bot.action("referral:claim", async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from)
+            return;
+        const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
+        if (!user)
+            return;
+        try {
+            const result = await referral_service_1.ReferralService.claimPendingRewards(user.id);
+            await ctx.answerCbQuery(`برداشت شد: ${result.amount.toLocaleString("fa-IR")} تومان`);
+        }
+        catch (error) {
+            await ctx.answerCbQuery(error instanceof Error ? error.message : "برداشت ناموفق بود");
+        }
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "referral" }, "replace");
+    });
+    bot.action(/^admin:user:ban:([^:]+):([01])$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await admin_service_1.AdminService.setUserBan(ctx.match[1], ctx.match[2] === "1", String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.user", params: { userId: ctx.match[1] } }, "replace");
+    });
+    bot.action(/^admin:product:active:([^:]+):([01])$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await admin_service_1.AdminService.setProductActive(ctx.match[1], ctx.match[2] === "1", String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.product", params: { productId: ctx.match[1] } }, "replace");
+    });
+    bot.action(/^admin:product:delete:([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await admin_service_1.AdminService.deleteProduct(ctx.match[1], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.products" }, "replace");
+    });
+    bot.action(/^admin:deposit:(approve|reject):(.+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        if (ctx.match[1] === "approve")
+            await deposit_service_1.DepositService.approve(ctx.match[2], String(ctx.from.id));
+        else
+            await deposit_service_1.DepositService.reject(ctx.match[2], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.deposits" }, "replace");
+    });
+    bot.action(/^admin:ticket:close:(.+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await support_service_1.SupportService.closeTicket(ctx.match[1], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.tickets" }, "replace");
+    });
+    bot.on("photo", async (ctx, next) => {
+        const photo = ctx.message.photo[ctx.message.photo.length - 1];
+        if (photo && (await (0, flow_engine_1.handleActiveFlowPhoto)(ctx, photo.file_id)))
+            return;
+        return next();
+    });
+    bot.on("text", async (ctx, next) => {
+        if (await (0, flow_engine_1.handleActiveFlowText)(ctx, ctx.message.text.trim()))
+            return;
+        return next();
+    });
+}

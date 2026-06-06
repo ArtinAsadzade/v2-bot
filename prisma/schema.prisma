@@ -245,6 +245,7 @@ model Product {
   accounts   ProductAccount[]
   orders     Order[]
   orderItems OrderItem[]
+  freeAccountPool FreeAccountPool[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -339,4 +340,23 @@ model SecurityFlag {
 
   @@index([userId, createdAt])
   @@index([type, createdAt])
+}
+
+model FreeAccountPool {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  productId String   @db.ObjectId
+  username  String
+  password  String
+  config    String
+  isAssigned Boolean @default(false)
+  assignedTo String? @db.ObjectId
+  assignedAt DateTime?
+  reason    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId, isAssigned])
+  @@index([assignedTo])
 }
