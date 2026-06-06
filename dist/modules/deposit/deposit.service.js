@@ -4,6 +4,7 @@ exports.DepositService = exports.DEPOSIT_WALLETS = void 0;
 const prisma_1 = require("../../services/prisma");
 const wallet_service_1 = require("../wallet/wallet.service");
 const notification_service_1 = require("../../services/notification.service");
+const event_bus_service_1 = require("../../services/event-bus.service");
 exports.DEPOSIT_WALLETS = {
     usdt: process.env.USDT_WALLET_ADDRESS ?? "TRC20_WALLET_ADDRESS",
     btc: process.env.BTC_WALLET_ADDRESS ?? "BTC_WALLET_ADDRESS",
@@ -14,7 +15,7 @@ class DepositService {
             throw new Error("مبلغ شارژ معتبر نیست");
         }
         const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-        return prisma_1.prisma.deposit.create({
+        const deposit = await prisma_1.prisma.deposit.create({
             data: {
                 userId,
                 amount,
@@ -24,6 +25,8 @@ class DepositService {
                 expiresAt,
             },
         });
+        event_bus_service_1.eventBus.emit("deposit.created", { depositId: deposit.id, userId, amount, cryptoType, wallet: deposit.wallet });
+        return deposit;
     }
     static async submitReceipt(depositId, userId, receipt) {
         const deposit = await prisma_1.prisma.deposit.findFirst({
@@ -47,6 +50,13 @@ class DepositService {
                     { text: "❌ رد", callbackData: `admin:deposit:reject:${updatedDeposit.id}` },
                 ],
             ],
+        });
+        event_bus_service_1.eventBus.emit("deposit.receipt.submitted", {
+            depositId: updatedDeposit.id,
+            userId: updatedDeposit.userId,
+            amount: updatedDeposit.amount,
+            cryptoType: updatedDeposit.cryptoType,
+            receipt,
         });
     }
     static async approve(depositId, adminTelegramId) {

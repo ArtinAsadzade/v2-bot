@@ -3,9 +3,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SupportService = void 0;
 const prisma_1 = require("../../services/prisma");
 const notification_service_1 = require("../../services/notification.service");
+const event_bus_service_1 = require("../../services/event-bus.service");
 class SupportService {
     static async createTicket(userId) {
-        return prisma_1.prisma.ticket.create({ data: { userId, status: "open" } });
+        const ticket = await prisma_1.prisma.ticket.create({ data: { userId, status: "open" }, include: { user: true } });
+        event_bus_service_1.eventBus.emit("ticket.created", { ticketId: ticket.id, userId, telegramId: ticket.user.telegramId });
+        return ticket;
     }
     static async addUserMessage(ticketId, userId, message) {
         const ticketMessage = await prisma_1.prisma.ticketMessage.create({ data: { ticketId, senderId: userId, senderRole: "user", message } });
@@ -19,6 +22,7 @@ class SupportService {
                 ],
             });
         }
+        event_bus_service_1.eventBus.emit("ticket.message.created", { ticketId, userId, senderRole: "user", message });
         return ticketMessage;
     }
     static async addAdminReply(ticketId, adminTelegramId, message) {
@@ -26,6 +30,9 @@ class SupportService {
         const ticket = await this.getTicketWithUser(ticketId);
         if (ticket) {
             await notification_service_1.notificationService.notifyUser(ticket.userId, `📨 پاسخ پشتیبانی:\n\n${message}`);
+        }
+        if (ticket) {
+            event_bus_service_1.eventBus.emit("ticket.message.created", { ticketId, userId: ticket.userId, senderRole: "admin", message });
         }
         return ticketMessage;
     }
@@ -36,6 +43,8 @@ class SupportService {
             await tx.auditLog.create({
                 data: { actorId: adminTelegramId, action: "ticket.close", metadata: JSON.stringify({ ticketId }) },
             });
+            event_bus_service_1.eventBus.emit("ticket.closed", { ticketId, userId: ticket.userId, adminTelegramId });
+            await notification_service_1.notificationService.notifyUser(ticket.userId, "✅ تیکت پشتیبانی شما بسته شد.");
             return ticket;
         });
     }

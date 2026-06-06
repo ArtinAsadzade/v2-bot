@@ -50,6 +50,16 @@ enum OrderStatus {
   failed
 }
 
+enum ReferralRewardStatus {
+  pending
+  claimed
+}
+
+enum FreeConfigRewardStatus {
+  available
+  claimed
+}
+
 model User {
   id         String   @id @default(auto()) @map("_id") @db.ObjectId
   telegramId String   @unique
@@ -59,6 +69,8 @@ model User {
   balance    Int      @default(0)
   role       Role     @default(user)
   isBanned   Boolean  @default(false)
+  referralCode String?  @unique
+  referredById String?  @db.ObjectId
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -67,8 +79,57 @@ model User {
   tickets            Ticket[]
   couponUsages       CouponUsage[]
   orders             Order[]
+  referralsMade      Referral[]          @relation("Referrer")
+  referredReferral   Referral?           @relation("Referred")
+  referralRewards    ReferralReward[]
+  freeConfigRewards  FreeConfigReward[]
 
   @@index([role])
+  @@index([referredById])
+  @@index([createdAt])
+}
+
+model Referral {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  referrerId String   @db.ObjectId
+  referredId String   @unique @db.ObjectId
+  createdAt  DateTime @default(now())
+
+  referrer User @relation("Referrer", fields: [referrerId], references: [id])
+  referred User @relation("Referred", fields: [referredId], references: [id])
+  rewards  ReferralReward[]
+
+  @@index([referrerId, createdAt])
+}
+
+model ReferralReward {
+  id         String               @id @default(auto()) @map("_id") @db.ObjectId
+  referralId String               @db.ObjectId
+  userId     String               @db.ObjectId
+  amount     Int
+  status     ReferralRewardStatus @default(pending)
+  createdAt  DateTime             @default(now())
+  claimedAt  DateTime?
+
+  referral Referral @relation(fields: [referralId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
+  @@index([referralId])
+}
+
+model FreeConfigReward {
+  id        String                 @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String                 @db.ObjectId
+  config    String
+  reason    String
+  status    FreeConfigRewardStatus @default(available)
+  createdAt DateTime               @default(now())
+  claimedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
   @@index([createdAt])
 }
 

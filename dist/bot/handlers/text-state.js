@@ -2,12 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleStateText = handleStateText;
 const coupon_service_1 = require("../../modules/coupon/coupon.service");
-const product_service_1 = require("../../modules/product/product.service");
 const support_service_1 = require("../../modules/support/support.service");
 const user_service_1 = require("../../modules/user/user.service");
 const start_1 = require("./deposit/start");
 const main_keyboard_1 = require("../keyboards/main.keyboard");
-const prisma_1 = require("../../services/prisma");
 const admin_service_1 = require("../../modules/admin/admin.service");
 async function handleStateText(ctx, next) {
     const state = ctx.session.state;
@@ -46,79 +44,16 @@ async function handleStateText(ctx, next) {
             }
             return;
         }
-        case "admin_coupon_create": {
-            const [code, percentRaw, maxUsesRaw, daysRaw] = text.split(/\s+/);
-            const percent = Number(percentRaw);
-            const maxUses = Number(maxUsesRaw);
-            const days = Number(daysRaw);
-            if (!code || !Number.isInteger(percent) || !Number.isInteger(maxUses) || !Number.isInteger(days) || days <= 0) {
-                await ctx.reply("فرمت کوپن معتبر نیست. نمونه: OFF20 20 10 7", (0, main_keyboard_1.navigationKeyboard)("admin:dashboard"));
-                return;
-            }
-            const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-            const coupon = await coupon_service_1.CouponService.create(code, percent, expiresAt, maxUses);
-            await admin_service_1.AdminService.audit(String(ctx.from?.id ?? "system"), "coupon.create", { couponId: coupon.id, code: coupon.code });
-            ctx.session.state = undefined;
-            await ctx.reply(`✅ کوپن ${coupon.code} ساخته شد.`, (0, main_keyboard_1.navigationKeyboard)("admin:dashboard"));
-            return;
-        }
-        case "admin_product_create": {
-            const [categoryName, title, priceRaw, durationRaw] = text.split("|").map((part) => part.trim());
-            const price = Number(priceRaw);
-            const duration = Number(durationRaw);
-            if (!categoryName || !title || !Number.isInteger(price) || price <= 0 || !Number.isInteger(duration) || duration <= 0) {
-                await ctx.reply("فرمت محصول معتبر نیست. نمونه: VIP|VPN یک‌ماهه|50000|30", (0, main_keyboard_1.navigationKeyboard)("admin:dashboard"));
-                return;
-            }
-            const product = await product_service_1.ProductService.create({ categoryName, title, price, duration });
-            await admin_service_1.AdminService.audit(String(ctx.from?.id ?? "system"), "product.create", { productId: product.id });
-            ctx.session.state = undefined;
-            await ctx.reply(`✅ محصول ${product.title} ساخته شد.`, (0, main_keyboard_1.navigationKeyboard)("admin:dashboard"));
-            return;
-        }
-        case "admin_account_create": {
-            const [username, password, config] = text.split("|").map((part) => part.trim());
-            if (!username || !password || !config) {
-                await ctx.reply("فرمت اکانت معتبر نیست. نمونه: user|pass|config", (0, main_keyboard_1.navigationKeyboard)("admin:dashboard"));
-                return;
-            }
-            const account = await product_service_1.ProductService.addAccount(state.productId, { username, password, config });
-            await admin_service_1.AdminService.audit(String(ctx.from?.id ?? "system"), "product_account.create", { accountId: account.id, productId: state.productId });
-            ctx.session.state = undefined;
-            await ctx.reply(`✅ اکانت ${account.username} اضافه شد.`, (0, main_keyboard_1.navigationKeyboard)("admin:dashboard"));
-            return;
-        }
         case "admin_user_search": {
             const query = text.replace(/^@/, "");
-            const users = await prisma_1.prisma.user.findMany({
-                where: {
-                    OR: [
-                        { telegramId: { contains: query } },
-                        { username: { contains: query } },
-                        { firstName: { contains: query } },
-                        { lastName: { contains: query } },
-                    ],
-                },
-                orderBy: { createdAt: "desc" },
-                take: 10,
-            });
+            const users = await admin_service_1.AdminService.searchUsers(query);
             ctx.session.state = undefined;
             await ctx.reply(users.map((user) => `👤 ${user.telegramId} @${user.username ?? "-"} | ${user.balance.toLocaleString("fa-IR")} تومان`).join("\n") || "نتیجه‌ای پیدا نشد.", (0, main_keyboard_1.navigationKeyboard)("admin:users"));
             return;
         }
         case "admin_product_search": {
-            const products = await prisma_1.prisma.product.findMany({
-                where: {
-                    OR: [{ title: { contains: text } }, { category: { is: { name: { contains: text } } } }],
-                },
-                include: { category: true },
-                orderBy: { createdAt: "desc" },
-                take: 10,
-            });
-            const lines = await Promise.all(products.map(async (product) => {
-                const stock = await product_service_1.ProductService.availableStock(product.id);
-                return `📦 ${product.title} | ${product.category.name} | ${product.price.toLocaleString("fa-IR")} تومان | موجودی ${stock.toLocaleString("fa-IR")}`;
-            }));
+            const products = await admin_service_1.AdminService.searchProducts(text);
+            const lines = products.map((product) => `📦 ${product.title} | ${product.category.name} | ${product.price.toLocaleString("fa-IR")} تومان`);
             ctx.session.state = undefined;
             await ctx.reply(lines.join("\n") || "نتیجه‌ای پیدا نشد.", (0, main_keyboard_1.navigationKeyboard)("admin:products"));
             return;

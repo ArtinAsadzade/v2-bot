@@ -2,6 +2,7 @@ import type { InlineKeyboardMarkup } from "telegraf/types";
 import type { AppBot } from "../types/bot";
 import { prisma } from "./prisma";
 import { logger } from "./logger";
+import { eventBus } from "./event-bus.service";
 
 export type NotificationAction = {
   text: string;
@@ -93,3 +94,36 @@ class NotificationService {
 }
 
 export const notificationService = new NotificationService();
+
+let notificationEventsRegistered = false;
+
+export function registerNotificationEvents() {
+  if (notificationEventsRegistered) return;
+  notificationEventsRegistered = true;
+
+  eventBus.on("deposit.created", async (event) => {
+    await notificationService.notifyAdmins({
+      text: `💳 درخواست شارژ جدید\n\nشناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`,
+      actions: [[{ text: "👁 مشاهده", callbackData: `admin:deposits` }]],
+    });
+  });
+
+  eventBus.on("ticket.created", async (event) => {
+    await notificationService.notifyAdmins({
+      text: `🎧 تیکت جدید\n\nشناسه: ${event.ticketId}\nکاربر: ${event.telegramId}`,
+      actions: [[{ text: "💬 ورود به چت", callbackData: `admin:ticket:${event.ticketId}` }]],
+    });
+  });
+
+  eventBus.on("referral.reward.claimed", async (event) => {
+    await notificationService.notifyUser(event.userId, `🎁 پاداش زیرمجموعه به مبلغ ${event.amount.toLocaleString("fa-IR")} تومان به کیف پول شما اضافه شد.`);
+  });
+
+  eventBus.on("free_config.claimed", async (event) => {
+    await notificationService.notifyUser(event.userId, {
+      text: `🎁 کانفیگ رایگان شما:\n\n${event.config}`,
+      actions: [[{ text: "🏠 خانه", callbackData: "home" }]],
+    });
+  });
+}
+

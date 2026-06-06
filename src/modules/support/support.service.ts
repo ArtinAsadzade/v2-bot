@@ -1,9 +1,12 @@
 import { prisma } from "../../services/prisma";
 import { notificationService } from "../../services/notification.service";
+import { eventBus } from "../../services/event-bus.service";
 
 export class SupportService {
   static async createTicket(userId: string) {
-    return prisma.ticket.create({ data: { userId, status: "open" } });
+    const ticket = await prisma.ticket.create({ data: { userId, status: "open" }, include: { user: true } });
+    eventBus.emit("ticket.created", { ticketId: ticket.id, userId, telegramId: ticket.user.telegramId });
+    return ticket;
   }
 
   static async addUserMessage(ticketId: string, userId: string, message: string) {
@@ -20,6 +23,7 @@ export class SupportService {
       });
     }
 
+    eventBus.emit("ticket.message.created", { ticketId, userId, senderRole: "user", message });
     return ticketMessage;
   }
 
@@ -31,6 +35,9 @@ export class SupportService {
       await notificationService.notifyUser(ticket.userId, `📨 پاسخ پشتیبانی:\n\n${message}`);
     }
 
+    if (ticket) {
+      eventBus.emit("ticket.message.created", { ticketId, userId: ticket.userId, senderRole: "admin", message });
+    }
     return ticketMessage;
   }
 
@@ -41,6 +48,8 @@ export class SupportService {
       await tx.auditLog.create({
         data: { actorId: adminTelegramId, action: "ticket.close", metadata: JSON.stringify({ ticketId }) },
       });
+      eventBus.emit("ticket.closed", { ticketId, userId: ticket.userId, adminTelegramId });
+      await notificationService.notifyUser(ticket.userId, "✅ تیکت پشتیبانی شما بسته شد.");
       return ticket;
     });
   }

@@ -3,7 +3,8 @@ import type { AppContext } from "../types/bot";
 import { logger } from "../services/logger";
 import { UserService } from "../modules/user/user.service";
 import { handleAdminFlow } from "./handlers/admin/admin.flow.handler";
-import { notificationService } from "../services/notification.service";
+import { notificationService, registerNotificationEvents } from "../services/notification.service";
+import { SupportService } from "../modules/support/support.service";
 
 if (!process.env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN is missing");
@@ -11,6 +12,7 @@ if (!process.env.BOT_TOKEN) {
 
 export const bot = new Telegraf<AppContext>(process.env.BOT_TOKEN);
 notificationService.setBot(bot);
+registerNotificationEvents();
 
 // ---------------- SESSION ----------------
 bot.use(
@@ -27,7 +29,16 @@ bot.use(async (ctx, next) => {
   await next();
 });
 
-// ---------------- ADMIN FLOW (🔥 ADD THIS HERE) ----------------
+
+// ---------------- ADMIN LIVE CHAT ----------------
+bot.on("text", async (ctx, next) => {
+  if (!ctx.session.liveTicketId || !ctx.from || !(ctx.message && "text" in ctx.message)) return next();
+
+  await SupportService.addAdminReply(ctx.session.liveTicketId, String(ctx.from.id), ctx.message.text.trim());
+  await ctx.reply("✅ پیام در چت تیکت ارسال شد.");
+});
+
+// ---------------- ADMIN FLOW ----------------
 bot.on("text", async (ctx, next) => {
   const handled = await handleAdminFlow(ctx);
   if (handled) return;

@@ -1,4 +1,5 @@
 import { prisma } from "../../services/prisma";
+import { ReferralService } from "../referral/referral.service";
 
 type TelegramUser = {
   id: number;
@@ -15,7 +16,7 @@ export class UserService {
       throw new Error("Telegram user is missing from context");
     }
 
-    return prisma.user.upsert({
+    const user = await prisma.user.upsert({
       where: { telegramId: String(tgUser.id) },
       update: {
         username: tgUser.username ?? null,
@@ -27,8 +28,15 @@ export class UserService {
         username: tgUser.username ?? null,
         firstName: tgUser.first_name ?? null,
         lastName: tgUser.last_name ?? null,
+        referralCode: `ref${tgUser.id}`,
       },
     });
+
+    if (!user.referralCode) {
+      await ReferralService.ensureReferralCode(user.id, user.telegramId);
+    }
+
+    return user;
   }
 
   static async getByTelegramId(telegramId: number | string) {

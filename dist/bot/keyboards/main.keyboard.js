@@ -8,6 +8,7 @@ function homeKeyboard(isAdmin = false) {
         [telegraf_1.Markup.button.callback("🛒 خرید سرویس", "shop")],
         [telegraf_1.Markup.button.callback("💰 کیف پول", "wallet"), telegraf_1.Markup.button.callback("➕ شارژ کیف پول", "deposit")],
         [telegraf_1.Markup.button.callback("🎧 پشتیبانی", "support")],
+        [telegraf_1.Markup.button.callback("🎁 زیرمجموعه‌گیری", "referral"), telegraf_1.Markup.button.callback("🆓 کانفیگ رایگان", "free_config")],
     ];
     if (isAdmin) {
         rows.push([telegraf_1.Markup.button.callback("👨‍💼 پنل مدیریت", "admin:dashboard")]);

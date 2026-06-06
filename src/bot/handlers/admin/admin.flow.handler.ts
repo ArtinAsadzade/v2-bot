@@ -1,7 +1,14 @@
 import type { AppContext } from "../../../types/bot";
 import { CouponService } from "../../../modules/coupon/coupon.service";
 import { ProductService } from "../../../modules/product/product.service";
+import { AdminService } from "../../../modules/admin/admin.service";
 import { resetFlow, getFlow } from "./admin.flow";
+import { navigationKeyboard } from "../../keyboards/main.keyboard";
+
+function asPositiveInteger(value: string) {
+  const number = Number(value.replace(/[,،]/g, ""));
+  return Number.isInteger(number) && number > 0 ? number : undefined;
+}
 
 export async function handleAdminFlow(ctx: AppContext) {
   const flow = getFlow(ctx);
@@ -14,26 +21,39 @@ export async function handleAdminFlow(ctx: AppContext) {
     if (flow.step === "title") {
       flow.data.title = text;
       flow.step = "price";
-      await ctx.reply("💰 قیمت را ارسال کنید:");
+      await ctx.reply("💰 قیمت محصول را به تومان ارسال کنید:", navigationKeyboard("admin:dashboard"));
       return true;
     }
 
     if (flow.step === "price") {
-      const price = Number(text);
-      if (!Number.isInteger(price) || price <= 0) {
-        await ctx.reply("❌ قیمت معتبر نیست.");
+      const price = asPositiveInteger(text);
+      if (!price) {
+        await ctx.reply("❌ قیمت معتبر نیست. فقط عدد مثبت ارسال کنید.", navigationKeyboard("admin:dashboard"));
         return true;
       }
       flow.data.price = price;
+      flow.step = "duration";
+      await ctx.reply("⏳ مدت سرویس را به روز ارسال کنید:", navigationKeyboard("admin:dashboard"));
+      return true;
+    }
+
+    if (flow.step === "duration") {
+      const duration = asPositiveInteger(text);
+      if (!duration) {
+        await ctx.reply("❌ مدت معتبر نیست. فقط عدد مثبت ارسال کنید.", navigationKeyboard("admin:dashboard"));
+        return true;
+      }
+      flow.data.duration = duration;
       flow.step = "category";
-      await ctx.reply("📂 نام دسته‌بندی را ارسال کنید:");
+      await ctx.reply("📂 نام دسته‌بندی را ارسال کنید:", navigationKeyboard("admin:dashboard"));
       return true;
     }
 
     if (flow.step === "category") {
-      const product = await ProductService.create({ categoryName: text, title: String(flow.data.title), price: Number(flow.data.price), duration: Number(flow.data.duration ?? 30) });
+      const product = await ProductService.create({ categoryName: text, title: String(flow.data.title), price: Number(flow.data.price), duration: Number(flow.data.duration) });
+      await AdminService.audit(String(ctx.from?.id ?? "system"), "product.create", { productId: product.id });
       resetFlow(ctx);
-      await ctx.reply(`✅ محصول ${product.title} ساخته شد.`);
+      await ctx.reply(`✅ محصول ${product.title} ساخته شد.`, navigationKeyboard("admin:dashboard"));
       return true;
     }
   }
@@ -42,43 +62,70 @@ export async function handleAdminFlow(ctx: AppContext) {
     if (flow.step === "code") {
       flow.data.code = text;
       flow.step = "discount";
-      await ctx.reply("📉 درصد تخفیف را ارسال کنید:");
+      await ctx.reply("📉 درصد تخفیف را ارسال کنید:", navigationKeyboard("admin:dashboard"));
       return true;
     }
 
     if (flow.step === "discount") {
-      flow.data.discountPercent = Number(text);
+      const discountPercent = asPositiveInteger(text);
+      if (!discountPercent || discountPercent > 100) {
+        await ctx.reply("❌ درصد تخفیف باید عددی بین ۱ تا ۱۰۰ باشد.", navigationKeyboard("admin:dashboard"));
+        return true;
+      }
+      flow.data.discountPercent = discountPercent;
       flow.step = "maxUses";
-      await ctx.reply("🔁 تعداد استفاده مجاز را ارسال کنید:");
+      await ctx.reply("🔁 تعداد استفاده مجاز را ارسال کنید:", navigationKeyboard("admin:dashboard"));
       return true;
     }
 
     if (flow.step === "maxUses") {
-      flow.data.maxUses = Number(text);
+      const maxUses = asPositiveInteger(text);
+      if (!maxUses) {
+        await ctx.reply("❌ تعداد استفاده معتبر نیست.", navigationKeyboard("admin:dashboard"));
+        return true;
+      }
+      flow.data.maxUses = maxUses;
       flow.step = "days";
-      await ctx.reply("📆 تعداد روزهای اعتبار را ارسال کنید:");
+      await ctx.reply("📆 تعداد روزهای اعتبار را ارسال کنید:", navigationKeyboard("admin:dashboard"));
       return true;
     }
 
     if (flow.step === "days") {
-      const days = Number(text);
+      const days = asPositiveInteger(text);
+      if (!days) {
+        await ctx.reply("❌ تعداد روز معتبر نیست.", navigationKeyboard("admin:dashboard"));
+        return true;
+      }
       const coupon = await CouponService.create(String(flow.data.code), Number(flow.data.discountPercent), new Date(Date.now() + days * 86_400_000), Number(flow.data.maxUses));
+      await AdminService.audit(String(ctx.from?.id ?? "system"), "coupon.create", { couponId: coupon.id, code: coupon.code });
       resetFlow(ctx);
-      await ctx.reply(`✅ کوپن ${coupon.code} ساخته شد.`);
+      await ctx.reply(`✅ کوپن ${coupon.code} ساخته شد.`, navigationKeyboard("admin:dashboard"));
       return true;
     }
   }
 
   if (flow.flow === "account_create") {
-    const [username, password, config] = text.split("|").map((part) => part.trim());
-    if (!username || !password || !config) {
-      await ctx.reply("فرمت اکانت معتبر نیست. نمونه: نام‌کاربری|رمزعبور|کانفیگ");
+    if (flow.step === "username") {
+      flow.data.username = text;
+      flow.step = "password";
+      await ctx.reply("🔑 رمز عبور اکانت را ارسال کنید:", navigationKeyboard("admin:dashboard"));
       return true;
     }
-    await ProductService.addAccount(String(flow.data.productId), { username, password, config });
-    resetFlow(ctx);
-    await ctx.reply("✅ اکانت اضافه شد.");
-    return true;
+
+    if (flow.step === "password") {
+      flow.data.password = text;
+      flow.step = "config";
+      await ctx.reply("⚙️ متن کانفیگ را ارسال کنید:", navigationKeyboard("admin:dashboard"));
+      return true;
+    }
+
+    if (flow.step === "config") {
+      const account = await ProductService.addAccount(String(flow.data.productId), { username: String(flow.data.username), password: String(flow.data.password), config: text });
+      await AdminService.audit(String(ctx.from?.id ?? "system"), "product_account.create", { accountId: account.id, productId: flow.data.productId });
+      resetFlow(ctx);
+      await ctx.reply(`✅ اکانت ${account.username} اضافه شد.`, navigationKeyboard("admin:dashboard"));
+      return true;
+    }
   }
 
   return false;

@@ -4,6 +4,7 @@ exports.PurchaseService = void 0;
 const prisma_1 = require("../../services/prisma");
 const coupon_service_1 = require("../coupon/coupon.service");
 const wallet_service_1 = require("../wallet/wallet.service");
+const event_bus_service_1 = require("../../services/event-bus.service");
 class PurchaseService {
     static async buyProduct(userId, productId, couponCode) {
         return prisma_1.prisma.$transaction(async (tx) => {
@@ -66,6 +67,9 @@ class PurchaseService {
             if (sold.count !== 1)
                 throw new Error("تحویل اکانت ناموفق بود");
             return { order, product, account, totalAmount, discountAmount };
+        }).then((result) => {
+            event_bus_service_1.eventBus.emit("order.completed", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });
+            return result;
         });
     }
 }
