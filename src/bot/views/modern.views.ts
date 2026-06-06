@@ -120,7 +120,7 @@ export function registerModernViews() {
 
   registerView("admin.dashboard", async () => {
     const stats = await AdminService.dashboard(true);
-    return { text: `⚙️ داشبورد مدیریت\n\n👥 کاربران: ${stats.users.toLocaleString("fa-IR")}\n💰 درآمد: ${money(stats.revenue)}\n🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}\n🎧 تیکت‌های فعال: ${stats.openTickets.toLocaleString("fa-IR")}\n💳 واریزی‌های منتظر: ${stats.submittedDeposits.toLocaleString("fa-IR")}`, keyboard: [[{ text: "👥 کاربران", action: callbackFor("admin.users") }, { text: "📦 محصولات", action: callbackFor("admin.products") }], [{ text: "🔐 اکانت‌ها", action: callbackFor("admin.accounts") }, { text: "🎁 اکانت رایگان", action: callbackFor("admin.freeAccounts") }], [{ text: "🎟 کوپن‌ها", action: callbackFor("admin.coupons") }, { text: "💳 واریزی‌ها", action: callbackFor("admin.deposits") }], [{ text: "🧾 سفارش‌ها", action: callbackFor("admin.orders") }, { text: "🎧 تیکت‌ها", action: callbackFor("admin.tickets") }], [{ text: "💎 کریپتو", action: callbackFor("admin.crypto") }, { text: "📊 آمار", action: callbackFor("admin.analytics") }]] };
+    return { text: `⚙️ داشبورد مدیریت\n\n👥 کاربران: ${stats.users.toLocaleString("fa-IR")}\n💰 درآمد: ${money(stats.revenue)}\n🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}\n🎧 تیکت‌های فعال: ${stats.openTickets.toLocaleString("fa-IR")}\n💳 واریزی‌های منتظر: ${stats.submittedDeposits.toLocaleString("fa-IR")}`, keyboard: [[{ text: "👥 کاربران", action: callbackFor("admin.users") }, { text: "📦 محصولات", action: callbackFor("admin.products") }], [{ text: "🔐 اکانت‌ها", action: callbackFor("admin.accounts") }, { text: "🎁 اکانت رایگان", action: callbackFor("admin.freeAccounts") }], [{ text: "🎟 کوپن‌ها", action: callbackFor("admin.coupons") }, { text: "💳 واریزی‌ها", action: callbackFor("admin.deposits") }], [{ text: "🧾 سفارش‌ها", action: callbackFor("admin.orders") }, { text: "🎧 تیکت‌ها", action: callbackFor("admin.tickets") }], [{ text: "💎 کریپتو", action: callbackFor("admin.crypto") }, { text: "وضعیت فروشگاه", action: callbackFor("admin.store") }], [{ text: "🎁 پاداش دعوت", action: callbackFor("admin.referrals") }, { text: "📊 آمار", action: callbackFor("admin.analytics") }]] };
   });
 
   registerView("admin.users", async (_ctx, params) => {
@@ -134,7 +134,13 @@ export function registerModernViews() {
   registerView("admin.user", async (_ctx, params) => {
     const profile = await AdminService.userProfile(params.userId);
     if (!profile.user) return { text: "کاربر پیدا نشد.", keyboard: [] };
-    return { text: `👤 پروفایل کاربر\n\n${userLine(profile.user)}\nموجودی: ${money(profile.user.balance)}\nدعوت موفق: ${profile.referralCount.toLocaleString("fa-IR")}\nوضعیت: ${profile.user.isBanned ? "مسدود" : "فعال"}\n\nخریدهای اخیر:\n${profile.orders.map((order) => `• ${order.product.title} — ${money(order.totalAmount)}`).join("\n") || "خریدی ندارد"}\n\nتراکنش‌های کیف پول:\n${profile.transactions.map((tx) => `• ${tx.description}: ${money(tx.amount)}`).join("\n") || "تراکنشی ندارد"}`, keyboard: [[{ text: "➕ افزودن موجودی", action: `flow:start:wallet_adjust:${profile.user.id}:credit` }, { text: "➖ کسر موجودی", action: `flow:start:wallet_adjust:${profile.user.id}:debit` }], [{ text: profile.user.isBanned ? "✅ رفع مسدودی" : "⛔ مسدودسازی", action: `admin:user:ban:${profile.user.id}:${profile.user.isBanned ? "0" : "1"}` }]] };
+    return { text: `👤 پروفایل کاربر\n\n${userLine(profile.user)}\nموجودی: ${money(profile.user.balance)}\nدعوت موفق: ${profile.referralCount.toLocaleString("fa-IR")}\nوضعیت: ${profile.user.isBanned ? "مسدود" : "فعال"}\n\nخریدهای اخیر:\n${profile.orders.map((order) => `• ${order.product.title} — ${money(order.totalAmount)}`).join("\n") || "خریدی ندارد"}\n\nتراکنش‌های کیف پول:\n${profile.transactions.map((tx) => `• ${tx.description}: ${money(tx.amount)}`).join("\n") || "تراکنشی ندارد"}`, keyboard: [[{ text: "➕ افزودن موجودی", action: `flow:start:wallet_adjust:${profile.user.id}:credit` }, { text: "➖ کسر موجودی", action: `flow:start:wallet_adjust:${profile.user.id}:debit` }], [{ text: profile.user.isBanned ? "✅ رفع مسدودی" : "⛔ مسدودسازی", action: `admin:user:ban:${profile.user.id}:${profile.user.isBanned ? "0" : "1"}` }], [{ text: "📜 تاریخچه مسدودی", action: callbackFor("admin.user.blocks", { userId: profile.user.id }) }]] };
+  });
+
+
+  registerView("admin.user.blocks", async (_ctx, params) => {
+    const history = await AdminService.userBlockHistory(params.userId);
+    return { text: `📜 تاریخچه مسدودی\n\n${history.map((item) => `• ${item.blocked ? "مسدود" : "رفع مسدودی"} — مدیر: ${item.actorId} — ${item.createdAt.toLocaleString("fa-IR")}${item.reason ? ` — ${item.reason}` : ""}`).join("\n") || "تاریخچه‌ای ثبت نشده است."}`, keyboard: [] };
   });
 
   registerView("admin.products", async (_ctx, params) => {
@@ -149,7 +155,7 @@ export function registerModernViews() {
   registerView("admin.product", async (_ctx, params) => {
     const detail = await AdminService.productDetail(params.productId);
     if (!detail.product) return { text: "محصول پیدا نشد.", keyboard: [] };
-    return { text: `📦 ${detail.product.title}\n\nدسته‌بندی: ${detail.product.category.name}\nقیمت: ${money(detail.product.price)}\nمدت: ${detail.product.duration.toLocaleString("fa-IR")} روز\nموجودی قابل فروش: ${detail.available.toLocaleString("fa-IR")}\nفروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}\nوضعیت: ${detail.product.isActive ? "فعال" : "غیرفعال"}`, keyboard: [[{ text: "🔐 افزودن اکانت", action: `flow:start:account_create:${detail.product.id}` }, { text: "💰 تغییر قیمت", action: `flow:start:product_price:${detail.product.id}` }], [{ text: detail.product.isActive ? "غیرفعال‌سازی" : "فعال‌سازی", action: `admin:product:active:${detail.product.id}:${detail.product.isActive ? "0" : "1"}` }, { text: "حذف نرم", action: `admin:product:delete:${detail.product.id}` }]] };
+    return { text: `📦 ${detail.product.title}\n\nدسته‌بندی: ${detail.product.category.name}\nقیمت: ${money(detail.product.price)}\nمدت: ${detail.product.duration.toLocaleString("fa-IR")} روز\nموجودی قابل فروش: ${detail.available.toLocaleString("fa-IR")}\nفروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}\nوضعیت: ${detail.product.isActive ? "فعال" : "غیرفعال"}`, keyboard: [[{ text: "🔐 افزودن اکانت", action: `flow:start:account_create:${detail.product.id}` }, { text: "💰 تغییر قیمت", action: `flow:start:product_price:${detail.product.id}` }], [{ text: detail.product.isActive ? "غیرفعال‌سازی" : "فعال‌سازی", action: `admin:product:active:${detail.product.id}:${detail.product.isActive ? "0" : "1"}` }, { text: "حذف نرم", action: `admin:product:delete:${detail.product.id}` }], [{ text: "حذف دائمی", action: `admin:product:hard_delete:confirm:${detail.product.id}` }]] };
   });
 
   registerView("admin.accounts", async () => {
@@ -159,16 +165,28 @@ export function registerModernViews() {
 
   registerView("admin.freeAccounts", async () => {
     const stats = await FreeAccountService.stats();
-    return { text: `🎁 استخر اکانت رایگان\n\nآماده تخصیص: ${stats.available.toLocaleString("fa-IR")}\nتخصیص‌یافته: ${stats.assigned.toLocaleString("fa-IR")}\nآستانه دعوت: ${FreeAccountService.threshold().toLocaleString("fa-IR")} نفر\n\nبرای افزودن اکانت رایگان، محصول را انتخاب کنید.`, keyboard: stats.products.map((product) => [{ text: `➕ ${product.title}`, action: `flow:start:free_account_create:${product.id}` }]) };
+    return { text: `🎁 استخر اکانت رایگان\n\nآماده تخصیص: ${stats.available.toLocaleString("fa-IR")}\nتخصیص‌یافته: ${stats.assigned.toLocaleString("fa-IR")}\n\nاکانت رایگان فقط یک‌بار برای هر کاربر قابل دریافت است و از پاداش دعوت جداست.\n\nبرای افزودن اکانت رایگان، محصول را انتخاب کنید.`, keyboard: stats.products.map((product) => [{ text: `➕ ${product.title}`, action: `flow:start:free_account_create:${product.id}` }]) };
   });
 
 
   registerView("admin.crypto", async () => {
     const stats = await AdminService.cryptoWalletStats();
     return {
-      text: `💎 مدیریت پرداخت رمز ارزی\n\nحداقل شارژ کیف پول: ${money(stats.setting.minimumTopupAmount)}\n\n${stats.wallets.map((wallet) => `• ${wallet.coinName} — شبکه ${wallet.networkName}\n  وضعیت: ${wallet.status === "active" ? "فعال" : "غیرفعال"}\n  نرخ: ${money(wallet.rateToman)}\n  آدرس: ${wallet.walletAddress}`).join("\n\n") || "هنوز کیف پولی ثبت نشده است."}`,
-      keyboard: [[{ text: "➕ ثبت/ویرایش کیف پول", action: "flow:start:crypto_wallet_create" }], [{ text: "⚙️ حداقل شارژ", action: "flow:start:minimum_topup" }]],
+      text: `💎 مدیریت پرداخت رمز ارزی\n\nحداقل شارژ کیف پول: ${money(stats.setting.minimumTopupAmount)}\n\n${stats.wallets.map((wallet) => `• ${wallet.coinName} — شبکه ${wallet.networkName}\n  وضعیت: ${wallet.status === "active" ? "فعال" : "غیرفعال"}\n  نرخ خودکار: ${wallet.rateToman > 0 ? money(wallet.rateToman) : "در انتظار دریافت"}\n  آخرین بروزرسانی: ${wallet.lastRateAt ? wallet.lastRateAt.toLocaleString("fa-IR") : "-"}\n  آدرس: ${wallet.walletAddress}`).join("\n\n") || "هنوز کیف پولی ثبت نشده است."}`,
+      keyboard: [[{ text: "➕ ثبت/ویرایش کیف پول", action: "flow:start:crypto_wallet_create" }], [{ text: "⚙️ حداقل شارژ", action: "flow:start:minimum_topup" }], [{ text: "وضعیت فروشگاه", action: callbackFor("admin.store") }]],
     };
+  });
+
+
+
+  registerView("admin.store", async () => {
+    const stats = await AdminService.cryptoWalletStats();
+    return { text: `وضعیت فروشگاه\n\nوضعیت فعلی: ${stats.setting.storeStatus === "active" ? "فعال" : "غیرفعال"}\n\nوقتی غیرفعال باشد کاربران عادی به قابلیت‌های فروشگاه دسترسی ندارند اما مدیران همچنان دسترسی دارند.`, keyboard: [[{ text: "فعال", action: "admin:store:status:active" }, { text: "غیرفعال", action: "admin:store:status:inactive" }]] };
+  });
+
+  registerView("admin.referrals", async () => {
+    const tiers = await ReferralService.listTiers();
+    return { text: `🎁 سطوح پاداش دعوت\n\n${tiers.map((tier) => `• ${tier.threshold.toLocaleString("fa-IR")} دعوت ← ${money(tier.amount)} — ${tier.isActive ? "فعال" : "غیرفعال"}`).join("\n") || "سطحی ثبت نشده است."}`, keyboard: [[{ text: "➕ سطح جدید/ویرایش", action: "flow:start:referral_tier_create" }], ...tiers.map((tier) => [{ text: tier.isActive ? `غیرفعال‌سازی ${tier.threshold}` : `فعال‌سازی ${tier.threshold}`, action: `admin:referral:tier:status:${tier.id}:${tier.isActive ? "0" : "1"}` }, { text: `حذف ${tier.threshold}`, action: `admin:referral:tier:delete:${tier.id}` }])] };
   });
 
   registerView("admin.analytics", async () => {

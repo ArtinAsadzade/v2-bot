@@ -1,6 +1,7 @@
 import { prisma } from "../../services/prisma";
 import { WalletService } from "../wallet/wallet.service";
 import { CryptoWalletService, FinancialSettingsService } from "../deposit/deposit.service";
+import { SystemSettingsService } from "../system/system.service";
 
 const DASHBOARD_CACHE_TTL_MS = 30_000;
 
@@ -62,10 +63,20 @@ export class AdminService {
     return user;
   }
 
-  static async setUserBan(userId: string, banned: boolean, actorId: string) {
-    const user = await prisma.user.update({ where: { id: userId }, data: { isBanned: banned } });
-    await this.audit(actorId, banned ? "user.ban" : "user.unban", { userId });
+  static async setUserBan(userId: string, banned: boolean, actorId: string, reason?: string) {
+    const user = await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({ where: { id: userId }, data: { isBanned: banned } });
+      await tx.userBlockHistory.create({ data: { userId, actorId, blocked: banned, reason } });
+      await tx.auditLog.create({ data: { actorId, action: banned ? "user.block" : "user.unblock", metadata: JSON.stringify({ userId, reason }) } });
+      return updated;
+    });
+    SystemSettingsService.invalidateUserStatus(user.telegramId);
+    this.invalidateDashboardCache();
     return user;
+  }
+
+  static async userBlockHistory(userId: string) {
+    return prisma.userBlockHistory.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 20 });
   }
 
   static async searchUsers(query: string) {
@@ -117,6 +128,24 @@ export class AdminService {
     return product;
   }
 
+  static async hardDeleteProduct(productId: string, actorId: string, force = false) {
+    return prisma.$transaction(async (tx) => {
+      const activeOrders = await tx.order.count({ where: { productId, status: "completed", items: { some: { isActive: true } } } });
+      if (activeOrders > 0 && !force) throw new Error("این محصول در سفارش فعال استفاده شده است. برای حذف دائمی، تایید نهایی لازم است");
+      const orders = await tx.order.findMany({ where: { productId }, select: { id: true } });
+      const orderIds = orders.map((order) => order.id);
+      if (orderIds.length) await tx.couponUsage.updateMany({ where: { orderId: { in: orderIds } }, data: { orderId: null } });
+      await tx.orderItem.deleteMany({ where: { productId } });
+      await tx.order.deleteMany({ where: { productId } });
+      await tx.freeAccountAssignment.deleteMany({ where: { productId } });
+      await tx.freeAccountPool.deleteMany({ where: { productId } });
+      await tx.productAccount.deleteMany({ where: { productId } });
+      const product = await tx.product.delete({ where: { id: productId } });
+      await tx.auditLog.create({ data: { actorId, action: "product.delete.hard", metadata: JSON.stringify({ productId, force, activeOrders }) } });
+      return product;
+    });
+  }
+
   static async listSubmittedDeposits(page = 1, take = 8) {
     const skip = (page - 1) * take;
     return Promise.all([
@@ -151,7 +180,7 @@ export class AdminService {
     return CryptoWalletService.listAll();
   }
 
-  static async saveCryptoWallet(data: { coinName: string; networkName: string; walletAddress: string; rateToman: number }, actorId: string) {
+  static async saveCryptoWallet(data: { coinName: string; networkName: string; walletAddress: string; status?: "active" | "inactive" }, actorId: string) {
     const wallet = await CryptoWalletService.upsert(data, actorId);
     this.invalidateDashboardCache();
     return wallet;
@@ -159,7 +188,13 @@ export class AdminService {
 
   static async cryptoWalletStats() {
     const [wallets, setting] = await Promise.all([CryptoWalletService.listAll(), FinancialSettingsService.get()]);
-    return { wallets, setting };
+    return { wallets, setting, supportedCoins: CryptoWalletService.supportedCoins() };
+  }
+
+  static async setStoreStatus(status: "active" | "inactive", actorId: string) {
+    const setting = await SystemSettingsService.setStoreStatus(status, actorId);
+    this.invalidateDashboardCache();
+    return setting;
   }
 
   static async setMinimumTopupAmount(amount: number, actorId: string) {

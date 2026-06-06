@@ -7,6 +7,7 @@ import { registerHandlers } from "./bot/handlers";
 import { cleanExpiredDeposits } from "./jobs/depositCleaner";
 import { deactivateExpiredAccounts } from "./jobs/accountExpiration";
 import { logger } from "./services/logger";
+import { CryptoRateService } from "./modules/system/system.service";
 import { prisma } from "./services/prisma";
 
 async function bootstrap() {
@@ -14,12 +15,16 @@ async function bootstrap() {
     logger.info("Bot starting...");
     registerHandlers(bot);
 
+    await CryptoRateService.refreshAll().catch((error) => logger.error("Initial crypto rate refresh failed", { error: error instanceof Error ? error.message : String(error) }));
     await cleanExpiredDeposits().catch((error) => logger.error("Initial deposit cleaner failed", { error: error instanceof Error ? error.message : String(error) }));
     await deactivateExpiredAccounts().catch((error) => logger.error("Initial account expiration job failed", { error: error instanceof Error ? error.message : String(error) }));
     setInterval(() => {
       cleanExpiredDeposits().catch((error) => logger.error("Deposit cleaner failed", { error: error instanceof Error ? error.message : String(error) }));
       deactivateExpiredAccounts().catch((error) => logger.error("Account expiration job failed", { error: error instanceof Error ? error.message : String(error) }));
     }, 60_000);
+    setInterval(() => {
+      CryptoRateService.refreshAll().catch((error) => logger.error("Crypto rate refresh failed", { error: error instanceof Error ? error.message : String(error) }));
+    }, 5 * 60_000);
 
     await bot.launch();
     logger.info("Bot is running");

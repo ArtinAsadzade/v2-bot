@@ -107,6 +107,28 @@ ${result.account.configLink}
     await renderPanel(ctx, { id: "referral" }, "replace");
   });
 
+
+  bot.action(/^admin:store:status:(active|inactive)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await AdminService.setStoreStatus(ctx.match[1] as "active" | "inactive", String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.store" }, "replace");
+  });
+
+  bot.action(/^admin:referral:tier:status:([^:]+):([01])$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await ReferralService.setTierStatus(ctx.match[1], ctx.match[2] === "1", String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.referrals" }, "replace");
+  });
+
+  bot.action(/^admin:referral:tier:delete:([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await ReferralService.deleteTier(ctx.match[1], String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.referrals" }, "replace");
+  });
+
   bot.action(/^admin:user:ban:([^:]+):([01])$/, async (ctx) => {
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
     await ctx.answerCbQuery();
@@ -125,6 +147,20 @@ ${result.account.configLink}
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
     await ctx.answerCbQuery();
     await AdminService.deleteProduct(ctx.match[1], String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.products" }, "replace");
+  });
+
+
+  bot.action(/^admin:product:hard_delete:confirm:([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await ctx.reply("⚠️ حذف دائمی محصول غیرقابل بازگشت است. اگر محصول سفارش فعال داشته باشد با تایید نهایی هم حذف می‌شود.", { reply_markup: { inline_keyboard: [[{ text: "تایید حذف دائمی", callback_data: `admin:product:hard_delete:force:${ctx.match[1]}` }, { text: "لغو", callback_data: callbackFor("admin.product", { productId: ctx.match[1] }) }]] } });
+  });
+
+  bot.action(/^admin:product:hard_delete:force:([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await AdminService.hardDeleteProduct(ctx.match[1], String(ctx.from.id), true);
     await renderPanel(ctx, { id: "admin.products" }, "replace");
   });
 
