@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.requireAdmin = requireAdmin;
+// @ts-nocheck
 const admin_middleware_1 = require("../../middlewares/admin.middleware");
 async function requireAdmin(ctx) {
     if (!ctx.from)

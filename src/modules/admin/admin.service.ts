@@ -1,4 +1,5 @@
 import { prisma } from "../../services/prisma";
+import { WalletService } from "../wallet/wallet.service";
 
 const DASHBOARD_CACHE_TTL_MS = 30_000;
 
@@ -31,8 +32,31 @@ export class AdminService {
     return stats;
   }
 
-  static async listUsers(skip: number, take: number) {
+  static async listUsers(page = 1, take = 8) {
+    const skip = (page - 1) * take;
     return Promise.all([prisma.user.findMany({ orderBy: { createdAt: "desc" }, skip, take }), prisma.user.count()]);
+  }
+
+  static async userProfile(userId: string) {
+    const [user, referralCount, transactions, orders] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId } }),
+      prisma.referral.count({ where: { referrerId: userId } }),
+      prisma.walletTransaction.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 6 }),
+      prisma.order.findMany({ where: { userId }, include: { product: true }, orderBy: { createdAt: "desc" }, take: 6 }),
+    ]);
+    return { user, referralCount, transactions, orders };
+  }
+
+  static async adjustUserBalance(userId: string, amount: number, reason: string, actorId: string) {
+    const user = amount >= 0 ? await WalletService.credit(userId, amount, reason) : await WalletService.debit(userId, Math.abs(amount), reason);
+    await this.audit(actorId, "user.balance.adjust", { userId, amount, reason });
+    return user;
+  }
+
+  static async setUserBan(userId: string, banned: boolean, actorId: string) {
+    const user = await prisma.user.update({ where: { id: userId }, data: { isBanned: banned } });
+    await this.audit(actorId, banned ? "user.ban" : "user.unban", { userId });
+    return user;
   }
 
   static async searchUsers(query: string) {
@@ -43,8 +67,18 @@ export class AdminService {
     });
   }
 
-  static async listProducts(skip: number, take: number) {
-    return Promise.all([prisma.product.findMany({ include: { category: true }, orderBy: { createdAt: "desc" }, skip, take }), prisma.product.count()]);
+  static async listProducts(page = 1, take = 8) {
+    const skip = (page - 1) * take;
+    return Promise.all([prisma.product.findMany({ include: { category: true, _count: { select: { accounts: true } } }, orderBy: { createdAt: "desc" }, skip, take }), prisma.product.count()]);
+  }
+
+  static async productDetail(productId: string) {
+    const [product, available, sold] = await Promise.all([
+      prisma.product.findUnique({ where: { id: productId }, include: { category: true } }),
+      prisma.productAccount.count({ where: { productId, status: "available" } }),
+      prisma.productAccount.count({ where: { productId, status: "sold" } }),
+    ]);
+    return { product, available, sold };
   }
 
   static async searchProducts(query: string) {
@@ -56,20 +90,61 @@ export class AdminService {
     });
   }
 
-  static async listSubmittedDeposits() {
-    return prisma.deposit.findMany({ where: { status: "submitted" }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 20 });
+  static async setProductActive(productId: string, isActive: boolean, actorId: string) {
+    const product = await prisma.product.update({ where: { id: productId }, data: { isActive } });
+    await this.audit(actorId, isActive ? "product.activate" : "product.deactivate", { productId });
+    return product;
   }
 
-  static async listOpenTickets() {
-    return prisma.ticket.findMany({ where: { status: "open" }, include: { user: true }, orderBy: { updatedAt: "desc" }, take: 20 });
+  static async updateProductPrice(productId: string, price: number, actorId: string) {
+    const product = await prisma.product.update({ where: { id: productId }, data: { price } });
+    await this.audit(actorId, "product.price.update", { productId, price });
+    return product;
   }
 
-  static async listCoupons() {
-    return prisma.coupon.findMany({ orderBy: { createdAt: "desc" }, take: 10 });
+  static async deleteProduct(productId: string, actorId: string) {
+    const product = await prisma.product.update({ where: { id: productId }, data: { isActive: false } });
+    await this.audit(actorId, "product.delete.soft", { productId });
+    return product;
   }
 
-  static async listRecentOrders() {
-    return prisma.order.findMany({ include: { user: true, product: true }, orderBy: { createdAt: "desc" }, take: 20 });
+  static async listSubmittedDeposits(page = 1, take = 8) {
+    const skip = (page - 1) * take;
+    return Promise.all([
+      prisma.deposit.findMany({ where: { status: "submitted" }, include: { user: true }, orderBy: { createdAt: "desc" }, skip, take }),
+      prisma.deposit.count({ where: { status: "submitted" } }),
+    ]);
+  }
+
+  static async depositDetail(depositId: string) {
+    return prisma.deposit.findUnique({ where: { id: depositId }, include: { user: true } });
+  }
+
+  static async listOpenTickets(page = 1, take = 8) {
+    const skip = (page - 1) * take;
+    return Promise.all([
+      prisma.ticket.findMany({ where: { status: "open" }, include: { user: true }, orderBy: { updatedAt: "desc" }, skip, take }),
+      prisma.ticket.count({ where: { status: "open" } }),
+    ]);
+  }
+
+  static async listCoupons(page = 1, take = 8) {
+    const skip = (page - 1) * take;
+    return Promise.all([prisma.coupon.findMany({ orderBy: { createdAt: "desc" }, skip, take }), prisma.coupon.count()]);
+  }
+
+  static async listRecentOrders(page = 1, take = 8) {
+    const skip = (page - 1) * take;
+    return Promise.all([prisma.order.findMany({ include: { user: true, product: true }, orderBy: { createdAt: "desc" }, skip, take }), prisma.order.count()]);
+  }
+
+  static async accountStats() {
+    const [available, sold, products] = await Promise.all([
+      prisma.productAccount.count({ where: { status: "available" } }),
+      prisma.productAccount.count({ where: { status: "sold" } }),
+      prisma.product.findMany({ where: { isActive: true }, include: { _count: { select: { accounts: true } } }, orderBy: { title: "asc" }, take: 20 }),
+    ]);
+    return { available, sold, products };
   }
 
   static invalidateDashboardCache() {

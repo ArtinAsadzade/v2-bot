@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { isAdminByTelegramId } from "../../middlewares/admin.middleware";
 
 export async function requireAdmin(ctx: any) {

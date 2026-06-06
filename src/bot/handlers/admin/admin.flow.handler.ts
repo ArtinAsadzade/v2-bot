@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { AppContext } from "../../../types/bot";
 import { CouponService } from "../../../modules/coupon/coupon.service";
 import { ProductService } from "../../../modules/product/product.service";

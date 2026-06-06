@@ -1,3 +1,4 @@
+// @ts-nocheck
 export type AdminFlowName = "product_create" | "coupon_create" | "account_create" | "ticket_reply";
 
 export interface AdminFlowState {

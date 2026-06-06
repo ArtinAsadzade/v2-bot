@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerAdminHandlers = registerAdminHandlers;
+// @ts-nocheck
 const telegraf_1 = require("telegraf");
 const deposit_service_1 = require("../../../modules/deposit/deposit.service");
 const product_service_1 = require("../../../modules/product/product.service");

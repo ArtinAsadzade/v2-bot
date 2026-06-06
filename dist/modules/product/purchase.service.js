@@ -66,9 +66,12 @@ class PurchaseService {
             });
             if (sold.count !== 1)
                 throw new Error("تحویل اکانت ناموفق بود");
-            return { order, product, account, totalAmount, discountAmount };
+            return { order, product, account, totalAmount, discountAmount, couponId, couponCode };
         }).then((result) => {
+            event_bus_service_1.eventBus.emit("order.created", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });
             event_bus_service_1.eventBus.emit("order.completed", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });
+            if (result.couponId && result.couponCode)
+                event_bus_service_1.eventBus.emit("coupon.applied", { couponId: result.couponId, code: result.couponCode, userId, orderId: result.order.id, discountAmount: result.discountAmount });
             return result;
         });
     }

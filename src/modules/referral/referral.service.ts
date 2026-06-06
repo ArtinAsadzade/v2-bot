@@ -28,6 +28,8 @@ export class ReferralService {
     await prisma.user.update({ where: { id: referredUserId }, data: { referredById: referrer.id } });
     await prisma.referralReward.create({ data: { referralId: referral.id, userId: referrer.id, amount: REFERRAL_REWARD_AMOUNT } });
     eventBus.emit("referral.created", { referralId: referral.id, referrerId: referrer.id, referredId: referredUserId });
+    const referralCount = await prisma.referral.count({ where: { referrerId: referrer.id } });
+    eventBus.emit("referral.earned", { referrerId: referrer.id, referredId: referredUserId, referralCount });
     return referral;
   }
 

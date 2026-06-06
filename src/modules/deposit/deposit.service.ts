@@ -83,6 +83,7 @@ export class DepositService {
       });
 
       await notificationService.notifyUser(deposit.userId, `✅ شارژ ${deposit.amount.toLocaleString("fa-IR")} تومانی شما تایید شد.`);
+      eventBus.emit("deposit.approved", { depositId: deposit.id, userId: deposit.userId, amount: deposit.amount, adminTelegramId });
 
       return deposit;
     });
@@ -94,6 +95,7 @@ export class DepositService {
       data: { actorId: adminTelegramId, action: "deposit.reject", metadata: JSON.stringify({ depositId }) },
     });
     await notificationService.notifyUser(deposit.userId, "❌ رسید شارژ شما رد شد.");
+    eventBus.emit("deposit.rejected", { depositId: deposit.id, userId: deposit.userId, adminTelegramId });
     return deposit;
   }
 }

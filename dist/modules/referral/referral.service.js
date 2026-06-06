@@ -27,6 +27,8 @@ class ReferralService {
         await prisma_1.prisma.user.update({ where: { id: referredUserId }, data: { referredById: referrer.id } });
         await prisma_1.prisma.referralReward.create({ data: { referralId: referral.id, userId: referrer.id, amount: REFERRAL_REWARD_AMOUNT } });
         event_bus_service_1.eventBus.emit("referral.created", { referralId: referral.id, referrerId: referrer.id, referredId: referredUserId });
+        const referralCount = await prisma_1.prisma.referral.count({ where: { referrerId: referrer.id } });
+        event_bus_service_1.eventBus.emit("referral.earned", { referrerId: referrer.id, referredId: referredUserId, referralCount });
         return referral;
     }
     static async claimPendingRewards(userId) {
