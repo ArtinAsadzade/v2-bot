@@ -1,8 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.notificationService = void 0;
+exports.registerNotificationEvents = registerNotificationEvents;
 const prisma_1 = require("./prisma");
 const logger_1 = require("./logger");
+const event_bus_service_1 = require("./event-bus.service");
 class NotificationService {
     setBot(bot) {
         this.bot = bot;
@@ -65,3 +67,30 @@ class NotificationService {
     }
 }
 exports.notificationService = new NotificationService();
+let notificationEventsRegistered = false;
+function registerNotificationEvents() {
+    if (notificationEventsRegistered)
+        return;
+    notificationEventsRegistered = true;
+    event_bus_service_1.eventBus.on("deposit.created", async (event) => {
+        await exports.notificationService.notifyAdmins({
+            text: `💳 درخواست شارژ جدید\n\nشناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`,
+            actions: [[{ text: "👁 مشاهده", callbackData: `admin:deposits` }]],
+        });
+    });
+    event_bus_service_1.eventBus.on("ticket.created", async (event) => {
+        await exports.notificationService.notifyAdmins({
+            text: `🎧 تیکت جدید\n\nشناسه: ${event.ticketId}\nکاربر: ${event.telegramId}`,
+            actions: [[{ text: "💬 ورود به چت", callbackData: `admin:ticket:${event.ticketId}` }]],
+        });
+    });
+    event_bus_service_1.eventBus.on("referral.reward.claimed", async (event) => {
+        await exports.notificationService.notifyUser(event.userId, `🎁 پاداش زیرمجموعه به مبلغ ${event.amount.toLocaleString("fa-IR")} تومان به کیف پول شما اضافه شد.`);
+    });
+    event_bus_service_1.eventBus.on("free_config.claimed", async (event) => {
+        await exports.notificationService.notifyUser(event.userId, {
+            text: `🎁 کانفیگ رایگان شما:\n\n${event.config}`,
+            actions: [[{ text: "🏠 خانه", callbackData: "home" }]],
+        });
+    });
+}

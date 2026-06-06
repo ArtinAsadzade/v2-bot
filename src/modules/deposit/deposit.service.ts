@@ -1,6 +1,7 @@
 import { prisma } from "../../services/prisma";
 import { WalletService } from "../wallet/wallet.service";
 import { notificationService } from "../../services/notification.service";
+import { eventBus } from "../../services/event-bus.service";
 
 export const DEPOSIT_WALLETS = {
   usdt: process.env.USDT_WALLET_ADDRESS ?? "TRC20_WALLET_ADDRESS",
@@ -17,7 +18,7 @@ export class DepositService {
 
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
-    return prisma.deposit.create({
+    const deposit = await prisma.deposit.create({
       data: {
         userId,
         amount,
@@ -27,6 +28,9 @@ export class DepositService {
         expiresAt,
       },
     });
+
+    eventBus.emit("deposit.created", { depositId: deposit.id, userId, amount, cryptoType, wallet: deposit.wallet });
+    return deposit;
   }
 
   static async submitReceipt(depositId: string, userId: string, receipt: string) {
@@ -54,6 +58,14 @@ export class DepositService {
           { text: "❌ رد", callbackData: `admin:deposit:reject:${updatedDeposit.id}` },
         ],
       ],
+    });
+
+    eventBus.emit("deposit.receipt.submitted", {
+      depositId: updatedDeposit.id,
+      userId: updatedDeposit.userId,
+      amount: updatedDeposit.amount,
+      cryptoType: updatedDeposit.cryptoType,
+      receipt,
     });
   }
 

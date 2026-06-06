@@ -37,6 +37,10 @@ export class ProductService {
     });
   }
 
+  static async listActiveProducts(take = 25) {
+    return prisma.product.findMany({ where: { isActive: true }, orderBy: { title: "asc" }, take });
+  }
+
   static async availableStock(productId: string) {
     return prisma.productAccount.count({ where: { productId, status: "available" } });
   }

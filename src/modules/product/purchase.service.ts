@@ -1,6 +1,7 @@
 import { prisma } from "../../services/prisma";
 import { CouponService } from "../coupon/coupon.service";
 import { WalletService } from "../wallet/wallet.service";
+import { eventBus } from "../../services/event-bus.service";
 
 export class PurchaseService {
   static async buyProduct(userId: string, productId: string, couponCode?: string) {
@@ -69,6 +70,9 @@ export class PurchaseService {
       if (sold.count !== 1) throw new Error("تحویل اکانت ناموفق بود");
 
       return { order, product, account, totalAmount, discountAmount };
+    }).then((result) => {
+      eventBus.emit("order.completed", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });
+      return result;
     });
   }
 }

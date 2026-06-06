@@ -33,6 +33,9 @@ class ProductService {
             data: { productId, username: data.username, password: data.password, config: data.config, status: "available" },
         });
     }
+    static async listActiveProducts(take = 25) {
+        return prisma_1.prisma.product.findMany({ where: { isActive: true }, orderBy: { title: "asc" }, take });
+    }
     static async availableStock(productId) {
         return prisma_1.prisma.productAccount.count({ where: { productId, status: "available" } });
     }

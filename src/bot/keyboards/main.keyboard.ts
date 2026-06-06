@@ -5,6 +5,7 @@ export function homeKeyboard(isAdmin = false) {
     [Markup.button.callback("🛒 خرید سرویس", "shop")],
     [Markup.button.callback("💰 کیف پول", "wallet"), Markup.button.callback("➕ شارژ کیف پول", "deposit")],
     [Markup.button.callback("🎧 پشتیبانی", "support")],
+    [Markup.button.callback("🎁 زیرمجموعه‌گیری", "referral"), Markup.button.callback("🆓 کانفیگ رایگان", "free_config")],
   ];
 
   if (isAdmin) {
