@@ -5,6 +5,8 @@ import { SupportService } from "../../modules/support/support.service";
 import { UserService } from "../../modules/user/user.service";
 import { currencyKeyboard } from "./deposit/start";
 import { navigationKeyboard } from "../keyboards/main.keyboard";
+import { prisma } from "../../services/prisma";
+import { AdminService } from "../../modules/admin/admin.service";
 
 export async function handleStateText(ctx: AppContext, next: () => Promise<void>) {
   const state = ctx.session.state;
@@ -54,6 +56,7 @@ export async function handleStateText(ctx: AppContext, next: () => Promise<void>
       }
       const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
       const coupon = await CouponService.create(code, percent, expiresAt, maxUses);
+      await AdminService.audit(String(ctx.from?.id ?? "system"), "coupon.create", { couponId: coupon.id, code: coupon.code });
       ctx.session.state = undefined;
       await ctx.reply(`✅ کوپن ${coupon.code} ساخته شد.`, navigationKeyboard("admin:dashboard"));
       return;
@@ -67,6 +70,7 @@ export async function handleStateText(ctx: AppContext, next: () => Promise<void>
         return;
       }
       const product = await ProductService.create({ categoryName, title, price, duration });
+      await AdminService.audit(String(ctx.from?.id ?? "system"), "product.create", { productId: product.id });
       ctx.session.state = undefined;
       await ctx.reply(`✅ محصول ${product.title} ساخته شد.`, navigationKeyboard("admin:dashboard"));
       return;
@@ -78,8 +82,49 @@ export async function handleStateText(ctx: AppContext, next: () => Promise<void>
         return;
       }
       const account = await ProductService.addAccount(state.productId, { username, password, config });
+      await AdminService.audit(String(ctx.from?.id ?? "system"), "product_account.create", { accountId: account.id, productId: state.productId });
       ctx.session.state = undefined;
       await ctx.reply(`✅ اکانت ${account.username} اضافه شد.`, navigationKeyboard("admin:dashboard"));
+      return;
+    }
+    case "admin_user_search": {
+      const query = text.replace(/^@/, "");
+      const users = await prisma.user.findMany({
+        where: {
+          OR: [
+            { telegramId: { contains: query } },
+            { username: { contains: query } },
+            { firstName: { contains: query } },
+            { lastName: { contains: query } },
+          ],
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      });
+      ctx.session.state = undefined;
+      await ctx.reply(
+        users.map((user) => `👤 ${user.telegramId} @${user.username ?? "-"} | ${user.balance.toLocaleString("fa-IR")} تومان`).join("\n") || "نتیجه‌ای پیدا نشد.",
+        navigationKeyboard("admin:users"),
+      );
+      return;
+    }
+    case "admin_product_search": {
+      const products = await prisma.product.findMany({
+        where: {
+          OR: [{ title: { contains: text } }, { category: { is: { name: { contains: text } } } }],
+        },
+        include: { category: true },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      });
+      const lines = await Promise.all(
+        products.map(async (product) => {
+          const stock = await ProductService.availableStock(product.id);
+          return `📦 ${product.title} | ${product.category.name} | ${product.price.toLocaleString("fa-IR")} تومان | موجودی ${stock.toLocaleString("fa-IR")}`;
+        }),
+      );
+      ctx.session.state = undefined;
+      await ctx.reply(lines.join("\n") || "نتیجه‌ای پیدا نشد.", navigationKeyboard("admin:products"));
       return;
     }
     case "admin_ticket_reply": {
@@ -90,7 +135,6 @@ export async function handleStateText(ctx: AppContext, next: () => Promise<void>
         return;
       }
       await SupportService.addAdminReply(ticket.id, String(ctx.from?.id), text);
-      await ctx.telegram.sendMessage(Number(ticket.user.telegramId), `📨 پاسخ پشتیبانی:\n\n${text}`);
       ctx.session.state = undefined;
       await ctx.reply("✅ پاسخ ارسال شد.", navigationKeyboard("admin:tickets"));
       return;

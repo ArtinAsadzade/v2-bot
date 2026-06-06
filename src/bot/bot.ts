@@ -3,12 +3,14 @@ import type { AppContext } from "../types/bot";
 import { logger } from "../services/logger";
 import { UserService } from "../modules/user/user.service";
 import { handleAdminFlow } from "./handlers/admin/admin.flow.handler";
+import { notificationService } from "../services/notification.service";
 
 if (!process.env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN is missing");
 }
 
 export const bot = new Telegraf<AppContext>(process.env.BOT_TOKEN);
+notificationService.setBot(bot);
 
 // ---------------- SESSION ----------------
 bot.use(
