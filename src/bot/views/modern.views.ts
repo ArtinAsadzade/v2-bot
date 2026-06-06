@@ -24,7 +24,7 @@ export function registerModernViews() {
       [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }, { text: "🆓 اکانت رایگان", action: callbackFor("freeAccount") }],
     ];
     if (isAdmin) keyboard.push([{ text: "⚙️ پنل مدیریت", action: callbackFor("admin.dashboard") }]);
-    return { text: `سلام ${ctx.from?.first_name ?? "دوست عزیز"} 🌿\n\nبه پنل هوشمند بازارچه خوش آمدید.\n\nموجودی شما: ${money(user?.balance ?? 0)}\n\nاز منوی زیر انتخاب کنید:`, keyboard };
+    return { text: `سلام ${ctx.from?.first_name ?? "دوست عزیز"} 🌿\n\nبه پنل هوشمند نیمه شب خوش آمدید.\n\nموجودی شما: ${money(user?.balance ?? 0)}\n\nاز منوی زیر انتخاب کنید:`, keyboard };
   });
 
   registerView("shop.categories", async () => {
