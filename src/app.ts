@@ -3,41 +3,36 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import { bot } from "./bot/bot";
+import { registerHandlers } from "./bot/handlers";
+import { cleanExpiredDeposits } from "./jobs/depositCleaner";
 import { logger } from "./services/logger";
-
-import "./bot/handlers/start";
-import "./bot/handlers/wallet";
-
-import "./bot/handlers/deposit/start";
-import "./bot/handlers/deposit/create";
-import "./bot/handlers/deposit/receipt";
-
-import "./bot/handlers/admin/deposit.admin";
-
-import "./bot/handlers/support/start";
-import "./bot/handlers/support/messages";
-import "./bot/handlers/admin/support.admin";
-
-import "./bot/handlers/coupon/apply";
-
-import "./bot/handlers/admin/panel";
-import "./bot/handlers/admin/coupon.admin";
+import { prisma } from "./services/prisma";
 
 async function bootstrap() {
   try {
     logger.info("Bot starting...");
+    registerHandlers(bot);
+
+    await cleanExpiredDeposits();
+    setInterval(() => {
+      cleanExpiredDeposits().catch((error) => logger.error("Deposit cleaner failed", { error: error instanceof Error ? error.message : String(error) }));
+    }, 60_000);
 
     await bot.launch();
-
     logger.info("Bot is running");
   } catch (error) {
-    logger.error("Failed to start bot");
-    console.error(error);
+    logger.error("Failed to start bot", { error: error instanceof Error ? error.message : String(error) });
     process.exit(1);
   }
 }
 
 bootstrap();
 
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+async function shutdown(signal: string) {
+  logger.info(`Stopping bot: ${signal}`);
+  bot.stop(signal);
+  await prisma.$disconnect();
+}
+
+process.once("SIGINT", () => void shutdown("SIGINT"));
+process.once("SIGTERM", () => void shutdown("SIGTERM"));

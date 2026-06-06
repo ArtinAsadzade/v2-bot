@@ -181,8 +181,9 @@ model Product {
   updatedAt  DateTime @updatedAt
 
   category Category         @relation(fields: [categoryId], references: [id])
-  accounts ProductAccount[]
-  orders   Order[]
+  accounts   ProductAccount[]
+  orders     Order[]
+  orderItems OrderItem[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -206,6 +207,7 @@ model ProductAccount {
   items   OrderItem[]
 
   @@index([productId, status])
+  @@index([reservedBy])
   @@index([soldTo])
 }
 
@@ -239,9 +241,11 @@ model OrderItem {
   deliveredConfig    String
 
   order          Order          @relation(fields: [orderId], references: [id])
+  product        Product        @relation(fields: [productId], references: [id])
   productAccount ProductAccount @relation(fields: [productAccountId], references: [id])
 
   @@index([orderId])
+  @@index([productId])
   @@index([productAccountId])
 }
 

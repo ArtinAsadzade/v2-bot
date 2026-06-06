@@ -1,15 +1,13 @@
 import { prisma } from "../services/prisma";
 
 export async function cleanExpiredDeposits() {
-  const now = new Date();
-
-  await prisma.deposit.updateMany({
+  return prisma.deposit.updateMany({
     where: {
       status: "pending",
-      expiresAt: { lt: now },
+      expiresAt: { lt: new Date() },
     },
     data: {
-      status: "rejected",
+      status: "expired",
     },
   });
 }
