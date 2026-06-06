@@ -6,6 +6,7 @@ const logger_1 = require("../services/logger");
 const user_service_1 = require("../modules/user/user.service");
 const notification_service_1 = require("../services/notification.service");
 const access_control_middleware_1 = require("./middlewares/access-control.middleware");
+const forced_join_middleware_1 = require("./middlewares/forced-join.middleware");
 if (!process.env.BOT_TOKEN) {
     throw new Error("BOT_TOKEN is missing");
 }
@@ -21,6 +22,7 @@ exports.bot.use(async (ctx, next) => {
     await next();
 });
 exports.bot.use((0, access_control_middleware_1.accessControlMiddleware)());
+exports.bot.use((0, forced_join_middleware_1.forcedJoinMiddleware)());
 exports.bot.catch((error, ctx) => {
     logger_1.logger.error("Unhandled bot error", {
         updateId: ctx.update.update_id,

@@ -5,13 +5,15 @@ const prisma_1 = require("../../services/prisma");
 const wallet_service_1 = require("../wallet/wallet.service");
 const deposit_service_1 = require("../deposit/deposit.service");
 const system_service_1 = require("../system/system.service");
+const coupon_service_1 = require("../coupon/coupon.service");
+const forced_join_service_1 = require("../system/forced-join.service");
 const DASHBOARD_CACHE_TTL_MS = 30000;
 let dashboardCache;
 class AdminService {
     static async dashboard(forceRefresh = false) {
         if (!forceRefresh && dashboardCache && dashboardCache.expiresAt > Date.now())
             return dashboardCache.stats;
-        const [users, products, submittedDeposits, openTickets, orders, revenue, availableAccounts, soldAccounts, referralRewards, freeRewards] = await Promise.all([
+        const [users, products, submittedDeposits, openTickets, orders, revenue, availableAccounts, soldAccounts, referralRewards, freeAccountsAvailable, freeAccountsAssigned] = await Promise.all([
             prisma_1.prisma.user.count(),
             prisma_1.prisma.product.count(),
             prisma_1.prisma.deposit.count({ where: { status: "submitted" } }),
@@ -21,9 +23,10 @@ class AdminService {
             prisma_1.prisma.productAccount.count({ where: { status: "available" } }),
             prisma_1.prisma.productAccount.count({ where: { status: "sold" } }),
             prisma_1.prisma.referralReward.aggregate({ _sum: { amount: true }, _count: true }),
-            prisma_1.prisma.freeConfigReward.count(),
+            prisma_1.prisma.freeAccount.count({ where: { status: "available" } }),
+            prisma_1.prisma.freeAccount.count({ where: { status: "assigned" } }),
         ]);
-        const stats = { users, products, submittedDeposits, openTickets, orders, revenue: revenue._sum.finalPaidAmount ?? 0, availableAccounts, soldAccounts, referralRewards: referralRewards._sum.amount ?? 0, freeRewards };
+        const stats = { users, products, submittedDeposits, openTickets, orders, revenue: revenue._sum.finalPaidAmount ?? 0, availableAccounts, soldAccounts, referralRewards: referralRewards._sum.amount ?? 0, freeAccountsAvailable, freeAccountsAssigned };
         dashboardCache = { expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS, stats };
         return stats;
     }
@@ -112,8 +115,6 @@ class AdminService {
                 await tx.couponUsage.updateMany({ where: { orderId: { in: orderIds } }, data: { orderId: null } });
             await tx.orderItem.deleteMany({ where: { productId } });
             await tx.order.deleteMany({ where: { productId } });
-            await tx.freeAccountAssignment.deleteMany({ where: { productId } });
-            await tx.freeAccountPool.deleteMany({ where: { productId } });
             await tx.productAccount.deleteMany({ where: { productId } });
             const product = await tx.product.delete({ where: { id: productId } });
             await tx.auditLog.create({ data: { actorId, action: "product.delete.hard", metadata: JSON.stringify({ productId, force, activeOrders }) } });
@@ -137,9 +138,11 @@ class AdminService {
             prisma_1.prisma.ticket.count({ where: { status: "open" } }),
         ]);
     }
-    static async listCoupons(page = 1, take = 8) {
-        const skip = (page - 1) * take;
-        return Promise.all([prisma_1.prisma.coupon.findMany({ orderBy: { createdAt: "desc" }, skip, take }), prisma_1.prisma.coupon.count()]);
+    static async listCoupons(page = 1, take = 8, query, status) {
+        return coupon_service_1.CouponService.list({ page, take, query, status });
+    }
+    static async couponDetail(couponId) {
+        return prisma_1.prisma.coupon.findUnique({ where: { id: couponId } });
     }
     static async listRecentOrders(page = 1, take = 8) {
         const skip = (page - 1) * take;
@@ -166,6 +169,18 @@ class AdminService {
         const setting = await deposit_service_1.FinancialSettingsService.setMinimumTopupAmount(amount, actorId);
         this.invalidateDashboardCache();
         return setting;
+    }
+    static async forcedJoinChannels() {
+        return forced_join_service_1.ForcedJoinService.listAll();
+    }
+    static async saveForcedJoinChannel(data, actorId) {
+        return forced_join_service_1.ForcedJoinService.upsert(data, actorId);
+    }
+    static async setForcedJoinStatus(channelId, status, actorId) {
+        return forced_join_service_1.ForcedJoinService.setStatus(channelId, status, actorId);
+    }
+    static async deleteForcedJoinChannel(channelId, actorId) {
+        return forced_join_service_1.ForcedJoinService.delete(channelId, actorId);
     }
     static async accountStats() {
         const [available, sold, products] = await Promise.all([

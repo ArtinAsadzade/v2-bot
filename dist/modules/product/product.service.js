@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ProductService = void 0;
 const prisma_1 = require("../../services/prisma");
-const event_bus_service_1 = require("../../services/event-bus.service");
 class ProductService {
     static async getCategories() {
         return prisma_1.prisma.category.findMany({
@@ -87,22 +86,6 @@ class ProductService {
     }
     static async availableStock(productId) {
         return prisma_1.prisma.productAccount.count({ where: { productId, status: "available" } });
-    }
-    static async claimFreeAccount(userId, productId) {
-        const product = await prisma_1.prisma.product.findUnique({ where: { id: productId } });
-        if (!product)
-            throw new Error("محصول پیدا نشد");
-        const account = await prisma_1.prisma.$transaction(async (tx) => {
-            const candidate = await tx.productAccount.findFirst({ where: { productId, status: "available" }, orderBy: { createdAt: "asc" } });
-            if (!candidate)
-                throw new Error("اکانت رایگان برای این محصول موجود نیست");
-            const updated = await tx.productAccount.updateMany({ where: { id: candidate.id, status: "available" }, data: { status: "sold", soldTo: userId, soldAt: new Date() } });
-            if (updated.count !== 1)
-                throw new Error("تحویل اکانت ناموفق بود");
-            return candidate;
-        });
-        event_bus_service_1.eventBus.emit("free_account.assigned", { userId, productId, accountId: account.id, reason: "manual_claim" });
-        return { product, account };
     }
 }
 exports.ProductService = ProductService;

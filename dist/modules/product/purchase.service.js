@@ -14,14 +14,16 @@ class PurchaseService {
             let discountAmount = 0;
             let couponId = null;
             let couponMaxUses = 0;
+            const originalAmount = product.price;
+            let totalAmount = originalAmount;
             if (couponCode) {
-                const coupon = await coupon_service_1.CouponService.validateForUser(couponCode, userId, tx);
+                const coupon = await coupon_service_1.CouponService.validateForUser(couponCode, userId, tx, originalAmount);
                 couponId = coupon.id;
-                discountAmount = Math.floor((product.price * coupon.discountPercent) / 100);
+                const calculation = coupon_service_1.CouponService.calculate(coupon, originalAmount);
+                discountAmount = calculation.discountAmount;
+                totalAmount = calculation.finalAmount;
                 couponMaxUses = coupon.maxUses;
             }
-            const originalAmount = product.price;
-            const totalAmount = Math.max(originalAmount - discountAmount, 0);
             const account = await tx.productAccount.findFirst({
                 where: { productId, status: "available" },
                 orderBy: { createdAt: "asc" },

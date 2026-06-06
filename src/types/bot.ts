@@ -10,7 +10,7 @@ export type ConversationState =
   | { name: "admin_user_search" }
   | { name: "admin_product_search" };
 
-export type FlowName = "product_create" | "account_create" | "coupon_create" | "deposit_submit" | "ticket_reply" | "coupon_code" | "product_search" | "wallet_adjust" | "free_account_create" | "product_price" | "crypto_wallet_create" | "minimum_topup" | "referral_tier_create" | "store_status";
+export type FlowName = "product_create" | "account_create" | "coupon_create" | "deposit_submit" | "ticket_reply" | "coupon_code" | "product_search" | "wallet_adjust" | "free_account_create" | "product_price" | "crypto_wallet_create" | "minimum_topup" | "referral_tier_create" | "store_status" | "forced_join_create";
 
 export interface ActiveFlow {
   name: FlowName;

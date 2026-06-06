@@ -87,6 +87,10 @@ class CryptoWalletService {
         return {
             amount,
             exchangeRate,
+            coinUsdPrice: rate.usd,
+            usdTomanRate: rate.usdToman,
+            rateSource: rate.source,
+            stale: rate.stale,
             cryptoAmount: roundCrypto(amount / exchangeRate),
             wallet: { id: wallet.id, coinName: wallet.coinName, networkName: wallet.networkName, walletAddress: wallet.walletAddress },
         };
@@ -132,13 +136,16 @@ class DepositService {
     static async approve(depositId, adminTelegramId) {
         return prisma_1.prisma.$transaction(async (tx) => {
             const deposit = await tx.deposit.findUnique({ where: { id: depositId } });
-            if (!deposit || deposit.status !== "submitted")
-                throw new Error("درخواست شارژ قابل تایید نیست");
-            const approved = await tx.deposit.updateMany({ where: { id: depositId, status: "submitted" }, data: { status: "approved" } });
+            if (!deposit)
+                throw new Error("درخواست شارژ پیدا نشد");
+            if (deposit.status !== "submitted")
+                throw new Error("⚠️ این پرداخت قبلاً تعیین وضعیت شده است.");
+            const now = new Date();
+            const approved = await tx.deposit.updateMany({ where: { id: depositId, status: "submitted" }, data: { status: "approved", reviewedBy: adminTelegramId, reviewedAt: now, reviewAction: "APPROVED" } });
             if (approved.count !== 1)
-                throw new Error("این درخواست قبلاً پردازش شده است");
+                throw new Error("⚠️ این پرداخت قبلاً تعیین وضعیت شده است.");
             await wallet_service_1.WalletService.credit(deposit.userId, deposit.amount, `تایید شارژ ${deposit.id}`, tx);
-            await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.approve", metadata: JSON.stringify({ depositId }) } });
+            await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.approve", metadata: JSON.stringify({ depositId, action: "APPROVED", reviewedAt: now.toISOString() }) } });
             await notification_service_1.notificationService.notifyUser(deposit.userId, `✅ شارژ ${deposit.amount.toLocaleString("fa-IR")} تومانی شما تایید شد.`);
             event_bus_service_1.eventBus.emit("deposit.approved", { depositId: deposit.id, userId: deposit.userId, amount: deposit.amount, adminTelegramId });
             return deposit;
@@ -147,12 +154,15 @@ class DepositService {
     static async reject(depositId, adminTelegramId) {
         const deposit = await prisma_1.prisma.$transaction(async (tx) => {
             const current = await tx.deposit.findUnique({ where: { id: depositId } });
-            if (!current || current.status !== "submitted")
-                throw new Error("درخواست شارژ قابل رد نیست");
-            const rejected = await tx.deposit.updateMany({ where: { id: depositId, status: "submitted" }, data: { status: "rejected" } });
+            if (!current)
+                throw new Error("درخواست شارژ پیدا نشد");
+            if (current.status !== "submitted")
+                throw new Error("⚠️ این پرداخت قبلاً تعیین وضعیت شده است.");
+            const now = new Date();
+            const rejected = await tx.deposit.updateMany({ where: { id: depositId, status: "submitted" }, data: { status: "rejected", reviewedBy: adminTelegramId, reviewedAt: now, reviewAction: "REJECTED" } });
             if (rejected.count !== 1)
-                throw new Error("این درخواست قبلاً پردازش شده است");
-            await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.reject", metadata: JSON.stringify({ depositId }) } });
+                throw new Error("⚠️ این پرداخت قبلاً تعیین وضعیت شده است.");
+            await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.reject", metadata: JSON.stringify({ depositId, action: "REJECTED", reviewedAt: now.toISOString() }) } });
             return current;
         });
         await notification_service_1.notificationService.notifyUser(deposit.userId, "❌ رسید شارژ شما رد شد.");

@@ -6,8 +6,8 @@ const notification_service_1 = require("../../services/notification.service");
 const logger_1 = require("../../services/logger");
 const STORE_STATUS_CACHE_TTL_MS = 30000;
 const USER_STATUS_CACHE_TTL_MS = 15000;
-exports.BLOCKED_USER_MESSAGE = "⛔ حساب کاربری شما توسط مدیریت مسدود شده است.\nدر صورت نیاز با پشتیبانی تماس بگیرید.";
-exports.STORE_DISABLED_MESSAGE = "🚧 فروشگاه در حال حاضر غیرفعال است.\nلطفاً بعداً مجدداً تلاش کنید.";
+exports.BLOCKED_USER_MESSAGE = "⛔ حساب کاربری شما مسدود شده است.";
+exports.STORE_DISABLED_MESSAGE = "🚧 فروشگاه موقتاً غیرفعال است.";
 let storeStatusCache;
 const userStatusCache = new Map();
 class SystemSettingsService {
@@ -112,14 +112,14 @@ class CryptoRateService {
             const usd = prices[COINGECKO_IDS[coin]]?.usd;
             if (!usd || usd <= 0)
                 throw new Error(`Missing price for ${coin}`);
-            return { coin, usd, toman: usd * usdToman, fetchedAt, source: "coingecko", stale: false };
+            return { coin, usd, usdToman, toman: usd * usdToman, fetchedAt, source: "coingecko", stale: false };
         });
     }
     static async getDbFallback(coin) {
         const wallet = await prisma_1.prisma.cryptoWallet.findFirst({ where: { coinName: coin, rateToman: { gt: 0 } }, orderBy: { updatedAt: "desc" } });
         if (!wallet)
             return undefined;
-        return { coin, usd: 0, toman: wallet.rateToman, fetchedAt: wallet.lastRateAt ?? wallet.updatedAt, source: "database", stale: true };
+        return { coin, usd: 0, usdToman: 0, toman: wallet.rateToman, fetchedAt: wallet.lastRateAt ?? wallet.updatedAt, source: "database", stale: true };
     }
     static async notifyAdminsProviderUnavailable(coin) {
         if (Date.now() - lastAdminRateAlertAt < 30 * 60000)

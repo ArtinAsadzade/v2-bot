@@ -94,17 +94,5 @@ export class ProductService {
     return prisma.productAccount.count({ where: { productId, status: "available" } });
   }
 
-  static async claimFreeAccount(userId: string, productId: string) {
-    const product = await prisma.product.findUnique({ where: { id: productId } });
-    if (!product) throw new Error("محصول پیدا نشد");
-    const account = await prisma.$transaction(async (tx) => {
-      const candidate = await tx.productAccount.findFirst({ where: { productId, status: "available" }, orderBy: { createdAt: "asc" } });
-      if (!candidate) throw new Error("اکانت رایگان برای این محصول موجود نیست");
-      const updated = await tx.productAccount.updateMany({ where: { id: candidate.id, status: "available" }, data: { status: "sold", soldTo: userId, soldAt: new Date() } });
-      if (updated.count !== 1) throw new Error("تحویل اکانت ناموفق بود");
-      return candidate;
-    });
-    eventBus.emit("free_account.assigned", { userId, productId, accountId: account.id, reason: "manual_claim" });
-    return { product, account };
-  }
+
 }

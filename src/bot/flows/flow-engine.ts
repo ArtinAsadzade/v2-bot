@@ -138,13 +138,16 @@ const definitions: Record<FlowName, FlowDefinition> = {
   },
   free_account_create: {
     firstStep: "username",
-    prompt: "🎁 نام کاربری اکانت رایگان را وارد کنید:",
+    prompt: "🎁 نام کاربری اکانت تست رایگان را وارد کنید:",
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
-      if (flow.step === "username") { flow.data.username = text.trim(); flow.step = "password"; return { text: "رمز عبور اکانت رایگان را وارد کنید:", nextStep: "password" }; }
-      if (flow.step === "password") { flow.data.password = text.trim(); flow.step = "config"; return { text: "کانفیگ اکانت رایگان را وارد کنید:", nextStep: "config" }; }
-      await FreeAccountService.addToPool(String(flow.data.productId), { username: String(flow.data.username), password: String(flow.data.password), config: text.trim() });
-      return { done: true, text: "✅ اکانت به استخر رایگان اضافه شد.", returnTo: { id: "admin.freeAccounts" } };
+      if (flow.step === "username") { flow.data.username = text.trim(); flow.step = "subscriptionLink"; return { text: "لینک اشتراک اکانت تست را وارد کنید:", nextStep: "subscriptionLink" }; }
+      if (flow.step === "subscriptionLink") { flow.data.subscriptionLink = text.trim(); flow.step = "configLink"; return { text: "لینک کانفیگ اکانت تست را وارد کنید:", nextStep: "configLink" }; }
+      if (flow.step === "configLink") { flow.data.configLink = text.trim(); flow.step = "durationDays"; return { text: "مدت اعتبار اکانت تست را به روز وارد کنید:", nextStep: "durationDays" }; }
+      const durationDays = Number(text.replace(/[,،\s]/g, ""));
+      if (!Number.isInteger(durationDays) || durationDays <= 0) return { text: "مدت اعتبار معتبر نیست. یک عدد مثبت وارد کنید:" };
+      await FreeAccountService.addToInventory({ username: String(flow.data.username), subscriptionLink: String(flow.data.subscriptionLink), configLink: String(flow.data.configLink), durationDays }, String(ctx.from?.id ?? "admin"));
+      return { done: true, text: "✅ اکانت تست رایگان به موجودی مستقل اضافه شد.", returnTo: { id: "admin.freeAccounts" } };
     },
   },
   coupon_create: {
@@ -152,11 +155,14 @@ const definitions: Record<FlowName, FlowDefinition> = {
     prompt: "🎟 کد کوپن را وارد کنید:",
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
-      if (flow.step === "code") { flow.data.code = text.trim(); flow.step = "percent"; return { text: "درصد تخفیف را وارد کنید:", nextStep: "percent" }; }
-      if (flow.step === "percent") { const percent = Number(text); if (!Number.isInteger(percent) || percent < 1 || percent > 100) return { text: "درصد معتبر نیست:" }; flow.data.percent = percent; flow.step = "maxUses"; return { text: "حداکثر تعداد استفاده را وارد کنید:", nextStep: "maxUses" }; }
-      if (flow.step === "maxUses") { const maxUses = Number(text); if (!Number.isInteger(maxUses) || maxUses <= 0) return { text: "تعداد معتبر نیست:" }; flow.data.maxUses = maxUses; flow.step = "days"; return { text: "اعتبار کوپن چند روز باشد؟", nextStep: "days" }; }
-      const days = Number(text); if (!Number.isInteger(days) || days <= 0) return { text: "تعداد روز معتبر نیست:" };
-      await CouponService.create(String(flow.data.code), Number(flow.data.percent), new Date(Date.now() + days * 86_400_000), Number(flow.data.maxUses));
+      if (flow.step === "code") { flow.data.code = text.trim(); flow.step = "type"; return { text: "نوع کوپن را وارد کنید (درصدی / ثابت):", nextStep: "type" }; }
+      if (flow.step === "type") { flow.data.type = text.includes("ثابت") || text.toLowerCase() === "fixed" ? "fixed" : "percentage"; flow.step = "value"; return { text: flow.data.type === "fixed" ? "مبلغ تخفیف را به تومان وارد کنید:" : "درصد تخفیف را وارد کنید:", nextStep: "value" }; }
+      if (flow.step === "value") { const value = Number(text.replace(/[,،\s]/g, "")); if (!Number.isInteger(value) || value <= 0 || (flow.data.type === "percentage" && value > 100)) return { text: "مقدار تخفیف معتبر نیست:" }; flow.data.value = value; flow.step = "maxUses"; return { text: "حداکثر تعداد استفاده کل را وارد کنید:", nextStep: "maxUses" }; }
+      if (flow.step === "maxUses") { const maxUses = Number(text.replace(/[,،\s]/g, "")); if (!Number.isInteger(maxUses) || maxUses <= 0) return { text: "تعداد معتبر نیست:" }; flow.data.maxUses = maxUses; flow.step = "perUserLimit"; return { text: "حداکثر استفاده هر کاربر را وارد کنید:", nextStep: "perUserLimit" }; }
+      if (flow.step === "perUserLimit") { const perUserLimit = Number(text.replace(/[,،\s]/g, "")); if (!Number.isInteger(perUserLimit) || perUserLimit <= 0) return { text: "محدودیت هر کاربر معتبر نیست:" }; flow.data.perUserLimit = perUserLimit; flow.step = "minimumPurchaseAmount"; return { text: "حداقل مبلغ خرید را به تومان وارد کنید (برای بدون حداقل، 0):", nextStep: "minimumPurchaseAmount" }; }
+      if (flow.step === "minimumPurchaseAmount") { const minimumPurchaseAmount = Number(text.replace(/[,،\s]/g, "")); if (!Number.isInteger(minimumPurchaseAmount) || minimumPurchaseAmount < 0) return { text: "حداقل مبلغ خرید معتبر نیست:" }; flow.data.minimumPurchaseAmount = minimumPurchaseAmount; flow.step = "days"; return { text: "اعتبار کوپن چند روز باشد؟", nextStep: "days" }; }
+      const days = Number(text.replace(/[,،\s]/g, "")); if (!Number.isInteger(days) || days <= 0) return { text: "تعداد روز معتبر نیست:" };
+      await CouponService.createAdvanced({ code: String(flow.data.code), type: flow.data.type === "fixed" ? "fixed" : "percentage", value: Number(flow.data.value), maxUses: Number(flow.data.maxUses), perUserLimit: Number(flow.data.perUserLimit), minimumPurchaseAmount: Number(flow.data.minimumPurchaseAmount), expiresAt: new Date(Date.now() + days * 86_400_000) }, String(ctx.from?.id ?? "admin"));
       return { done: true, text: "✅ کوپن جدید ساخته شد.", returnTo: { id: "admin.coupons" } };
     },
   },
@@ -218,6 +224,17 @@ const definitions: Record<FlowName, FlowDefinition> = {
       const status = text.includes("غیر") || text.toLowerCase() === "inactive" ? "inactive" : "active";
       await AdminService.setStoreStatus(status, String(ctx.from?.id ?? "admin"));
       return { done: true, text: "✅ وضعیت فروشگاه ذخیره شد.", returnTo: { id: "admin.store" } };
+    },
+  },
+  forced_join_create: {
+    firstStep: "chatId",
+    prompt: "📢 شناسه کانال عضویت اجباری را وارد کنید (مثلاً @channel یا -100...):",
+    async handleText(ctx, text) {
+      const flow = ctx.session.flow!;
+      if (flow.step === "chatId") { flow.data.chatId = text.trim(); flow.step = "title"; return { text: "عنوان نمایشی کانال را وارد کنید:", nextStep: "title" }; }
+      if (flow.step === "title") { flow.data.title = text.trim(); flow.step = "inviteLink"; return { text: "لینک عضویت کانال را وارد کنید (اگر عمومی است لینک t.me):", nextStep: "inviteLink" }; }
+      await AdminService.saveForcedJoinChannel({ chatId: String(flow.data.chatId), title: String(flow.data.title), inviteLink: text.trim(), status: "active" }, String(ctx.from?.id ?? "admin"));
+      return { done: true, text: "✅ کانال عضویت اجباری ذخیره شد.", returnTo: { id: "admin.forcedJoin" } };
     },
   },
 
