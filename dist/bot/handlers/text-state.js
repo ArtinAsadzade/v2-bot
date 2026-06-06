@@ -42,7 +42,7 @@ async function handleStateText(ctx, next) {
                 const coupon = await coupon_service_1.CouponService.validateForUser(text, user.id);
                 ctx.session.selectedCoupons = { ...(ctx.session.selectedCoupons ?? {}), [state.productId]: coupon.code };
                 ctx.session.state = undefined;
-                await ctx.reply(`✅ کد تخفیف ${coupon.discountPercent}% برای این خرید ثبت شد.`, (0, main_keyboard_1.navigationKeyboard)(`product:${state.productId}`));
+                await ctx.reply(`✅ کد تخفیف ${coupon.type === "percentage" ? `${coupon.value || coupon.discountPercent || 0}%` : `${coupon.value.toLocaleString("fa-IR")} تومان`} برای این خرید ثبت شد.`, (0, main_keyboard_1.navigationKeyboard)(`product:${state.productId}`));
             }
             catch (error) {
                 await ctx.reply(`❌ ${error instanceof Error ? error.message : "کد تخفیف معتبر نیست"}`, (0, main_keyboard_1.navigationKeyboard)(`product:${state.productId}`));

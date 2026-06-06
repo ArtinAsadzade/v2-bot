@@ -42,8 +42,8 @@ export class UserService {
       prisma.order.findMany({ where: { userId }, include: { product: true }, orderBy: { createdAt: "desc" }, take: 10 }),
       prisma.walletTransaction.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 10 }),
       prisma.referral.count({ where: { referrerId: userId } }),
-      prisma.referralReward.aggregate({ where: { userId, status: "pending" }, _sum: { amount: true }, _count: true }),
-      prisma.freeConfigReward.count({ where: { userId, status: "available" } }),
+      prisma.referralReward.aggregate({ where: { userId, status: { in: ["pending", "claimable"] } }, _sum: { amount: true }, _count: true }),
+      prisma.freeAccountAssignment.count({ where: { userId } }),
     ]);
     return {
       user,

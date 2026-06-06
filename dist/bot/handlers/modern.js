@@ -9,6 +9,7 @@ const referral_service_1 = require("../../modules/referral/referral.service");
 const purchase_service_1 = require("../../modules/product/purchase.service");
 const deposit_service_1 = require("../../modules/deposit/deposit.service");
 const admin_service_1 = require("../../modules/admin/admin.service");
+const coupon_service_1 = require("../../modules/coupon/coupon.service");
 const support_service_1 = require("../../modules/support/support.service");
 const free_account_service_1 = require("../../modules/free-account/free-account.service");
 const admin_middleware_1 = require("../middlewares/admin.middleware");
@@ -112,11 +113,54 @@ ${error instanceof Error ? error.message : "در انجام درخواست مش�
             const deposit = await deposit_service_1.DepositService.createDeposit(user.id, amount, walletId);
             flow.step = "receipt";
             flow.data.depositId = deposit.id;
-            await ctx.editMessageText(`⏳ درخواست پرداخت آماده شد\n\nمبلغ شارژ:\n${quote.amount.toLocaleString("fa-IR")} تومان\n\nرمز ارز:\n${quote.wallet.coinName}\n\nشبکه:\n${quote.wallet.networkName}\n\nنرخ:\n${quote.exchangeRate.toLocaleString("fa-IR")} تومان\n\nمبلغ قابل پرداخت:\n${quote.cryptoAmount.toLocaleString("fa-IR", { maximumFractionDigits: 8 })} ${quote.wallet.coinName}\n\nآدرس کیف پول:\n${quote.wallet.walletAddress}\n\n⏳ مهلت پرداخت: ۳۰ دقیقه\n📤 پس از پرداخت، تصویر رسید را ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "❌ لغو", callback_data: "flow:cancel" }]] } });
+            await ctx.editMessageText(`⏳ درخواست پرداخت آماده شد
+
+مبلغ شارژ:
+${quote.amount.toLocaleString("fa-IR")} تومان
+
+رمز ارز:
+${quote.wallet.coinName}
+
+شبکه:
+${quote.wallet.networkName}
+
+قیمت دلاری هر ${quote.wallet.coinName}:
+${quote.coinUsdPrice ? `${quote.coinUsdPrice.toLocaleString("fa-IR")} دلار` : "نرخ ذخیره‌شده"}
+
+نرخ دلار به تومان:
+${quote.usdTomanRate ? `${quote.usdTomanRate.toLocaleString("fa-IR")} تومان` : "نرخ ذخیره‌شده"}
+
+قیمت تومان هر ${quote.wallet.coinName}:
+${quote.exchangeRate.toLocaleString("fa-IR")} تومان
+
+مبلغ نهایی قابل پرداخت:
+${quote.cryptoAmount.toLocaleString("fa-IR", { maximumFractionDigits: 8 })} ${quote.wallet.coinName}
+
+آدرس کیف پول:
+${quote.wallet.walletAddress}
+
+⏳ مهلت پرداخت: ۳۰ دقیقه
+📤 پس از پرداخت، تصویر رسید را ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "❌ لغو", callback_data: "flow:cancel" }]] } });
         }
         catch (error) {
             await ctx.reply(`⚠️ ${error instanceof Error ? error.message : "ایجاد درخواست شارژ ناموفق بود. لطفاً دوباره تلاش کنید."}`);
         }
+    });
+    bot.action("freeAccount:claim", async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from)
+            return;
+        const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
+        if (!user)
+            return;
+        try {
+            const account = await free_account_service_1.FreeAccountService.assign(user.id, "user_claim");
+            await ctx.reply(`✅ اکانت تست رایگان اختصاص یافت.\n\nنام کاربری: ${account.username}\nلینک اشتراک: ${account.subscriptionLink}\nلینک کانفیگ: ${account.configLink}\nمدت: ${account.durationDays.toLocaleString("fa-IR")} روز`);
+        }
+        catch (error) {
+            await ctx.answerCbQuery(error instanceof Error ? error.message : "دریافت اکانت رایگان ناموفق بود");
+        }
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "freeAccount" }, "replace");
     });
     bot.action("referral:claim", async (ctx) => {
         await ctx.answerCbQuery();
@@ -140,6 +184,37 @@ ${error instanceof Error ? error.message : "در انجام درخواست مش�
         await ctx.answerCbQuery();
         await admin_service_1.AdminService.setStoreStatus(ctx.match[1], String(ctx.from.id));
         await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.store" }, "replace");
+    });
+    bot.action(/^admin:coupon:status:([^:]+):(active|inactive)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await coupon_service_1.CouponService.setStatus(ctx.match[1], ctx.match[2], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.coupon", params: { couponId: ctx.match[1] } }, "replace");
+    });
+    bot.action(/^admin:coupon:(soft_delete|hard_delete):([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        if (ctx.match[1] === "soft_delete")
+            await coupon_service_1.CouponService.softDelete(ctx.match[2], String(ctx.from.id));
+        else
+            await coupon_service_1.CouponService.hardDelete(ctx.match[2], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.coupons" }, "replace");
+    });
+    bot.action(/^admin:forced_join:status:([^:]+):(active|inactive)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await admin_service_1.AdminService.setForcedJoinStatus(ctx.match[1], ctx.match[2], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.forcedJoin" }, "replace");
+    });
+    bot.action(/^admin:forced_join:delete:([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await admin_service_1.AdminService.deleteForcedJoinChannel(ctx.match[1], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.forcedJoin" }, "replace");
     });
     bot.action(/^admin:referral:tier:status:([^:]+):([01])$/, async (ctx) => {
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
@@ -193,10 +268,15 @@ ${error instanceof Error ? error.message : "در انجام درخواست مش�
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
             return ctx.answerCbQuery("دسترسی غیرمجاز");
         await ctx.answerCbQuery();
-        if (ctx.match[1] === "approve")
-            await deposit_service_1.DepositService.approve(ctx.match[2], String(ctx.from.id));
-        else
-            await deposit_service_1.DepositService.reject(ctx.match[2], String(ctx.from.id));
+        try {
+            if (ctx.match[1] === "approve")
+                await deposit_service_1.DepositService.approve(ctx.match[2], String(ctx.from.id));
+            else
+                await deposit_service_1.DepositService.reject(ctx.match[2], String(ctx.from.id));
+        }
+        catch (error) {
+            await ctx.answerCbQuery(error instanceof Error ? error.message : "عملیات ناموفق بود");
+        }
         await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.deposits" }, "replace");
     });
     bot.action(/^admin:ticket:close:(.+)$/, async (ctx) => {

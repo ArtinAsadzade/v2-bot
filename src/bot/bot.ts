@@ -4,6 +4,7 @@ import { logger } from "../services/logger";
 import { UserService } from "../modules/user/user.service";
 import { notificationService, registerNotificationEvents } from "../services/notification.service";
 import { accessControlMiddleware } from "./middlewares/access-control.middleware";
+import { forcedJoinMiddleware } from "./middlewares/forced-join.middleware";
 
 if (!process.env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN is missing");
@@ -25,6 +26,7 @@ bot.use(async (ctx, next) => {
 });
 
 bot.use(accessControlMiddleware());
+bot.use(forcedJoinMiddleware());
 
 bot.catch((error, ctx) => {
   logger.error("Unhandled bot error", {

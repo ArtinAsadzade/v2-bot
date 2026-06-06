@@ -2,33 +2,135 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CouponService = void 0;
 const prisma_1 = require("../../services/prisma");
+function normalizeCode(code) {
+    return code.trim().toUpperCase();
+}
+function assertCoupon(data) {
+    if (data.code !== undefined && !normalizeCode(data.code))
+        throw new Error("کد کوپن معتبر نیست");
+    if (data.type !== undefined && data.type !== "percentage" && data.type !== "fixed")
+        throw new Error("نوع کوپن معتبر نیست");
+    if (data.value !== undefined && (!Number.isInteger(data.value) || data.value <= 0))
+        throw new Error("مقدار تخفیف معتبر نیست");
+    if (data.type === "percentage" && data.value !== undefined && data.value > 100)
+        throw new Error("درصد تخفیف نمی‌تواند بیش از ۱۰۰ باشد");
+    if (data.maxUses !== undefined && (!Number.isInteger(data.maxUses) || data.maxUses <= 0))
+        throw new Error("محدودیت استفاده معتبر نیست");
+    if (data.perUserLimit !== undefined && (!Number.isInteger(data.perUserLimit) || data.perUserLimit <= 0))
+        throw new Error("محدودیت هر کاربر معتبر نیست");
+    if (data.minimumPurchaseAmount !== undefined && (!Number.isInteger(data.minimumPurchaseAmount) || data.minimumPurchaseAmount < 0))
+        throw new Error("حداقل مبلغ خرید معتبر نیست");
+    if (data.expiresAt !== undefined && data.expiresAt <= new Date())
+        throw new Error("تاریخ انقضا باید در آینده باشد");
+}
+function couponValue(coupon) {
+    return coupon.value || coupon.discountPercent || 0;
+}
 class CouponService {
+    static calculate(coupon, originalAmount) {
+        if (!Number.isInteger(originalAmount) || originalAmount < 0)
+            throw new Error("مبلغ سفارش معتبر نیست");
+        const value = couponValue(coupon);
+        const discountAmount = coupon.type === "fixed" ? Math.min(value, originalAmount) : Math.floor((originalAmount * value) / 100);
+        return { originalAmount, discountAmount, finalAmount: Math.max(originalAmount - discountAmount, 0) };
+    }
     static async create(code, discountPercent, expiresAt, maxUses = 10) {
-        const normalizedCode = code.trim().toUpperCase();
-        if (!normalizedCode || !Number.isInteger(discountPercent) || discountPercent <= 0 || discountPercent > 100) {
-            throw new Error("اطلاعات کوپن معتبر نیست");
+        return this.createAdvanced({ code, type: "percentage", value: discountPercent, expiresAt, maxUses, perUserLimit: 1, minimumPurchaseAmount: 0 });
+    }
+    static async createAdvanced(data, actorId) {
+        assertCoupon(data);
+        const type = data.type;
+        const normalizedCode = normalizeCode(data.code);
+        const coupon = await prisma_1.prisma.coupon.create({
+            data: {
+                code: normalizedCode,
+                type,
+                value: data.value,
+                discountPercent: type === "percentage" ? data.value : null,
+                maxUses: data.maxUses,
+                perUserLimit: data.perUserLimit ?? 1,
+                minimumPurchaseAmount: data.minimumPurchaseAmount ?? 0,
+                expiresAt: data.expiresAt,
+                status: data.status ?? "active",
+            },
+        });
+        if (actorId)
+            await prisma_1.prisma.auditLog.create({ data: { actorId, action: "coupon.create", metadata: JSON.stringify({ couponId: coupon.id, code: coupon.code }) } });
+        return coupon;
+    }
+    static async update(couponId, data, actorId) {
+        assertCoupon(data);
+        const patch = {};
+        if (data.code !== undefined)
+            patch.code = normalizeCode(data.code);
+        if (data.type !== undefined)
+            patch.type = data.type;
+        if (data.value !== undefined)
+            patch.value = data.value;
+        if (data.type !== undefined || data.value !== undefined) {
+            const current = await prisma_1.prisma.coupon.findUniqueOrThrow({ where: { id: couponId } });
+            const finalType = data.type ?? current.type;
+            const finalValue = data.value ?? couponValue(current);
+            patch.discountPercent = finalType === "percentage" ? finalValue : null;
         }
-        if (!Number.isInteger(maxUses) || maxUses <= 0) {
-            throw new Error("تعداد استفاده کوپن معتبر نیست");
-        }
-        return prisma_1.prisma.coupon.create({
-            data: { code: normalizedCode, discountPercent, maxUses, expiresAt },
+        if (data.maxUses !== undefined)
+            patch.maxUses = data.maxUses;
+        if (data.perUserLimit !== undefined)
+            patch.perUserLimit = data.perUserLimit;
+        if (data.minimumPurchaseAmount !== undefined)
+            patch.minimumPurchaseAmount = data.minimumPurchaseAmount;
+        if (data.expiresAt !== undefined)
+            patch.expiresAt = data.expiresAt;
+        if (data.status !== undefined)
+            patch.status = data.status;
+        const coupon = await prisma_1.prisma.coupon.update({ where: { id: couponId }, data: patch });
+        await prisma_1.prisma.auditLog.create({ data: { actorId, action: "coupon.update", metadata: JSON.stringify({ couponId, fields: Object.keys(patch) }) } });
+        return coupon;
+    }
+    static async setStatus(couponId, status, actorId) {
+        const coupon = await prisma_1.prisma.coupon.update({ where: { id: couponId }, data: { status } });
+        await prisma_1.prisma.auditLog.create({ data: { actorId, action: "coupon.status", metadata: JSON.stringify({ couponId, status }) } });
+        return coupon;
+    }
+    static async softDelete(couponId, actorId) {
+        const coupon = await prisma_1.prisma.coupon.update({ where: { id: couponId }, data: { status: "deleted", deletedAt: new Date() } });
+        await prisma_1.prisma.auditLog.create({ data: { actorId, action: "coupon.delete.soft", metadata: JSON.stringify({ couponId }) } });
+        return coupon;
+    }
+    static async hardDelete(couponId, actorId) {
+        return prisma_1.prisma.$transaction(async (tx) => {
+            await tx.couponUsage.deleteMany({ where: { couponId } });
+            await tx.order.updateMany({ where: { couponId }, data: { couponId: null } });
+            const coupon = await tx.coupon.delete({ where: { id: couponId } });
+            await tx.auditLog.create({ data: { actorId, action: "coupon.delete.hard", metadata: JSON.stringify({ couponId }) } });
+            return coupon;
         });
     }
-    static async validateForUser(code, userId, tx = prisma_1.prisma) {
-        const normalizedCode = code.trim().toUpperCase();
+    static async list(params = {}) {
+        const page = Math.max(params.page ?? 1, 1);
+        const take = params.take ?? 8;
+        const where = {
+            ...(params.status ? { status: params.status } : { status: { not: "deleted" } }),
+            ...(params.query ? { code: { contains: normalizeCode(params.query) } } : {}),
+        };
+        return Promise.all([prisma_1.prisma.coupon.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * take, take }), prisma_1.prisma.coupon.count({ where })]);
+    }
+    static async validateForUser(code, userId, tx = prisma_1.prisma, originalAmount) {
+        const normalizedCode = normalizeCode(code);
         const coupon = await tx.coupon.findUnique({ where: { code: normalizedCode } });
-        if (!coupon)
+        if (!coupon || coupon.status === "deleted")
             throw new Error("کد تخفیف پیدا نشد");
+        if (coupon.status !== "active")
+            throw new Error("کد تخفیف غیرفعال است");
         if (coupon.expiresAt <= new Date())
             throw new Error("کد تخفیف منقضی شده است");
         if (coupon.usedCount >= coupon.maxUses)
             throw new Error("ظرفیت استفاده از این کد به پایان رسیده است");
-        const existingUsage = await tx.couponUsage.findUnique({
-            where: { couponId_userId: { couponId: coupon.id, userId } },
-        });
-        if (existingUsage)
-            throw new Error("شما قبلا از این کد تخفیف استفاده کرده‌اید");
+        if (originalAmount !== undefined && originalAmount < coupon.minimumPurchaseAmount)
+            throw new Error(`حداقل مبلغ خرید برای این کد ${coupon.minimumPurchaseAmount.toLocaleString("fa-IR")} تومان است`);
+        const usedByUser = await tx.couponUsage.count({ where: { couponId: coupon.id, userId } });
+        if (usedByUser >= coupon.perUserLimit)
+            throw new Error("سقف استفاده شما از این کد تخفیف تکمیل شده است");
         return coupon;
     }
 }

@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.accessControlMiddleware = accessControlMiddleware;
 const system_service_1 = require("../../modules/system/system.service");
-const ADMIN_ACTION_PREFIXES = ["admin", "flow:start:product_", "flow:start:account_create", "flow:start:crypto_wallet", "flow:start:minimum_topup", "flow:start:wallet_adjust", "flow:start:free_account_create"];
+const ADMIN_ACTION_PREFIXES = ["admin", "flow:start:product_", "flow:start:account_create", "flow:start:crypto_wallet", "flow:start:minimum_topup", "flow:start:wallet_adjust", "flow:start:free_account_create", "flow:start:forced_join"];
 function callbackData(ctx) {
     const update = ctx.update;
     return update.callback_query?.data;
@@ -26,7 +26,7 @@ function accessControlMiddleware() {
             return;
         }
         const isAdmin = access.role === "admin" || access.role === "superadmin";
-        if (!isAdmin && !isStart(ctx) && !isAdminAction(ctx)) {
+        if (!isAdmin) {
             const storeStatus = await system_service_1.SystemSettingsService.getFinancialSettingsCached();
             if (storeStatus === "inactive") {
                 if (callbackData(ctx))

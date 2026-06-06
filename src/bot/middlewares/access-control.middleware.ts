@@ -2,7 +2,7 @@ import type { MiddlewareFn } from "telegraf";
 import type { AppContext } from "../../types/bot";
 import { BLOCKED_USER_MESSAGE, STORE_DISABLED_MESSAGE, SystemSettingsService } from "../../modules/system/system.service";
 
-const ADMIN_ACTION_PREFIXES = ["admin", "flow:start:product_", "flow:start:account_create", "flow:start:crypto_wallet", "flow:start:minimum_topup", "flow:start:wallet_adjust", "flow:start:free_account_create"];
+const ADMIN_ACTION_PREFIXES = ["admin", "flow:start:product_", "flow:start:account_create", "flow:start:crypto_wallet", "flow:start:minimum_topup", "flow:start:wallet_adjust", "flow:start:free_account_create", "flow:start:forced_join"];
 
 function callbackData(ctx: AppContext): string | undefined {
   const update = ctx.update as { callback_query?: { data?: string } };
@@ -29,7 +29,7 @@ export function accessControlMiddleware(): MiddlewareFn<AppContext> {
     }
 
     const isAdmin = access.role === "admin" || access.role === "superadmin";
-    if (!isAdmin && !isStart(ctx) && !isAdminAction(ctx)) {
+    if (!isAdmin) {
       const storeStatus = await SystemSettingsService.getFinancialSettingsCached();
       if (storeStatus === "inactive") {
         if (callbackData(ctx)) await ctx.answerCbQuery("فروشگاه غیرفعال است").catch(() => undefined);

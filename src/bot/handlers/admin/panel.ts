@@ -135,7 +135,7 @@ export function registerAdminHandlers(bot: AppBot) {
     await ctx.answerCbQuery();
     const [coupons] = await AdminService.listCoupons();
     await ctx.reply(
-      `${coupons.map((coupon) => `🎟 ${coupon.code} | ${coupon.discountPercent}% | ${coupon.usedCount}/${coupon.maxUses}`).join("\n") || "کوپنی وجود ندارد."}\n\nبرای ایجاد کوپن جدید دکمه زیر را بزنید.`,
+      `${coupons.map((coupon) => `🎟 ${coupon.code} | ${coupon.type === "percentage" ? `${coupon.value || coupon.discountPercent || 0}%` : `${coupon.value.toLocaleString("fa-IR")} تومان`} | ${coupon.status} | ${coupon.usedCount}/${coupon.maxUses}`).join("\n") || "کوپنی وجود ندارد."}\n\nبرای ایجاد کوپن جدید دکمه زیر را بزنید.`,
       Markup.inlineKeyboard([[Markup.button.callback("➕ کوپن جدید", "admin:coupon:create")], [Markup.button.callback("⬅️ بازگشت", "admin:dashboard")]]),
     );
   });

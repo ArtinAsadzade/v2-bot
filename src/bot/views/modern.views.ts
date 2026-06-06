@@ -4,7 +4,6 @@ import { UserService } from "../../modules/user/user.service";
 import { ProductService } from "../../modules/product/product.service";
 import { AdminService } from "../../modules/admin/admin.service";
 import { ReferralService } from "../../modules/referral/referral.service";
-import { FreeConfigService } from "../../modules/rewards/free-config.service";
 import { FreeAccountService } from "../../modules/free-account/free-account.service";
 import { SupportService } from "../../modules/support/support.service";
 
@@ -160,14 +159,17 @@ export function registerModernViews() {
   registerView("freeAccount", async (ctx) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
-    const status = await FreeConfigService.getStatus(user.id);
+    const eligibility = await FreeAccountService.eligibility(user.id);
     const assigned = await FreeAccountService.assignedForUser(user.id);
-    return { text: `🆓 اکانت رایگان\n\nدعوت‌های شما: ${status.referralCount.toLocaleString("fa-IR")} از ${status.requiredReferrals.toLocaleString("fa-IR")}\nاکانت‌های دریافتی: ${assigned.length.toLocaleString("fa-IR")}\n\n${assigned.map((item) => `• ${item.product.title}\nنام کاربری: ${item.username}\nرمز: ${item.password ?? "—"}\nکانفیگ: ${item.config}`).join("\n\n") || "هنوز اکانت رایگان اختصاص داده نشده است."}`, keyboard: [[{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }]] };
+    return {
+      text: `🆓 اکانت تست رایگان\n\nقانون دریافت: هر ۳۰ روز یک اکانت\nوضعیت: ${eligibility.eligible ? "آماده دریافت" : `قابل دریافت از ${eligibility.nextAvailableAt?.toLocaleDateString("fa-IR")}`}\nاکانت‌های دریافتی: ${assigned.length.toLocaleString("fa-IR")}\n\n${assigned.map((item) => `• اکانت تست ${item.account.durationDays.toLocaleString("fa-IR")} روزه\nنام کاربری: ${item.account.username}\nلینک اشتراک: ${item.account.subscriptionLink}\nلینک کانفیگ: ${item.account.configLink}\nتاریخ دریافت: ${item.createdAt.toLocaleDateString("fa-IR")}`).join("\n\n") || "هنوز اکانت رایگان اختصاص داده نشده است."}`,
+      keyboard: [[{ text: "🆓 دریافت اکانت رایگان", action: "freeAccount:claim" }, { text: "🎁 دعوت دوستان", action: callbackFor("referral") }]],
+    };
   });
 
   registerView("admin.dashboard", async () => {
     const stats = await AdminService.dashboard(true);
-    return { text: `⚙️ مرکز مدیریت\n\n${divider}\n📊 نمای کلی عملیات\n\n👥 کاربران: ${stats.users.toLocaleString("fa-IR")}\n💰 درآمد موفق: ${money(stats.revenue)}\n🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}\n🎧 تیکت‌های فعال: ${stats.openTickets.toLocaleString("fa-IR")}\n💳 واریزی‌های منتظر: ${stats.submittedDeposits.toLocaleString("fa-IR")}\n📦 موجودی آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}\n${divider}\n\nماژول مدیریتی را انتخاب کنید:`, keyboard: [[{ text: "💰 مالی", action: callbackFor("admin.deposits") }, { text: "🛒 فروشگاه", action: callbackFor("admin.products") }], [{ text: "👥 کاربران", action: callbackFor("admin.users") }, { text: "🎁 رفرال", action: callbackFor("admin.referrals") }], [{ text: "🆓 رایگان", action: callbackFor("admin.freeAccounts") }, { text: "📊 آمار", action: callbackFor("admin.analytics") }], [{ text: "🎧 تیکت‌ها", action: callbackFor("admin.tickets") }, { text: "🎟 کوپن‌ها", action: callbackFor("admin.coupons") }], [{ text: "🔐 اکانت‌ها", action: callbackFor("admin.accounts") }, { text: "⚙️ تنظیمات", action: callbackFor("admin.crypto") }]] };
+    return { text: `⚙️ مرکز مدیریت\n\n${divider}\n📊 نمای کلی عملیات\n\n👥 کاربران: ${stats.users.toLocaleString("fa-IR")}\n💰 درآمد موفق: ${money(stats.revenue)}\n🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}\n🎧 تیکت‌های فعال: ${stats.openTickets.toLocaleString("fa-IR")}\n💳 واریزی‌های منتظر: ${stats.submittedDeposits.toLocaleString("fa-IR")}\n📦 موجودی آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}\n${divider}\n\nماژول مدیریتی را انتخاب کنید:`, keyboard: [[{ text: "💰 مالی", action: callbackFor("admin.deposits") }, { text: "🛒 فروشگاه", action: callbackFor("admin.products") }], [{ text: "👥 کاربران", action: callbackFor("admin.users") }, { text: "🎁 رفرال", action: callbackFor("admin.referrals") }], [{ text: "🆓 رایگان", action: callbackFor("admin.freeAccounts") }, { text: "📊 آمار", action: callbackFor("admin.analytics") }], [{ text: "🎧 تیکت‌ها", action: callbackFor("admin.tickets") }, { text: "🎟 کوپن‌ها", action: callbackFor("admin.coupons") }], [{ text: "🔐 اکانت‌ها", action: callbackFor("admin.accounts") }, { text: "⚙️ تنظیمات", action: callbackFor("admin.crypto") }, { text: "📢 عضویت", action: callbackFor("admin.forcedJoin") }]] };
   });
 
   registerView("admin.users", async (_ctx, params) => {
@@ -211,7 +213,10 @@ export function registerModernViews() {
 
   registerView("admin.freeAccounts", async () => {
     const stats = await FreeAccountService.stats();
-    return { text: `🆓 استخر اکانت رایگان\n\nآماده تخصیص: ${stats.available.toLocaleString("fa-IR")}\nتخصیص‌یافته: ${stats.assigned.toLocaleString("fa-IR")}\n\nبرای افزودن اکانت رایگان، محصول را انتخاب کنید.`, keyboard: stats.products.map((product) => [{ text: `➕ ${product.title}`, action: `flow:start:free_account_create:${product.id}` }]) };
+    return {
+      text: `🆓 مدیریت اکانت تست رایگان\n\nآماده تخصیص: ${stats.available.toLocaleString("fa-IR")}\nتخصیص‌یافته: ${stats.assigned.toLocaleString("fa-IR")}\nغیرفعال: ${stats.disabled.toLocaleString("fa-IR")}\n\nآخرین تخصیص‌ها:\n${stats.recentAssignments.map((item) => `• ${item.user.telegramId} ← ${item.account.username} · ${item.createdAt.toLocaleDateString("fa-IR")}`).join("\n") || "هنوز تخصیصی ثبت نشده است."}\n\nموجودی اخیر:\n${stats.inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleString("fa-IR")} روز · ${item.status}`).join("\n") || "موجودی ثبت نشده است."}`,
+      keyboard: [[{ text: "➕ افزودن اکانت تست", action: "flow:start:free_account_create" }]],
+    };
   });
 
   registerView("admin.crypto", async () => {
@@ -224,6 +229,15 @@ export function registerModernViews() {
     return { text: `⚙️ وضعیت فروشگاه\n\nوضعیت فعلی: ${stats.setting.storeStatus === "active" ? "فعال" : "غیرفعال"}\n\nدر حالت غیرفعال، کاربران عادی به خرید دسترسی ندارند اما مدیران همچنان می‌توانند عملیات را مدیریت کنند.`, keyboard: [[{ text: "✅ فعال", action: "admin:store:status:active" }, { text: "⛔ غیرفعال", action: "admin:store:status:inactive" }]] };
   });
 
+
+  registerView("admin.forcedJoin", async () => {
+    const channels = await AdminService.forcedJoinChannels();
+    return {
+      text: `📢 مدیریت عضویت اجباری\n\n${channels.map((channel) => `• ${channel.title} · ${channel.chatId} · ${channel.status === "active" ? "فعال" : "غیرفعال"}`).join("\n") || "کانالی ثبت نشده است."}`,
+      keyboard: [[{ text: "➕ افزودن کانال", action: "flow:start:forced_join_create" }], ...channels.map((channel) => [{ text: channel.status === "active" ? `غیرفعال‌سازی ${channel.title}` : `فعال‌سازی ${channel.title}`, action: `admin:forced_join:status:${channel.id}:${channel.status === "active" ? "inactive" : "active"}` }, { text: "حذف", action: `admin:forced_join:delete:${channel.id}` }])],
+    };
+  });
+
   registerView("admin.referrals", async () => {
     const tiers = await ReferralService.listTiers();
     return { text: `🎁 مدیریت رفرال\n\n${tiers.map((tier) => `• ${tier.threshold.toLocaleString("fa-IR")} دعوت ← ${money(tier.amount)} · ${tier.isActive ? "فعال" : "غیرفعال"}`).join("\n") || "سطحی ثبت نشده است."}`, keyboard: [[{ text: "➕ سطح جدید/ویرایش", action: "flow:start:referral_tier_create" }], ...tiers.map((tier) => [{ text: tier.isActive ? `غیرفعال‌سازی ${tier.threshold}` : `فعال‌سازی ${tier.threshold}`, action: `admin:referral:tier:status:${tier.id}:${tier.isActive ? "0" : "1"}` }, { text: `حذف ${tier.threshold}`, action: `admin:referral:tier:delete:${tier.id}` }])] };
@@ -231,13 +245,26 @@ export function registerModernViews() {
 
   registerView("admin.analytics", async () => {
     const stats = await AdminService.dashboard(true);
-    return { text: `📊 آمار عملیاتی\n\n💰 درآمد موفق: ${money(stats.revenue)}\n📦 اکانت آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}\n✅ اکانت فروخته‌شده: ${stats.soldAccounts.toLocaleString("fa-IR")}\n🎁 مجموع پاداش دعوت: ${money(stats.referralRewards)}\n🆓 پاداش رایگان: ${stats.freeRewards.toLocaleString("fa-IR")}\n💳 واریزی در انتظار: ${stats.submittedDeposits.toLocaleString("fa-IR")}`, keyboard: [] };
+    return { text: `📊 آمار عملیاتی\n\n💰 درآمد موفق: ${money(stats.revenue)}\n📦 اکانت آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}\n✅ اکانت فروخته‌شده: ${stats.soldAccounts.toLocaleString("fa-IR")}\n🎁 مجموع پاداش دعوت: ${money(stats.referralRewards)}\n🆓 اکانت تست تخصیص‌یافته: ${stats.freeAccountsAssigned.toLocaleString("fa-IR")}\n💳 واریزی در انتظار: ${stats.submittedDeposits.toLocaleString("fa-IR")}`, keyboard: [] };
   });
 
   registerView("admin.coupons", async (_ctx, params) => {
     const current = page(params);
     const [coupons, total] = await AdminService.listCoupons(current);
-    return { text: `🎟 مدیریت کوپن‌ها\n\n${coupons.map((coupon) => `• ${coupon.code} · ${coupon.discountPercent.toLocaleString("fa-IR")}% · ${coupon.usedCount.toLocaleString("fa-IR")}/${coupon.maxUses.toLocaleString("fa-IR")}`).join("\n") || "کوپنی ثبت نشده است."}\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}`, keyboard: [[{ text: "➕ کوپن جدید", action: "flow:start:coupon_create" }], [{ text: "قبلی", action: callbackFor("admin.coupons", { page: Math.max(current - 1, 1) }) }, { text: "بعدی", action: callbackFor("admin.coupons", { page: current + 1 }) }]] };
+    return {
+      text: `🎟 مدیریت کوپن‌ها\n\n${coupons.map((coupon) => `• ${coupon.code} · ${coupon.type === "percentage" ? `${(coupon.value || coupon.discountPercent || 0).toLocaleString("fa-IR")}%` : money(coupon.value)} · ${coupon.status} · ${coupon.usedCount.toLocaleString("fa-IR")}/${coupon.maxUses.toLocaleString("fa-IR")} · هر کاربر ${coupon.perUserLimit.toLocaleString("fa-IR")}`).join("\n") || "کوپنی ثبت نشده است."}\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}`,
+      keyboard: [[{ text: "➕ کوپن جدید", action: "flow:start:coupon_create" }], ...coupons.map((coupon) => [{ text: `مدیریت ${coupon.code}`, action: callbackFor("admin.coupon", { couponId: coupon.id }) }]), [{ text: "قبلی", action: callbackFor("admin.coupons", { page: Math.max(current - 1, 1) }) }, { text: "بعدی", action: callbackFor("admin.coupons", { page: current + 1 }) }]],
+    };
+  });
+
+
+  registerView("admin.coupon", async (_ctx, params) => {
+    const direct = await AdminService.couponDetail(params.couponId);
+    if (!direct) return { text: "⚠️ کوپن پیدا نشد.", keyboard: [] };
+    return {
+      text: `🎟 جزئیات کوپن ${direct.code}\n\nنوع: ${direct.type === "percentage" ? "درصدی" : "مبلغ ثابت"}\nمقدار: ${direct.type === "percentage" ? `${(direct.value || direct.discountPercent || 0).toLocaleString("fa-IR")}%` : money(direct.value)}\nوضعیت: ${direct.status}\nمصرف: ${direct.usedCount.toLocaleString("fa-IR")}/${direct.maxUses.toLocaleString("fa-IR")}\nسقف هر کاربر: ${direct.perUserLimit.toLocaleString("fa-IR")}\nحداقل خرید: ${money(direct.minimumPurchaseAmount)}\nانقضا: ${direct.expiresAt.toLocaleDateString("fa-IR")}`,
+      keyboard: [[{ text: direct.status === "active" ? "⛔ غیرفعال" : "✅ فعال", action: `admin:coupon:status:${direct.id}:${direct.status === "active" ? "inactive" : "active"}` }], [{ text: "🗑 حذف نرم", action: `admin:coupon:soft_delete:${direct.id}` }, { text: "🧨 حذف دائمی", action: `admin:coupon:hard_delete:${direct.id}` }]],
+    };
   });
 
   registerView("admin.deposits", async (_ctx, params) => {

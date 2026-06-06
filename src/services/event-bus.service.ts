@@ -15,7 +15,7 @@ export type AppEventMap = {
   "referral.reward.claimed": { rewardId: string; userId: string; amount: number };
   "coupon.applied": { couponId: string; code: string; userId: string; orderId: string; discountAmount: number };
   "free_config.claimed": { rewardId: string; userId: string; config: string };
-  "free_account.assigned": { userId: string; productId: string; accountId: string; reason: string };
+  "free_account.assigned": { userId: string; accountId: string; reason: string; productId?: string };
   "order.created": { orderId: string; userId: string; productId: string; totalAmount: number };
   "order.completed": { orderId: string; userId: string; productId: string; totalAmount: number };
 };

@@ -11,6 +11,10 @@ export type DepositQuote = {
   amount: number;
   cryptoAmount: number;
   exchangeRate: number;
+  coinUsdPrice: number;
+  usdTomanRate: number;
+  rateSource: string;
+  stale: boolean;
   wallet: {
     id: string;
     coinName: string;
@@ -102,6 +106,10 @@ export class CryptoWalletService {
     return {
       amount,
       exchangeRate,
+      coinUsdPrice: rate.usd,
+      usdTomanRate: rate.usdToman,
+      rateSource: rate.source,
+      stale: rate.stale,
       cryptoAmount: roundCrypto(amount / exchangeRate),
       wallet: { id: wallet.id, coinName: wallet.coinName, networkName: wallet.networkName, walletAddress: wallet.walletAddress },
     };
@@ -154,12 +162,14 @@ export class DepositService {
   static async approve(depositId: string, adminTelegramId: string) {
     return prisma.$transaction(async (tx) => {
       const deposit = await tx.deposit.findUnique({ where: { id: depositId } });
-      if (!deposit || deposit.status !== "submitted") throw new Error("درخواست شارژ قابل تایید نیست");
+      if (!deposit) throw new Error("درخواست شارژ پیدا نشد");
+      if (deposit.status !== "submitted") throw new Error("⚠️ این پرداخت قبلاً تعیین وضعیت شده است.");
 
-      const approved = await tx.deposit.updateMany({ where: { id: depositId, status: "submitted" }, data: { status: "approved" } });
-      if (approved.count !== 1) throw new Error("این درخواست قبلاً پردازش شده است");
+      const now = new Date();
+      const approved = await tx.deposit.updateMany({ where: { id: depositId, status: "submitted" }, data: { status: "approved", reviewedBy: adminTelegramId, reviewedAt: now, reviewAction: "APPROVED" } });
+      if (approved.count !== 1) throw new Error("⚠️ این پرداخت قبلاً تعیین وضعیت شده است.");
       await WalletService.credit(deposit.userId, deposit.amount, `تایید شارژ ${deposit.id}`, tx);
-      await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.approve", metadata: JSON.stringify({ depositId }) } });
+      await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.approve", metadata: JSON.stringify({ depositId, action: "APPROVED", reviewedAt: now.toISOString() }) } });
 
       await notificationService.notifyUser(deposit.userId, `✅ شارژ ${deposit.amount.toLocaleString("fa-IR")} تومانی شما تایید شد.`);
       eventBus.emit("deposit.approved", { depositId: deposit.id, userId: deposit.userId, amount: deposit.amount, adminTelegramId });
@@ -170,10 +180,12 @@ export class DepositService {
   static async reject(depositId: string, adminTelegramId: string) {
     const deposit = await prisma.$transaction(async (tx) => {
       const current = await tx.deposit.findUnique({ where: { id: depositId } });
-      if (!current || current.status !== "submitted") throw new Error("درخواست شارژ قابل رد نیست");
-      const rejected = await tx.deposit.updateMany({ where: { id: depositId, status: "submitted" }, data: { status: "rejected" } });
-      if (rejected.count !== 1) throw new Error("این درخواست قبلاً پردازش شده است");
-      await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.reject", metadata: JSON.stringify({ depositId }) } });
+      if (!current) throw new Error("درخواست شارژ پیدا نشد");
+      if (current.status !== "submitted") throw new Error("⚠️ این پرداخت قبلاً تعیین وضعیت شده است.");
+      const now = new Date();
+      const rejected = await tx.deposit.updateMany({ where: { id: depositId, status: "submitted" }, data: { status: "rejected", reviewedBy: adminTelegramId, reviewedAt: now, reviewAction: "REJECTED" } });
+      if (rejected.count !== 1) throw new Error("⚠️ این پرداخت قبلاً تعیین وضعیت شده است.");
+      await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.reject", metadata: JSON.stringify({ depositId, action: "REJECTED", reviewedAt: now.toISOString() }) } });
       return current;
     });
     await notificationService.notifyUser(deposit.userId, "❌ رسید شارژ شما رد شد.");

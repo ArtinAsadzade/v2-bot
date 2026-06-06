@@ -62,6 +62,28 @@ enum FreeConfigRewardStatus {
   claimed
 }
 
+enum FreeAccountStatus {
+  available
+  assigned
+  disabled
+}
+
+enum CouponType {
+  percentage
+  fixed
+}
+
+enum CouponStatus {
+  active
+  inactive
+  deleted
+}
+
+enum ForcedJoinChannelStatus {
+  active
+  inactive
+}
+
 enum CryptoWalletStatus {
   active
   inactive
@@ -95,7 +117,7 @@ model User {
   referredReferral   Referral?           @relation("Referred")
   referralRewards    ReferralReward[]
   freeConfigRewards  FreeConfigReward[]
-  freeAccountAssignment FreeAccountAssignment?
+  freeAccountAssignments FreeAccountAssignment[]
 
   @@index([role])
   @@index([referredById])
@@ -193,6 +215,9 @@ model Deposit {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   expiresAt      DateTime
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  reviewAction   String?
 
   user         User          @relation(fields: [userId], references: [id])
   cryptoWallet CryptoWallet? @relation(fields: [cryptoWalletId], references: [id])
@@ -255,19 +280,26 @@ model TicketMessage {
 }
 
 model Coupon {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  code            String   @unique
-  discountPercent Int
-  maxUses         Int
-  usedCount       Int      @default(0)
-  expiresAt       DateTime
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                    String       @id @default(auto()) @map("_id") @db.ObjectId
+  code                  String       @unique
+  type                  CouponType   @default(percentage)
+  value                 Int
+  discountPercent       Int?
+  maxUses               Int
+  usedCount             Int          @default(0)
+  perUserLimit          Int          @default(1)
+  minimumPurchaseAmount Int          @default(0)
+  status                CouponStatus @default(active)
+  expiresAt             DateTime
+  deletedAt             DateTime?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
 
   usages CouponUsage[]
   orders Order[]
 
-  @@index([expiresAt])
+  @@index([status, expiresAt])
+  @@index([deletedAt])
 }
 
 model CouponUsage {
@@ -280,7 +312,7 @@ model CouponUsage {
   coupon Coupon @relation(fields: [couponId], references: [id])
   user   User   @relation(fields: [userId], references: [id])
 
-  @@unique([couponId, userId])
+  @@index([couponId, userId])
   @@index([userId, createdAt])
 }
 
@@ -306,7 +338,6 @@ model Product {
   accounts        ProductAccount[]
   orders          Order[]
   orderItems      OrderItem[]
-  freeAccountPool FreeAccountPool[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -414,38 +445,37 @@ model SecurityFlag {
   @@index([type, createdAt])
 }
 
-model FreeAccountPool {
-  id         String    @id @default(auto()) @map("_id") @db.ObjectId
-  productId  String    @db.ObjectId
-  username   String
-  password   String
-  config     String
-  isAssigned Boolean   @default(false)
-  assignedTo String?   @db.ObjectId
-  assignedAt DateTime?
-  reason     String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+model FreeAccount {
+  id               String            @id @default(auto()) @map("_id") @db.ObjectId
+  username         String
+  subscriptionLink String
+  configLink       String
+  durationDays     Int
+  status           FreeAccountStatus @default(available)
+  assignedTo       String?           @db.ObjectId
+  assignedAt       DateTime?
+  disabledAt       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
-  product    Product                @relation(fields: [productId], references: [id])
   assignment FreeAccountAssignment?
 
-  @@index([productId, isAssigned])
-  @@index([assignedTo])
+  @@index([status, createdAt])
+  @@index([assignedTo, assignedAt])
 }
 
 model FreeAccountAssignment {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String   @unique @db.ObjectId
+  userId    String   @db.ObjectId
   accountId String   @unique @db.ObjectId
-  productId String   @db.ObjectId
   reason    String
   createdAt DateTime @default(now())
 
-  user    User            @relation(fields: [userId], references: [id])
-  account FreeAccountPool @relation(fields: [accountId], references: [id])
+  user    User        @relation(fields: [userId], references: [id])
+  account FreeAccount @relation(fields: [accountId], references: [id])
 
-  @@index([productId, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
 }
 
 model UserBlockHistory {
@@ -458,6 +488,18 @@ model UserBlockHistory {
 
   @@index([userId, createdAt])
   @@index([actorId, createdAt])
+}
+
+model ForcedJoinChannel {
+  id          String                  @id @default(auto()) @map("_id") @db.ObjectId
+  chatId      String                  @unique
+  title       String
+  inviteLink  String?
+  status      ForcedJoinChannelStatus @default(active)
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  @@index([status])
 }
 
 model AccountExpirationNotification {

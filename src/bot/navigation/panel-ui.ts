@@ -29,8 +29,10 @@ export type PanelViewId =
   | "admin.accounts"
   | "admin.freeAccounts"
   | "admin.coupons"
+  | "admin.coupon"
   | "admin.crypto"
   | "admin.store"
+  | "admin.forcedJoin"
   | "admin.referrals"
   | "admin.analytics"
   | "admin.deposits"
@@ -96,8 +98,10 @@ const PANEL_VIEW_IDS = new Set<string>([
   "admin.accounts",
   "admin.freeAccounts",
   "admin.coupons",
+  "admin.coupon",
   "admin.crypto",
   "admin.store",
+  "admin.forcedJoin",
   "admin.referrals",
   "admin.analytics",
   "admin.deposits",
