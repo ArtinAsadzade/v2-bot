@@ -69,7 +69,11 @@ const definitions: Record<FlowName, FlowDefinition> = {
       const depositId = String(ctx.session.flow?.data.depositId ?? "");
       if (!depositId) return { text: "ابتدا مبلغ شارژ را وارد کنید." };
       await DepositService.submitReceipt(depositId, user.id, fileId);
-      return { done: true, text: "✅ رسید شما ثبت شد. تیم مالی در کوتاه‌ترین زمان پرداخت را بررسی می‌کند و نتیجه از همین ربات اطلاع‌رسانی می‌شود.", returnTo: { id: "wallet" } };
+      return {
+        done: true,
+        text: "✅ رسید شما ثبت شد. تیم مالی در کوتاه‌ترین زمان پرداخت را بررسی می‌کند و نتیجه از همین ربات اطلاع‌رسانی می‌شود.",
+        returnTo: { id: "wallet" },
+      };
     },
   },
   ticket_reply: {
@@ -93,13 +97,25 @@ const definitions: Record<FlowName, FlowDefinition> = {
     async handleText(ctx, text) {
       const user = await requireUser(ctx);
       const productId = String(ctx.session.flow?.data.productId ?? "");
-      await CouponService.validateForUser(text, user.id);
-      ctx.session.selectedCoupons ??= {};
-      ctx.session.selectedCoupons[productId] = text.trim().toUpperCase();
-      return { done: true, text: "✅ کد تخفیف روی پیش‌فاکتور اعمال شد.", returnTo: { id: "shop.checkout", params: { productId } } };
+
+      try {
+        await CouponService.validateForUser(text.trim(), user.id);
+
+        ctx.session.selectedCoupons ??= {};
+        ctx.session.selectedCoupons[productId] = text.trim().toUpperCase();
+
+        return {
+          done: true,
+          text: "✅ کد تخفیف روی پیش‌فاکتور اعمال شد.",
+          returnTo: { id: "shop.checkout", params: { productId } },
+        };
+      } catch (error) {
+        return {
+          text: error instanceof Error ? `❌ ${error.message}` : "❌ کد تخفیف معتبر نیست.",
+        };
+      }
     },
   },
-
 
   product_search: {
     firstStep: "query",
@@ -117,16 +133,31 @@ const definitions: Record<FlowName, FlowDefinition> = {
     prompt: "📦 نام دسته‌بندی محصول را وارد کنید:",
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
-      if (flow.step === "category") { flow.data.categoryName = text.trim(); flow.step = "title"; return { text: "نام محصول را وارد کنید:", nextStep: "title" }; }
-      if (flow.step === "title") { flow.data.title = text.trim(); flow.step = "price"; return { text: "قیمت محصول را به تومان وارد کنید:", nextStep: "price" }; }
+      if (flow.step === "category") {
+        flow.data.categoryName = text.trim();
+        flow.step = "title";
+        return { text: "نام محصول را وارد کنید:", nextStep: "title" };
+      }
+      if (flow.step === "title") {
+        flow.data.title = text.trim();
+        flow.step = "price";
+        return { text: "قیمت محصول را به تومان وارد کنید:", nextStep: "price" };
+      }
       if (flow.step === "price") {
         const price = Number(text.replace(/[,،\s]/g, ""));
         if (!Number.isInteger(price) || price < 0) return { text: "قیمت معتبر نیست. دوباره وارد کنید:" };
-        flow.data.price = price; flow.step = "duration"; return { text: "مدت سرویس را به روز وارد کنید:", nextStep: "duration" };
+        flow.data.price = price;
+        flow.step = "duration";
+        return { text: "مدت سرویس را به روز وارد کنید:", nextStep: "duration" };
       }
       const duration = Number(text.replace(/[,،\s]/g, ""));
       if (!Number.isInteger(duration) || duration <= 0) return { text: "مدت معتبر نیست. دوباره وارد کنید:" };
-      await ProductService.create({ categoryName: String(flow.data.categoryName), title: String(flow.data.title), price: Number(flow.data.price), duration });
+      await ProductService.create({
+        categoryName: String(flow.data.categoryName),
+        title: String(flow.data.title),
+        price: Number(flow.data.price),
+        duration,
+      });
       return { done: true, text: "✅ محصول جدید ثبت شد.", returnTo: { id: "admin.products" } };
     },
   },
@@ -135,10 +166,22 @@ const definitions: Record<FlowName, FlowDefinition> = {
     prompt: "🔐 نام کاربری اکانت را وارد کنید:",
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
-        if (flow.step === "username") { flow.data.username = text.trim(); flow.step = "subscriptionLink"; return { text: "لینک ساب اکانت را وارد کنید:", nextStep: "subscriptionLink" }; }
-      if (flow.step === "subscriptionLink") { flow.data.subscriptionLink = text.trim(); flow.step = "configLink"; return { text: "لینک کانفیگ را وارد کنید:", nextStep: "configLink" }; }
+      if (flow.step === "username") {
+        flow.data.username = text.trim();
+        flow.step = "subscriptionLink";
+        return { text: "لینک ساب اکانت را وارد کنید:", nextStep: "subscriptionLink" };
+      }
+      if (flow.step === "subscriptionLink") {
+        flow.data.subscriptionLink = text.trim();
+        flow.step = "configLink";
+        return { text: "لینک کانفیگ را وارد کنید:", nextStep: "configLink" };
+      }
       const productId = String(flow.data.productId);
-      await ProductService.addAccount(productId, { username: String(flow.data.username), subscriptionLink: String(flow.data.subscriptionLink), configLink: text.trim() });
+      await ProductService.addAccount(productId, {
+        username: String(flow.data.username),
+        subscriptionLink: String(flow.data.subscriptionLink),
+        configLink: text.trim(),
+      });
       return { done: true, text: "✅ اکانت به موجودی محصول اضافه شد.", returnTo: { id: "admin.product", params: { productId } } };
     },
   },
@@ -147,12 +190,32 @@ const definitions: Record<FlowName, FlowDefinition> = {
     prompt: "🎁 نام کاربری اکانت تست رایگان را وارد کنید:",
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
-      if (flow.step === "username") { flow.data.username = text.trim(); flow.step = "subscriptionLink"; return { text: "لینک اشتراک اکانت تست را وارد کنید:", nextStep: "subscriptionLink" }; }
-      if (flow.step === "subscriptionLink") { flow.data.subscriptionLink = text.trim(); flow.step = "configLink"; return { text: "لینک کانفیگ اکانت تست را وارد کنید:", nextStep: "configLink" }; }
-      if (flow.step === "configLink") { flow.data.configLink = text.trim(); flow.step = "durationDays"; return { text: "مدت اعتبار اکانت تست را به روز وارد کنید:", nextStep: "durationDays" }; }
+      if (flow.step === "username") {
+        flow.data.username = text.trim();
+        flow.step = "subscriptionLink";
+        return { text: "لینک اشتراک اکانت تست را وارد کنید:", nextStep: "subscriptionLink" };
+      }
+      if (flow.step === "subscriptionLink") {
+        flow.data.subscriptionLink = text.trim();
+        flow.step = "configLink";
+        return { text: "لینک کانفیگ اکانت تست را وارد کنید:", nextStep: "configLink" };
+      }
+      if (flow.step === "configLink") {
+        flow.data.configLink = text.trim();
+        flow.step = "durationDays";
+        return { text: "مدت اعتبار اکانت تست را به روز وارد کنید:", nextStep: "durationDays" };
+      }
       const durationDays = Number(text.replace(/[,،\s]/g, ""));
       if (!Number.isInteger(durationDays) || durationDays <= 0) return { text: "مدت اعتبار معتبر نیست. یک عدد مثبت وارد کنید:" };
-      await FreeAccountService.addToInventory({ username: String(flow.data.username), subscriptionLink: String(flow.data.subscriptionLink), configLink: String(flow.data.configLink), durationDays }, String(ctx.from?.id ?? "admin"));
+      await FreeAccountService.addToInventory(
+        {
+          username: String(flow.data.username),
+          subscriptionLink: String(flow.data.subscriptionLink),
+          configLink: String(flow.data.configLink),
+          durationDays,
+        },
+        String(ctx.from?.id ?? "admin"),
+      );
       return { done: true, text: "✅ اکانت تست رایگان به موجودی مستقل اضافه شد.", returnTo: { id: "admin.freeAccounts" } };
     },
   },
@@ -161,14 +224,58 @@ const definitions: Record<FlowName, FlowDefinition> = {
     prompt: "🎟 کد کوپن را وارد کنید:",
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
-      if (flow.step === "code") { flow.data.code = text.trim(); flow.step = "type"; return { text: "نوع کوپن را وارد کنید (درصدی / ثابت):", nextStep: "type" }; }
-      if (flow.step === "type") { flow.data.type = text.includes("ثابت") || text.toLowerCase() === "fixed" ? "fixed" : "percentage"; flow.step = "value"; return { text: flow.data.type === "fixed" ? "مبلغ تخفیف را به تومان وارد کنید:" : "درصد تخفیف را وارد کنید:", nextStep: "value" }; }
-      if (flow.step === "value") { const value = Number(text.replace(/[,،\s]/g, "")); if (!Number.isInteger(value) || value <= 0 || (flow.data.type === "percentage" && value > 100)) return { text: "مقدار تخفیف معتبر نیست:" }; flow.data.value = value; flow.step = "maxUses"; return { text: "حداکثر تعداد استفاده کل را وارد کنید:", nextStep: "maxUses" }; }
-      if (flow.step === "maxUses") { const maxUses = Number(text.replace(/[,،\s]/g, "")); if (!Number.isInteger(maxUses) || maxUses <= 0) return { text: "تعداد معتبر نیست:" }; flow.data.maxUses = maxUses; flow.step = "perUserLimit"; return { text: "حداکثر استفاده هر کاربر را وارد کنید:", nextStep: "perUserLimit" }; }
-      if (flow.step === "perUserLimit") { const perUserLimit = Number(text.replace(/[,،\s]/g, "")); if (!Number.isInteger(perUserLimit) || perUserLimit <= 0) return { text: "محدودیت هر کاربر معتبر نیست:" }; flow.data.perUserLimit = perUserLimit; flow.step = "minimumPurchaseAmount"; return { text: "حداقل مبلغ خرید را به تومان وارد کنید (برای بدون حداقل، 0):", nextStep: "minimumPurchaseAmount" }; }
-      if (flow.step === "minimumPurchaseAmount") { const minimumPurchaseAmount = Number(text.replace(/[,،\s]/g, "")); if (!Number.isInteger(minimumPurchaseAmount) || minimumPurchaseAmount < 0) return { text: "حداقل مبلغ خرید معتبر نیست:" }; flow.data.minimumPurchaseAmount = minimumPurchaseAmount; flow.step = "days"; return { text: "اعتبار کوپن چند روز باشد؟", nextStep: "days" }; }
-      const days = Number(text.replace(/[,،\s]/g, "")); if (!Number.isInteger(days) || days <= 0) return { text: "تعداد روز معتبر نیست:" };
-      await CouponService.createAdvanced({ code: String(flow.data.code), type: flow.data.type === "fixed" ? "fixed" : "percentage", value: Number(flow.data.value), maxUses: Number(flow.data.maxUses), perUserLimit: Number(flow.data.perUserLimit), minimumPurchaseAmount: Number(flow.data.minimumPurchaseAmount), expiresAt: new Date(Date.now() + days * 86_400_000) }, String(ctx.from?.id ?? "admin"));
+      if (flow.step === "code") {
+        flow.data.code = text.trim();
+        flow.step = "type";
+        return { text: "نوع کوپن را وارد کنید (درصدی / ثابت):", nextStep: "type" };
+      }
+      if (flow.step === "type") {
+        flow.data.type = text.includes("ثابت") || text.toLowerCase() === "fixed" ? "fixed" : "percentage";
+        flow.step = "value";
+        return { text: flow.data.type === "fixed" ? "مبلغ تخفیف را به تومان وارد کنید:" : "درصد تخفیف را وارد کنید:", nextStep: "value" };
+      }
+      if (flow.step === "value") {
+        const value = Number(text.replace(/[,،\s]/g, ""));
+        if (!Number.isInteger(value) || value <= 0 || (flow.data.type === "percentage" && value > 100)) return { text: "مقدار تخفیف معتبر نیست:" };
+        flow.data.value = value;
+        flow.step = "maxUses";
+        return { text: "حداکثر تعداد استفاده کل را وارد کنید:", nextStep: "maxUses" };
+      }
+      if (flow.step === "maxUses") {
+        const maxUses = Number(text.replace(/[,،\s]/g, ""));
+        if (!Number.isInteger(maxUses) || maxUses <= 0) return { text: "تعداد معتبر نیست:" };
+        flow.data.maxUses = maxUses;
+        flow.step = "perUserLimit";
+        return { text: "حداکثر استفاده هر کاربر را وارد کنید:", nextStep: "perUserLimit" };
+      }
+      if (flow.step === "perUserLimit") {
+        const perUserLimit = Number(text.replace(/[,،\s]/g, ""));
+        if (!Number.isInteger(perUserLimit) || perUserLimit <= 0) return { text: "محدودیت هر کاربر معتبر نیست:" };
+        flow.data.perUserLimit = perUserLimit;
+        flow.step = "minimumPurchaseAmount";
+        return { text: "حداقل مبلغ خرید را به تومان وارد کنید (برای بدون حداقل، 0):", nextStep: "minimumPurchaseAmount" };
+      }
+      if (flow.step === "minimumPurchaseAmount") {
+        const minimumPurchaseAmount = Number(text.replace(/[,،\s]/g, ""));
+        if (!Number.isInteger(minimumPurchaseAmount) || minimumPurchaseAmount < 0) return { text: "حداقل مبلغ خرید معتبر نیست:" };
+        flow.data.minimumPurchaseAmount = minimumPurchaseAmount;
+        flow.step = "days";
+        return { text: "اعتبار کوپن چند روز باشد؟", nextStep: "days" };
+      }
+      const days = Number(text.replace(/[,،\s]/g, ""));
+      if (!Number.isInteger(days) || days <= 0) return { text: "تعداد روز معتبر نیست:" };
+      await CouponService.createAdvanced(
+        {
+          code: String(flow.data.code),
+          type: flow.data.type === "fixed" ? "fixed" : "percentage",
+          value: Number(flow.data.value),
+          maxUses: Number(flow.data.maxUses),
+          perUserLimit: Number(flow.data.perUserLimit),
+          minimumPurchaseAmount: Number(flow.data.minimumPurchaseAmount),
+          expiresAt: new Date(Date.now() + days * 86_400_000),
+        },
+        String(ctx.from?.id ?? "admin"),
+      );
       return { done: true, text: "✅ کوپن جدید ساخته شد.", returnTo: { id: "admin.coupons" } };
     },
   },
@@ -189,11 +296,26 @@ const definitions: Record<FlowName, FlowDefinition> = {
     prompt: `💎 نام رمز ارز را وارد کنید (${CryptoWalletService.supportedCoins().join(" / ")}):`,
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
-      if (flow.step === "coin") { flow.data.coinName = text.trim().toUpperCase(); flow.step = "network"; return { text: "🌐 نام شبکه را وارد کنید (مثلا TRC20):", nextStep: "network" }; }
-      if (flow.step === "network") { flow.data.networkName = text.trim(); flow.step = "address"; return { text: "🏦 آدرس کیف پول را وارد کنید:", nextStep: "address" }; }
-      if (flow.step === "address") { flow.data.walletAddress = text.trim(); flow.step = "status"; return { text: "وضعیت کیف پول را وارد کنید (فعال / غیرفعال):", nextStep: "status" }; }
+      if (flow.step === "coin") {
+        flow.data.coinName = text.trim().toUpperCase();
+        flow.step = "network";
+        return { text: "🌐 نام شبکه را وارد کنید (مثلا TRC20):", nextStep: "network" };
+      }
+      if (flow.step === "network") {
+        flow.data.networkName = text.trim();
+        flow.step = "address";
+        return { text: "🏦 آدرس کیف پول را وارد کنید:", nextStep: "address" };
+      }
+      if (flow.step === "address") {
+        flow.data.walletAddress = text.trim();
+        flow.step = "status";
+        return { text: "وضعیت کیف پول را وارد کنید (فعال / غیرفعال):", nextStep: "status" };
+      }
       const status = text.includes("غیر") || text.toLowerCase() === "inactive" ? "inactive" : "active";
-      await AdminService.saveCryptoWallet({ coinName: String(flow.data.coinName), networkName: String(flow.data.networkName), walletAddress: String(flow.data.walletAddress), status }, String(ctx.from?.id ?? "admin"));
+      await AdminService.saveCryptoWallet(
+        { coinName: String(flow.data.coinName), networkName: String(flow.data.networkName), walletAddress: String(flow.data.walletAddress), status },
+        String(ctx.from?.id ?? "admin"),
+      );
       return { done: true, text: "✅ کیف پول رمز ارزی ذخیره شد. نرخ به‌صورت خودکار دریافت می‌شود.", returnTo: { id: "admin.crypto" } };
     },
   },
@@ -215,7 +337,9 @@ const definitions: Record<FlowName, FlowDefinition> = {
       if (flow.step === "threshold") {
         const threshold = Number(text.replace(/[,،\s]/g, ""));
         if (!Number.isInteger(threshold) || threshold <= 0) return { text: "تعداد دعوت معتبر نیست:" };
-        flow.data.threshold = threshold; flow.step = "amount"; return { text: "مبلغ پاداش را به تومان وارد کنید:", nextStep: "amount" };
+        flow.data.threshold = threshold;
+        flow.step = "amount";
+        return { text: "مبلغ پاداش را به تومان وارد کنید:", nextStep: "amount" };
       }
       const amount = Number(text.replace(/[,،\s]/g, ""));
       if (!Number.isInteger(amount) || amount <= 0) return { text: "مبلغ معتبر نیست:" };
@@ -237,9 +361,20 @@ const definitions: Record<FlowName, FlowDefinition> = {
     prompt: "📢 شناسه کانال عضویت اجباری را وارد کنید (مثلاً @channel یا -100...):",
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
-      if (flow.step === "chatId") { flow.data.chatId = text.trim(); flow.step = "title"; return { text: "عنوان نمایشی کانال را وارد کنید:", nextStep: "title" }; }
-      if (flow.step === "title") { flow.data.title = text.trim(); flow.step = "inviteLink"; return { text: "لینک عضویت کانال را وارد کنید (اگر عمومی است لینک t.me):", nextStep: "inviteLink" }; }
-      await AdminService.saveForcedJoinChannel({ chatId: String(flow.data.chatId), title: String(flow.data.title), inviteLink: text.trim(), status: "active" }, String(ctx.from?.id ?? "admin"));
+      if (flow.step === "chatId") {
+        flow.data.chatId = text.trim();
+        flow.step = "title";
+        return { text: "عنوان نمایشی کانال را وارد کنید:", nextStep: "title" };
+      }
+      if (flow.step === "title") {
+        flow.data.title = text.trim();
+        flow.step = "inviteLink";
+        return { text: "لینک عضویت کانال را وارد کنید (اگر عمومی است لینک t.me):", nextStep: "inviteLink" };
+      }
+      await AdminService.saveForcedJoinChannel(
+        { chatId: String(flow.data.chatId), title: String(flow.data.title), inviteLink: text.trim(), status: "active" },
+        String(ctx.from?.id ?? "admin"),
+      );
       return { done: true, text: "✅ کانال عضویت اجباری ذخیره شد.", returnTo: { id: "admin.forcedJoin" } };
     },
   },
