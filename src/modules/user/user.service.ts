@@ -25,7 +25,7 @@ export class UserService {
 
   static async dashboard(userId: string) {
     const now = new Date();
-    const [user, activeAccounts, expiredAccounts, recentOrders, referralCount, pendingReferralRewards, freeRewards] = await Promise.all([
+    const [user, activeAccounts, expiredAccounts, recentOrders, walletTransactions, referralCount, pendingReferralRewards, freeRewards] = await Promise.all([
       prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { balance: true, referralCode: true } }),
       prisma.orderItem.findMany({
         where: { order: { userId }, isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
@@ -40,6 +40,7 @@ export class UserService {
         take: 10,
       }),
       prisma.order.findMany({ where: { userId }, include: { product: true }, orderBy: { createdAt: "desc" }, take: 10 }),
+      prisma.walletTransaction.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 10 }),
       prisma.referral.count({ where: { referrerId: userId } }),
       prisma.referralReward.aggregate({ where: { userId, status: "pending" }, _sum: { amount: true }, _count: true }),
       prisma.freeConfigReward.count({ where: { userId, status: "available" } }),
@@ -49,6 +50,7 @@ export class UserService {
       activeAccounts,
       expiredAccounts,
       recentOrders,
+      walletTransactions,
       referralCount,
       pendingReferralAmount: pendingReferralRewards._sum.amount ?? 0,
       pendingReferralCount: pendingReferralRewards._count,

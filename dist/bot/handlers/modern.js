@@ -47,30 +47,51 @@ function registerModernHandlers(bot) {
             return;
         try {
             const productId = ctx.match[1];
+            await ctx.editMessageText("⏳ در حال بررسی موجودی، کیف پول و تخصیص اکانت...", { reply_markup: { inline_keyboard: [] } });
             const coupon = ctx.session.selectedCoupons?.[productId];
             const result = await purchase_service_1.PurchaseService.buyProduct(user.id, productId, coupon);
             delete ctx.session.selectedCoupons?.[productId];
-            await ctx.editMessageText(`✅ خرید با موفقیت انجام شد.
+            await ctx.editMessageText(`🎉 خرید شما با موفقیت انجام شد
 
-محصول: ${result.product.title}
-مبلغ اصلی: ${result.originalAmount.toLocaleString("fa-IR")} تومان
-تخفیف: ${result.discountAmount.toLocaleString("fa-IR")} تومان
-مبلغ پرداختی: ${result.totalAmount.toLocaleString("fa-IR")} تومان
+📦 محصول:
+${result.product.title}
 
-نام کاربری:
+💰 مبلغ اصلی: ${result.originalAmount.toLocaleString("fa-IR")} تومان
+🎟 تخفیف: ${result.discountAmount.toLocaleString("fa-IR")} تومان
+✅ مبلغ پرداختی: ${result.totalAmount.toLocaleString("fa-IR")} تومان
+📅 اعتبار تا: ${result.expiresAt.toLocaleDateString("fa-IR")}
+
+👤 نام کاربری:
 ${result.account.username}
 
-لینک ساب:
+🔗 لینک اشتراک:
 ${result.account.subscriptionLink}
 
-لینک کانفیگ:
+🧩 لینک کانفیگ:
 ${result.account.configLink}
 
-تاریخ انقضا: ${result.expiresAt.toLocaleDateString("fa-IR")}`, { reply_markup: { inline_keyboard: [[{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+این اطلاعات همیشه از بخش «اکانت‌های من» قابل مشاهده است.`, { reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }, { text: "🎧 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
         }
         catch (error) {
-            await ctx.editMessageText(`❌ ${error instanceof Error ? error.message : "خرید ناموفق بود"}`, { reply_markup: { inline_keyboard: [[{ text: "⬅️ بازگشت", callback_data: "nav:back" }, { text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+            await ctx.editMessageText(`⚠️ خرید تکمیل نشد.
+
+${error instanceof Error ? error.message : "در انجام درخواست مشکلی پیش آمد. لطفاً چند لحظه دیگر دوباره تلاش کنید."}`, { reply_markup: { inline_keyboard: [[{ text: "💳 شارژ کیف پول", callback_data: (0, panel_ui_1.callbackFor)("deposit") }, { text: "⬅️ بازگشت", callback_data: "nav:back" }], [{ text: "🎧 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") }]] } });
         }
+    });
+    bot.action(/^favorite:toggle:(.+)$/, async (ctx) => {
+        var _a;
+        await ctx.answerCbQuery();
+        const productId = ctx.match[1];
+        (_a = ctx.session).favoriteProducts ?? (_a.favoriteProducts = {});
+        if (ctx.session.favoriteProducts[productId]) {
+            delete ctx.session.favoriteProducts[productId];
+            await ctx.answerCbQuery("از علاقه‌مندی‌ها حذف شد");
+        }
+        else {
+            ctx.session.favoriteProducts[productId] = true;
+            await ctx.answerCbQuery("به علاقه‌مندی‌ها اضافه شد");
+        }
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "shop.product", params: { productId } }, "replace");
     });
     bot.action(/^deposit:wallet:(.+)$/, async (ctx) => {
         await ctx.answerCbQuery();
@@ -91,10 +112,10 @@ ${result.account.configLink}
             const deposit = await deposit_service_1.DepositService.createDeposit(user.id, amount, walletId);
             flow.step = "receipt";
             flow.data.depositId = deposit.id;
-            await ctx.editMessageText(`💳 درخواست شارژ آماده شد\n\nمبلغ شارژ:\n${quote.amount.toLocaleString("fa-IR")} تومان\n\nرمز ارز:\n${quote.wallet.coinName}\n\nشبکه:\n${quote.wallet.networkName}\n\nنرخ:\n${quote.exchangeRate.toLocaleString("fa-IR")} تومان\n\nمبلغ قابل پرداخت:\n${quote.cryptoAmount.toLocaleString("fa-IR", { maximumFractionDigits: 8 })} ${quote.wallet.coinName}\n\nآدرس کیف پول:\n${quote.wallet.walletAddress}\n\n⏳ مهلت پرداخت: ۳۰ دقیقه\n📤 پس از پرداخت، تصویر رسید را ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "❌ لغو", callback_data: "flow:cancel" }]] } });
+            await ctx.editMessageText(`⏳ درخواست پرداخت آماده شد\n\nمبلغ شارژ:\n${quote.amount.toLocaleString("fa-IR")} تومان\n\nرمز ارز:\n${quote.wallet.coinName}\n\nشبکه:\n${quote.wallet.networkName}\n\nنرخ:\n${quote.exchangeRate.toLocaleString("fa-IR")} تومان\n\nمبلغ قابل پرداخت:\n${quote.cryptoAmount.toLocaleString("fa-IR", { maximumFractionDigits: 8 })} ${quote.wallet.coinName}\n\nآدرس کیف پول:\n${quote.wallet.walletAddress}\n\n⏳ مهلت پرداخت: ۳۰ دقیقه\n📤 پس از پرداخت، تصویر رسید را ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "❌ لغو", callback_data: "flow:cancel" }]] } });
         }
         catch (error) {
-            await ctx.reply(`❌ ${error instanceof Error ? error.message : "ایجاد درخواست شارژ ناموفق بود"}`);
+            await ctx.reply(`⚠️ ${error instanceof Error ? error.message : "ایجاد درخواست شارژ ناموفق بود. لطفاً دوباره تلاش کنید."}`);
         }
     });
     bot.action("referral:claim", async (ctx) => {
