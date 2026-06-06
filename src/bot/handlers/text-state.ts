@@ -19,7 +19,11 @@ export async function handleStateText(ctx: AppContext, next: () => Promise<void>
         await ctx.reply("❌ مبلغ معتبر وارد کنید.");
         return;
       }
-      await ctx.reply("💱 ارز پرداخت را انتخاب کنید:", currencyKeyboard(amount));
+      try {
+        await ctx.reply("💱 ارز پرداخت را انتخاب کنید:", await currencyKeyboard(amount));
+      } catch (error) {
+        await ctx.reply(`❌ ${error instanceof Error ? error.message : "مبلغ معتبر نیست"}`);
+      }
       return;
     }
     case "deposit_receipt":

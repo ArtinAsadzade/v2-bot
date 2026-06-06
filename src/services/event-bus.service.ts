@@ -3,7 +3,7 @@ import { logger } from "./logger";
 
 export type AppEventMap = {
   "user.created": { userId: string; telegramId: string; referralCode?: string | null };
-  "deposit.created": { depositId: string; userId: string; amount: number; cryptoType: string; wallet: string };
+  "deposit.created": { depositId: string; userId: string; amount: number; cryptoType: string; wallet: string; networkName?: string | null };
   "deposit.receipt.submitted": { depositId: string; userId: string; amount: number; cryptoType: string; receipt: string };
   "deposit.approved": { depositId: string; userId: string; amount: number; adminTelegramId: string };
   "deposit.rejected": { depositId: string; userId: string; adminTelegramId: string };

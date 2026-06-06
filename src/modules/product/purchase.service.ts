@@ -19,7 +19,8 @@ export class PurchaseService {
         couponMaxUses = coupon.maxUses;
       }
 
-      const totalAmount = Math.max(product.price - discountAmount, 0);
+      const originalAmount = product.price;
+      const totalAmount = Math.max(originalAmount - discountAmount, 0);
       const account = await tx.productAccount.findFirst({
         where: { productId, status: "available" },
         orderBy: { createdAt: "asc" },
@@ -45,8 +46,12 @@ export class PurchaseService {
       }
 
       const order = await tx.order.create({
-        data: { userId, productId, couponId, totalAmount, discountAmount, status: "completed" },
+        data: { userId, productId, couponId, originalAmount, totalAmount, finalPaidAmount: totalAmount, discountAmount, status: "completed" },
       });
+
+      const purchaseDate = new Date();
+      const durationDays = account.durationDays ?? product.duration;
+      const expiresAt = new Date(purchaseDate.getTime() + durationDays * 86_400_000);
 
       await tx.orderItem.create({
         data: {
@@ -55,7 +60,12 @@ export class PurchaseService {
           productAccountId: account.id,
           deliveredUsername: account.username,
           deliveredPassword: account.password,
-          deliveredConfig: account.config,
+          deliveredSubscriptionLink: account.subscriptionLink,
+          deliveredConfigLink: account.configLink,
+          deliveredConfig: account.configLink || account.config,
+          purchaseDate,
+          expiresAt,
+          isActive: true,
         },
       });
 
@@ -69,7 +79,7 @@ export class PurchaseService {
       });
       if (sold.count !== 1) throw new Error("تحویل اکانت ناموفق بود");
 
-      return { order, product, account, totalAmount, discountAmount, couponId, couponCode };
+      return { order, product, account, totalAmount, originalAmount, discountAmount, couponId, couponCode, expiresAt };
     }).then((result) => {
       eventBus.emit("order.created", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });
       eventBus.emit("order.completed", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });

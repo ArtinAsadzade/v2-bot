@@ -17,8 +17,8 @@ function currentReturnTo(ctx) {
     const stack = ctx.session.navigation?.stack ?? [];
     return stack[stack.length - 1] ?? { id: "home" };
 }
-async function flowPrompt(ctx, text) {
-    await ctx.reply(text, { ...(0, panel_ui_1.panelKeyboard)([], { back: false, home: true, cancel: true }) });
+async function flowPrompt(ctx, text, keyboard = []) {
+    await ctx.reply(text, { ...(0, panel_ui_1.panelKeyboard)(keyboard, { back: false, home: true, cancel: true }) });
 }
 function requireUser(ctx) {
     if (!ctx.from)
@@ -32,27 +32,31 @@ function requireUser(ctx) {
 const definitions = {
     deposit_submit: {
         firstStep: "amount",
-        prompt: "💳 مبلغ شارژ را به تومان وارد کنید:",
+        prompt: async () => {
+            const setting = await deposit_service_1.FinancialSettingsService.get();
+            return `💳 مبلغ شارژ را به تومان وارد کنید:\n\nحداقل شارژ: ${money(setting.minimumTopupAmount)}`;
+        },
         async handleText(ctx, text) {
-            const user = await requireUser(ctx);
             if (ctx.session.flow?.step === "amount") {
                 const amount = Number(text.replace(/[,،\s]/g, ""));
-                if (!Number.isInteger(amount) || amount <= 0)
-                    return { text: "مبلغ معتبر نیست. یک عدد به تومان وارد کنید:" };
+                try {
+                    await deposit_service_1.FinancialSettingsService.validateTopupAmount(amount);
+                }
+                catch (error) {
+                    return { text: error instanceof Error ? error.message : "مبلغ معتبر نیست. یک عدد به تومان وارد کنید:" };
+                }
+                const wallets = await deposit_service_1.CryptoWalletService.listActive();
+                if (wallets.length === 0)
+                    return { text: "در حال حاضر کیف پول فعالی برای پرداخت ثبت نشده است." };
                 ctx.session.flow.data.amount = amount;
-                ctx.session.flow.step = "currency";
-                return { text: "نوع ارز را وارد کنید: usdt یا btc", nextStep: "currency" };
+                ctx.session.flow.step = "wallet";
+                return {
+                    text: `مبلغ شارژ: ${money(amount)}\n\nرمز ارز پرداخت را انتخاب کنید:`,
+                    nextStep: "wallet",
+                    keyboard: wallets.map((wallet) => [{ text: `${wallet.coinName} ${wallet.networkName}`, action: `deposit:wallet:${wallet.id}` }]),
+                };
             }
-            if (ctx.session.flow?.step === "currency") {
-                const cryptoType = text.trim().toLowerCase();
-                if (!(0, deposit_service_1.isDepositCurrency)(cryptoType))
-                    return { text: "ارز معتبر نیست. فقط usdt یا btc را وارد کنید:" };
-                const deposit = await deposit_service_1.DepositService.createDeposit(user.id, Number(ctx.session.flow.data.amount), cryptoType);
-                ctx.session.flow.step = "receipt";
-                ctx.session.flow.data.depositId = deposit.id;
-                return { text: `درخواست شارژ ساخته شد.\nمبلغ: ${money(deposit.amount)}\nآدرس کیف پول:\n${deposit.wallet}\n\nاکنون تصویر رسید را ارسال کنید.`, nextStep: "receipt" };
-            }
-            return { text: "لطفا تصویر رسید را ارسال کنید." };
+            return { text: "لطفا رمز ارز را فقط از دکمه‌های نمایش داده‌شده انتخاب کنید." };
         },
         async handlePhoto(ctx, fileId) {
             const user = await requireUser(ctx);
@@ -123,16 +127,16 @@ const definitions = {
             const flow = ctx.session.flow;
             if (flow.step === "username") {
                 flow.data.username = text.trim();
-                flow.step = "password";
-                return { text: "رمز عبور اکانت را وارد کنید:", nextStep: "password" };
+                flow.step = "subscriptionLink";
+                return { text: "لینک ساب اکانت را وارد کنید:", nextStep: "subscriptionLink" };
             }
-            if (flow.step === "password") {
-                flow.data.password = text.trim();
-                flow.step = "config";
-                return { text: "کانفیگ یا توضیحات تحویل را وارد کنید:", nextStep: "config" };
+            if (flow.step === "subscriptionLink") {
+                flow.data.subscriptionLink = text.trim();
+                flow.step = "configLink";
+                return { text: "لینک کانفیگ را وارد کنید:", nextStep: "configLink" };
             }
             const productId = String(flow.data.productId);
-            await product_service_1.ProductService.addAccount(productId, { username: String(flow.data.username), password: String(flow.data.password), config: text.trim() });
+            await product_service_1.ProductService.addAccount(productId, { username: String(flow.data.username), subscriptionLink: String(flow.data.subscriptionLink), configLink: text.trim() });
             return { done: true, text: "✅ اکانت به موجودی محصول اضافه شد.", returnTo: { id: "admin.product", params: { productId } } };
         },
     },
@@ -200,6 +204,44 @@ const definitions = {
             return { done: true, text: "✅ قیمت محصول به‌روزرسانی شد.", returnTo: { id: "admin.product", params: { productId } } };
         },
     },
+    crypto_wallet_create: {
+        firstStep: "coin",
+        prompt: "💎 نام رمز ارز را وارد کنید (مثلا USDT):",
+        async handleText(ctx, text) {
+            const flow = ctx.session.flow;
+            if (flow.step === "coin") {
+                flow.data.coinName = text.trim();
+                flow.step = "network";
+                return { text: "🌐 نام شبکه را وارد کنید (مثلا TRC20):", nextStep: "network" };
+            }
+            if (flow.step === "network") {
+                flow.data.networkName = text.trim();
+                flow.step = "address";
+                return { text: "🏦 آدرس کیف پول را وارد کنید:", nextStep: "address" };
+            }
+            if (flow.step === "address") {
+                flow.data.walletAddress = text.trim();
+                flow.step = "rate";
+                return { text: "📈 نرخ هر واحد رمز ارز به تومان را وارد کنید:", nextStep: "rate" };
+            }
+            const rateToman = Number(text.replace(/[,،\s]/g, ""));
+            if (!Number.isInteger(rateToman) || rateToman <= 0)
+                return { text: "نرخ معتبر نیست. فقط عدد مثبت وارد کنید:" };
+            await admin_service_1.AdminService.saveCryptoWallet({ coinName: String(flow.data.coinName), networkName: String(flow.data.networkName), walletAddress: String(flow.data.walletAddress), rateToman }, String(ctx.from?.id ?? "admin"));
+            return { done: true, text: "✅ کیف پول رمز ارزی ذخیره شد.", returnTo: { id: "admin.crypto" } };
+        },
+    },
+    minimum_topup: {
+        firstStep: "amount",
+        prompt: "💳 حداقل شارژ کیف پول را به تومان وارد کنید:",
+        async handleText(ctx, text) {
+            const amount = Number(text.replace(/[,،\s]/g, ""));
+            if (!Number.isInteger(amount) || amount <= 0)
+                return { text: "مبلغ معتبر نیست. فقط عدد مثبت وارد کنید:" };
+            await admin_service_1.AdminService.setMinimumTopupAmount(amount, String(ctx.from?.id ?? "admin"));
+            return { done: true, text: "✅ حداقل شارژ کیف پول ذخیره شد.", returnTo: { id: "admin.crypto" } };
+        },
+    },
     wallet_adjust: {
         firstStep: "amount",
         prompt: "💳 مبلغ تغییر موجودی را به تومان وارد کنید:",
@@ -237,7 +279,7 @@ async function handleActiveFlowText(ctx, text) {
         await (0, panel_ui_1.renderPanel)(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace");
         return true;
     }
-    await flowPrompt(ctx, result.text);
+    await flowPrompt(ctx, result.text, result.keyboard);
     return true;
 }
 async function handleActiveFlowPhoto(ctx, fileId) {
@@ -253,7 +295,7 @@ async function handleActiveFlowPhoto(ctx, fileId) {
         await (0, panel_ui_1.renderPanel)(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace");
         return true;
     }
-    await flowPrompt(ctx, result.text);
+    await flowPrompt(ctx, result.text, result.keyboard);
     return true;
 }
 function registerFlowEngine(bot) {

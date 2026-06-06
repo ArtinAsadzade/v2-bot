@@ -11,6 +11,9 @@ export type PanelViewId =
   | "shop.product"
   | "shop.checkout"
   | "wallet"
+  | "account"
+  | "account.details"
+  | "account.history"
   | "deposit"
   | "support"
   | "referral"
@@ -23,6 +26,8 @@ export type PanelViewId =
   | "admin.accounts"
   | "admin.freeAccounts"
   | "admin.coupons"
+  | "admin.crypto"
+  | "admin.analytics"
   | "admin.deposits"
   | "admin.deposit"
   | "admin.orders"
@@ -68,6 +73,9 @@ const PANEL_VIEW_IDS = new Set<string>([
   "shop.product",
   "shop.checkout",
   "wallet",
+  "account",
+  "account.details",
+  "account.history",
   "deposit",
   "support",
   "referral",
@@ -80,6 +88,8 @@ const PANEL_VIEW_IDS = new Set<string>([
   "admin.accounts",
   "admin.freeAccounts",
   "admin.coupons",
+  "admin.crypto",
+  "admin.analytics",
   "admin.deposits",
   "admin.deposit",
   "admin.orders",

@@ -3,21 +3,26 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AdminService = void 0;
 const prisma_1 = require("../../services/prisma");
 const wallet_service_1 = require("../wallet/wallet.service");
+const deposit_service_1 = require("../deposit/deposit.service");
 const DASHBOARD_CACHE_TTL_MS = 30000;
 let dashboardCache;
 class AdminService {
     static async dashboard(forceRefresh = false) {
         if (!forceRefresh && dashboardCache && dashboardCache.expiresAt > Date.now())
             return dashboardCache.stats;
-        const [users, products, submittedDeposits, openTickets, orders, revenue] = await Promise.all([
+        const [users, products, submittedDeposits, openTickets, orders, revenue, availableAccounts, soldAccounts, referralRewards, freeRewards] = await Promise.all([
             prisma_1.prisma.user.count(),
             prisma_1.prisma.product.count(),
             prisma_1.prisma.deposit.count({ where: { status: "submitted" } }),
             prisma_1.prisma.ticket.count({ where: { status: "open" } }),
             prisma_1.prisma.order.count(),
-            prisma_1.prisma.order.aggregate({ where: { status: "completed" }, _sum: { totalAmount: true } }),
+            prisma_1.prisma.order.aggregate({ where: { status: "completed" }, _sum: { finalPaidAmount: true } }),
+            prisma_1.prisma.productAccount.count({ where: { status: "available" } }),
+            prisma_1.prisma.productAccount.count({ where: { status: "sold" } }),
+            prisma_1.prisma.referralReward.aggregate({ _sum: { amount: true }, _count: true }),
+            prisma_1.prisma.freeConfigReward.count(),
         ]);
-        const stats = { users, products, submittedDeposits, openTickets, orders, revenue: revenue._sum.totalAmount ?? 0 };
+        const stats = { users, products, submittedDeposits, openTickets, orders, revenue: revenue._sum.finalPaidAmount ?? 0, availableAccounts, soldAccounts, referralRewards: referralRewards._sum.amount ?? 0, freeRewards };
         dashboardCache = { expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS, stats };
         return stats;
     }
@@ -110,6 +115,23 @@ class AdminService {
     static async listRecentOrders(page = 1, take = 8) {
         const skip = (page - 1) * take;
         return Promise.all([prisma_1.prisma.order.findMany({ include: { user: true, product: true }, orderBy: { createdAt: "desc" }, skip, take }), prisma_1.prisma.order.count()]);
+    }
+    static async listCryptoWallets() {
+        return deposit_service_1.CryptoWalletService.listAll();
+    }
+    static async saveCryptoWallet(data, actorId) {
+        const wallet = await deposit_service_1.CryptoWalletService.upsert(data, actorId);
+        this.invalidateDashboardCache();
+        return wallet;
+    }
+    static async cryptoWalletStats() {
+        const [wallets, setting] = await Promise.all([deposit_service_1.CryptoWalletService.listAll(), deposit_service_1.FinancialSettingsService.get()]);
+        return { wallets, setting };
+    }
+    static async setMinimumTopupAmount(amount, actorId) {
+        const setting = await deposit_service_1.FinancialSettingsService.setMinimumTopupAmount(amount, actorId);
+        this.invalidateDashboardCache();
+        return setting;
     }
     static async accountStats() {
         const [available, sold, products] = await Promise.all([
