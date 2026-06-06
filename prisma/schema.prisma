@@ -7,121 +7,271 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  user
+  admin
+  superadmin
+}
+
+enum WalletTransactionType {
+  credit
+  debit
+  transfer_in
+  transfer_out
+}
+
+enum DepositStatus {
+  pending
+  submitted
+  approved
+  rejected
+  expired
+}
+
+enum TicketStatus {
+  open
+  closed
+}
+
+enum TicketSenderRole {
+  user
+  admin
+}
+
+enum ProductAccountStatus {
+  available
+  reserved
+  sold
+}
+
+enum OrderStatus {
+  completed
+  cancelled
+  failed
+}
+
 model User {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  telegramId  String   @unique
-  username    String?
-  firstName   String
-  lastName    String?
-  balance     Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  role String @default("user")
-  isBanned Boolean @default(false)
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  telegramId String   @unique
+  username   String?
+  firstName  String?
+  lastName   String?
+  balance    Int      @default(0)
+  role       Role     @default(user)
+  isBanned   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  walletTransactions WalletTransaction[]
+  deposits           Deposit[]
+  tickets            Ticket[]
+  couponUsages       CouponUsage[]
+  orders             Order[]
+
+  @@index([role])
+  @@index([createdAt])
 }
 
-model Transaction {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId      String
+model WalletTransaction {
+  id          String                @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String                @db.ObjectId
   amount      Int
-  type        String   // credit | debit
-  reason      String
-  createdAt   DateTime @default(now())
-}
+  type        WalletTransactionType
+  description String
+  createdAt   DateTime              @default(now())
 
-model Product {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  title       String
-  category    String
-  price       Int
-  duration    Int      // days
-  createdAt   DateTime @default(now())
+  user User @relation(fields: [userId], references: [id])
 
-  items       ProductItem[]
-}
-
-model ProductItem {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  productId   String
-  configLink  String
-  isSold      Boolean  @default(false)
-
-  soldTo      String?
-  soldAt      DateTime?
-
-  product     Product  @relation(fields: [productId], references: [id])
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
 }
 
 model Deposit {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId      String
-  amount      Int
-  cryptoType  String   // USDT, BTC, etc.
-  wallet      String
-  status      String   // pending | submitted | approved | rejected
+  id         String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String        @db.ObjectId
+  amount     Int
+  cryptoType String
+  wallet     String
+  status     DepositStatus @default(pending)
+  receipt    String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  expiresAt  DateTime
 
-  receipt     String?
-  createdAt   DateTime @default(now())
-  expiresAt   DateTime
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@index([expiresAt])
 }
 
 model Ticket {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String
-  status    String   // open | closed
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String       @db.ObjectId
+  status    TicketStatus @default(open)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
-  createdAt DateTime @default(now())
+  user     User            @relation(fields: [userId], references: [id])
+  messages TicketMessage[]
+
+  @@index([userId, status])
+  @@index([status, createdAt])
 }
 
 model TicketMessage {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  ticketId  String
-  senderId  String
-  message   String
+  id         String           @id @default(auto()) @map("_id") @db.ObjectId
+  ticketId   String           @db.ObjectId
+  senderId   String
+  senderRole TicketSenderRole
+  message    String
+  createdAt  DateTime         @default(now())
 
-  createdAt DateTime @default(now())
+  ticket Ticket @relation(fields: [ticketId], references: [id])
+
+  @@index([ticketId, createdAt])
 }
 
 model Coupon {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  code        String   @unique
-  discount    Int      // percentage
-  maxUses     Int
-  usedCount   Int      @default(0)
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  code            String   @unique
+  discountPercent Int
+  maxUses         Int
+  usedCount       Int      @default(0)
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  expiresAt   DateTime
-  createdAt   DateTime @default(now())
+  usages CouponUsage[]
+  orders Order[]
+
+  @@index([expiresAt])
+}
+
+model CouponUsage {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  couponId  String   @db.ObjectId
+  userId    String   @db.ObjectId
+  orderId   String?  @db.ObjectId
+  createdAt DateTime @default(now())
+
+  coupon Coupon @relation(fields: [couponId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([couponId, userId])
+  @@index([userId, createdAt])
+}
+
+model Category {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model Product {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  categoryId String   @db.ObjectId
+  title      String
+  price      Int
+  duration   Int
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  category Category         @relation(fields: [categoryId], references: [id])
+  accounts ProductAccount[]
+  orders   Order[]
+
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+model ProductAccount {
+  id         String               @id @default(auto()) @map("_id") @db.ObjectId
+  productId  String               @db.ObjectId
+  username   String
+  password   String
+  config     String
+  status     ProductAccountStatus @default(available)
+  reservedBy String?              @db.ObjectId
+  reservedAt DateTime?
+  soldTo     String?              @db.ObjectId
+  soldAt     DateTime?
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  product Product @relation(fields: [productId], references: [id])
+  items   OrderItem[]
+
+  @@index([productId, status])
+  @@index([soldTo])
+}
+
+model Order {
+  id             String      @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String      @db.ObjectId
+  productId      String      @db.ObjectId
+  couponId       String?     @db.ObjectId
+  totalAmount    Int
+  discountAmount Int         @default(0)
+  status         OrderStatus @default(completed)
+  createdAt      DateTime    @default(now())
+
+  user    User        @relation(fields: [userId], references: [id])
+  product Product     @relation(fields: [productId], references: [id])
+  coupon  Coupon?     @relation(fields: [couponId], references: [id])
+  items   OrderItem[]
+
+  @@index([userId, createdAt])
+  @@index([productId, createdAt])
+  @@index([status, createdAt])
+}
+
+model OrderItem {
+  id                 String @id @default(auto()) @map("_id") @db.ObjectId
+  orderId            String @db.ObjectId
+  productId          String @db.ObjectId
+  productAccountId   String @db.ObjectId
+  deliveredUsername  String
+  deliveredPassword  String
+  deliveredConfig    String
+
+  order          Order          @relation(fields: [orderId], references: [id])
+  productAccount ProductAccount @relation(fields: [productAccountId], references: [id])
+
+  @@index([orderId])
+  @@index([productAccountId])
 }
 
 model AuditLog {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  actorId   String
+  action    String
+  metadata  String?
+  createdAt DateTime @default(now())
 
-  actorId     String
-  action      String
-
-  metadata    String?
-
-  createdAt   DateTime @default(now())
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
 }
 
 model DailyStats {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-
-  date        DateTime
-
-  users       Int
-  deposits    Int
-  purchases   Int
-  revenue     Int
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  date      DateTime @unique
+  users     Int
+  deposits  Int
+  purchases Int
+  revenue   Int
 }
 
 model SecurityFlag {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  type      String
+  reason    String
+  createdAt DateTime @default(now())
 
-  userId      String
-
-  type        String
-  reason      String
-
-  createdAt   DateTime @default(now())
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
 }
