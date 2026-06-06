@@ -27,6 +27,7 @@ export interface SessionData {
   productSearchQuery?: string;
   adminFlow?: { flow: string; step: string; data: Record<string, unknown> };
   liveTicketId?: string;
+  liveTicketRole?: "user" | "admin";
   flow?: ActiveFlow;
   navigation?: { panelMessageId?: number; stack: ViewState[] };
 }

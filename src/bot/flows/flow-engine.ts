@@ -8,6 +8,7 @@ import { SupportService } from "../../modules/support/support.service";
 import { AdminService } from "../../modules/admin/admin.service";
 import { FreeAccountService } from "../../modules/free-account/free-account.service";
 import { ReferralService } from "../../modules/referral/referral.service";
+import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
 
@@ -75,8 +76,13 @@ const definitions: Record<FlowName, FlowDefinition> = {
     firstStep: "message",
     prompt: "🎧 پیام خود را برای پشتیبانی بنویسید:\n\nاگر درباره خرید یا شارژ است، مبلغ یا شماره سفارش را هم ارسال کنید.",
     async handleText(ctx, text) {
+      const ticketIdFromFlow = ctx.session.flow?.data.ticketId ? String(ctx.session.flow.data.ticketId) : undefined;
+      if (ticketIdFromFlow && ctx.from && (await isAdminByTelegramId(ctx.from.id))) {
+        await SupportService.addAdminReply(ticketIdFromFlow, String(ctx.from.id), text.trim());
+        return { done: true, text: "✅ پاسخ پشتیبانی ارسال شد.", returnTo: { id: "admin.ticket", params: { ticketId: ticketIdFromFlow } } };
+      }
       const user = await requireUser(ctx);
-      const ticketId = ctx.session.flow?.data.ticketId ? String(ctx.session.flow.data.ticketId) : (await SupportService.createTicket(user.id)).id;
+      const ticketId = ticketIdFromFlow ?? (await SupportService.createTicket(user.id)).id;
       await SupportService.addUserMessage(ticketId, user.id, text.trim());
       return { done: true, text: "✅ تیکت شما ثبت شد. پاسخ پشتیبانی در همین گفتگو برایتان ارسال می‌شود.", returnTo: { id: "support" } };
     },

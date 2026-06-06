@@ -29,8 +29,8 @@ function registerModernViews() {
             ...featuredKeyboard,
             [{ text: "🔎 جستجوی محصول", action: "flow:start:product_search" }, { text: "🛍 همه محصولات", action: (0, panel_ui_1.callbackFor)("shop.categories") }],
             [{ text: "💳 شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") }, { text: "📦 اکانت‌های من", action: (0, panel_ui_1.callbackFor)("account.details") }],
-            [{ text: "🎁 دعوت دوستان", action: (0, panel_ui_1.callbackFor)("referral") }, { text: "🎧 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }],
-            [{ text: "👤 داشبورد من", action: (0, panel_ui_1.callbackFor)("account") }],
+            [{ text: "🆓 دریافت اکانت تست", action: (0, panel_ui_1.callbackFor)("freeAccount") }, { text: "🎁 دعوت دوستان", action: (0, panel_ui_1.callbackFor)("referral") }],
+            [{ text: "🎫 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }, { text: "⚙️ حساب کاربری", action: (0, panel_ui_1.callbackFor)("account") }],
         ];
         if (isAdmin)
             keyboard.push([{ text: "⚙️ مرکز مدیریت", action: (0, panel_ui_1.callbackFor)("admin.dashboard") }]);
@@ -140,7 +140,29 @@ function registerModernViews() {
         return { text: `📜 گردش کیف پول\n\n${dashboard.walletTransactions.map((tx) => `${tx.type === "credit" || tx.type === "transfer_in" ? "🟢" : "🔴"} ${tx.description}\n${money(tx.amount)} · ${tx.createdAt.toLocaleString("fa-IR")}`).join("\n\n") || "هنوز تراکنشی ثبت نشده است."}`, keyboard: [[{ text: "➕ شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") }]] };
     });
     (0, panel_ui_1.registerView)("deposit", async () => ({ text: `➕ شارژ کیف پول\n\n${divider}\nمبلغ شارژ را به تومان وارد می‌کنید، سپس شبکه پرداخت را انتخاب و رسید را ارسال می‌کنید.\n\n⏳ درخواست‌ها زمان‌دار هستند تا پرداخت‌ها دقیق و قابل پیگیری بمانند.`, keyboard: [[{ text: "💳 شروع شارژ", action: "flow:start:deposit_submit" }]] }));
-    (0, panel_ui_1.registerView)("support", async () => ({ text: `🎧 پشتیبانی\n\nبرای پیگیری سریع‌تر، پیام خود را شفاف و کوتاه بنویسید. اگر موضوع مربوط به خرید یا شارژ است، شماره سفارش یا مبلغ را هم ارسال کنید.`, keyboard: [[{ text: "✉️ ثبت تیکت", action: "flow:start:ticket_reply" }]] }));
+    (0, panel_ui_1.registerView)("support", async (ctx) => {
+        const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
+        if (!user)
+            return { text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.", keyboard: [] };
+        const tickets = await support_service_1.SupportService.listUserTickets(user.id);
+        const latestOpen = tickets.find((ticket) => ticket.status === "open");
+        return {
+            text: `🎫 پشتیبانی حرفه‌ای
+
+${divider}
+
+💬 برای گفتگوی طبیعی با پشتیبانی، وارد چت شوید و هر تعداد پیام لازم است ارسال کنید. پاسخ‌ها در همین گفتگو برای شما ارسال می‌شود.
+
+📌 وضعیت آخرین تیکت: ${latestOpen ? `باز (#${shortId(latestOpen.id)})` : "تیکت باز ندارید"}
+
+${tickets.map((ticket) => `• #${shortId(ticket.id)} · ${ticket.status === "open" ? "باز ✅" : "بسته 🔒"} · ${ticket.updatedAt.toLocaleString("fa-IR")}
+  ${ticket.messages[0]?.message ?? "بدون پیام"}`).join("\n") || "هنوز تیکتی ثبت نشده است."}`,
+            keyboard: [
+                [{ text: latestOpen ? "💬 ادامه گفتگو" : "✉️ ایجاد تیکت جدید", action: "support:chat:start" }],
+                ...tickets.slice(0, 3).map((ticket) => [{ text: `👁 تیکت #${shortId(ticket.id)}`, action: `support:chat:${ticket.id}` }]),
+            ],
+        };
+    });
     (0, panel_ui_1.registerView)("referral", async (ctx) => {
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
         if (!user)
@@ -148,7 +170,7 @@ function registerModernViews() {
         const stats = await referral_service_1.ReferralService.getStats(user.id);
         const botUsername = process.env.BOT_USERNAME ?? "BOT";
         const link = `https://t.me/${botUsername}?start=${user.referralCode}`;
-        return { text: `🎁 دعوت دوستان\n\n${divider}\nکد دعوت شما:\n${user.referralCode ?? "در حال ساخت"}\n\nلینک دعوت آماده کپی:\n${link}\n\n👥 دعوت‌های موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر\n💰 پاداش قابل برداشت: ${money(stats.pendingAmount)}\n${divider}\n\nاین لینک را برای دوستانتان ارسال کنید؛ بعد از ثبت‌نام موفق، پاداش شما به‌صورت شفاف در همین بخش نمایش داده می‌شود.`, keyboard: [[{ text: "💰 برداشت پاداش", action: "referral:claim" }], [{ text: "🆓 اکانت رایگان", action: (0, panel_ui_1.callbackFor)("freeAccount") }]] };
+        return { text: `🎁 دعوت دوستان\n\n${divider}\nکد دعوت شما:\n${user.referralCode ?? "در حال ساخت"}\n\nلینک دعوت آماده کپی:\n${link}\n\n👥 دعوت‌های موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر\n💰 پاداش قابل برداشت: ${money(stats.pendingAmount)}\n${divider}\n\nاین لینک را برای دوستانتان ارسال کنید؛ بعد از ثبت‌نام موفق، پاداش شما به‌صورت شفاف در همین بخش نمایش داده می‌شود.`, keyboard: [[{ text: "💰 برداشت پاداش", action: "referral:claim" }]] };
     });
     (0, panel_ui_1.registerView)("freeAccount", async (ctx) => {
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
@@ -157,8 +179,30 @@ function registerModernViews() {
         const eligibility = await free_account_service_1.FreeAccountService.eligibility(user.id);
         const assigned = await free_account_service_1.FreeAccountService.assignedForUser(user.id);
         return {
-            text: `🆓 اکانت تست رایگان\n\nقانون دریافت: هر ۳۰ روز یک اکانت\nوضعیت: ${eligibility.eligible ? "آماده دریافت" : `قابل دریافت از ${eligibility.nextAvailableAt?.toLocaleDateString("fa-IR")}`}\nاکانت‌های دریافتی: ${assigned.length.toLocaleString("fa-IR")}\n\n${assigned.map((item) => `• اکانت تست ${item.account.durationDays.toLocaleString("fa-IR")} روزه\nنام کاربری: ${item.account.username}\nلینک اشتراک: ${item.account.subscriptionLink}\nلینک کانفیگ: ${item.account.configLink}\nتاریخ دریافت: ${item.createdAt.toLocaleDateString("fa-IR")}`).join("\n\n") || "هنوز اکانت رایگان اختصاص داده نشده است."}`,
-            keyboard: [[{ text: "🆓 دریافت اکانت رایگان", action: "freeAccount:claim" }, { text: "🎁 دعوت دوستان", action: (0, panel_ui_1.callbackFor)("referral") }]],
+            text: `🆓 دریافت اکانت تست
+${divider}
+
+🎯 این بخش مستقل از دعوت دوستان است و هر کاربر می‌تواند طبق قوانین دوره‌ای، اکانت تست دریافت کند.
+
+📌 قانون دریافت: هر ۳۰ روز یک اکانت
+⚡ وضعیت: ${eligibility.eligible ? "آماده دریافت ✅" : `قابل دریافت از ${eligibility.nextAvailableAt?.toLocaleDateString("fa-IR")}`}
+📦 اکانت‌های دریافتی: ${assigned.length.toLocaleString("fa-IR")}
+
+${assigned.map((item) => `━━━━━━━━━━━━━━
+📦 اطلاعات اکانت تست
+
+👤 نام کاربری:
+${item.account.username}
+
+🔗 لینک اشتراک:
+${item.account.subscriptionLink}
+
+🧩 لینک کانفیگ:
+${item.account.configLink}
+
+⏳ مدت: ${item.account.durationDays.toLocaleString("fa-IR")} روز
+📅 تاریخ دریافت: ${item.createdAt.toLocaleDateString("fa-IR")}`).join("\n\n") || "هنوز اکانت تستی اختصاص داده نشده است."}`,
+            keyboard: [[{ text: "🆓 دریافت اکانت تست", action: "freeAccount:claim" }]],
         };
     });
     (0, panel_ui_1.registerView)("admin.dashboard", async () => {
@@ -265,13 +309,37 @@ function registerModernViews() {
     });
     (0, panel_ui_1.registerView)("admin.tickets", async (_ctx, params) => {
         const current = page(params);
-        const [tickets, total] = await admin_service_1.AdminService.listOpenTickets(current);
-        return { text: `🎧 تیکت‌های فعال\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}`, keyboard: tickets.map((ticket) => [{ text: `🎧 ${ticket.user.telegramId} · #${shortId(ticket.id)}`, action: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: ticket.id }) }]) };
+        const [tickets, total] = await admin_service_1.AdminService.listTickets(current);
+        const openCount = tickets.filter((ticket) => ticket.status === "open").length;
+        return {
+            text: `🎫 مدیریت تیکت‌ها
+${divider}
+
+📌 تاریخچه گفتگوها، ورود مستقیم به چت و بستن تیکت‌ها از همین بخش انجام می‌شود.
+
+✅ تیکت‌های باز این صفحه: ${openCount.toLocaleString("fa-IR")}
+📄 صفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}`,
+            keyboard: [
+                ...tickets.map((ticket) => [{ text: `${ticket.status === "open" ? "🟢" : "⚫️"} ${ticket.user.telegramId} · #${shortId(ticket.id)}`, action: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: ticket.id }) }]),
+                [{ text: "قبلی", action: (0, panel_ui_1.callbackFor)("admin.tickets", { page: Math.max(current - 1, 1) }) }, { text: "بعدی", action: (0, panel_ui_1.callbackFor)("admin.tickets", { page: current + 1 }) }],
+            ],
+        };
     });
     (0, panel_ui_1.registerView)("admin.ticket", async (_ctx, params) => {
         const ticket = await support_service_1.SupportService.getTicketWithUser(params.ticketId);
         if (!ticket)
             return { text: "⚠️ تیکت پیدا نشد.", keyboard: [] };
-        return { text: `🎧 تیکت #${shortId(ticket.id)}\nکاربر: ${ticket.user.telegramId}\n\n${ticket.messages.map((message) => `${message.senderRole === "admin" ? "پشتیبانی" : "کاربر"}: ${message.message}`).join("\n") || "بدون پیام"}`, keyboard: [[{ text: "↩️ پاسخ", action: `flow:start:ticket_reply:${ticket.id}` }, { text: "✅ بستن", action: `admin:ticket:close:${ticket.id}` }]] };
+        return {
+            text: `🎫 تیکت #${shortId(ticket.id)}
+${divider}
+
+👤 کاربر: ${ticket.user.telegramId}${ticket.user.username ? ` (@${ticket.user.username})` : ""}
+⚡ وضعیت: ${ticket.status === "open" ? "باز ✅" : "بسته 🔒"}
+🕒 آخرین بروزرسانی: ${ticket.updatedAt.toLocaleString("fa-IR")}
+
+${ticket.messages.map((message) => `${message.senderRole === "admin" ? "👨‍💼 پشتیبانی" : "👤 کاربر"} · ${message.createdAt.toLocaleString("fa-IR")}
+${message.message}`).join("\n\n") || "بدون پیام"}`,
+            keyboard: [[{ text: "💬 ورود به چت", action: `support:admin:chat:${ticket.id}` }, { text: "↩️ پاسخ سریع", action: `flow:start:ticket_reply:${ticket.id}` }], [{ text: "✅ بستن", action: `admin:ticket:close:${ticket.id}` }]],
+        };
     });
 }

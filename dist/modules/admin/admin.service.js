@@ -131,12 +131,16 @@ class AdminService {
     static async depositDetail(depositId) {
         return prisma_1.prisma.deposit.findUnique({ where: { id: depositId }, include: { user: true } });
     }
-    static async listOpenTickets(page = 1, take = 8) {
+    static async listTickets(page = 1, take = 8, status) {
         const skip = (page - 1) * take;
+        const where = status ? { status } : {};
         return Promise.all([
-            prisma_1.prisma.ticket.findMany({ where: { status: "open" }, include: { user: true }, orderBy: { updatedAt: "desc" }, skip, take }),
-            prisma_1.prisma.ticket.count({ where: { status: "open" } }),
+            prisma_1.prisma.ticket.findMany({ where, include: { user: true, messages: { orderBy: { createdAt: "desc" }, take: 1 } }, orderBy: { updatedAt: "desc" }, skip, take }),
+            prisma_1.prisma.ticket.count({ where }),
         ]);
+    }
+    static async listOpenTickets(page = 1, take = 8) {
+        return this.listTickets(page, take, "open");
     }
     static async listCoupons(page = 1, take = 8, query, status) {
         return coupon_service_1.CouponService.list({ page, take, query, status });

@@ -160,12 +160,17 @@ export class AdminService {
     return prisma.deposit.findUnique({ where: { id: depositId }, include: { user: true } });
   }
 
-  static async listOpenTickets(page = 1, take = 8) {
+  static async listTickets(page = 1, take = 8, status?: "open" | "closed") {
     const skip = (page - 1) * take;
+    const where = status ? { status } : {};
     return Promise.all([
-      prisma.ticket.findMany({ where: { status: "open" }, include: { user: true }, orderBy: { updatedAt: "desc" }, skip, take }),
-      prisma.ticket.count({ where: { status: "open" } }),
+      prisma.ticket.findMany({ where, include: { user: true, messages: { orderBy: { createdAt: "desc" }, take: 1 } }, orderBy: { updatedAt: "desc" }, skip, take }),
+      prisma.ticket.count({ where }),
     ]);
+  }
+
+  static async listOpenTickets(page = 1, take = 8) {
+    return this.listTickets(page, take, "open");
   }
 
   static async listCoupons(page = 1, take = 8, query?: string, status?: "active" | "inactive" | "deleted") {

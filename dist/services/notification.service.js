@@ -80,8 +80,14 @@ function registerNotificationEvents() {
     });
     event_bus_service_1.eventBus.on("ticket.created", async (event) => {
         await exports.notificationService.notifyAdmins({
-            text: `🎧 تیکت جدید\n\nشناسه: ${event.ticketId}\nکاربر: ${event.telegramId}`,
-            actions: [[{ text: "💬 ورود به چت", callbackData: `admin:ticket:${event.ticketId}` }]],
+            text: `🎫 تیکت جدید
+━━━━━━━━━━━━━━
+
+🧾 شناسه: #${String(event.ticketId).slice(-6).toUpperCase()}
+👤 کاربر: ${event.telegramId}
+
+برای مشاهده تاریخچه یا پاسخ مستقیم، یکی از دکمه‌های زیر را انتخاب کنید.`,
+            actions: [[{ text: "👁 مشاهده تیکت", callbackData: `nav:admin.ticket?ticketId=${event.ticketId}` }, { text: "💬 ورود به چت", callbackData: `support:admin:chat:${event.ticketId}` }]],
         });
     });
     event_bus_service_1.eventBus.on("referral.reward.claimed", async (event) => {
@@ -90,7 +96,7 @@ function registerNotificationEvents() {
     event_bus_service_1.eventBus.on("free_config.claimed", async (event) => {
         await exports.notificationService.notifyUser(event.userId, {
             text: `🎁 کانفیگ رایگان شما:\n\n${event.config}`,
-            actions: [[{ text: "🏠 خانه", callbackData: "home" }]],
+            actions: [[{ text: "🏠 خانه", callbackData: "nav:home" }]],
         });
     });
 }
