@@ -3,6 +3,7 @@ import type { AppContext } from "../types/bot";
 import { logger } from "../services/logger";
 import { UserService } from "../modules/user/user.service";
 import { notificationService, registerNotificationEvents } from "../services/notification.service";
+import { accessControlMiddleware } from "./middlewares/access-control.middleware";
 
 if (!process.env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN is missing");
@@ -22,6 +23,8 @@ bot.use(async (ctx, next) => {
   if (ctx.from) await UserService.findOrCreateUser(ctx);
   await next();
 });
+
+bot.use(accessControlMiddleware());
 
 bot.catch((error, ctx) => {
   logger.error("Unhandled bot error", {

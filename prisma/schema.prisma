@@ -42,6 +42,7 @@ enum ProductAccountStatus {
   available
   reserved
   sold
+  expired
 }
 
 enum OrderStatus {
@@ -52,6 +53,7 @@ enum OrderStatus {
 
 enum ReferralRewardStatus {
   pending
+  claimable
   claimed
 }
 
@@ -61,6 +63,11 @@ enum FreeConfigRewardStatus {
 }
 
 enum CryptoWalletStatus {
+  active
+  inactive
+}
+
+enum StoreStatus {
   active
   inactive
 }
@@ -88,6 +95,7 @@ model User {
   referredReferral   Referral?           @relation("Referred")
   referralRewards    ReferralReward[]
   freeConfigRewards  FreeConfigReward[]
+  freeAccountAssignment FreeAccountAssignment?
 
   @@index([role])
   @@index([referredById])
@@ -109,18 +117,36 @@ model Referral {
 
 model ReferralReward {
   id         String               @id @default(auto()) @map("_id") @db.ObjectId
-  referralId String               @db.ObjectId
+  referralId String?              @db.ObjectId
+  tierId     String?              @db.ObjectId
   userId     String               @db.ObjectId
+  threshold  Int                  @default(1)
   amount     Int
-  status     ReferralRewardStatus @default(pending)
+  status     ReferralRewardStatus @default(claimable)
   createdAt  DateTime             @default(now())
   claimedAt  DateTime?
 
-  referral Referral @relation(fields: [referralId], references: [id])
-  user     User     @relation(fields: [userId], references: [id])
+  referral Referral?           @relation(fields: [referralId], references: [id])
+  tier     ReferralRewardTier? @relation(fields: [tierId], references: [id])
+  user     User                @relation(fields: [userId], references: [id])
 
+  @@unique([userId, threshold])
   @@index([userId, status])
   @@index([referralId])
+  @@index([tierId])
+}
+
+model ReferralRewardTier {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  threshold Int      @unique
+  amount    Int
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rewards ReferralReward[]
+
+  @@index([isActive, threshold])
 }
 
 model FreeConfigReward {
@@ -182,7 +208,8 @@ model CryptoWallet {
   walletAddress String
   networkName   String
   status        CryptoWalletStatus @default(active)
-  rateToman     Int
+  rateToman     Int                @default(0)
+  lastRateAt    DateTime?
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
@@ -193,10 +220,11 @@ model CryptoWallet {
 }
 
 model FinancialSetting {
-  id                 String   @id @default("singleton") @map("_id")
-  minimumTopupAmount Int      @default(100000)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                 String      @id @default("singleton") @map("_id")
+  minimumTopupAmount Int         @default(100000)
+  storeStatus        StoreStatus @default(active)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 }
 
 model Ticket {
@@ -399,8 +427,45 @@ model FreeAccountPool {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  product Product @relation(fields: [productId], references: [id])
+  product    Product                @relation(fields: [productId], references: [id])
+  assignment FreeAccountAssignment?
 
   @@index([productId, isAssigned])
   @@index([assignedTo])
+}
+
+model FreeAccountAssignment {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @unique @db.ObjectId
+  accountId String   @unique @db.ObjectId
+  productId String   @db.ObjectId
+  reason    String
+  createdAt DateTime @default(now())
+
+  user    User            @relation(fields: [userId], references: [id])
+  account FreeAccountPool @relation(fields: [accountId], references: [id])
+
+  @@index([productId, createdAt])
+}
+
+model UserBlockHistory {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  actorId   String
+  blocked   Boolean
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model AccountExpirationNotification {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  orderItemId String   @db.ObjectId
+  daysBefore  Int
+  sentAt      DateTime @default(now())
+
+  @@unique([orderItemId, daysBefore])
+  @@index([sentAt])
 }

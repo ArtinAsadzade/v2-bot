@@ -7,6 +7,7 @@ import { CryptoWalletService, DepositService, FinancialSettingsService } from ".
 import { SupportService } from "../../modules/support/support.service";
 import { AdminService } from "../../modules/admin/admin.service";
 import { FreeAccountService } from "../../modules/free-account/free-account.service";
+import { ReferralService } from "../../modules/referral/referral.service";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
 
@@ -160,16 +161,15 @@ const definitions: Record<FlowName, FlowDefinition> = {
 
   crypto_wallet_create: {
     firstStep: "coin",
-    prompt: "💎 نام رمز ارز را وارد کنید (مثلا USDT):",
+    prompt: `💎 نام رمز ارز را وارد کنید (${CryptoWalletService.supportedCoins().join(" / ")}):`,
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
-      if (flow.step === "coin") { flow.data.coinName = text.trim(); flow.step = "network"; return { text: "🌐 نام شبکه را وارد کنید (مثلا TRC20):", nextStep: "network" }; }
+      if (flow.step === "coin") { flow.data.coinName = text.trim().toUpperCase(); flow.step = "network"; return { text: "🌐 نام شبکه را وارد کنید (مثلا TRC20):", nextStep: "network" }; }
       if (flow.step === "network") { flow.data.networkName = text.trim(); flow.step = "address"; return { text: "🏦 آدرس کیف پول را وارد کنید:", nextStep: "address" }; }
-      if (flow.step === "address") { flow.data.walletAddress = text.trim(); flow.step = "rate"; return { text: "📈 نرخ هر واحد رمز ارز به تومان را وارد کنید:", nextStep: "rate" }; }
-      const rateToman = Number(text.replace(/[,،\s]/g, ""));
-      if (!Number.isInteger(rateToman) || rateToman <= 0) return { text: "نرخ معتبر نیست. فقط عدد مثبت وارد کنید:" };
-      await AdminService.saveCryptoWallet({ coinName: String(flow.data.coinName), networkName: String(flow.data.networkName), walletAddress: String(flow.data.walletAddress), rateToman }, String(ctx.from?.id ?? "admin"));
-      return { done: true, text: "✅ کیف پول رمز ارزی ذخیره شد.", returnTo: { id: "admin.crypto" } };
+      if (flow.step === "address") { flow.data.walletAddress = text.trim(); flow.step = "status"; return { text: "وضعیت کیف پول را وارد کنید (فعال / غیرفعال):", nextStep: "status" }; }
+      const status = text.includes("غیر") || text.toLowerCase() === "inactive" ? "inactive" : "active";
+      await AdminService.saveCryptoWallet({ coinName: String(flow.data.coinName), networkName: String(flow.data.networkName), walletAddress: String(flow.data.walletAddress), status }, String(ctx.from?.id ?? "admin"));
+      return { done: true, text: "✅ کیف پول رمز ارزی ذخیره شد. نرخ به‌صورت خودکار دریافت می‌شود.", returnTo: { id: "admin.crypto" } };
     },
   },
   minimum_topup: {
@@ -182,6 +182,32 @@ const definitions: Record<FlowName, FlowDefinition> = {
       return { done: true, text: "✅ حداقل شارژ کیف پول ذخیره شد.", returnTo: { id: "admin.crypto" } };
     },
   },
+  referral_tier_create: {
+    firstStep: "threshold",
+    prompt: "🎁 تعداد دعوت مورد نیاز برای سطح پاداش را وارد کنید:",
+    async handleText(ctx, text) {
+      const flow = ctx.session.flow!;
+      if (flow.step === "threshold") {
+        const threshold = Number(text.replace(/[,،\s]/g, ""));
+        if (!Number.isInteger(threshold) || threshold <= 0) return { text: "تعداد دعوت معتبر نیست:" };
+        flow.data.threshold = threshold; flow.step = "amount"; return { text: "مبلغ پاداش را به تومان وارد کنید:", nextStep: "amount" };
+      }
+      const amount = Number(text.replace(/[,،\s]/g, ""));
+      if (!Number.isInteger(amount) || amount <= 0) return { text: "مبلغ معتبر نیست:" };
+      await ReferralService.upsertTier(Number(flow.data.threshold), amount, String(ctx.from?.id ?? "admin"));
+      return { done: true, text: "✅ سطح پاداش دعوت ذخیره شد.", returnTo: { id: "admin.referrals" } };
+    },
+  },
+  store_status: {
+    firstStep: "status",
+    prompt: "وضعیت فروشگاه را وارد کنید (فعال / غیرفعال):",
+    async handleText(ctx, text) {
+      const status = text.includes("غیر") || text.toLowerCase() === "inactive" ? "inactive" : "active";
+      await AdminService.setStoreStatus(status, String(ctx.from?.id ?? "admin"));
+      return { done: true, text: "✅ وضعیت فروشگاه ذخیره شد.", returnTo: { id: "admin.store" } };
+    },
+  },
+
   wallet_adjust: {
     firstStep: "amount",
     prompt: "💳 مبلغ تغییر موجودی را به تومان وارد کنید:",

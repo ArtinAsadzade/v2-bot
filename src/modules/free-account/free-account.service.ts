@@ -1,11 +1,9 @@
 import { prisma } from "../../services/prisma";
 import { eventBus } from "../../services/event-bus.service";
 
-const DEFAULT_THRESHOLD = Number(process.env.FREE_ACCOUNT_REFERRAL_THRESHOLD ?? 3);
-
 export class FreeAccountService {
   static threshold() {
-    return DEFAULT_THRESHOLD;
+    return 1;
   }
 
   static async addToPool(productId: string, data: { username: string; password: string; config: string }) {
@@ -22,18 +20,18 @@ export class FreeAccountService {
   }
 
   static async assign(userId: string, reason: string, productId?: string) {
-    const candidate = await prisma.freeAccountPool.findFirst({ where: { isAssigned: false, ...(productId ? { productId } : {}) }, orderBy: { createdAt: "asc" }, include: { product: true } });
-    if (!candidate) throw new Error("اکانت رایگان موجود نیست");
-    const updated = await prisma.freeAccountPool.update({ where: { id: candidate.id }, data: { isAssigned: true, assignedTo: userId, assignedAt: new Date(), reason }, include: { product: true } });
-    eventBus.emit("free_account.assigned", { userId, productId: updated.productId, accountId: updated.id, reason });
-    return updated;
-  }
-
-  static async autoAssignReferralReward(referrerId: string, referralCount: number) {
-    if (referralCount < DEFAULT_THRESHOLD || referralCount % DEFAULT_THRESHOLD !== 0) return undefined;
-    const alreadyAssignedForMilestone = await prisma.freeAccountPool.findFirst({ where: { assignedTo: referrerId, reason: `referral_${referralCount}` } });
-    if (alreadyAssignedForMilestone) return alreadyAssignedForMilestone;
-    return this.assign(referrerId, `referral_${referralCount}`).catch(() => undefined);
+    const assigned = await prisma.$transaction(async (tx) => {
+      const previous = await tx.freeAccountAssignment.findUnique({ where: { userId }, include: { account: { include: { product: true } } } });
+      if (previous) throw new Error("شما قبلاً اکانت رایگان دریافت کرده‌اید");
+      const candidate = await tx.freeAccountPool.findFirst({ where: { isAssigned: false, ...(productId ? { productId } : {}) }, orderBy: { createdAt: "asc" }, include: { product: true } });
+      if (!candidate) throw new Error("اکانت رایگان موجود نیست");
+      const updated = await tx.freeAccountPool.updateMany({ where: { id: candidate.id, isAssigned: false, assignedTo: null }, data: { isAssigned: true, assignedTo: userId, assignedAt: new Date(), reason } });
+      if (updated.count !== 1) throw new Error("اکانت رایگان هم‌زمان تخصیص داده شد؛ دوباره تلاش کنید");
+      await tx.freeAccountAssignment.create({ data: { userId, accountId: candidate.id, productId: candidate.productId, reason } });
+      return { ...candidate, isAssigned: true, assignedTo: userId, assignedAt: new Date(), reason };
+    });
+    eventBus.emit("free_account.assigned", { userId, productId: assigned.productId, accountId: assigned.id, reason });
+    return assigned;
   }
 
   static async assignedForUser(userId: string) {
@@ -42,7 +40,5 @@ export class FreeAccountService {
 }
 
 export function registerFreeAccountEvents() {
-  eventBus.on("referral.earned", async (payload) => {
-    await FreeAccountService.autoAssignReferralReward(payload.referrerId, payload.referralCount);
-  });
+  // Free accounts are intentionally separate from referral rewards.
 }

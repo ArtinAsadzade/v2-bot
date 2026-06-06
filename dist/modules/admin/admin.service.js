@@ -4,6 +4,7 @@ exports.AdminService = void 0;
 const prisma_1 = require("../../services/prisma");
 const wallet_service_1 = require("../wallet/wallet.service");
 const deposit_service_1 = require("../deposit/deposit.service");
+const system_service_1 = require("../system/system.service");
 const DASHBOARD_CACHE_TTL_MS = 30000;
 let dashboardCache;
 class AdminService {
@@ -44,10 +45,19 @@ class AdminService {
         await this.audit(actorId, "user.balance.adjust", { userId, amount, reason });
         return user;
     }
-    static async setUserBan(userId, banned, actorId) {
-        const user = await prisma_1.prisma.user.update({ where: { id: userId }, data: { isBanned: banned } });
-        await this.audit(actorId, banned ? "user.ban" : "user.unban", { userId });
+    static async setUserBan(userId, banned, actorId, reason) {
+        const user = await prisma_1.prisma.$transaction(async (tx) => {
+            const updated = await tx.user.update({ where: { id: userId }, data: { isBanned: banned } });
+            await tx.userBlockHistory.create({ data: { userId, actorId, blocked: banned, reason } });
+            await tx.auditLog.create({ data: { actorId, action: banned ? "user.block" : "user.unblock", metadata: JSON.stringify({ userId, reason }) } });
+            return updated;
+        });
+        system_service_1.SystemSettingsService.invalidateUserStatus(user.telegramId);
+        this.invalidateDashboardCache();
         return user;
+    }
+    static async userBlockHistory(userId) {
+        return prisma_1.prisma.userBlockHistory.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 20 });
     }
     static async searchUsers(query) {
         return prisma_1.prisma.user.findMany({
@@ -91,6 +101,25 @@ class AdminService {
         await this.audit(actorId, "product.delete.soft", { productId });
         return product;
     }
+    static async hardDeleteProduct(productId, actorId, force = false) {
+        return prisma_1.prisma.$transaction(async (tx) => {
+            const activeOrders = await tx.order.count({ where: { productId, status: "completed", items: { some: { isActive: true } } } });
+            if (activeOrders > 0 && !force)
+                throw new Error("این محصول در سفارش فعال استفاده شده است. برای حذف دائمی، تایید نهایی لازم است");
+            const orders = await tx.order.findMany({ where: { productId }, select: { id: true } });
+            const orderIds = orders.map((order) => order.id);
+            if (orderIds.length)
+                await tx.couponUsage.updateMany({ where: { orderId: { in: orderIds } }, data: { orderId: null } });
+            await tx.orderItem.deleteMany({ where: { productId } });
+            await tx.order.deleteMany({ where: { productId } });
+            await tx.freeAccountAssignment.deleteMany({ where: { productId } });
+            await tx.freeAccountPool.deleteMany({ where: { productId } });
+            await tx.productAccount.deleteMany({ where: { productId } });
+            const product = await tx.product.delete({ where: { id: productId } });
+            await tx.auditLog.create({ data: { actorId, action: "product.delete.hard", metadata: JSON.stringify({ productId, force, activeOrders }) } });
+            return product;
+        });
+    }
     static async listSubmittedDeposits(page = 1, take = 8) {
         const skip = (page - 1) * take;
         return Promise.all([
@@ -126,7 +155,12 @@ class AdminService {
     }
     static async cryptoWalletStats() {
         const [wallets, setting] = await Promise.all([deposit_service_1.CryptoWalletService.listAll(), deposit_service_1.FinancialSettingsService.get()]);
-        return { wallets, setting };
+        return { wallets, setting, supportedCoins: deposit_service_1.CryptoWalletService.supportedCoins() };
+    }
+    static async setStoreStatus(status, actorId) {
+        const setting = await system_service_1.SystemSettingsService.setStoreStatus(status, actorId);
+        this.invalidateDashboardCache();
+        return setting;
     }
     static async setMinimumTopupAmount(amount, actorId) {
         const setting = await deposit_service_1.FinancialSettingsService.setMinimumTopupAmount(amount, actorId);
