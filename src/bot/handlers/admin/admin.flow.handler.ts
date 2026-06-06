@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { AppContext } from "../../../types/bot";
 import { CouponService } from "../../../modules/coupon/coupon.service";
 import { ProductService } from "../../../modules/product/product.service";
@@ -6,12 +5,12 @@ import { AdminService } from "../../../modules/admin/admin.service";
 import { resetFlow, getFlow } from "./admin.flow";
 import { navigationKeyboard } from "../../keyboards/main.keyboard";
 
-function asPositiveInteger(value: string) {
+function asPositiveInteger(value: string): number | undefined {
   const number = Number(value.replace(/[,،]/g, ""));
   return Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
-export async function handleAdminFlow(ctx: AppContext) {
+export async function handleAdminFlow(ctx: AppContext): Promise<boolean> {
   const flow = getFlow(ctx);
   if (!flow) return false;
 

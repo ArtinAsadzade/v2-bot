@@ -3,7 +3,7 @@ import { renderPanel, callbackFor, panelKeyboard, type ViewState } from "../navi
 import { UserService } from "../../modules/user/user.service";
 import { ProductService } from "../../modules/product/product.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
-import { DepositService, type DepositCurrency } from "../../modules/deposit/deposit.service";
+import { DepositService, isDepositCurrency } from "../../modules/deposit/deposit.service";
 import { SupportService } from "../../modules/support/support.service";
 import { AdminService } from "../../modules/admin/admin.service";
 import { FreeAccountService } from "../../modules/free-account/free-account.service";
@@ -35,7 +35,7 @@ function requireUser(ctx: AppContext) {
   });
 }
 
-const definitions: Record<string, FlowDefinition> = {
+const definitions: Record<FlowName, FlowDefinition> = {
   deposit_submit: {
     firstStep: "amount",
     prompt: "💳 مبلغ شارژ را به تومان وارد کنید:",
@@ -49,8 +49,8 @@ const definitions: Record<string, FlowDefinition> = {
         return { text: "نوع ارز را وارد کنید: usdt یا btc", nextStep: "currency" };
       }
       if (ctx.session.flow?.step === "currency") {
-        const cryptoType = text.trim().toLowerCase() as DepositCurrency;
-        if (cryptoType !== "usdt" && cryptoType !== "btc") return { text: "ارز معتبر نیست. فقط usdt یا btc را وارد کنید:" };
+        const cryptoType = text.trim().toLowerCase();
+        if (!isDepositCurrency(cryptoType)) return { text: "ارز معتبر نیست. فقط usdt یا btc را وارد کنید:" };
         const deposit = await DepositService.createDeposit(user.id, Number(ctx.session.flow.data.amount), cryptoType);
         ctx.session.flow.step = "receipt";
         ctx.session.flow.data.depositId = deposit.id;
@@ -167,6 +167,10 @@ const definitions: Record<string, FlowDefinition> = {
   },
 };
 
+function isFlowName(value: string): value is FlowName {
+  return Object.prototype.hasOwnProperty.call(definitions, value);
+}
+
 export async function startFlow(ctx: AppContext, name: FlowName, data: Record<string, string | number | boolean | undefined> = {}) {
   const definition = definitions[name];
   if (!definition) throw new Error("جریان پیدا نشد");
@@ -213,13 +217,17 @@ export function registerFlowEngine(bot: AppBot) {
 
   bot.action(/^flow:start:([^:]+)(?::([^:]+))?(?::([^:]+))?$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const name = ctx.match[1] as FlowName;
+    const name = ctx.match[1];
+    if (!isFlowName(name)) {
+      await ctx.answerCbQuery("جریان نامعتبر است");
+      return;
+    }
     if (name === "coupon_code") return startFlow(ctx, "coupon_code", { productId: ctx.match[2] });
     if (name === "account_create") return startFlow(ctx, "account_create", { productId: ctx.match[2] });
     if (name === "free_account_create") return startFlow(ctx, "free_account_create", { productId: ctx.match[2] });
     if (name === "ticket_reply") return startFlow(ctx, "ticket_reply", { ticketId: ctx.match[2] });
     if (name === "wallet_adjust") return startFlow(ctx, "wallet_adjust", { userId: ctx.match[2], mode: ctx.match[3] });
     if (name === "product_price") return startFlow(ctx, "product_price", { productId: ctx.match[2] });
-    return startFlow(ctx, name as FlowName);
+    return startFlow(ctx, name);
   });
 }

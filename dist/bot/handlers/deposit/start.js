@@ -15,6 +15,10 @@ function registerDepositHandlers(bot) {
     bot.action(/^dep:(usdt|btc):(\d+)$/, async (ctx) => {
         await ctx.answerCbQuery();
         const currency = ctx.match[1];
+        if (!(0, deposit_service_1.isDepositCurrency)(currency)) {
+            await ctx.reply("ارز انتخابی معتبر نیست.", (0, main_keyboard_1.navigationKeyboard)());
+            return;
+        }
         const amount = Number(ctx.match[2]);
         const user = await user_service_1.UserService.findOrCreateUser(ctx);
         const deposit = await deposit_service_1.DepositService.createDeposit(user.id, amount, currency);

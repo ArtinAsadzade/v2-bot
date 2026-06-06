@@ -10,6 +10,10 @@ export const DEPOSIT_WALLETS = {
 
 export type DepositCurrency = keyof typeof DEPOSIT_WALLETS;
 
+export function isDepositCurrency(value: string): value is DepositCurrency {
+  return value === "usdt" || value === "btc";
+}
+
 export class DepositService {
   static async createDeposit(userId: string, amount: number, cryptoType: DepositCurrency) {
     if (!Number.isInteger(amount) || amount <= 0) {

@@ -1,7 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerAdminHandlers = registerAdminHandlers;
-// @ts-nocheck
 const telegraf_1 = require("telegraf");
 const deposit_service_1 = require("../../../modules/deposit/deposit.service");
 const product_service_1 = require("../../../modules/product/product.service");
@@ -44,8 +43,8 @@ function registerAdminHandlers(bot) {
             return;
         await ctx.answerCbQuery();
         const page = "match" in ctx && ctx.match ? Number(ctx.match[1]) : 1;
-        const { skip, take, pageSize } = (0, pagination_1.getPagination)(page);
-        const [users, total] = await admin_service_1.AdminService.listUsers(skip, take);
+        const { take, pageSize } = (0, pagination_1.getPagination)(page);
+        const [users, total] = await admin_service_1.AdminService.listUsers(page, take);
         await ctx.reply(users.map((user) => `👤 ${user.telegramId} @${user.username ?? "-"} | ${user.balance.toLocaleString("fa-IR")} تومان`).join("\n") || "کاربری وجود ندارد.", paginationKeyboard("admin:users", page, (0, pagination_1.getTotalPages)(total, pageSize)));
     });
     bot.action("admin:users:search", async (ctx) => {
@@ -60,8 +59,8 @@ function registerAdminHandlers(bot) {
             return;
         await ctx.answerCbQuery();
         const page = "match" in ctx && ctx.match ? Number(ctx.match[1]) : 1;
-        const { skip, take, pageSize } = (0, pagination_1.getPagination)(page);
-        const [products, total] = await admin_service_1.AdminService.listProducts(skip, take);
+        const { take, pageSize } = (0, pagination_1.getPagination)(page);
+        const [products, total] = await admin_service_1.AdminService.listProducts(page, take);
         const lines = await Promise.all(products.map(async (product) => `📦 ${product.title} | ${product.category.name} | ${product.price.toLocaleString("fa-IR")} تومان | موجودی ${(await product_service_1.ProductService.availableStock(product.id)).toLocaleString("fa-IR")}`));
         await ctx.reply(lines.join("\n") || "محصولی وجود ندارد.", paginationKeyboard("admin:products", page, (0, pagination_1.getTotalPages)(total, pageSize)));
     });
@@ -97,7 +96,7 @@ function registerAdminHandlers(bot) {
         if (!(await requireAdmin(ctx)))
             return;
         await ctx.answerCbQuery();
-        const deposits = await admin_service_1.AdminService.listSubmittedDeposits();
+        const [deposits] = await admin_service_1.AdminService.listSubmittedDeposits();
         if (deposits.length === 0) {
             await ctx.reply("واریزی در انتظار بررسی وجود ندارد.", (0, main_keyboard_1.navigationKeyboard)("admin:dashboard"));
             return;
@@ -130,7 +129,7 @@ function registerAdminHandlers(bot) {
         if (!(await requireAdmin(ctx)))
             return;
         await ctx.answerCbQuery();
-        const coupons = await admin_service_1.AdminService.listCoupons();
+        const [coupons] = await admin_service_1.AdminService.listCoupons();
         await ctx.reply(`${coupons.map((coupon) => `🎟 ${coupon.code} | ${coupon.discountPercent}% | ${coupon.usedCount}/${coupon.maxUses}`).join("\n") || "کوپنی وجود ندارد."}\n\nبرای ایجاد کوپن جدید دکمه زیر را بزنید.`, telegraf_1.Markup.inlineKeyboard([[telegraf_1.Markup.button.callback("➕ کوپن جدید", "admin:coupon:create")], [telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:dashboard")]]));
     });
     bot.action("admin:coupon:create", async (ctx) => {
@@ -144,7 +143,7 @@ function registerAdminHandlers(bot) {
         if (!(await requireAdmin(ctx)))
             return;
         await ctx.answerCbQuery();
-        const tickets = await admin_service_1.AdminService.listOpenTickets();
+        const [tickets] = await admin_service_1.AdminService.listOpenTickets();
         await ctx.reply("تیکت‌های باز:", telegraf_1.Markup.inlineKeyboard([...tickets.map((ticket) => [telegraf_1.Markup.button.callback(`🎧 ${ticket.user.telegramId} - ${ticket.id.slice(-6)}`, `admin:ticket:${ticket.id}`)]), [telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:dashboard")]]));
     });
     bot.action(/^admin:ticket:([^:]+)$/, async (ctx) => {
@@ -180,7 +179,7 @@ function registerAdminHandlers(bot) {
         if (!(await requireAdmin(ctx)))
             return;
         await ctx.answerCbQuery();
-        const orders = await admin_service_1.AdminService.listRecentOrders();
+        const [orders] = await admin_service_1.AdminService.listRecentOrders();
         await ctx.reply(orders.map((order) => `🧾 ${order.id.slice(-6)} | ${order.user.telegramId} | ${order.product.title} | ${order.totalAmount.toLocaleString("fa-IR")}`).join("\n") || "سفارشی وجود ندارد.", (0, main_keyboard_1.navigationKeyboard)("admin:dashboard"));
     });
 }

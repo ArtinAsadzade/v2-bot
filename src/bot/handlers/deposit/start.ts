@@ -1,6 +1,6 @@
 import { Markup } from "telegraf";
 import type { AppBot } from "../../../types/bot";
-import { DepositService, type DepositCurrency } from "../../../modules/deposit/deposit.service";
+import { DepositService, isDepositCurrency } from "../../../modules/deposit/deposit.service";
 import { UserService } from "../../../modules/user/user.service";
 import { navigationKeyboard } from "../../keyboards/main.keyboard";
 
@@ -13,7 +13,11 @@ export function registerDepositHandlers(bot: AppBot) {
 
   bot.action(/^dep:(usdt|btc):(\d+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const currency = ctx.match[1] as DepositCurrency;
+    const currency = ctx.match[1];
+    if (!isDepositCurrency(currency)) {
+      await ctx.reply("ارز انتخابی معتبر نیست.", navigationKeyboard());
+      return;
+    }
     const amount = Number(ctx.match[2]);
     const user = await UserService.findOrCreateUser(ctx);
     const deposit = await DepositService.createDeposit(user.id, amount, currency);
