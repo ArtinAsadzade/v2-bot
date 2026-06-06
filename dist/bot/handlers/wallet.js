@@ -1,13 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const bot_1 = require("../bot");
-const prisma_1 = require("../../services/prisma");
-bot_1.bot.action("wallet", async (ctx) => {
-    const user = await prisma_1.prisma.user.findUnique({
-        where: { telegramId: String(ctx.from?.id) },
+exports.registerWalletHandlers = registerWalletHandlers;
+const user_service_1 = require("../../modules/user/user.service");
+const main_keyboard_1 = require("../keyboards/main.keyboard");
+function registerWalletHandlers(bot) {
+    bot.action("wallet", async (ctx) => {
+        await ctx.answerCbQuery();
+        const user = await user_service_1.UserService.findOrCreateUser(ctx);
+        await ctx.reply(`💰 کیف پول شما:\n\nموجودی: ${user.balance.toLocaleString("fa-IR")} تومان`, (0, main_keyboard_1.navigationKeyboard)());
     });
-    await ctx.answerCbQuery();
-    await ctx.reply(`💰 کیف پول شما:
-    
-موجودی: ${user?.balance || 0} تومان`);
-});
+}

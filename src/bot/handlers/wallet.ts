@@ -1,16 +1,11 @@
-import { bot } from "../bot";
-import { prisma } from "../../services/prisma";
+import type { AppBot } from "../../types/bot";
+import { UserService } from "../../modules/user/user.service";
+import { navigationKeyboard } from "../keyboards/main.keyboard";
 
-bot.action("wallet", async (ctx) => {
-  const user = await prisma.user.findUnique({
-    where: { telegramId: String(ctx.from?.id) },
+export function registerWalletHandlers(bot: AppBot) {
+  bot.action("wallet", async (ctx) => {
+    await ctx.answerCbQuery();
+    const user = await UserService.findOrCreateUser(ctx);
+    await ctx.reply(`💰 کیف پول شما:\n\nموجودی: ${user.balance.toLocaleString("fa-IR")} تومان`, navigationKeyboard());
   });
-
-  await ctx.answerCbQuery();
-
-  await ctx.reply(
-    `💰 کیف پول شما:
-    
-موجودی: ${user?.balance || 0} تومان`,
-  );
-});
+}

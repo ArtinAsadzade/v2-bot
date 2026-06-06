@@ -1,4 +1,4 @@
-import type { Context, SessionFlavor, Telegraf } from "telegraf";
+import type { Context, Telegraf } from "telegraf";
 
 export type ConversationState =
   | { name: "deposit_amount" }
@@ -12,7 +12,11 @@ export type ConversationState =
 
 export interface SessionData {
   state?: ConversationState;
+  selectedCoupons?: Record<string, string>;
 }
 
-export type AppContext = Context & SessionFlavor<SessionData>;
+export interface AppContext extends Context {
+  session: SessionData;
+}
+
 export type AppBot = Telegraf<AppContext>;

@@ -1,15 +1,13 @@
-const cache = new Map();
+const cache = new Map<string, number>();
 
-export function rateLimit(userId: string) {
+export function rateLimit(userId: string, windowMs = 1000) {
   const now = Date.now();
-
   const last = cache.get(userId);
 
-  if (last && now - last < 1000) {
+  if (last && now - last < windowMs) {
     return false;
   }
 
   cache.set(userId, now);
-
   return true;
 }
