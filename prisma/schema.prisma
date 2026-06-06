@@ -65,7 +65,7 @@ enum FreeConfigRewardStatus {
 enum FreeAccountStatus {
   available
   assigned
-  disabled
+  expired
 }
 
 enum CouponType {
@@ -454,7 +454,6 @@ model FreeAccount {
   status           FreeAccountStatus @default(available)
   assignedTo       String?           @db.ObjectId
   assignedAt       DateTime?
-  disabledAt       DateTime?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -469,13 +468,26 @@ model FreeAccountAssignment {
   userId    String   @db.ObjectId
   accountId String   @unique @db.ObjectId
   reason    String
+  assignedAt DateTime @default(now())
+  expiresAt DateTime
   createdAt DateTime @default(now())
 
   user    User        @relation(fields: [userId], references: [id])
   account FreeAccount @relation(fields: [accountId], references: [id])
 
-  @@index([userId, createdAt])
+  @@index([userId, assignedAt])
+  @@index([expiresAt])
   @@index([createdAt])
+}
+
+model FreeAccountUserLock {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId           String   @unique @db.ObjectId
+  lastClaimAt      DateTime
+  lastAssignmentId String?  @db.ObjectId
+  updatedAt        DateTime @updatedAt
+
+  @@index([lastClaimAt])
 }
 
 model UserBlockHistory {

@@ -19,6 +19,9 @@ type DashboardStats = {
   referralRewards: number;
   freeAccountsAvailable: number;
   freeAccountsAssigned: number;
+  freeAccountsExpired: number;
+  freeAccountsMonthly: number;
+  freeAccountsUniqueUsers: number;
 };
 
 let dashboardCache: { expiresAt: number; stats: DashboardStats } | undefined;
@@ -27,7 +30,8 @@ export class AdminService {
   static async dashboard(forceRefresh = false) {
     if (!forceRefresh && dashboardCache && dashboardCache.expiresAt > Date.now()) return dashboardCache.stats;
 
-    const [users, products, submittedDeposits, openTickets, orders, revenue, availableAccounts, soldAccounts, referralRewards, freeAccountsAvailable, freeAccountsAssigned] = await Promise.all([
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000);
+    const [users, products, submittedDeposits, openTickets, orders, revenue, availableAccounts, soldAccounts, referralRewards, freeAccountsAvailable, freeAccountsAssigned, freeAccountsExpired, freeAccountsMonthly, freeAccountUniqueRows] = await Promise.all([
       prisma.user.count(),
       prisma.product.count(),
       prisma.deposit.count({ where: { status: "submitted" } }),
@@ -39,9 +43,12 @@ export class AdminService {
       prisma.referralReward.aggregate({ _sum: { amount: true }, _count: true }),
       prisma.freeAccount.count({ where: { status: "available" } }),
       prisma.freeAccount.count({ where: { status: "assigned" } }),
+      prisma.freeAccount.count({ where: { status: "expired" } }),
+      prisma.freeAccountAssignment.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+      prisma.freeAccountAssignment.findMany({ distinct: ["userId"], select: { userId: true } }),
     ]);
 
-    const stats = { users, products, submittedDeposits, openTickets, orders, revenue: revenue._sum.finalPaidAmount ?? 0, availableAccounts, soldAccounts, referralRewards: referralRewards._sum.amount ?? 0, freeAccountsAvailable, freeAccountsAssigned };
+    const stats = { users, products, submittedDeposits, openTickets, orders, revenue: revenue._sum.finalPaidAmount ?? 0, availableAccounts, soldAccounts, referralRewards: referralRewards._sum.amount ?? 0, freeAccountsAvailable, freeAccountsAssigned, freeAccountsExpired, freeAccountsMonthly, freeAccountsUniqueUsers: freeAccountUniqueRows.length };
     dashboardCache = { expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS, stats };
     return stats;
   }

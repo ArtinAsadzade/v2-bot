@@ -4,7 +4,7 @@ import { UserService } from "../../modules/user/user.service";
 import { ProductService } from "../../modules/product/product.service";
 import { AdminService } from "../../modules/admin/admin.service";
 import { ReferralService } from "../../modules/referral/referral.service";
-import { FreeAccountService } from "../../modules/free-account/free-account.service";
+import { FreeAccountService, FREE_ACCOUNT_STATUS_LABELS, formatRemainingTime } from "../../modules/free-account/free-account.service";
 import { SupportService } from "../../modules/support/support.service";
 
 const divider = "━━━━━━━━━━━━━━";
@@ -34,7 +34,7 @@ export function registerModernViews() {
     if (isAdmin) keyboard.push([{ text: "⚙️ مرکز مدیریت", action: callbackFor("admin.dashboard") }]);
 
     return {
-      text: `سلام ${ctx.from?.first_name ?? "دوست عزیز"} 🌿\n\n${divider}\n👤 پروفایل کاربر\n\n💰 موجودی کیف پول: ${money(user?.balance ?? 0)}\n👥 تعداد دعوت‌ها: ${(dashboard?.referralCount ?? 0).toLocaleString("fa-IR")} نفر\n🎁 جوایز فعال: ${(dashboard?.freeRewards ?? 0).toLocaleString("fa-IR")}\n📦 اکانت‌های فعال: ${(dashboard?.activeAccounts.length ?? 0).toLocaleString("fa-IR")}\n${divider}\n\n✨ سرویس‌های منتخب آماده تحویل هستند. برای خرید سریع، یکی از گزینه‌های زیر را انتخاب کنید.`,
+      text: `سلام ${ctx.from?.first_name ?? "دوست عزیز"} 🌿\n\n${divider}\n👤 پروفایل کاربر\n\n💰 موجودی کیف پول: ${money(user?.balance ?? 0)}\n👥 تعداد دعوت‌ها: ${(dashboard?.referralCount ?? 0).toLocaleString("fa-IR")} نفر\n🎁 جوایز فعال: ${(dashboard?.freeRewards ?? 0).toLocaleString("fa-IR")}\n📦 اکانت‌های فعال: ${((dashboard?.activeAccounts.length ?? 0) + (dashboard?.activeFreeAccounts.length ?? 0)).toLocaleString("fa-IR")}\n${divider}\n\n✨ سرویس‌های منتخب آماده تحویل هستند. برای خرید سریع، یکی از گزینه‌های زیر را انتخاب کنید.`,
       keyboard,
     };
   });
@@ -105,7 +105,7 @@ export function registerModernViews() {
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.", keyboard: [] };
     const dashboard = await UserService.dashboard(user.id);
     return {
-      text: `👤 داشبورد حساب کاربری\n\n${divider}\n💰 موجودی کیف پول: ${money(dashboard.user.balance)}\n👥 تعداد دعوت‌ها: ${dashboard.referralCount.toLocaleString("fa-IR")} نفر\n🎁 جوایز فعال: ${dashboard.freeRewards.toLocaleString("fa-IR")}\n📦 اکانت‌های فعال: ${dashboard.activeAccounts.length.toLocaleString("fa-IR")}\n🧾 خریدهای اخیر: ${dashboard.recentOrders.length.toLocaleString("fa-IR")} سفارش\n💎 پاداش قابل برداشت: ${money(dashboard.pendingReferralAmount)}\n${divider}\n\nاقدام سریع خود را انتخاب کنید:`,
+      text: `👤 داشبورد حساب کاربری\n\n${divider}\n💰 موجودی کیف پول: ${money(dashboard.user.balance)}\n👥 تعداد دعوت‌ها: ${dashboard.referralCount.toLocaleString("fa-IR")} نفر\n🎁 جوایز فعال: ${dashboard.freeRewards.toLocaleString("fa-IR")}\n📦 اکانت‌های فعال: ${(dashboard.activeAccounts.length + dashboard.activeFreeAccounts.length).toLocaleString("fa-IR")}\n🧾 خریدهای اخیر: ${dashboard.recentOrders.length.toLocaleString("fa-IR")} سفارش\n💎 پاداش قابل برداشت: ${money(dashboard.pendingReferralAmount)}\n${divider}\n\nاقدام سریع خود را انتخاب کنید:`,
       keyboard: [
         [{ text: "💳 شارژ کیف پول", action: callbackFor("deposit") }, { text: "🛒 فروشگاه", action: callbackFor("shop.categories") }],
         [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }, { text: "📦 اکانت‌های من", action: callbackFor("account.details") }],
@@ -119,8 +119,54 @@ export function registerModernViews() {
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.", keyboard: [] };
     const dashboard = await UserService.dashboard(user.id);
     return {
-      text: `📦 اطلاعات اکانت‌های من\n\n${dashboard.activeAccounts.map((item) => `▸ ${item.product.title}\nنام کاربری:\n${item.deliveredUsername}\nلینک اشتراک:\n${item.deliveredSubscriptionLink ?? "ثبت نشده"}\nلینک کانفیگ:\n${item.deliveredConfigLink ?? item.deliveredConfig}\nانقضا: ${item.expiresAt ? item.expiresAt.toLocaleDateString("fa-IR") : "نامحدود"}`).join("\n\n") || "اکانت فعالی برای نمایش وجود ندارد. از فروشگاه می‌توانید سرویس جدید تهیه کنید."}`,
-      keyboard: [[{ text: "🛒 خرید سرویس", action: callbackFor("shop.categories") }, { text: "🎧 پشتیبانی", action: callbackFor("support") }]],
+      text: `📦 اکانت‌های من
+
+${divider}
+
+${[...dashboard.activeFreeAccounts.map((item) => `🆓 اکانت تست
+
+👤 نام کاربری:
+${item.account.username}
+
+🔗 لینک اشتراک:
+${item.account.subscriptionLink}
+
+⚙️ لینک کانفیگ:
+${item.account.configLink}
+
+📅 تاریخ دریافت:
+${(item.assignedAt ?? item.createdAt).toLocaleString("fa-IR")}
+
+⏳ مدت اعتبار:
+${item.account.durationDays.toLocaleString("fa-IR")} روز (تا ${(item.expiresAt ?? new Date((item.assignedAt ?? item.createdAt).getTime() + item.account.durationDays * 86_400_000)).toLocaleDateString("fa-IR")})
+
+📌 وضعیت:
+فعال`), ...dashboard.activeAccounts.map((item) => `📦 ${item.product.title}
+
+👤 نام کاربری:
+${item.deliveredUsername}
+
+🔗 لینک اشتراک:
+${item.deliveredSubscriptionLink ?? "ثبت نشده"}
+
+⚙️ لینک کانفیگ:
+${item.deliveredConfigLink ?? item.deliveredConfig}
+
+📅 تاریخ دریافت:
+${item.purchaseDate.toLocaleString("fa-IR")}
+
+⏳ اعتبار:
+${item.expiresAt ? `تا ${item.expiresAt.toLocaleDateString("fa-IR")}` : "نامحدود"}
+
+📌 وضعیت:
+فعال`)].join(`
+
+${divider}
+
+`) || "اکانت فعالی برای نمایش وجود ندارد. از فروشگاه می‌توانید سرویس جدید تهیه کنید یا اکانت تست دریافت کنید."}
+
+${divider}`,
+      keyboard: [[{ text: "🛒 خرید سرویس", action: callbackFor("shop.categories") }, { text: "🆓 اکانت تست", action: callbackFor("freeAccount") }], [{ text: "🎧 پشتیبانی", action: callbackFor("support") }]],
     };
   });
 
@@ -180,33 +226,34 @@ ${tickets.map((ticket) => `• #${shortId(ticket.id)} · ${ticket.status === "op
   registerView("freeAccount", async (ctx) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
-    const eligibility = await FreeAccountService.eligibility(user.id);
-    const assigned = await FreeAccountService.assignedForUser(user.id);
+    const [eligibility, stats] = await Promise.all([FreeAccountService.eligibility(user.id), FreeAccountService.stats()]);
+    const last = eligibility.last;
+    const statusText = eligibility.reason === "active" ? "دارای اکانت تست فعال ⚠️" : eligibility.reason === "cooldown" ? "در انتظار پایان محدودیت ۳۰ روزه ⏳" : eligibility.reason === "blocked" ? "حساب مسدود است ⛔" : "آماده دریافت ✅";
     return {
       text: `🆓 دریافت اکانت تست
+
 ${divider}
 
-🎯 این بخش مستقل از دعوت دوستان است و هر کاربر می‌تواند طبق قوانین دوره‌ای، اکانت تست دریافت کند.
+این بخش کاملاً مستقل از فروشگاه، محصولات و سیستم دعوت دوستان است. هر کاربر فقط هر ۳۰ روز یک‌بار می‌تواند اکانت تست دریافت کند.
 
-📌 قانون دریافت: هر ۳۰ روز یک اکانت
-⚡ وضعیت: ${eligibility.eligible ? "آماده دریافت ✅" : `قابل دریافت از ${eligibility.nextAvailableAt?.toLocaleDateString("fa-IR")}`}
-📦 اکانت‌های دریافتی: ${assigned.length.toLocaleString("fa-IR")}
+📌 وضعیت شما:
+${statusText}
 
-${assigned.map((item) => `━━━━━━━━━━━━━━
-📦 اطلاعات اکانت تست
+📦 موجودی آماده:
+${stats.available.toLocaleString("fa-IR")} عدد
 
-👤 نام کاربری:
-${item.account.username}
+${eligibility.activeAccount ? `⚠️ شما در حال حاضر یک اکانت تست فعال دارید.
 
-🔗 لینک اشتراک:
-${item.account.subscriptionLink}
+📦 برای مشاهده اطلاعات اکانت از بخش «اکانت‌های من» استفاده کنید.` : last ? `📅 تاریخ دریافت قبلی:
+${(last.assignedAt ?? last.createdAt).toLocaleString("fa-IR")}
 
-🧩 لینک کانفیگ:
-${item.account.configLink}
+⏳ زمان باقی‌مانده تا دریافت مجدد:
+${eligibility.nextAvailableAt && eligibility.nextAvailableAt > new Date() ? formatRemainingTime(eligibility.nextAvailableAt) : "اکنون امکان دریافت دارید"}` : "✅ تاکنون اکانت تست دریافت نکرده‌اید."}
 
-⏳ مدت: ${item.account.durationDays.toLocaleString("fa-IR")} روز
-📅 تاریخ دریافت: ${item.createdAt.toLocaleDateString("fa-IR")}`).join("\n\n") || "هنوز اکانت تستی اختصاص داده نشده است."}`,
-      keyboard: [[{ text: "🆓 دریافت اکانت تست", action: "freeAccount:claim" }]],
+${divider}
+
+در صورت تأیید، موجودی به‌صورت امن و اتمیک بررسی و فقط یک اکانت به شما اختصاص داده می‌شود.`,
+      keyboard: eligibility.activeAccount ? [[{ text: "📦 مشاهده اکانت‌های من", action: callbackFor("account.details") }]] : [[{ text: "🆓 دریافت اکانت تست", action: "freeAccount:claim" }], [{ text: "📦 اکانت‌های من", action: callbackFor("account.details") }]],
     };
   });
 
@@ -257,8 +304,27 @@ ${item.account.configLink}
   registerView("admin.freeAccounts", async () => {
     const stats = await FreeAccountService.stats();
     return {
-      text: `🆓 مدیریت اکانت تست رایگان\n\nآماده تخصیص: ${stats.available.toLocaleString("fa-IR")}\nتخصیص‌یافته: ${stats.assigned.toLocaleString("fa-IR")}\nغیرفعال: ${stats.disabled.toLocaleString("fa-IR")}\n\nآخرین تخصیص‌ها:\n${stats.recentAssignments.map((item) => `• ${item.user.telegramId} ← ${item.account.username} · ${item.createdAt.toLocaleDateString("fa-IR")}`).join("\n") || "هنوز تخصیصی ثبت نشده است."}\n\nموجودی اخیر:\n${stats.inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleString("fa-IR")} روز · ${item.status}`).join("\n") || "موجودی ثبت نشده است."}`,
-      keyboard: [[{ text: "➕ افزودن اکانت تست", action: "flow:start:free_account_create" }]],
+      text: `🆓 مدیریت اکانت تست
+
+${divider}
+
+📊 آمار اختصاصی اکانت تست
+
+• کل اکانت‌ها: ${stats.total.toLocaleString("fa-IR")}
+• موجودی آماده: ${stats.available.toLocaleString("fa-IR")}
+• تخصیص‌یافته فعال: ${stats.assigned.toLocaleString("fa-IR")}
+• منقضی‌شده: ${stats.expired.toLocaleString("fa-IR")}
+• تخصیص‌های ۳۰ روز اخیر: ${stats.monthlyAssignments.toLocaleString("fa-IR")}
+• کاربران یکتای سرویس‌گرفته: ${stats.uniqueUsers.toLocaleString("fa-IR")}
+
+${divider}
+
+🧾 آخرین تخصیص‌ها:
+${stats.recentAssignments.map((item) => `• ${item.user.telegramId} ← ${item.account.username} · ${(item.assignedAt ?? item.createdAt).toLocaleDateString("fa-IR")} · انقضا ${(item.expiresAt ?? new Date((item.assignedAt ?? item.createdAt).getTime() + item.account.durationDays * 86_400_000)).toLocaleDateString("fa-IR")}`).join("\n") || "هنوز تخصیصی ثبت نشده است."}
+
+📦 موجودی اخیر:
+${stats.inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleString("fa-IR")} روز · ${FREE_ACCOUNT_STATUS_LABELS[item.status]}`).join("\n") || "موجودی ثبت نشده است."}`,
+      keyboard: [[{ text: "➕ افزودن اکانت تست", action: "flow:start:free_account_create" }], [{ text: "📦 مشاهده موجودی", action: callbackFor("admin.freeAccounts") }, { text: "🧾 تاریخچه تخصیص", action: callbackFor("admin.freeAccounts") }]],
     };
   });
 

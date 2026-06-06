@@ -25,7 +25,7 @@ export class UserService {
 
   static async dashboard(userId: string) {
     const now = new Date();
-    const [user, activeAccounts, expiredAccounts, recentOrders, walletTransactions, referralCount, pendingReferralRewards, freeRewards] = await Promise.all([
+    const [user, activeAccounts, expiredAccounts, activeFreeAccounts, recentOrders, walletTransactions, referralCount, pendingReferralRewards, freeRewards] = await Promise.all([
       prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { balance: true, referralCode: true } }),
       prisma.orderItem.findMany({
         where: { order: { userId }, isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
@@ -39,6 +39,16 @@ export class UserService {
         orderBy: { purchaseDate: "desc" },
         take: 10,
       }),
+      prisma.freeAccountAssignment.findMany({
+        where: { userId, account: { is: { status: "assigned" } } },
+        include: { account: true },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      }).then((items) => items.filter((item) => {
+        const assignedAt = item.assignedAt ?? item.createdAt;
+        const expiresAt = item.expiresAt ?? new Date(assignedAt.getTime() + (item.account.durationDays * 86_400_000));
+        return expiresAt > now;
+      }).slice(0, 10)),
       prisma.order.findMany({ where: { userId }, include: { product: true }, orderBy: { createdAt: "desc" }, take: 10 }),
       prisma.walletTransaction.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 10 }),
       prisma.referral.count({ where: { referrerId: userId } }),
@@ -49,6 +59,7 @@ export class UserService {
       user,
       activeAccounts,
       expiredAccounts,
+      activeFreeAccounts,
       recentOrders,
       walletTransactions,
       referralCount,

@@ -16,6 +16,7 @@ export type AppEventMap = {
   "coupon.applied": { couponId: string; code: string; userId: string; orderId: string; discountAmount: number };
   "free_config.claimed": { rewardId: string; userId: string; config: string };
   "free_account.assigned": { userId: string; accountId: string; reason: string; productId?: string };
+  "free_account.expired": { count: number };
   "order.created": { orderId: string; userId: string; productId: string; totalAmount: number };
   "order.completed": { orderId: string; userId: string; productId: string; totalAmount: number };
 };
