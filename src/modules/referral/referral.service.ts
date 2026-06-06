@@ -24,9 +24,18 @@ export class ReferralService {
     const existing = await prisma.referral.findUnique({ where: { referredId: referredUserId } });
     if (existing) return existing;
 
-    const referral = await prisma.referral.create({ data: { referrerId: referrer.id, referredId: referredUserId } });
-    await prisma.user.update({ where: { id: referredUserId }, data: { referredById: referrer.id } });
-    await prisma.referralReward.create({ data: { referralId: referral.id, userId: referrer.id, amount: REFERRAL_REWARD_AMOUNT } });
+    const referral = await prisma.$transaction(async (tx) => {
+      const referred = await tx.user.findUnique({ where: { id: referredUserId }, select: { referredById: true } });
+      if (referred?.referredById) {
+        const current = await tx.referral.findUnique({ where: { referredId: referredUserId } });
+        if (current) return current;
+        throw new Error("این کاربر قبلا دعوت شده است");
+      }
+      const created = await tx.referral.create({ data: { referrerId: referrer.id, referredId: referredUserId } });
+      await tx.user.update({ where: { id: referredUserId }, data: { referredById: referrer.id } });
+      await tx.referralReward.create({ data: { referralId: created.id, userId: referrer.id, amount: REFERRAL_REWARD_AMOUNT } });
+      return created;
+    });
     eventBus.emit("referral.created", { referralId: referral.id, referrerId: referrer.id, referredId: referredUserId });
     const referralCount = await prisma.referral.count({ where: { referrerId: referrer.id } });
     eventBus.emit("referral.earned", { referrerId: referrer.id, referredId: referredUserId, referralCount });

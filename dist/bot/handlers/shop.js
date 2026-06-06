@@ -60,7 +60,24 @@ function registerShopHandlers(bot) {
             const result = await purchase_service_1.PurchaseService.buyProduct(user.id, productId, couponCode);
             if (ctx.session.selectedCoupons)
                 delete ctx.session.selectedCoupons[productId];
-            await ctx.reply(`✅ خرید موفق\n\n🧾 سفارش: ${result.order.id}\n📦 محصول: ${result.product.title}\n💵 مبلغ پرداختی: ${result.totalAmount.toLocaleString("fa-IR")} تومان\n\n🔐 نام کاربری:\n${result.account.username}\n\n🔑 رمز عبور:\n${result.account.password}\n\n⚙️ کانفیگ:\n${result.account.config}`, (0, main_keyboard_1.navigationKeyboard)());
+            await ctx.reply(`✅ خرید موفق
+
+🧾 سفارش: ${result.order.id}
+📦 محصول: ${result.product.title}
+💵 مبلغ اصلی: ${result.originalAmount.toLocaleString("fa-IR")} تومان
+🎟 تخفیف: ${result.discountAmount.toLocaleString("fa-IR")} تومان
+💳 مبلغ پرداختی: ${result.totalAmount.toLocaleString("fa-IR")} تومان
+
+🔐 نام کاربری:
+${result.account.username}
+
+🔗 لینک ساب:
+${result.account.subscriptionLink}
+
+⚙️ لینک کانفیگ:
+${result.account.configLink}
+
+📅 تاریخ انقضا: ${result.expiresAt.toLocaleDateString("fa-IR")}`, (0, main_keyboard_1.navigationKeyboard)());
         }
         catch (error) {
             await ctx.reply(`❌ ${error instanceof Error ? error.message : "خرید ناموفق بود"}`, (0, main_keyboard_1.navigationKeyboard)(`product:${productId}`));

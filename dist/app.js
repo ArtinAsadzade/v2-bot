@@ -8,6 +8,7 @@ dotenv_1.default.config();
 const bot_1 = require("./bot/bot");
 const handlers_1 = require("./bot/handlers");
 const depositCleaner_1 = require("./jobs/depositCleaner");
+const accountExpiration_1 = require("./jobs/accountExpiration");
 const logger_1 = require("./services/logger");
 const prisma_1 = require("./services/prisma");
 async function bootstrap() {
@@ -15,8 +16,10 @@ async function bootstrap() {
         logger_1.logger.info("Bot starting...");
         (0, handlers_1.registerHandlers)(bot_1.bot);
         await (0, depositCleaner_1.cleanExpiredDeposits)().catch((error) => logger_1.logger.error("Initial deposit cleaner failed", { error: error instanceof Error ? error.message : String(error) }));
+        await (0, accountExpiration_1.deactivateExpiredAccounts)().catch((error) => logger_1.logger.error("Initial account expiration job failed", { error: error instanceof Error ? error.message : String(error) }));
         setInterval(() => {
             (0, depositCleaner_1.cleanExpiredDeposits)().catch((error) => logger_1.logger.error("Deposit cleaner failed", { error: error instanceof Error ? error.message : String(error) }));
+            (0, accountExpiration_1.deactivateExpiredAccounts)().catch((error) => logger_1.logger.error("Account expiration job failed", { error: error instanceof Error ? error.message : String(error) }));
         }, 60000);
         await bot_1.bot.launch();
         logger_1.logger.info("Bot is running");

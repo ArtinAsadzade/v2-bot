@@ -10,20 +10,23 @@ function registerDepositHandlers(bot) {
     bot.action("deposit", async (ctx) => {
         await ctx.answerCbQuery();
         ctx.session.state = { name: "deposit_amount" };
-        await ctx.reply("💰 مبلغ شارژ را به تومان وارد کنید:", (0, main_keyboard_1.navigationKeyboard)());
+        const setting = await deposit_service_1.FinancialSettingsService.get();
+        await ctx.reply(`💰 مبلغ شارژ را به تومان وارد کنید:\n\nحداقل شارژ: ${setting.minimumTopupAmount.toLocaleString("fa-IR")} تومان`, (0, main_keyboard_1.navigationKeyboard)());
     });
-    bot.action(/^dep:(usdt|btc):(\d+)$/, async (ctx) => {
+    bot.action(/^dep:wallet:([^:]+):(\d+)$/, async (ctx) => {
         await ctx.answerCbQuery();
-        const currency = ctx.match[1];
-        if (!(0, deposit_service_1.isDepositCurrency)(currency)) {
-            await ctx.reply("ارز انتخابی معتبر نیست.", (0, main_keyboard_1.navigationKeyboard)());
-            return;
-        }
+        const walletId = ctx.match[1];
         const amount = Number(ctx.match[2]);
         const user = await user_service_1.UserService.findOrCreateUser(ctx);
-        const deposit = await deposit_service_1.DepositService.createDeposit(user.id, amount, currency);
-        ctx.session.state = { name: "deposit_receipt", depositId: deposit.id };
-        await ctx.reply(`💰 درخواست شارژ ایجاد شد\n\n💵 مبلغ: ${amount.toLocaleString("fa-IR")} تومان\n💱 ارز: ${currency.toUpperCase()}\n\n📥 آدرس پرداخت:\n${deposit.wallet}\n\n⏳ مهلت پرداخت: ۳۰ دقیقه\n📤 پس از پرداخت، تصویر رسید را همینجا ارسال کنید.`, (0, main_keyboard_1.navigationKeyboard)());
+        try {
+            const quote = await deposit_service_1.CryptoWalletService.quote(walletId, amount);
+            const deposit = await deposit_service_1.DepositService.createDeposit(user.id, amount, walletId);
+            ctx.session.state = { name: "deposit_receipt", depositId: deposit.id };
+            await ctx.reply(`💰 درخواست شارژ ایجاد شد\n\nمبلغ شارژ:\n${amount.toLocaleString("fa-IR")} تومان\n\nرمز ارز:\n${quote.wallet.coinName}\n\nشبکه:\n${quote.wallet.networkName}\n\nنرخ:\n${quote.exchangeRate.toLocaleString("fa-IR")} تومان\n\nمبلغ قابل پرداخت:\n${quote.cryptoAmount.toLocaleString("fa-IR", { maximumFractionDigits: 8 })} ${quote.wallet.coinName}\n\nآدرس کیف پول:\n${quote.wallet.walletAddress}\n\n⏳ مهلت پرداخت: ۳۰ دقیقه\n📤 پس از پرداخت، تصویر رسید را همینجا ارسال کنید.`, (0, main_keyboard_1.navigationKeyboard)());
+        }
+        catch (error) {
+            await ctx.reply(`❌ ${error instanceof Error ? error.message : "ایجاد درخواست شارژ ناموفق بود"}`, (0, main_keyboard_1.navigationKeyboard)());
+        }
     });
     bot.on("photo", async (ctx, next) => {
         if (ctx.session.state?.name !== "deposit_receipt")
@@ -45,10 +48,10 @@ function registerDepositHandlers(bot) {
         }
     });
 }
-function currencyKeyboard(amount) {
+async function currencyKeyboard(amount) {
+    const wallets = await deposit_service_1.CryptoWalletService.listActive();
     return telegraf_1.Markup.inlineKeyboard([
-        [telegraf_1.Markup.button.callback("USDT (TRC20)", `dep:usdt:${amount}`)],
-        [telegraf_1.Markup.button.callback("BTC", `dep:btc:${amount}`)],
+        ...wallets.map((wallet) => [telegraf_1.Markup.button.callback(`${wallet.coinName} ${wallet.networkName}`, `dep:wallet:${wallet.id}:${amount}`)]),
         [telegraf_1.Markup.button.callback("⬅️ بازگشت", "deposit"), telegraf_1.Markup.button.callback("❌ لغو", "cancel")],
     ]);
 }

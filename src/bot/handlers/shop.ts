@@ -72,7 +72,24 @@ export function registerShopHandlers(bot: AppBot) {
       const result = await PurchaseService.buyProduct(user.id, productId, couponCode);
       if (ctx.session.selectedCoupons) delete ctx.session.selectedCoupons[productId];
       await ctx.reply(
-        `✅ خرید موفق\n\n🧾 سفارش: ${result.order.id}\n📦 محصول: ${result.product.title}\n💵 مبلغ پرداختی: ${result.totalAmount.toLocaleString("fa-IR")} تومان\n\n🔐 نام کاربری:\n${result.account.username}\n\n🔑 رمز عبور:\n${result.account.password}\n\n⚙️ کانفیگ:\n${result.account.config}`,
+        `✅ خرید موفق
+
+🧾 سفارش: ${result.order.id}
+📦 محصول: ${result.product.title}
+💵 مبلغ اصلی: ${result.originalAmount.toLocaleString("fa-IR")} تومان
+🎟 تخفیف: ${result.discountAmount.toLocaleString("fa-IR")} تومان
+💳 مبلغ پرداختی: ${result.totalAmount.toLocaleString("fa-IR")} تومان
+
+🔐 نام کاربری:
+${result.account.username}
+
+🔗 لینک ساب:
+${result.account.subscriptionLink}
+
+⚙️ لینک کانفیگ:
+${result.account.configLink}
+
+📅 تاریخ انقضا: ${result.expiresAt.toLocaleDateString("fa-IR")}`,
         navigationKeyboard(),
       );
     } catch (error) {

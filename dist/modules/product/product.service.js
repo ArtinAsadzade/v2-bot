@@ -6,12 +6,13 @@ const event_bus_service_1 = require("../../services/event-bus.service");
 class ProductService {
     static async getCategories() {
         return prisma_1.prisma.category.findMany({
+            where: { products: { some: { isActive: true, accounts: { some: { status: "available" } } } } },
             orderBy: { name: "asc" },
-            include: { products: { where: { isActive: true }, orderBy: { title: "asc" } } },
+            include: { products: { where: { isActive: true, accounts: { some: { status: "available" } } }, orderBy: { title: "asc" } } },
         });
     }
     static async getProductsByCategory(categoryId) {
-        return prisma_1.prisma.product.findMany({ where: { categoryId, isActive: true }, orderBy: { title: "asc" } });
+        return prisma_1.prisma.product.findMany({ where: { categoryId, isActive: true, accounts: { some: { status: "available" } } }, orderBy: { title: "asc" } });
     }
     static async getProduct(productId) {
         return prisma_1.prisma.product.findUnique({ where: { id: productId }, include: { category: true } });
@@ -23,13 +24,35 @@ class ProductService {
         return prisma_1.prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: data.duration } });
     }
     static async addAccount(productId, data) {
-        return prisma_1.prisma.productAccount.create({ data: { productId, username: data.username.trim(), password: data.password.trim(), config: data.config.trim(), status: "available" } });
+        if (!data.username.trim() || !data.subscriptionLink.trim() || !data.configLink.trim())
+            throw new Error("اطلاعات اکانت کامل نیست");
+        return prisma_1.prisma.productAccount.create({
+            data: {
+                productId,
+                username: data.username.trim(),
+                subscriptionLink: data.subscriptionLink.trim(),
+                configLink: data.configLink.trim(),
+                config: data.configLink.trim(),
+                durationDays: data.durationDays,
+                status: "available",
+            },
+        });
     }
     static async bulkAddAccounts(productId, rows) {
-        const validRows = rows.filter((row) => row.username && row.password && row.config);
+        const validRows = rows.filter((row) => row.username && row.subscriptionLink && row.configLink);
         if (!validRows.length)
             throw new Error("اکانت معتبری برای ثبت وجود ندارد");
-        await prisma_1.prisma.productAccount.createMany({ data: validRows.map((row) => ({ productId, username: row.username.trim(), password: row.password.trim(), config: row.config.trim(), status: "available" })) });
+        await prisma_1.prisma.productAccount.createMany({
+            data: validRows.map((row) => ({
+                productId,
+                username: row.username.trim(),
+                subscriptionLink: row.subscriptionLink.trim(),
+                configLink: row.configLink.trim(),
+                config: row.configLink.trim(),
+                durationDays: row.durationDays,
+                status: "available",
+            })),
+        });
         return validRows.length;
     }
     static async listActiveProducts(take = 25) {

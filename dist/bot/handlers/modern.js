@@ -50,10 +50,51 @@ function registerModernHandlers(bot) {
             const coupon = ctx.session.selectedCoupons?.[productId];
             const result = await purchase_service_1.PurchaseService.buyProduct(user.id, productId, coupon);
             delete ctx.session.selectedCoupons?.[productId];
-            await ctx.editMessageText(`✅ خرید با موفقیت انجام شد.\n\nمحصول: ${result.product.title}\nمبلغ پرداختی: ${result.totalAmount.toLocaleString("fa-IR")} تومان\n\nنام کاربری: ${result.account.username}\nرمز عبور: ${result.account.password}\nکانفیگ:\n${result.account.config}`, { reply_markup: { inline_keyboard: [[{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+            await ctx.editMessageText(`✅ خرید با موفقیت انجام شد.
+
+محصول: ${result.product.title}
+مبلغ اصلی: ${result.originalAmount.toLocaleString("fa-IR")} تومان
+تخفیف: ${result.discountAmount.toLocaleString("fa-IR")} تومان
+مبلغ پرداختی: ${result.totalAmount.toLocaleString("fa-IR")} تومان
+
+نام کاربری:
+${result.account.username}
+
+لینک ساب:
+${result.account.subscriptionLink}
+
+لینک کانفیگ:
+${result.account.configLink}
+
+تاریخ انقضا: ${result.expiresAt.toLocaleDateString("fa-IR")}`, { reply_markup: { inline_keyboard: [[{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
         }
         catch (error) {
             await ctx.editMessageText(`❌ ${error instanceof Error ? error.message : "خرید ناموفق بود"}`, { reply_markup: { inline_keyboard: [[{ text: "⬅️ بازگشت", callback_data: "nav:back" }, { text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+        }
+    });
+    bot.action(/^deposit:wallet:(.+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from)
+            return;
+        const flow = ctx.session.flow;
+        if (!flow || flow.name !== "deposit_submit" || flow.step !== "wallet") {
+            await ctx.reply("ابتدا مبلغ شارژ را وارد کنید.");
+            return;
+        }
+        const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
+        if (!user)
+            return;
+        try {
+            const walletId = ctx.match[1];
+            const amount = Number(flow.data.amount);
+            const quote = await deposit_service_1.CryptoWalletService.quote(walletId, amount);
+            const deposit = await deposit_service_1.DepositService.createDeposit(user.id, amount, walletId);
+            flow.step = "receipt";
+            flow.data.depositId = deposit.id;
+            await ctx.editMessageText(`💳 درخواست شارژ آماده شد\n\nمبلغ شارژ:\n${quote.amount.toLocaleString("fa-IR")} تومان\n\nرمز ارز:\n${quote.wallet.coinName}\n\nشبکه:\n${quote.wallet.networkName}\n\nنرخ:\n${quote.exchangeRate.toLocaleString("fa-IR")} تومان\n\nمبلغ قابل پرداخت:\n${quote.cryptoAmount.toLocaleString("fa-IR", { maximumFractionDigits: 8 })} ${quote.wallet.coinName}\n\nآدرس کیف پول:\n${quote.wallet.walletAddress}\n\n⏳ مهلت پرداخت: ۳۰ دقیقه\n📤 پس از پرداخت، تصویر رسید را ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "❌ لغو", callback_data: "flow:cancel" }]] } });
+        }
+        catch (error) {
+            await ctx.reply(`❌ ${error instanceof Error ? error.message : "ایجاد درخواست شارژ ناموفق بود"}`);
         }
     });
     bot.action("referral:claim", async (ctx) => {

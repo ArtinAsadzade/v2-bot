@@ -60,19 +60,24 @@ enum FreeConfigRewardStatus {
   claimed
 }
 
+enum CryptoWalletStatus {
+  active
+  inactive
+}
+
 model User {
-  id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  telegramId String   @unique
-  username   String?
-  firstName  String?
-  lastName   String?
-  balance    Int      @default(0)
-  role       Role     @default(user)
-  isBanned   Boolean  @default(false)
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  telegramId   String   @unique
+  username     String?
+  firstName    String?
+  lastName     String?
+  balance      Int      @default(0)
+  role         Role     @default(user)
+  isBanned     Boolean  @default(false)
   referralCode String?  @unique
   referredById String?  @db.ObjectId
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   walletTransactions WalletTransaction[]
   deposits           Deposit[]
@@ -95,8 +100,8 @@ model Referral {
   referredId String   @unique @db.ObjectId
   createdAt  DateTime @default(now())
 
-  referrer User @relation("Referrer", fields: [referrerId], references: [id])
-  referred User @relation("Referred", fields: [referredId], references: [id])
+  referrer User             @relation("Referrer", fields: [referrerId], references: [id])
+  referred User             @relation("Referred", fields: [referredId], references: [id])
   rewards  ReferralReward[]
 
   @@index([referrerId, createdAt])
@@ -148,22 +153,50 @@ model WalletTransaction {
 }
 
 model Deposit {
-  id         String        @id @default(auto()) @map("_id") @db.ObjectId
-  userId     String        @db.ObjectId
-  amount     Int
-  cryptoType String
-  wallet     String
-  status     DepositStatus @default(pending)
-  receipt    String?
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
-  expiresAt  DateTime
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String        @db.ObjectId
+  amount         Int
+  cryptoType     String
+  wallet         String
+  networkName    String?
+  cryptoAmount   Float?
+  exchangeRate   Int?
+  cryptoWalletId String?       @db.ObjectId
+  status         DepositStatus @default(pending)
+  receipt        String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  expiresAt      DateTime
 
-  user User @relation(fields: [userId], references: [id])
+  user         User          @relation(fields: [userId], references: [id])
+  cryptoWallet CryptoWallet? @relation(fields: [cryptoWalletId], references: [id])
 
   @@index([userId, status])
   @@index([status, createdAt])
   @@index([expiresAt])
+}
+
+model CryptoWallet {
+  id            String             @id @default(auto()) @map("_id") @db.ObjectId
+  coinName      String
+  walletAddress String
+  networkName   String
+  status        CryptoWalletStatus @default(active)
+  rateToman     Int
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  deposits Deposit[]
+
+  @@unique([coinName, networkName])
+  @@index([status])
+}
+
+model FinancialSetting {
+  id                 String   @id @default("singleton") @map("_id")
+  minimumTopupAmount Int      @default(100000)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
 
 model Ticket {
@@ -241,10 +274,10 @@ model Product {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  category Category         @relation(fields: [categoryId], references: [id])
-  accounts   ProductAccount[]
-  orders     Order[]
-  orderItems OrderItem[]
+  category        Category          @relation(fields: [categoryId], references: [id])
+  accounts        ProductAccount[]
+  orders          Order[]
+  orderItems      OrderItem[]
   freeAccountPool FreeAccountPool[]
 
   @@index([categoryId])
@@ -252,20 +285,23 @@ model Product {
 }
 
 model ProductAccount {
-  id         String               @id @default(auto()) @map("_id") @db.ObjectId
-  productId  String               @db.ObjectId
-  username   String
-  password   String
-  config     String
-  status     ProductAccountStatus @default(available)
-  reservedBy String?              @db.ObjectId
-  reservedAt DateTime?
-  soldTo     String?              @db.ObjectId
-  soldAt     DateTime?
-  createdAt  DateTime             @default(now())
-  updatedAt  DateTime             @updatedAt
+  id               String               @id @default(auto()) @map("_id") @db.ObjectId
+  productId        String               @db.ObjectId
+  username         String
+  password         String?
+  subscriptionLink String
+  configLink       String
+  config           String
+  durationDays     Int?
+  status           ProductAccountStatus @default(available)
+  reservedBy       String?              @db.ObjectId
+  reservedAt       DateTime?
+  soldTo           String?              @db.ObjectId
+  soldAt           DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 
-  product Product @relation(fields: [productId], references: [id])
+  product Product     @relation(fields: [productId], references: [id])
   items   OrderItem[]
 
   @@index([productId, status])
@@ -274,14 +310,16 @@ model ProductAccount {
 }
 
 model Order {
-  id             String      @id @default(auto()) @map("_id") @db.ObjectId
-  userId         String      @db.ObjectId
-  productId      String      @db.ObjectId
-  couponId       String?     @db.ObjectId
-  totalAmount    Int
-  discountAmount Int         @default(0)
-  status         OrderStatus @default(completed)
-  createdAt      DateTime    @default(now())
+  id              String      @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String      @db.ObjectId
+  productId       String      @db.ObjectId
+  couponId        String?     @db.ObjectId
+  originalAmount  Int
+  totalAmount     Int
+  finalPaidAmount Int
+  discountAmount  Int         @default(0)
+  status          OrderStatus @default(completed)
+  createdAt       DateTime    @default(now())
 
   user    User        @relation(fields: [userId], references: [id])
   product Product     @relation(fields: [productId], references: [id])
@@ -294,13 +332,18 @@ model Order {
 }
 
 model OrderItem {
-  id                 String @id @default(auto()) @map("_id") @db.ObjectId
-  orderId            String @db.ObjectId
-  productId          String @db.ObjectId
-  productAccountId   String @db.ObjectId
-  deliveredUsername  String
-  deliveredPassword  String
-  deliveredConfig    String
+  id                        String    @id @default(auto()) @map("_id") @db.ObjectId
+  orderId                   String    @db.ObjectId
+  productId                 String    @db.ObjectId
+  productAccountId          String    @db.ObjectId
+  deliveredUsername         String
+  deliveredPassword         String?
+  deliveredSubscriptionLink String?
+  deliveredConfigLink       String?
+  deliveredConfig           String
+  purchaseDate              DateTime  @default(now())
+  expiresAt                 DateTime?
+  isActive                  Boolean   @default(true)
 
   order          Order          @relation(fields: [orderId], references: [id])
   product        Product        @relation(fields: [productId], references: [id])
@@ -309,6 +352,7 @@ model OrderItem {
   @@index([orderId])
   @@index([productId])
   @@index([productAccountId])
+  @@index([expiresAt, isActive])
 }
 
 model AuditLog {
@@ -343,17 +387,17 @@ model SecurityFlag {
 }
 
 model FreeAccountPool {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  productId String   @db.ObjectId
-  username  String
-  password  String
-  config    String
-  isAssigned Boolean @default(false)
-  assignedTo String? @db.ObjectId
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  productId  String    @db.ObjectId
+  username   String
+  password   String
+  config     String
+  isAssigned Boolean   @default(false)
+  assignedTo String?   @db.ObjectId
   assignedAt DateTime?
-  reason    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  reason     String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   product Product @relation(fields: [productId], references: [id])
 

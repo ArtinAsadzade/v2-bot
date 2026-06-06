@@ -10,7 +10,7 @@ export type ConversationState =
   | { name: "admin_user_search" }
   | { name: "admin_product_search" };
 
-export type FlowName = "product_create" | "account_create" | "coupon_create" | "deposit_submit" | "ticket_reply" | "coupon_code" | "wallet_adjust" | "free_account_create" | "product_price";
+export type FlowName = "product_create" | "account_create" | "coupon_create" | "deposit_submit" | "ticket_reply" | "coupon_code" | "wallet_adjust" | "free_account_create" | "product_price" | "crypto_wallet_create" | "minimum_topup";
 
 export interface ActiveFlow {
   name: FlowName;

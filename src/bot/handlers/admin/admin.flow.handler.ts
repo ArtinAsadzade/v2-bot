@@ -107,20 +107,20 @@ export async function handleAdminFlow(ctx: AppContext): Promise<boolean> {
   if (flow.flow === "account_create") {
     if (flow.step === "username") {
       flow.data.username = text;
-      flow.step = "password";
-      await ctx.reply("🔑 رمز عبور اکانت را ارسال کنید:", navigationKeyboard("admin:dashboard"));
+      flow.step = "subscriptionLink";
+      await ctx.reply("🔗 لینک ساب اکانت را ارسال کنید:", navigationKeyboard("admin:dashboard"));
       return true;
     }
 
-    if (flow.step === "password") {
-      flow.data.password = text;
-      flow.step = "config";
-      await ctx.reply("⚙️ متن کانفیگ را ارسال کنید:", navigationKeyboard("admin:dashboard"));
+    if (flow.step === "subscriptionLink") {
+      flow.data.subscriptionLink = text;
+      flow.step = "configLink";
+      await ctx.reply("⚙️ لینک کانفیگ را ارسال کنید:", navigationKeyboard("admin:dashboard"));
       return true;
     }
 
-    if (flow.step === "config") {
-      const account = await ProductService.addAccount(String(flow.data.productId), { username: String(flow.data.username), password: String(flow.data.password), config: text });
+    if (flow.step === "configLink") {
+      const account = await ProductService.addAccount(String(flow.data.productId), { username: String(flow.data.username), subscriptionLink: String(flow.data.subscriptionLink), configLink: text });
       await AdminService.audit(String(ctx.from?.id ?? "system"), "product_account.create", { accountId: account.id, productId: flow.data.productId });
       resetFlow(ctx);
       await ctx.reply(`✅ اکانت ${account.username} اضافه شد.`, navigationKeyboard("admin:dashboard"));

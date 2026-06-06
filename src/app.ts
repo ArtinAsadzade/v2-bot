@@ -5,6 +5,7 @@ dotenv.config();
 import { bot } from "./bot/bot";
 import { registerHandlers } from "./bot/handlers";
 import { cleanExpiredDeposits } from "./jobs/depositCleaner";
+import { deactivateExpiredAccounts } from "./jobs/accountExpiration";
 import { logger } from "./services/logger";
 import { prisma } from "./services/prisma";
 
@@ -14,8 +15,10 @@ async function bootstrap() {
     registerHandlers(bot);
 
     await cleanExpiredDeposits().catch((error) => logger.error("Initial deposit cleaner failed", { error: error instanceof Error ? error.message : String(error) }));
+    await deactivateExpiredAccounts().catch((error) => logger.error("Initial account expiration job failed", { error: error instanceof Error ? error.message : String(error) }));
     setInterval(() => {
       cleanExpiredDeposits().catch((error) => logger.error("Deposit cleaner failed", { error: error instanceof Error ? error.message : String(error) }));
+      deactivateExpiredAccounts().catch((error) => logger.error("Account expiration job failed", { error: error instanceof Error ? error.message : String(error) }));
     }, 60_000);
 
     await bot.launch();

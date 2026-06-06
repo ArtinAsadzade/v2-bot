@@ -22,5 +22,37 @@ class UserService {
     static async getByTelegramId(telegramId) {
         return prisma_1.prisma.user.findUnique({ where: { telegramId: String(telegramId) } });
     }
+    static async dashboard(userId) {
+        const now = new Date();
+        const [user, activeAccounts, expiredAccounts, recentOrders, referralCount, pendingReferralRewards, freeRewards] = await Promise.all([
+            prisma_1.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { balance: true, referralCode: true } }),
+            prisma_1.prisma.orderItem.findMany({
+                where: { order: { userId }, isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+                include: { order: true, product: true },
+                orderBy: { purchaseDate: "desc" },
+                take: 20,
+            }),
+            prisma_1.prisma.orderItem.findMany({
+                where: { order: { userId }, OR: [{ isActive: false }, { expiresAt: { lte: now } }] },
+                include: { order: true, product: true },
+                orderBy: { purchaseDate: "desc" },
+                take: 10,
+            }),
+            prisma_1.prisma.order.findMany({ where: { userId }, include: { product: true }, orderBy: { createdAt: "desc" }, take: 10 }),
+            prisma_1.prisma.referral.count({ where: { referrerId: userId } }),
+            prisma_1.prisma.referralReward.aggregate({ where: { userId, status: "pending" }, _sum: { amount: true }, _count: true }),
+            prisma_1.prisma.freeConfigReward.count({ where: { userId, status: "available" } }),
+        ]);
+        return {
+            user,
+            activeAccounts,
+            expiredAccounts,
+            recentOrders,
+            referralCount,
+            pendingReferralAmount: pendingReferralRewards._sum.amount ?? 0,
+            pendingReferralCount: pendingReferralRewards._count,
+            freeRewards,
+        };
+    }
 }
 exports.UserService = UserService;
