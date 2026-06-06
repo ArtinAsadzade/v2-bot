@@ -1,89 +1,84 @@
-import { prisma } from "../../../services/prisma";
+import type { AppContext } from "../../../types/bot";
+import { CouponService } from "../../../modules/coupon/coupon.service";
+import { ProductService } from "../../../modules/product/product.service";
 import { resetFlow, getFlow } from "./admin.flow";
 
-export async function handleAdminFlow(ctx: any) {
+export async function handleAdminFlow(ctx: AppContext) {
   const flow = getFlow(ctx);
   if (!flow) return false;
 
-  const text = ctx.message?.text;
+  const text = ctx.message && "text" in ctx.message ? ctx.message.text.trim() : undefined;
   if (!text) return false;
 
-  // ---------------- PRODUCT CREATE ----------------
   if (flow.flow === "product_create") {
     if (flow.step === "title") {
       flow.data.title = text;
       flow.step = "price";
-      return ctx.reply("💰 Price:");
+      await ctx.reply("💰 قیمت را ارسال کنید:");
+      return true;
     }
 
     if (flow.step === "price") {
-      flow.data.price = Number(text);
+      const price = Number(text);
+      if (!Number.isInteger(price) || price <= 0) {
+        await ctx.reply("❌ قیمت معتبر نیست.");
+        return true;
+      }
+      flow.data.price = price;
       flow.step = "category";
+      await ctx.reply("📂 نام دسته‌بندی را ارسال کنید:");
+      return true;
+    }
 
-      const cats = await prisma.category.findMany();
-
-      return ctx.reply("📂 Select category:", {
-        reply_markup: {
-          inline_keyboard: cats.map((c) => [{ text: c.name, callback_data: `cat:${c.id}` }]),
-        },
-      });
+    if (flow.step === "category") {
+      const product = await ProductService.create({ categoryName: text, title: String(flow.data.title), price: Number(flow.data.price), duration: Number(flow.data.duration ?? 30) });
+      resetFlow(ctx);
+      await ctx.reply(`✅ محصول ${product.title} ساخته شد.`);
+      return true;
     }
   }
 
-  // ---------------- COUPON CREATE ----------------
   if (flow.flow === "coupon_create") {
     if (flow.step === "code") {
       flow.data.code = text;
       flow.step = "discount";
-      return ctx.reply("📉 Discount %:");
+      await ctx.reply("📉 درصد تخفیف را ارسال کنید:");
+      return true;
     }
 
     if (flow.step === "discount") {
       flow.data.discountPercent = Number(text);
       flow.step = "maxUses";
-      return ctx.reply("🔁 Max uses:");
+      await ctx.reply("🔁 تعداد استفاده مجاز را ارسال کنید:");
+      return true;
     }
 
     if (flow.step === "maxUses") {
       flow.data.maxUses = Number(text);
       flow.step = "days";
-      return ctx.reply("📆 Valid days:");
+      await ctx.reply("📆 تعداد روزهای اعتبار را ارسال کنید:");
+      return true;
     }
 
     if (flow.step === "days") {
-      flow.data.days = Number(text);
-
-      const coupon = await prisma.coupon.create({
-        data: {
-          code: flow.data.code,
-          discountPercent: flow.data.discountPercent,
-          maxUses: flow.data.maxUses,
-          expiresAt: new Date(Date.now() + flow.data.days * 86400000),
-        },
-      });
-
+      const days = Number(text);
+      const coupon = await CouponService.create(String(flow.data.code), Number(flow.data.discountPercent), new Date(Date.now() + days * 86_400_000), Number(flow.data.maxUses));
       resetFlow(ctx);
-
-      return ctx.reply(`✅ Coupon created: ${coupon.code}`);
+      await ctx.reply(`✅ کوپن ${coupon.code} ساخته شد.`);
+      return true;
     }
   }
 
-  // ---------------- ACCOUNT CREATE ----------------
   if (flow.flow === "account_create") {
-    const [username, password, config] = text.split("|");
-
-    await prisma.account.create({
-      data: {
-        productId: flow.data.productId,
-        username,
-        password,
-        config,
-      },
-    });
-
+    const [username, password, config] = text.split("|").map((part) => part.trim());
+    if (!username || !password || !config) {
+      await ctx.reply("فرمت اکانت معتبر نیست. نمونه: نام‌کاربری|رمزعبور|کانفیگ");
+      return true;
+    }
+    await ProductService.addAccount(String(flow.data.productId), { username, password, config });
     resetFlow(ctx);
-
-    return ctx.reply("✅ Account added");
+    await ctx.reply("✅ اکانت اضافه شد.");
+    return true;
   }
 
   return false;

@@ -3,9 +3,13 @@ import type { AppBot, AppContext } from "../../../types/bot";
 import { prisma } from "../../../services/prisma";
 import { DepositService } from "../../../modules/deposit/deposit.service";
 import { ProductService } from "../../../modules/product/product.service";
+import { SupportService } from "../../../modules/support/support.service";
+import { AdminService } from "../../../modules/admin/admin.service";
+import { notificationService } from "../../../services/notification.service";
 import { adminKeyboard } from "../../keyboards/admin.keyboard";
 import { navigationKeyboard } from "../../keyboards/main.keyboard";
 import { isAdminByTelegramId } from "../../middlewares/admin.middleware";
+import { getPagination, getTotalPages } from "../../../utils/pagination";
 
 async function requireAdmin(ctx: AppContext) {
   if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
@@ -15,44 +19,70 @@ async function requireAdmin(ctx: AppContext) {
   return true;
 }
 
+function paginationKeyboard(prefix: string, page: number, totalPages: number, backTo = "admin:dashboard") {
+  const rows = [];
+  const nav = [];
+  if (page > 1) nav.push(Markup.button.callback("⬅️ قبلی", `${prefix}:page:${page - 1}`));
+  if (page < totalPages) nav.push(Markup.button.callback("بعدی ➡️", `${prefix}:page:${page + 1}`));
+  if (nav.length) rows.push(nav);
+  rows.push([Markup.button.callback("🔎 جستجو", `${prefix}:search`), Markup.button.callback("↩️ بازگشت", backTo)]);
+  return Markup.inlineKeyboard(rows);
+}
+
 export function registerAdminHandlers(bot: AppBot) {
   bot.action("admin:dashboard", async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
-    const [users, products, deposits, tickets, orders] = await Promise.all([
-      prisma.user.count(),
-      prisma.product.count(),
-      prisma.deposit.count({ where: { status: "submitted" } }),
-      prisma.ticket.count({ where: { status: "open" } }),
-      prisma.order.count(),
-    ]);
+    const stats = await AdminService.dashboard();
     await ctx.reply(
-      `👨‍💼 پنل مدیریت\n\n👥 کاربران: ${users}\n📦 محصولات: ${products}\n💳 واریزی‌های در انتظار: ${deposits}\n🎧 تیکت‌های باز: ${tickets}\n🧾 سفارش‌ها: ${orders}`,
+      `👨‍💼 پنل مدیریت\n\n👥 کاربران: ${stats.users.toLocaleString("fa-IR")}\n📦 محصولات: ${stats.products.toLocaleString("fa-IR")}\n💳 واریزی‌های در انتظار: ${stats.submittedDeposits.toLocaleString("fa-IR")}\n🎧 تیکت‌های باز: ${stats.openTickets.toLocaleString("fa-IR")}\n🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}\n💰 درآمد: ${stats.revenue.toLocaleString("fa-IR")} تومان`,
       adminKeyboard(),
     );
   });
 
-  bot.action("admin:users", async (ctx) => {
+  bot.action(["admin:users", /^admin:users:page:(\d+)$/], async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
-    const users = await prisma.user.findMany({ orderBy: { createdAt: "desc" }, take: 10 });
+    const page = "match" in ctx && ctx.match ? Number(ctx.match[1]) : 1;
+    const { skip, take, pageSize } = getPagination(page);
+    const [users, total] = await Promise.all([prisma.user.findMany({ orderBy: { createdAt: "desc" }, skip, take }), prisma.user.count()]);
+    const totalPages = getTotalPages(total, pageSize);
     await ctx.reply(
       users.map((user) => `👤 ${user.telegramId} @${user.username ?? "-"} | ${user.balance.toLocaleString("fa-IR")} تومان`).join("\n") || "کاربری وجود ندارد.",
-      navigationKeyboard("admin:dashboard"),
+      paginationKeyboard("admin:users", page, totalPages),
     );
   });
 
-  bot.action("admin:products", async (ctx) => {
+  bot.action("admin:users:search", async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
-    const products = await prisma.product.findMany({ include: { category: true }, orderBy: { createdAt: "desc" }, take: 20 });
+    ctx.session.state = { name: "admin_user_search" };
+    await ctx.reply("🔎 شناسه تلگرام، نام کاربری یا نام کاربر را ارسال کنید:", navigationKeyboard("admin:users"));
+  });
+
+  bot.action(["admin:products", /^admin:products:page:(\d+)$/], async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    await ctx.answerCbQuery();
+    const page = "match" in ctx && ctx.match ? Number(ctx.match[1]) : 1;
+    const { skip, take, pageSize } = getPagination(page);
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({ include: { category: true }, orderBy: { createdAt: "desc" }, skip, take }),
+      prisma.product.count(),
+    ]);
     const lines = await Promise.all(
       products.map(async (product) => {
         const stock = await ProductService.availableStock(product.id);
-        return `📦 ${product.title} | ${product.category.name} | ${product.price.toLocaleString("fa-IR")} تومان | موجودی ${stock}`;
+        return `📦 ${product.title} | ${product.category.name} | ${product.price.toLocaleString("fa-IR")} تومان | موجودی ${stock.toLocaleString("fa-IR")}`;
       }),
     );
-    await ctx.reply(lines.join("\n") || "محصولی وجود ندارد.", navigationKeyboard("admin:dashboard"));
+    await ctx.reply(lines.join("\n") || "محصولی وجود ندارد.", paginationKeyboard("admin:products", page, getTotalPages(total, pageSize)));
+  });
+
+  bot.action("admin:products:search", async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    await ctx.answerCbQuery();
+    ctx.session.state = { name: "admin_product_search" };
+    await ctx.reply("🔎 عنوان محصول یا نام دسته‌بندی را ارسال کنید:", navigationKeyboard("admin:products"));
   });
 
   bot.action("admin:product:create", async (ctx) => {
@@ -65,7 +95,7 @@ export function registerAdminHandlers(bot: AppBot) {
   bot.action("admin:accounts", async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
-    const products = await prisma.product.findMany({ where: { isActive: true }, orderBy: { title: "asc" } });
+    const products = await prisma.product.findMany({ where: { isActive: true }, orderBy: { title: "asc" }, take: 25 });
     await ctx.reply(
       "برای کدام محصول اکانت اضافه شود؟",
       Markup.inlineKeyboard([
@@ -111,9 +141,9 @@ export function registerAdminHandlers(bot: AppBot) {
     const action = ctx.match[1];
     const depositId = ctx.match[2];
     try {
-      const deposit = action === "approve" ? await DepositService.approve(depositId, String(ctx.from.id)) : await DepositService.reject(depositId, String(ctx.from.id));
+      await (action === "approve" ? DepositService.approve(depositId, String(ctx.from.id)) : DepositService.reject(depositId, String(ctx.from.id)));
+      AdminService.invalidateDashboardCache();
       await ctx.reply(action === "approve" ? "✅ واریزی تایید و کیف پول شارژ شد." : "❌ واریزی رد شد.", navigationKeyboard("admin:deposits"));
-      await ctx.telegram.sendMessage(Number((await prisma.user.findUniqueOrThrow({ where: { id: deposit.userId } })).telegramId), action === "approve" ? `✅ شارژ ${deposit.amount.toLocaleString("fa-IR")} تومانی شما تایید شد.` : "❌ رسید شارژ شما رد شد.");
     } catch (error) {
       await ctx.reply(`❌ ${error instanceof Error ? error.message : "عملیات ناموفق بود"}`, navigationKeyboard("admin:deposits"));
     }
@@ -133,7 +163,7 @@ export function registerAdminHandlers(bot: AppBot) {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
     ctx.session.state = { name: "admin_coupon_create" };
-    await ctx.reply("کوپن را با فرمت زیر ارسال کنید:\n\nCODE درصد تعداد_استفاده روزهای_اعتبار", navigationKeyboard("admin:dashboard"));
+    await ctx.reply("کوپن را با فرمت زیر ارسال کنید:\n\nکد درصد تعداد_استفاده روزهای_اعتبار", navigationKeyboard("admin:dashboard"));
   });
 
   bot.action("admin:tickets", async (ctx) => {
@@ -149,10 +179,10 @@ export function registerAdminHandlers(bot: AppBot) {
     );
   });
 
-  bot.action(/^admin:ticket:(.+)$/, async (ctx) => {
+  bot.action(/^admin:ticket:([^:]+)$/, async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
-    const ticket = await prisma.ticket.findUnique({ where: { id: ctx.match[1] }, include: { user: true, messages: { orderBy: { createdAt: "asc" } } } });
+    const ticket = await SupportService.getTicketWithUser(ctx.match[1]);
     if (!ticket) {
       await ctx.reply("تیکت پیدا نشد.", navigationKeyboard("admin:tickets"));
       return;
@@ -160,8 +190,16 @@ export function registerAdminHandlers(bot: AppBot) {
     ctx.session.state = { name: "admin_ticket_reply", ticketId: ticket.id };
     await ctx.reply(
       `🎧 تیکت ${ticket.id}\nکاربر: ${ticket.user.telegramId}\n\n${ticket.messages.map((message) => `${message.senderRole === "admin" ? "ادمین" : "کاربر"}: ${message.message}`).join("\n") || "بدون پیام"}\n\nپاسخ خود را ارسال کنید:`,
-      navigationKeyboard("admin:tickets"),
+      Markup.inlineKeyboard([[Markup.button.callback("✅ بستن تیکت", `admin:ticket:close:${ticket.id}`)], [Markup.button.callback("⬅️ بازگشت", "admin:tickets")]]),
     );
+  });
+
+  bot.action(/^admin:ticket:close:(.+)$/, async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    await ctx.answerCbQuery();
+    const ticket = await SupportService.closeTicket(ctx.match[1], String(ctx.from.id));
+    await ctx.reply("✅ تیکت بسته شد.", navigationKeyboard("admin:tickets"));
+    await notificationService.notifyUser(ticket.userId, "✅ تیکت پشتیبانی شما بسته شد.");
   });
 
   bot.action("admin:orders", async (ctx) => {

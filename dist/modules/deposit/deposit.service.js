@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DepositService = exports.DEPOSIT_WALLETS = void 0;
 const prisma_1 = require("../../services/prisma");
 const wallet_service_1 = require("../wallet/wallet.service");
+const notification_service_1 = require("../../services/notification.service");
 exports.DEPOSIT_WALLETS = {
     usdt: process.env.USDT_WALLET_ADDRESS ?? "TRC20_WALLET_ADDRESS",
     btc: process.env.BTC_WALLET_ADDRESS ?? "BTC_WALLET_ADDRESS",
@@ -25,13 +26,28 @@ class DepositService {
         });
     }
     static async submitReceipt(depositId, userId, receipt) {
-        const updated = await prisma_1.prisma.deposit.updateMany({
+        const deposit = await prisma_1.prisma.deposit.findFirst({
             where: { id: depositId, userId, status: "pending", expiresAt: { gt: new Date() } },
-            data: { receipt, status: "submitted" },
+            include: { user: true },
         });
-        if (updated.count !== 1) {
+        if (!deposit) {
             throw new Error("درخواست شارژ فعال یا معتبر نیست");
         }
+        const updatedDeposit = await prisma_1.prisma.deposit.update({
+            where: { id: deposit.id },
+            data: { receipt, status: "submitted" },
+            include: { user: true },
+        });
+        await notification_service_1.notificationService.notifyAdmins({
+            text: `💳 رسید شارژ جدید\n\nکاربر: ${updatedDeposit.user.telegramId}\nمبلغ: ${updatedDeposit.amount.toLocaleString("fa-IR")} تومان\nارز: ${updatedDeposit.cryptoType.toUpperCase()}\nشناسه: ${updatedDeposit.id}`,
+            photo: receipt,
+            actions: [
+                [
+                    { text: "✅ تایید", callbackData: `admin:deposit:approve:${updatedDeposit.id}` },
+                    { text: "❌ رد", callbackData: `admin:deposit:reject:${updatedDeposit.id}` },
+                ],
+            ],
+        });
     }
     static async approve(depositId, adminTelegramId) {
         return prisma_1.prisma.$transaction(async (tx) => {
@@ -44,6 +60,7 @@ class DepositService {
             await tx.auditLog.create({
                 data: { actorId: adminTelegramId, action: "deposit.approve", metadata: JSON.stringify({ depositId }) },
             });
+            await notification_service_1.notificationService.notifyUser(deposit.userId, `✅ شارژ ${deposit.amount.toLocaleString("fa-IR")} تومانی شما تایید شد.`);
             return deposit;
         });
     }
@@ -52,6 +69,7 @@ class DepositService {
         await prisma_1.prisma.auditLog.create({
             data: { actorId: adminTelegramId, action: "deposit.reject", metadata: JSON.stringify({ depositId }) },
         });
+        await notification_service_1.notificationService.notifyUser(deposit.userId, "❌ رسید شارژ شما رد شد.");
         return deposit;
     }
 }
