@@ -153,7 +153,7 @@ const definitions: Record<FlowName, FlowDefinition> = {
       const durationDays = Number(text.replace(/[,،\s]/g, ""));
       if (!Number.isInteger(durationDays) || durationDays <= 0) return { text: "مدت اعتبار معتبر نیست. یک عدد مثبت وارد کنید:" };
       await FreeAccountService.addToInventory({ username: String(flow.data.username), subscriptionLink: String(flow.data.subscriptionLink), configLink: String(flow.data.configLink), durationDays }, String(ctx.from?.id ?? "admin"));
-      return { done: true, text: "✅ اکانت تست رایگان به موجودی مستقل اضافه شد.", returnTo: { id: "admin.freeAccounts" } };
+      return { done: true, text: "✅ اکانت تست رایگان به فهرست اکانت‌های تست اضافه شد.", returnTo: { id: "admin.freeAccounts" } };
     },
   },
   coupon_create: {
