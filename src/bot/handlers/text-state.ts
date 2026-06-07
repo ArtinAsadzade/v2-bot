@@ -64,6 +64,24 @@ export async function handleStateText(ctx: AppContext, next: () => Promise<void>
       await ctx.reply(lines.join("\n") || "نتیجه‌ای پیدا نشد.", navigationKeyboard("admin:products"));
       return;
     }
+    case "admin_category_search": {
+      const [categories] = await AdminService.listCategories(1, 10, text);
+      ctx.session.state = undefined;
+      await ctx.reply(categories.map((category) => `📂 ${category.name} | ${category.isActive ? "فعال" : "غیرفعال"} | ترتیب ${category.displayOrder}`).join("\n") || "نتیجه‌ای پیدا نشد.", navigationKeyboard("admin:categories"));
+      return;
+    }
+    case "admin_account_search": {
+      const [accounts] = await AdminService.listAccounts(1, 10, text);
+      ctx.session.state = undefined;
+      await ctx.reply(accounts.map((account) => `👤 ${account.username} | ${account.product.title} | ${account.status}`).join("\n") || "نتیجه‌ای پیدا نشد.", navigationKeyboard("admin:accounts"));
+      return;
+    }
+    case "admin_wallet_search": {
+      const [wallets] = await AdminService.listCryptoWallets(1, 10, text);
+      ctx.session.state = undefined;
+      await ctx.reply(wallets.map((wallet) => `💳 ${wallet.displayName ?? wallet.coinName} | ${wallet.networkName} | ${wallet.status}`).join("\n") || "نتیجه‌ای پیدا نشد.", navigationKeyboard("admin:wallets"));
+      return;
+    }
     case "admin_ticket_reply": {
       const ticket = await SupportService.getTicketWithUser(state.ticketId);
       if (!ticket) {

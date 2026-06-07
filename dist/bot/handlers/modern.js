@@ -183,21 +183,17 @@ ${quote.wallet.walletAddress}
         }
     });
     bot.action("freeAccount:claim", async (ctx) => {
-        await ctx.answerCbQuery("⏳ در حال بررسی موجودی...");
+        await ctx.answerCbQuery("در حال آماده‌سازی اکانت تست...");
         if (!ctx.from)
             return;
         const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
         if (!user)
             return;
         try {
-            await free_account_service_1.FreeAccountService.assertEligible(user.id);
-            await ctx.answerCbQuery("⏳ در حال تخصیص اکانت تست...");
             const account = await free_account_service_1.FreeAccountService.assign(user.id, "user_claim");
-            await ctx.reply(`✅ اکانت تست با موفقیت برای شما فعال شد.
+            await ctx.reply(`🎉 اکانت تست شما آماده است
 
 ━━━━━━━━━━━━━━
-
-🆓 اکانت تست
 
 👤 نام کاربری:
 ${account.username}
@@ -208,21 +204,20 @@ ${account.subscriptionLink}
 ⚙️ لینک کانفیگ:
 ${account.configLink}
 
-📅 تاریخ دریافت:
-${account.assignedAt.toLocaleString("fa-IR")}
-
-⏳ مدت اعتبار:
+⏳ اعتبار:
 ${account.durationDays.toLocaleString("fa-IR")} روز
 
-📌 وضعیت:
-فعال
+━━━━━━━━━━━━━━
 
-━━━━━━━━━━━━━━`);
-            await (0, panel_ui_1.renderPanel)(ctx, { id: "account.details" }, "replace");
+📦 این اکانت به بخش «اکانت‌های من» اضافه شد و در هر زمان می‌توانید اطلاعات آن را مشاهده کنید.`, {
+                reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }], [{ text: "🏠 منوی اصلی", callback_data: (0, panel_ui_1.callbackFor)("home") }]] },
+            });
         }
         catch (error) {
-            await ctx.reply((0, free_account_service_1.formatFreeAccountError)(error));
-            await (0, panel_ui_1.renderPanel)(ctx, { id: "freeAccount" }, "replace");
+            const keyboard = error instanceof free_account_service_1.FreeAccountError && error.code === "ACTIVE_ACCOUNT"
+                ? [[{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }], [{ text: "🏠 منوی اصلی", callback_data: (0, panel_ui_1.callbackFor)("home") }]]
+                : [[{ text: "🏠 منوی اصلی", callback_data: (0, panel_ui_1.callbackFor)("home") }]];
+            await ctx.reply((0, free_account_service_1.formatFreeAccountError)(error), { reply_markup: { inline_keyboard: keyboard } });
         }
     });
     bot.action("referral:claim", async (ctx) => {

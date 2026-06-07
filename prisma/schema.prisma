@@ -42,6 +42,7 @@ enum ProductAccountStatus {
   available
   reserved
   sold
+  disabled
   expired
 }
 
@@ -230,8 +231,11 @@ model Deposit {
 model CryptoWallet {
   id            String             @id @default(auto()) @map("_id") @db.ObjectId
   coinName      String
+  coinSymbol    String?
   walletAddress String
   networkName   String
+  displayName   String?
+  displayOrder  Int                @default(0)
   status        CryptoWalletStatus @default(active)
   rateToman     Int                @default(0)
   lastRateAt    DateTime?
@@ -241,7 +245,7 @@ model CryptoWallet {
   deposits Deposit[]
 
   @@unique([coinName, networkName])
-  @@index([status])
+  @@index([status, displayOrder])
 }
 
 model FinancialSetting {
@@ -317,22 +321,31 @@ model CouponUsage {
 }
 
 model Category {
-  id        String    @id @default(auto()) @map("_id") @db.ObjectId
-  name      String    @unique
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  products  Product[]
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  name         String    @unique
+  description  String?
+  icon         String?
+  displayOrder Int       @default(0)
+  isActive     Boolean   @default(true)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  products     Product[]
+
+  @@index([isActive, displayOrder])
+  @@index([deletedAt])
 }
 
 model Product {
-  id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  categoryId String   @db.ObjectId
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  categoryId String    @db.ObjectId
   title      String
   price      Int
   duration   Int
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  isActive   Boolean   @default(true)
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   category        Category          @relation(fields: [categoryId], references: [id])
   accounts        ProductAccount[]
@@ -340,7 +353,7 @@ model Product {
   orderItems      OrderItem[]
 
   @@index([categoryId])
-  @@index([isActive])
+  @@index([isActive, deletedAt])
 }
 
 model ProductAccount {
@@ -362,10 +375,26 @@ model ProductAccount {
 
   product Product     @relation(fields: [productId], references: [id])
   items   OrderItem[]
+  history ProductAccountHistory[]
 
   @@index([productId, status])
   @@index([reservedBy])
   @@index([soldTo])
+}
+
+model ProductAccountHistory {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  accountId String   @db.ObjectId
+  actorId   String
+  action    String
+  fromValue String?
+  toValue   String?
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  account ProductAccount @relation(fields: [accountId], references: [id])
+
+  @@index([accountId, createdAt])
 }
 
 model Order {

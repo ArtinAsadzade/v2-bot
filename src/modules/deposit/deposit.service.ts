@@ -67,24 +67,27 @@ export class CryptoWalletService {
   }
 
   static async listActive() {
-    return prisma.cryptoWallet.findMany({ where: { status: "active" }, orderBy: [{ coinName: "asc" }, { networkName: "asc" }] });
+    return prisma.cryptoWallet.findMany({ where: { status: "active" }, orderBy: [{ displayOrder: "asc" }, { coinName: "asc" }, { networkName: "asc" }] });
   }
 
   static async listAll() {
     return prisma.cryptoWallet.findMany({ orderBy: [{ status: "asc" }, { coinName: "asc" }, { networkName: "asc" }] });
   }
 
-  static async upsert(data: { coinName: string; networkName: string; walletAddress: string; status?: "active" | "inactive" }, actorId: string) {
+  static async upsert(data: { coinName: string; coinSymbol?: string; networkName: string; displayName?: string; walletAddress: string; displayOrder?: number; status?: "active" | "inactive" }, actorId: string) {
     const coinName = data.coinName.trim().toUpperCase();
     const networkName = data.networkName.trim().toUpperCase();
     const walletAddress = data.walletAddress.trim();
+    const coinSymbol = (data.coinSymbol ?? coinName).trim().toUpperCase();
+    const displayName = data.displayName?.trim() || `${coinName} ${networkName}`;
+    const displayOrder = data.displayOrder ?? 0;
     if (!coinName || !networkName || !walletAddress) throw new Error("اطلاعات کیف پول کامل نیست");
     if (!CryptoRateService.supportedCoins().includes(coinName as never)) throw new Error("رمز ارز پشتیبانی نمی‌شود");
     const rate = await CryptoRateService.getRateToman(coinName).catch(() => undefined);
     const wallet = await prisma.cryptoWallet.upsert({
       where: { coinName_networkName: { coinName, networkName } },
-      update: { walletAddress, status: data.status ?? "active", ...(rate ? { rateToman: Math.round(rate.toman), lastRateAt: rate.fetchedAt } : {}) },
-      create: { coinName, networkName, walletAddress, status: data.status ?? "active", rateToman: rate ? Math.round(rate.toman) : 0, lastRateAt: rate?.fetchedAt },
+      update: { walletAddress, coinSymbol, displayName, displayOrder, status: data.status ?? "active", ...(rate ? { rateToman: Math.round(rate.toman), lastRateAt: rate.fetchedAt } : {}) },
+      create: { coinName, coinSymbol, networkName, displayName, displayOrder, walletAddress, status: data.status ?? "active", rateToman: rate ? Math.round(rate.toman) : 0, lastRateAt: rate?.fetchedAt },
     });
     await prisma.auditLog.create({ data: { actorId, action: "crypto_wallet.upsert", metadata: JSON.stringify({ walletId: wallet.id, coinName, networkName }) } });
     return wallet;
