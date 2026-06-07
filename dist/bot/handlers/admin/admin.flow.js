@@ -20,7 +20,7 @@ function getFlow(ctx) {
     };
 }
 function isAdminFlowName(value) {
-    return value === "product_create" || value === "coupon_create" || value === "account_create" || value === "ticket_reply";
+    return value === "product_create" || value === "coupon_create" || value === "account_create" || value === "ticket_reply" || value === "category_create" || value === "category_edit" || value === "product_edit" || value === "account_edit" || value === "wallet_create" || value === "wallet_edit";
 }
 function normalizeFlowData(data) {
     return Object.fromEntries(Object.entries(data).filter((entry) => {

@@ -139,7 +139,8 @@ ${(item.assignedAt ?? item.createdAt).toLocaleString("fa-IR")}
 ${item.account.durationDays.toLocaleString("fa-IR")} روز (تا ${(item.expiresAt ?? new Date((item.assignedAt ?? item.createdAt).getTime() + item.account.durationDays * 86400000)).toLocaleDateString("fa-IR")})
 
 📌 وضعیت:
-فعال`), ...dashboard.activeAccounts.map((item) => `📦 ${item.product.title}
+فعال`), ...dashboard.activeAccounts.map((item) => `🛒 خریداری شده
+📦 ${item.product.title}
 
 👤 نام کاربری:
 ${item.deliveredUsername}
@@ -221,35 +222,90 @@ ${tickets.map((ticket) => `• #${shortId(ticket.id)} · ${ticket.status === "op
     (0, panel_ui_1.registerView)("freeAccount", async (ctx) => {
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
         if (!user)
-            return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
-        const [eligibility, stats] = await Promise.all([free_account_service_1.FreeAccountService.eligibility(user.id), free_account_service_1.FreeAccountService.stats()]);
-        const last = eligibility.last;
-        const statusText = eligibility.reason === "active" ? "دارای اکانت تست فعال ⚠️" : eligibility.reason === "cooldown" ? "در انتظار پایان محدودیت ۳۰ روزه ⏳" : eligibility.reason === "blocked" ? "حساب مسدود است ⛔" : "آماده دریافت ✅";
+            return { text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.", keyboard: [] };
+        const eligibility = await free_account_service_1.FreeAccountService.eligibility(user.id);
+        if (eligibility.reason === "active") {
+            return {
+                text: `⚠️ اکانت تست فعال دارید
+
+${divider}
+
+شما در حال حاضر یک اکانت تست فعال در اختیار دارید.
+
+برای مشاهده اطلاعات اکانت از بخش «اکانت‌های من» استفاده کنید.
+
+${divider}`,
+                keyboard: [[{ text: "📦 اکانت‌های من", action: (0, panel_ui_1.callbackFor)("account.details") }], [{ text: "🏠 منوی اصلی", action: (0, panel_ui_1.callbackFor)("home") }]],
+            };
+        }
+        if (eligibility.reason === "cooldown") {
+            const lastClaimAt = eligibility.last?.assignedAt ?? eligibility.last?.createdAt;
+            return {
+                text: `⏳ محدودیت دریافت اکانت تست
+
+${divider}
+
+شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید.
+
+📅 دریافت قبلی:
+${(0, free_account_service_1.formatFreeAccountDate)(lastClaimAt)}
+
+⏳ امکان دریافت مجدد:
+${(0, free_account_service_1.formatFreeAccountDate)(eligibility.nextAvailableAt)}
+
+${divider}`,
+                keyboard: [[{ text: "🏠 منوی اصلی", action: (0, panel_ui_1.callbackFor)("home") }]],
+            };
+        }
+        if (eligibility.reason === "blocked") {
+            return {
+                text: `⚠️ دسترسی محدود شده است
+
+${divider}
+
+امکان دریافت اکانت تست برای حساب شما در حال حاضر فعال نیست.
+
+برای بررسی بیشتر می‌توانید با پشتیبانی در ارتباط باشید.
+
+${divider}`,
+                keyboard: [[{ text: "🎧 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }], [{ text: "🏠 منوی اصلی", action: (0, panel_ui_1.callbackFor)("home") }]],
+            };
+        }
+        if (!eligibility.available) {
+            return {
+                text: `🚫 موجودی اکانت تست تکمیل شده است
+
+${divider}
+
+در حال حاضر تمامی اکانت‌های تست تخصیص داده شده‌اند.
+
+لطفاً بعداً مجدداً مراجعه کنید.
+
+${divider}`,
+                keyboard: [[{ text: "🏠 منوی اصلی", action: (0, panel_ui_1.callbackFor)("home") }]],
+            };
+        }
         return {
             text: `🆓 دریافت اکانت تست
 
 ${divider}
 
-این بخش کاملاً مستقل از فروشگاه، محصولات و سیستم دعوت دوستان است. هر کاربر فقط هر ۳۰ روز یک‌بار می‌تواند اکانت تست دریافت کند.
+برای آشنایی با کیفیت سرویس می‌توانید یک اکانت تست رایگان دریافت کنید.
 
-📌 وضعیت شما:
-${statusText}
+✨ ویژگی‌ها:
 
-📦 موجودی آماده:
-${stats.available.toLocaleString("fa-IR")} عدد
-
-${eligibility.activeAccount ? `⚠️ شما در حال حاضر یک اکانت تست فعال دارید.
-
-📦 برای مشاهده اطلاعات اکانت از بخش «اکانت‌های من» استفاده کنید.` : last ? `📅 تاریخ دریافت قبلی:
-${(last.assignedAt ?? last.createdAt).toLocaleString("fa-IR")}
-
-⏳ زمان باقی‌مانده تا دریافت مجدد:
-${eligibility.nextAvailableAt && eligibility.nextAvailableAt > new Date() ? (0, free_account_service_1.formatRemainingTime)(eligibility.nextAvailableAt) : "اکنون امکان دریافت دارید"}` : "✅ تاکنون اکانت تست دریافت نکرده‌اید."}
+• دسترسی کامل به سرویس
+• تحویل فوری
+• نمایش در بخش «اکانت‌های من»
+• فعال تا پایان مدت اعتبار
 
 ${divider}
 
-در صورت تأیید، موجودی به‌صورت امن و اتمیک بررسی و فقط یک اکانت به شما اختصاص داده می‌شود.`,
-            keyboard: eligibility.activeAccount ? [[{ text: "📦 مشاهده اکانت‌های من", action: (0, panel_ui_1.callbackFor)("account.details") }]] : [[{ text: "🆓 دریافت اکانت تست", action: "freeAccount:claim" }], [{ text: "📦 اکانت‌های من", action: (0, panel_ui_1.callbackFor)("account.details") }]],
+📌 وضعیت شما:
+آماده دریافت
+
+برای دریافت اکانت تست روی دکمه زیر کلیک کنید.`,
+            keyboard: [[{ text: "🆓 دریافت اکانت تست", action: "freeAccount:claim" }], [{ text: "🔙 بازگشت", action: "nav:back" }]],
         };
     });
     (0, panel_ui_1.registerView)("admin.dashboard", async () => {

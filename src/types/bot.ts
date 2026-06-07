@@ -8,7 +8,10 @@ export type ConversationState =
   | { name: "coupon_code"; productId: string }
   | { name: "admin_ticket_reply"; ticketId: string }
   | { name: "admin_user_search" }
-  | { name: "admin_product_search" };
+  | { name: "admin_product_search" }
+  | { name: "admin_category_search" }
+  | { name: "admin_account_search" }
+  | { name: "admin_wallet_search" };
 
 export type FlowName = "product_create" | "account_create" | "coupon_create" | "deposit_submit" | "ticket_reply" | "coupon_code" | "product_search" | "wallet_adjust" | "free_account_create" | "product_price" | "crypto_wallet_create" | "minimum_topup" | "referral_tier_create" | "store_status" | "forced_join_create";
 

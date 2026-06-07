@@ -5,21 +5,21 @@ const prisma_1 = require("../../services/prisma");
 class ProductService {
     static async getCategories() {
         return prisma_1.prisma.category.findMany({
-            where: { products: { some: { isActive: true, accounts: { some: { status: "available" } } } } },
-            orderBy: { name: "asc" },
-            include: { products: { where: { isActive: true, accounts: { some: { status: "available" } } }, orderBy: { title: "asc" } } },
+            where: { isActive: true, deletedAt: null, products: { some: { isActive: true, deletedAt: null, accounts: { some: { status: "available" } } } } },
+            orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+            include: { products: { where: { isActive: true, deletedAt: null, accounts: { some: { status: "available" } } }, orderBy: { title: "asc" } } },
         });
     }
     static async getProductsByCategory(categoryId) {
         return prisma_1.prisma.product.findMany({
-            where: { categoryId, isActive: true, accounts: { some: { status: "available" } } },
+            where: { categoryId, isActive: true, deletedAt: null, category: { is: { isActive: true, deletedAt: null } }, accounts: { some: { status: "available" } } },
             include: { _count: { select: { accounts: { where: { status: "available" } } } } },
             orderBy: { title: "asc" },
         });
     }
     static async listFeaturedProducts(take = 6) {
         return prisma_1.prisma.product.findMany({
-            where: { isActive: true, accounts: { some: { status: "available" } } },
+            where: { isActive: true, deletedAt: null, category: { is: { isActive: true, deletedAt: null } }, accounts: { some: { status: "available" } } },
             include: { category: true, _count: { select: { accounts: { where: { status: "available" } } } } },
             orderBy: [{ orders: { _count: "desc" } }, { price: "asc" }],
             take,
@@ -32,6 +32,8 @@ class ProductService {
         return prisma_1.prisma.product.findMany({
             where: {
                 isActive: true,
+                deletedAt: null,
+                category: { is: { isActive: true, deletedAt: null } },
                 accounts: { some: { status: "available" } },
                 OR: [{ title: { contains: normalized } }, { category: { is: { name: { contains: normalized } } } }],
             },
@@ -46,7 +48,7 @@ class ProductService {
     static async create(data) {
         const category = data.categoryId
             ? await prisma_1.prisma.category.findUniqueOrThrow({ where: { id: data.categoryId } })
-            : await prisma_1.prisma.category.upsert({ where: { name: (data.categoryName ?? "عمومی").trim() }, update: {}, create: { name: (data.categoryName ?? "عمومی").trim() } });
+            : await prisma_1.prisma.category.upsert({ where: { name: (data.categoryName ?? "عمومی").trim() }, update: { deletedAt: null }, create: { name: (data.categoryName ?? "عمومی").trim() } });
         return prisma_1.prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: data.duration } });
     }
     static async addAccount(productId, data) {
@@ -82,10 +84,13 @@ class ProductService {
         return validRows.length;
     }
     static async listActiveProducts(take = 25) {
-        return prisma_1.prisma.product.findMany({ where: { isActive: true }, include: { category: true }, orderBy: { title: "asc" }, take });
+        return prisma_1.prisma.product.findMany({ where: { isActive: true, deletedAt: null }, include: { category: true }, orderBy: { title: "asc" }, take });
     }
     static async availableStock(productId) {
         return prisma_1.prisma.productAccount.count({ where: { productId, status: "available" } });
+    }
+    static async listCategoriesForAdmin(take = 100) {
+        return prisma_1.prisma.category.findMany({ where: { deletedAt: null }, orderBy: [{ displayOrder: "asc" }, { name: "asc" }], take });
     }
 }
 exports.ProductService = ProductService;

@@ -66,7 +66,11 @@ const definitions = {
             if (!depositId)
                 return { text: "ابتدا مبلغ شارژ را وارد کنید." };
             await deposit_service_1.DepositService.submitReceipt(depositId, user.id, fileId);
-            return { done: true, text: "✅ رسید شما ثبت شد. تیم مالی در کوتاه‌ترین زمان پرداخت را بررسی می‌کند و نتیجه از همین ربات اطلاع‌رسانی می‌شود.", returnTo: { id: "wallet" } };
+            return {
+                done: true,
+                text: "✅ رسید شما ثبت شد. تیم مالی در کوتاه‌ترین زمان پرداخت را بررسی می‌کند و نتیجه از همین ربات اطلاع‌رسانی می‌شود.",
+                returnTo: { id: "wallet" },
+            };
         },
     },
     ticket_reply: {
@@ -91,10 +95,21 @@ const definitions = {
             var _a;
             const user = await requireUser(ctx);
             const productId = String(ctx.session.flow?.data.productId ?? "");
-            await coupon_service_1.CouponService.validateForUser(text, user.id);
-            (_a = ctx.session).selectedCoupons ?? (_a.selectedCoupons = {});
-            ctx.session.selectedCoupons[productId] = text.trim().toUpperCase();
-            return { done: true, text: "✅ کد تخفیف روی پیش‌فاکتور اعمال شد.", returnTo: { id: "shop.checkout", params: { productId } } };
+            try {
+                await coupon_service_1.CouponService.validateForUser(text.trim(), user.id);
+                (_a = ctx.session).selectedCoupons ?? (_a.selectedCoupons = {});
+                ctx.session.selectedCoupons[productId] = text.trim().toUpperCase();
+                return {
+                    done: true,
+                    text: "✅ کد تخفیف روی پیش‌فاکتور اعمال شد.",
+                    returnTo: { id: "shop.checkout", params: { productId } },
+                };
+            }
+            catch (error) {
+                return {
+                    text: error instanceof Error ? `❌ ${error.message}` : "❌ کد تخفیف معتبر نیست.",
+                };
+            }
         },
     },
     product_search: {
@@ -134,7 +149,12 @@ const definitions = {
             const duration = Number(text.replace(/[,،\s]/g, ""));
             if (!Number.isInteger(duration) || duration <= 0)
                 return { text: "مدت معتبر نیست. دوباره وارد کنید:" };
-            await product_service_1.ProductService.create({ categoryName: String(flow.data.categoryName), title: String(flow.data.title), price: Number(flow.data.price), duration });
+            await product_service_1.ProductService.create({
+                categoryName: String(flow.data.categoryName),
+                title: String(flow.data.title),
+                price: Number(flow.data.price),
+                duration,
+            });
             return { done: true, text: "✅ محصول جدید ثبت شد.", returnTo: { id: "admin.products" } };
         },
     },
@@ -154,7 +174,11 @@ const definitions = {
                 return { text: "لینک کانفیگ را وارد کنید:", nextStep: "configLink" };
             }
             const productId = String(flow.data.productId);
-            await product_service_1.ProductService.addAccount(productId, { username: String(flow.data.username), subscriptionLink: String(flow.data.subscriptionLink), configLink: text.trim() });
+            await product_service_1.ProductService.addAccount(productId, {
+                username: String(flow.data.username),
+                subscriptionLink: String(flow.data.subscriptionLink),
+                configLink: text.trim(),
+            });
             return { done: true, text: "✅ اکانت به موجودی محصول اضافه شد.", returnTo: { id: "admin.product", params: { productId } } };
         },
     },
@@ -181,7 +205,12 @@ const definitions = {
             const durationDays = Number(text.replace(/[,،\s]/g, ""));
             if (!Number.isInteger(durationDays) || durationDays <= 0)
                 return { text: "مدت اعتبار معتبر نیست. یک عدد مثبت وارد کنید:" };
-            await free_account_service_1.FreeAccountService.addToInventory({ username: String(flow.data.username), subscriptionLink: String(flow.data.subscriptionLink), configLink: String(flow.data.configLink), durationDays }, String(ctx.from?.id ?? "admin"));
+            await free_account_service_1.FreeAccountService.addToInventory({
+                username: String(flow.data.username),
+                subscriptionLink: String(flow.data.subscriptionLink),
+                configLink: String(flow.data.configLink),
+                durationDays,
+            }, String(ctx.from?.id ?? "admin"));
             return { done: true, text: "✅ اکانت تست رایگان به موجودی مستقل اضافه شد.", returnTo: { id: "admin.freeAccounts" } };
         },
     },
@@ -235,7 +264,15 @@ const definitions = {
             const days = Number(text.replace(/[,،\s]/g, ""));
             if (!Number.isInteger(days) || days <= 0)
                 return { text: "تعداد روز معتبر نیست:" };
-            await coupon_service_1.CouponService.createAdvanced({ code: String(flow.data.code), type: flow.data.type === "fixed" ? "fixed" : "percentage", value: Number(flow.data.value), maxUses: Number(flow.data.maxUses), perUserLimit: Number(flow.data.perUserLimit), minimumPurchaseAmount: Number(flow.data.minimumPurchaseAmount), expiresAt: new Date(Date.now() + days * 86400000) }, String(ctx.from?.id ?? "admin"));
+            await coupon_service_1.CouponService.createAdvanced({
+                code: String(flow.data.code),
+                type: flow.data.type === "fixed" ? "fixed" : "percentage",
+                value: Number(flow.data.value),
+                maxUses: Number(flow.data.maxUses),
+                perUserLimit: Number(flow.data.perUserLimit),
+                minimumPurchaseAmount: Number(flow.data.minimumPurchaseAmount),
+                expiresAt: new Date(Date.now() + days * 86400000),
+            }, String(ctx.from?.id ?? "admin"));
             return { done: true, text: "✅ کوپن جدید ساخته شد.", returnTo: { id: "admin.coupons" } };
         },
     },

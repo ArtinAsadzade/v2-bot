@@ -1,6 +1,6 @@
 import type { AppContext } from "../../../types/bot";
 
-export type AdminFlowName = "product_create" | "coupon_create" | "account_create" | "ticket_reply";
+export type AdminFlowName = "product_create" | "coupon_create" | "account_create" | "ticket_reply" | "category_create" | "category_edit" | "product_edit" | "account_edit" | "wallet_create" | "wallet_edit";
 
 export interface AdminFlowState {
   flow: AdminFlowName;
@@ -28,7 +28,7 @@ export function getFlow(ctx: AppContext): AdminFlowState | undefined {
 }
 
 function isAdminFlowName(value: string): value is AdminFlowName {
-  return value === "product_create" || value === "coupon_create" || value === "account_create" || value === "ticket_reply";
+  return value === "product_create" || value === "coupon_create" || value === "account_create" || value === "ticket_reply" || value === "category_create" || value === "category_edit" || value === "product_edit" || value === "account_edit" || value === "wallet_create" || value === "wallet_edit";
 }
 
 function normalizeFlowData(data: Record<string, unknown>): Record<string, string | number | boolean | undefined> {

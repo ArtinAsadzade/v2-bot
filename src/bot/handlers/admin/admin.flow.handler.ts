@@ -10,6 +10,26 @@ function asPositiveInteger(value: string): number | undefined {
   return Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
+
+function parseKeyValueLines(text: string): Record<string, string> {
+  return Object.fromEntries(
+    text
+      .split(/\n+/)
+      .map((line) => line.split(/[:=：]/, 2).map((part) => part.trim()))
+      .filter((parts): parts is [string, string] => parts.length === 2 && Boolean(parts[0]) && Boolean(parts[1])),
+  );
+}
+
+function optionalPositiveInteger(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  return asPositiveInteger(value);
+}
+
+function parseActive(value: string | undefined): boolean | undefined {
+  if (!value) return undefined;
+  return ["1", "true", "active", "فعال", "بله"].includes(value.toLowerCase()) ? true : ["0", "false", "inactive", "غیرفعال", "خیر"].includes(value.toLowerCase()) ? false : undefined;
+}
+
 export async function handleAdminFlow(ctx: AppContext): Promise<boolean> {
   const flow = getFlow(ctx);
   if (!flow) return false;
@@ -56,6 +76,84 @@ export async function handleAdminFlow(ctx: AppContext): Promise<boolean> {
       await ctx.reply(`✅ محصول ${product.title} ساخته شد.`, navigationKeyboard("admin:dashboard"));
       return true;
     }
+  }
+
+
+  if (flow.flow === "category_create" || flow.flow === "category_edit") {
+    const data = parseKeyValueLines(text);
+    const name = data.title ?? data.name ?? data["عنوان"] ?? (flow.flow === "category_create" ? text : undefined);
+    const category = await AdminService.saveCategory(
+      {
+        name: name ?? "",
+        description: data.description ?? data["توضیحات"],
+        icon: data.icon ?? data.emoji ?? data["آیکون"],
+        displayOrder: optionalPositiveInteger(data.order ?? data.sort ?? data["ترتیب"]),
+        isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
+      },
+      String(ctx.from?.id ?? "system"),
+      flow.flow === "category_edit" ? String(flow.data.categoryId) : undefined,
+    );
+    resetFlow(ctx);
+    await ctx.reply(`✅ دسته‌بندی ${category.name} ذخیره شد.`, navigationKeyboard(`admin:category:${category.id}`));
+    return true;
+  }
+
+  if (flow.flow === "product_edit") {
+    const data = parseKeyValueLines(text);
+    const price = optionalPositiveInteger(data.price ?? data["قیمت"]);
+    const duration = optionalPositiveInteger(data.duration ?? data["مدت"]);
+    const updated = await AdminService.updateProduct(
+      String(flow.data.productId),
+      {
+        title: data.title ?? data.name ?? data["عنوان"],
+        categoryId: data.categoryId ?? data["دسته"],
+        price,
+        duration,
+        isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
+      },
+      String(ctx.from?.id ?? "system"),
+    );
+    resetFlow(ctx);
+    await ctx.reply(`✅ محصول ${updated.title} ذخیره شد.`, navigationKeyboard(`admin:product:${updated.id}`));
+    return true;
+  }
+
+  if (flow.flow === "account_edit") {
+    const data = parseKeyValueLines(text);
+    const updated = await AdminService.updateAccount(
+      String(flow.data.accountId),
+      {
+        username: data.username ?? data["نام کاربری"],
+        subscriptionLink: data.subscriptionLink ?? data.sub ?? data["ساب"],
+        configLink: data.configLink ?? data.config ?? data["کانفیگ"],
+        productId: data.productId ?? data.product ?? data["محصول"],
+        status: (data.status as never) ?? undefined,
+      },
+      String(ctx.from?.id ?? "system"),
+    );
+    resetFlow(ctx);
+    await ctx.reply(`✅ اکانت ${updated.username} ذخیره شد.`, navigationKeyboard(`admin:account:${updated.id}`));
+    return true;
+  }
+
+  if (flow.flow === "wallet_create" || flow.flow === "wallet_edit") {
+    const data = parseKeyValueLines(text);
+    const wallet = await AdminService.saveCryptoWallet(
+      {
+        coinName: data.coinName ?? data.coin ?? data["نام ارز"] ?? "",
+        coinSymbol: data.coinSymbol ?? data.symbol ?? data["نماد"],
+        networkName: data.networkName ?? data.network ?? data["شبکه"] ?? "",
+        displayName: data.displayName ?? data.display ?? data["نام نمایشی"],
+        walletAddress: data.walletAddress ?? data.address ?? data["آدرس"] ?? "",
+        displayOrder: optionalPositiveInteger(data.order ?? data.sort ?? data["ترتیب"]),
+        status: parseActive(data.active ?? data.status ?? data["وضعیت"]) === false ? "inactive" : "active",
+      },
+      String(ctx.from?.id ?? "system"),
+      flow.flow === "wallet_edit" ? String(flow.data.walletId) : undefined,
+    );
+    resetFlow(ctx);
+    await ctx.reply(`✅ کیف پول ${wallet.coinName}/${wallet.networkName} ذخیره شد.`, navigationKeyboard(`admin:wallet:${wallet.id}`));
+    return true;
   }
 
   if (flow.flow === "coupon_create") {
