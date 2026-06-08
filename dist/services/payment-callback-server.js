@@ -11,7 +11,7 @@ const logger_1 = require("./logger");
 const money = (value) => `${value.toLocaleString("fa-IR")} تومان`;
 function invoiceIdFromRequest(req) {
     const url = new URL(req.url ?? "/", "http://localhost");
-    return url.searchParams.get("invoice_id") ?? url.searchParams.get("id") ?? url.pathname.split("/").filter(Boolean).pop() ?? "";
+    return url.searchParams.get("invoice_id") ?? "";
 }
 async function notifyUser(bot, result) {
     if (!result)
@@ -37,8 +37,7 @@ function startPaymentCallbackServer(bot) {
             return;
         }
         const invoiceId = invoiceIdFromRequest(req);
-        const url = new URL(req.url ?? "/", "http://localhost");
-        const result = await payment_service_1.PaymentInvoiceService.processCallback(invoiceId, { url: req.url, remoteAddress: req.socket.remoteAddress, token: url.searchParams.get("token") });
+        const result = await payment_service_1.PaymentInvoiceService.processCallback(invoiceId, { url: req.url, remoteAddress: req.socket.remoteAddress });
         if (result.result)
             await notifyUser(bot, result.result);
         res.writeHead(result.statusCode, { "Content-Type": "text/plain; charset=utf-8" });

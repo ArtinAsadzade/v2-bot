@@ -104,6 +104,7 @@ enum PaymentInvoiceStatus {
   PENDING
   PAID
   COMPLETED
+  CANCELED
   EXPIRED
   FAILED
 }
@@ -273,15 +274,19 @@ model FinancialSetting {
 
 
 model PaymentGatewayConfig {
-  id           String   @id @default("singleton") @map("_id")
-  enabled      Boolean  @default(false)
-  apiBaseUrl   String
-  apiKey       String
-  callbackUrl  String
-  gatewayName  String   @default("پرداخت آنی")
-  displayOrder Int      @default(1)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                    String    @id @default("singleton") @map("_id")
+  enabled               Boolean   @default(false)
+  apiBaseUrl            String
+  apiKey                String
+  callbackUrl           String
+  gatewayName           String    @default("پرداخت آنی")
+  displayOrder          Int       @default(1)
+  lastSuccessfulRequest DateTime?
+  lastFailedRequest     DateTime?
+  lastConnectionStatus  String?
+  lastConnectionError   String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   @@index([enabled, displayOrder])
 }
@@ -293,6 +298,7 @@ model PaymentInvoice {
   gatewayAmount  Int?
   payId          String?              @unique
   paymentLink    String?
+  gatewayResponse String?
   callbackToken  String               @unique
   type           PaymentInvoiceType
   status         PaymentInvoiceStatus @default(PENDING)
