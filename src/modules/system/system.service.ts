@@ -62,6 +62,22 @@ const COINGECKO_IDS: Record<SupportedCoin, string> = { USDT: "tether", BTC: "bit
 const rateCache = new Map<string, MarketRate>();
 let lastAdminRateAlertAt = 0;
 
+function readUsdTomanRate() {
+  const raw = process.env.USD_TOMAN_RATE ?? process.env.USDT_TOMAN_RATE ?? "60000";
+  const normalized = raw.replace(/[,،\s]/g, "");
+  const usdToman = Number(normalized);
+  if (!Number.isFinite(usdToman) || usdToman <= 0) throw new Error("USD_TOMAN_RATE is invalid");
+  return usdToman;
+}
+
+function toTomanRate(usd: number, usdToman: number) {
+  if (!Number.isFinite(usd) || usd <= 0) throw new Error("USD price is invalid");
+  if (!Number.isFinite(usdToman) || usdToman <= 0) throw new Error("USD_TOMAN_RATE is invalid");
+  const toman = usd * usdToman;
+  if (!Number.isFinite(toman) || toman <= 0) throw new Error("Toman rate is invalid");
+  return toman;
+}
+
 function normalizeCoin(coin: string): SupportedCoin {
   const normalized = coin.trim().toUpperCase();
   if (!SUPPORTED_COINS.includes(normalized as SupportedCoin)) throw new Error("رمز ارز پشتیبانی نمی‌شود");
@@ -116,13 +132,12 @@ export class CryptoRateService {
     const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`);
     if (!response.ok) throw new Error(`Coingecko returned ${response.status}`);
     const prices = await response.json() as Record<string, { usd?: number }>;
-    const usdToman = Number(process.env.USD_TOMAN_RATE ?? process.env.USDT_TOMAN_RATE ?? 60_000);
-    if (!Number.isFinite(usdToman) || usdToman <= 0) throw new Error("USD_TOMAN_RATE is invalid");
+    const usdToman = readUsdTomanRate();
     const fetchedAt = new Date();
     return coins.map((coin) => {
       const usd = prices[COINGECKO_IDS[coin]]?.usd;
       if (!usd || usd <= 0) throw new Error(`Missing price for ${coin}`);
-      return { coin, usd, usdToman, toman: usd * usdToman, fetchedAt, source: "coingecko", stale: false };
+      return { coin, usd, usdToman, toman: toTomanRate(usd, usdToman), fetchedAt, source: "coingecko", stale: false };
     });
   }
 
