@@ -7,11 +7,13 @@ const flow_engine_1 = require("../flows/flow-engine");
 const user_service_1 = require("../../modules/user/user.service");
 const referral_service_1 = require("../../modules/referral/referral.service");
 const purchase_service_1 = require("../../modules/product/purchase.service");
+const product_service_1 = require("../../modules/product/product.service");
 const deposit_service_1 = require("../../modules/deposit/deposit.service");
 const admin_service_1 = require("../../modules/admin/admin.service");
 const coupon_service_1 = require("../../modules/coupon/coupon.service");
 const support_service_1 = require("../../modules/support/support.service");
 const free_account_service_1 = require("../../modules/free-account/free-account.service");
+const payment_service_1 = require("../../modules/payment/payment.service");
 const admin_middleware_1 = require("../middlewares/admin.middleware");
 function registerModernHandlers(bot) {
     (0, modern_views_1.registerModernViews)();
@@ -113,6 +115,47 @@ ${result.account.configLink}
             await ctx.editMessageText(`⚠️ خرید تکمیل نشد
 
 ${error instanceof Error ? error.message : "در انجام درخواست مشکلی پیش آمد. لطفاً چند لحظه دیگر دوباره تلاش کنید."}`, { reply_markup: { inline_keyboard: [[{ text: "💳 شارژ کیف پول", callback_data: (0, panel_ui_1.callbackFor)("deposit") }, { text: "⬅️ بازگشت به پیش‌فاکتور", callback_data: "nav:back" }], [{ text: "🎧 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") }]] } });
+        }
+    });
+    bot.action(/^buy:instant:(.+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from)
+            return;
+        const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
+        if (!user)
+            return;
+        const productId = ctx.match[1];
+        try {
+            await ctx.editMessageText("⏳ در حال ایجاد فاکتور پرداخت آنی...", { reply_markup: { inline_keyboard: [] } });
+            const product = await product_service_1.ProductService.getProduct(productId);
+            const invoice = await payment_service_1.PaymentInvoiceService.createProductInvoice(user.id, productId);
+            await ctx.editMessageText(`📦 محصول:
+${product?.title ?? "-"}
+
+💰 مبلغ:
+${invoice.amount.toLocaleString("fa-IR")} تومان
+
+⚡ روش پرداخت:
+پرداخت آنی
+
+پس از پرداخت، محصول به صورت خودکار تحویل خواهد شد.`, {
+                reply_markup: { inline_keyboard: [[{ text: "⚡ پرداخت", url: invoice.paymentLink ?? "" }], [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }]] },
+            });
+        }
+        catch (error) {
+            await ctx.editMessageText(`❌ ${error instanceof Error ? error.message : "ایجاد پرداخت ناموفق بود"}`, { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }]] } });
+        }
+    });
+    bot.action(/^admin:payment_gateway:status:(enabled|disabled)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return void (await ctx.answerCbQuery("دسترسی غیرمجاز"));
+        try {
+            await payment_service_1.PaymentGatewayService.setEnabled(ctx.match[1] === "enabled", String(ctx.from.id));
+            await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.paymentGateway" }, "replace");
+        }
+        catch (error) {
+            await ctx.reply(`❌ ${error instanceof Error ? error.message : "تغییر وضعیت درگاه ناموفق بود"}`);
         }
     });
     bot.action(/^favorite:toggle:(.+)$/, async (ctx) => {
@@ -385,6 +428,86 @@ ${account.configLink}
         await admin_service_1.AdminService.setStoreStatus(ctx.match[1], String(ctx.from.id));
         await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.store" }, "replace");
     });
+    bot.action(/^admin:category:status:([^:]+):([01])$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await admin_service_1.AdminService.setCategoryActive(ctx.match[1], ctx.match[2] === "1", String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.category", params: { categoryId: ctx.match[1] } }, "replace");
+    });
+    bot.action(/^admin:category:delete:([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await admin_service_1.AdminService.deleteCategory(ctx.match[1], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.categories" }, "replace");
+    });
+    bot.action(/^admin:category:hard_delete:confirm:([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await ctx.reply("⚠️ حذف دائمی دسته‌بندی غیرقابل بازگشت است و محصولات وابسته را هم حذف می‌کند.", { reply_markup: { inline_keyboard: [[{ text: "تایید حذف دائمی", callback_data: `admin:category:hard_delete:force:${ctx.match[1]}` }, { text: "لغو", callback_data: (0, panel_ui_1.callbackFor)("admin.category", { categoryId: ctx.match[1] }) }]] } });
+    });
+    bot.action(/^admin:category:hard_delete:force:([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await admin_service_1.AdminService.hardDeleteCategory(ctx.match[1], String(ctx.from.id), true);
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.categories" }, "replace");
+    });
+    bot.action(/^admin:account:status:([^:]+):(available|reserved|sold|disabled|expired)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await admin_service_1.AdminService.setAccountStatus(ctx.match[1], ctx.match[2], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.account", params: { accountId: ctx.match[1] } }, "replace");
+    });
+    bot.action(/^admin:account:move_to:([^:]+):([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        const account = await admin_service_1.AdminService.moveAccount(ctx.match[1], ctx.match[2], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.account", params: { accountId: account.id } }, "replace");
+    });
+    bot.action(/^admin:account:delete:confirm:([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await ctx.reply("⚠️ این اکانت از موجودی حذف شود؟", { reply_markup: { inline_keyboard: [[{ text: "تایید حذف", callback_data: `admin:account:delete:force:${ctx.match[1]}` }, { text: "لغو", callback_data: (0, panel_ui_1.callbackFor)("admin.account", { accountId: ctx.match[1] }) }]] } });
+    });
+    bot.action(/^admin:account:delete:force:([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await admin_service_1.AdminService.deleteAccount(ctx.match[1], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.accounts" }, "replace");
+    });
+    bot.action(/^admin:wallet:status:([^:]+):(active|inactive)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await admin_service_1.AdminService.setCryptoWalletStatus(ctx.match[1], ctx.match[2], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.wallet", params: { walletId: ctx.match[1] } }, "replace");
+    });
+    bot.action(/^admin:wallet:delete:confirm:([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await ctx.reply("⚠️ این کیف پول حذف شود؟ اگر پرداخت فعال داشته باشد حذف انجام نمی‌شود.", { reply_markup: { inline_keyboard: [[{ text: "تایید حذف", callback_data: `admin:wallet:delete:force:${ctx.match[1]}` }, { text: "لغو", callback_data: (0, panel_ui_1.callbackFor)("admin.wallet", { walletId: ctx.match[1] }) }]] } });
+    });
+    bot.action(/^admin:wallet:delete:force:([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        try {
+            await admin_service_1.AdminService.deleteCryptoWallet(ctx.match[1], String(ctx.from.id));
+            await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.wallets" }, "replace");
+        }
+        catch (error) {
+            await ctx.reply(error instanceof Error ? `⚠️ ${error.message}` : "⚠️ حذف کیف پول ناموفق بود.");
+            await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.wallet", params: { walletId: ctx.match[1] } }, "replace");
+        }
+    });
     bot.action(/^admin:coupon:status:([^:]+):(active|inactive)$/, async (ctx) => {
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
             return ctx.answerCbQuery("دسترسی غیرمجاز");
@@ -443,6 +566,13 @@ ${account.configLink}
         await ctx.answerCbQuery();
         await admin_service_1.AdminService.setProductActive(ctx.match[1], ctx.match[2] === "1", String(ctx.from.id));
         await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.product", params: { productId: ctx.match[1] } }, "replace");
+    });
+    bot.action(/^admin:product:duplicate:([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        const product = await admin_service_1.AdminService.duplicateProduct(ctx.match[1], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.product", params: { productId: product.id } }, "replace");
     });
     bot.action(/^admin:product:delete:([^:]+)$/, async (ctx) => {
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))

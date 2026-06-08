@@ -5,11 +5,13 @@ import { registerFlowEngine, handleActiveFlowPhoto, handleActiveFlowText } from 
 import { UserService } from "../../modules/user/user.service";
 import { ReferralService } from "../../modules/referral/referral.service";
 import { PurchaseService } from "../../modules/product/purchase.service";
+import { ProductService } from "../../modules/product/product.service";
 import { CryptoWalletService, DepositService } from "../../modules/deposit/deposit.service";
 import { AdminService } from "../../modules/admin/admin.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
 import { SupportService } from "../../modules/support/support.service";
 import { FreeAccountError, FreeAccountService, FREE_ACCOUNT_STATUS_LABELS, formatFreeAccountError, formatFreeAccountDate, freeAccountExpiresAt } from "../../modules/free-account/free-account.service";
+import { PaymentGatewayService, PaymentInvoiceService } from "../../modules/payment/payment.service";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 
 
@@ -112,6 +114,46 @@ ${result.account.configLink}
       await ctx.editMessageText(`⚠️ خرید تکمیل نشد
 
 ${error instanceof Error ? error.message : "در انجام درخواست مشکلی پیش آمد. لطفاً چند لحظه دیگر دوباره تلاش کنید."}`, { reply_markup: { inline_keyboard: [[{ text: "💳 شارژ کیف پول", callback_data: callbackFor("deposit") }, { text: "⬅️ بازگشت به پیش‌فاکتور", callback_data: "nav:back" }], [{ text: "🎧 پشتیبانی", callback_data: callbackFor("support") }]] } });
+    }
+  });
+
+
+
+  bot.action(/^buy:instant:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from) return;
+    const user = await UserService.getByTelegramId(ctx.from.id);
+    if (!user) return;
+    const productId = ctx.match[1];
+    try {
+      await ctx.editMessageText("⏳ در حال ایجاد فاکتور پرداخت آنی...", { reply_markup: { inline_keyboard: [] } });
+      const product = await ProductService.getProduct(productId);
+      const invoice = await PaymentInvoiceService.createProductInvoice(user.id, productId);
+      await ctx.editMessageText(`📦 محصول:
+${product?.title ?? "-"}
+
+💰 مبلغ:
+${invoice.amount.toLocaleString("fa-IR")} تومان
+
+⚡ روش پرداخت:
+پرداخت آنی
+
+پس از پرداخت، محصول به صورت خودکار تحویل خواهد شد.`, {
+        reply_markup: { inline_keyboard: [[{ text: "⚡ پرداخت", url: invoice.paymentLink ?? "" }], [{ text: "🔙 بازگشت", callback_data: callbackFor("shop.checkout", { productId }) }]] },
+      });
+    } catch (error) {
+      await ctx.editMessageText(`❌ ${error instanceof Error ? error.message : "ایجاد پرداخت ناموفق بود"}`, { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+    }
+  });
+
+  bot.action(/^admin:payment_gateway:status:(enabled|disabled)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return void (await ctx.answerCbQuery("دسترسی غیرمجاز"));
+    try {
+      await PaymentGatewayService.setEnabled(ctx.match[1] === "enabled", String(ctx.from.id));
+      await renderPanel(ctx, { id: "admin.paymentGateway" }, "replace");
+    } catch (error) {
+      await ctx.reply(`❌ ${error instanceof Error ? error.message : "تغییر وضعیت درگاه ناموفق بود"}`);
     }
   });
 

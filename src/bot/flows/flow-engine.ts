@@ -9,6 +9,7 @@ import { AdminService, type ProductAccountAdminStatus } from "../../modules/admi
 import { FreeAccountService } from "../../modules/free-account/free-account.service";
 import { ReferralService } from "../../modules/referral/referral.service";
 import { BroadcastService } from "../../modules/broadcast/broadcast.service";
+import { PaymentGatewayService, PaymentInvoiceService } from "../../modules/payment/payment.service";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
@@ -93,6 +94,28 @@ async function completeBroadcast(ctx: AppContext) {
 }
 
 const definitions: Record<FlowName, FlowDefinition> = {
+  instant_topup: {
+    firstStep: "amount",
+    prompt: async () => {
+      const setting = await FinancialSettingsService.get();
+      return `💳 مبلغ شارژ را به تومان وارد کنید:\n\nحداقل شارژ: ${money(setting.minimumTopupAmount)}\n\nپس از پرداخت، کیف پول شما به صورت خودکار شارژ خواهد شد.`;
+    },
+    async handleText(ctx, text) {
+      const user = await requireUser(ctx);
+      const amount = Number(text.replace(/[,،\s]/g, ""));
+      try {
+        await FinancialSettingsService.validateTopupAmount(amount);
+        const invoice = await PaymentInvoiceService.createWalletTopupInvoice(user.id, amount);
+        return {
+          done: true,
+          text: `💳 مبلغ شارژ:\n${money(amount)}\n\n⚡ روش پرداخت:\nپرداخت آنی\n\nپس از پرداخت، کیف پول شما به صورت خودکار شارژ خواهد شد.\n\n⚡ لینک پرداخت:\n${invoice.paymentLink}`,
+          returnTo: { id: "wallet" },
+        };
+      } catch (error) {
+        return { text: error instanceof Error ? `❌ ${error.message}` : "❌ ایجاد پرداخت ناموفق بود" };
+      }
+    },
+  },
   deposit_submit: {
     firstStep: "amount",
     prompt: async () => {
@@ -781,6 +804,29 @@ status: ${detail.wallet.status}`;
     },
   },
 
+  payment_gateway_update: {
+    firstStep: "fields",
+    prompt: `⚡ تنظیمات درگاه پرداخت را ارسال کنید.\n\nهر خط به شکل field: value\n\nenabled: true\napiBaseUrl: https://gateway.example.com\napiKey: کلید_درگاه\ncallbackUrl: https://your-domain.com/payments/callback\ngatewayName: پرداخت آنی\ndisplayOrder: 1`,
+    async handleText(ctx, text) {
+      const data = parseKeyValueLines(text);
+      const enabled = parseActive(data.enabled ?? data.active ?? data.status ?? data["وضعیت"]);
+      const displayOrder = data.displayOrder || data.order || data["ترتیب"] ? parseInteger(data.displayOrder ?? data.order ?? data["ترتیب"] ?? "1") : undefined;
+      try {
+        await PaymentGatewayService.update({
+          enabled,
+          apiBaseUrl: data.apiBaseUrl ?? data.baseUrl ?? data.url,
+          apiKey: data.apiKey ?? data.key,
+          callbackUrl: data.callbackUrl ?? data.callback,
+          gatewayName: data.gatewayName ?? data.name,
+          displayOrder,
+        }, String(ctx.from?.id ?? "admin"));
+        return { done: true, text: "✅ تنظیمات درگاه پرداخت ذخیره شد.", returnTo: { id: "admin.paymentGateway" } };
+      } catch (error) {
+        return { text: error instanceof Error ? `❌ ${error.message}` : "❌ ذخیره تنظیمات ناموفق بود" };
+      }
+    },
+  },
+
   wallet_adjust: {
     firstStep: "amount",
     prompt: "💳 مبلغ تغییر موجودی را به تومان وارد کنید:",
@@ -892,6 +938,7 @@ const adminOnlyFlows: FlowName[] = [
   "forced_join_create",
   "wallet_adjust",
   "broadcast_create",
+  "payment_gateway_update",
   "free_account_create",
   "free_account_edit",
 ];
@@ -899,6 +946,7 @@ const adminOnlyFlows: FlowName[] = [
       await ctx.answerCbQuery("دسترسی غیرمجاز");
       return;
     }
+    if (name === "payment_gateway_update") return startFlow(ctx, "payment_gateway_update");
     if (name === "coupon_edit") return startFlow(ctx, "coupon_edit", { couponId: ctx.match[2] });
 if (name === "broadcast_create") {
   return startFlow(ctx, "broadcast_create", {

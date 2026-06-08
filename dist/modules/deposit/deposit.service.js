@@ -52,6 +52,20 @@ class FinancialSettingsService {
     }
 }
 exports.FinancialSettingsService = FinancialSettingsService;
+function normalizeCryptoWalletInput(data) {
+    const coinName = data.coinName.trim().toUpperCase();
+    const networkName = data.networkName.trim().toUpperCase();
+    const walletAddress = data.walletAddress.trim();
+    const coinSymbol = (data.coinSymbol ?? coinName).trim().toUpperCase();
+    const displayName = data.displayName?.trim() || `${coinName} ${networkName}`;
+    const displayOrder = data.displayOrder ?? 0;
+    const status = data.status ?? "active";
+    if (!coinName || !coinSymbol || !networkName || !walletAddress)
+        throw new Error("اطلاعات کیف پول کامل نیست");
+    if (!system_service_1.CryptoRateService.supportedCoins().includes(coinName))
+        throw new Error("رمز ارز پشتیبانی نمی‌شود");
+    return { coinName, coinSymbol, networkName, displayName, displayOrder, walletAddress, status };
+}
 class CryptoWalletService {
     static supportedCoins() {
         return system_service_1.CryptoRateService.supportedCoins();
@@ -62,30 +76,75 @@ class CryptoWalletService {
     static async listAll() {
         return prisma_1.prisma.cryptoWallet.findMany({ orderBy: [{ status: "asc" }, { coinName: "asc" }, { networkName: "asc" }] });
     }
-    static async upsert(data, actorId) {
-        const coinName = data.coinName.trim().toUpperCase();
-        const networkName = data.networkName.trim().toUpperCase();
-        const walletAddress = data.walletAddress.trim();
-        const coinSymbol = (data.coinSymbol ?? coinName).trim().toUpperCase();
-        const displayName = data.displayName?.trim() || `${coinName} ${networkName}`;
-        const displayOrder = data.displayOrder ?? 0;
-        if (!coinName || !networkName || !walletAddress)
-            throw new Error("اطلاعات کیف پول کامل نیست");
-        if (!system_service_1.CryptoRateService.supportedCoins().includes(coinName))
-            throw new Error("رمز ارز پشتیبانی نمی‌شود");
-        const rate = await system_service_1.CryptoRateService.getRateToman(coinName).catch(() => undefined);
-        const wallet = await prisma_1.prisma.cryptoWallet.upsert({
-            where: { coinName_networkName: { coinName, networkName } },
-            update: { walletAddress, coinSymbol, displayName, displayOrder, status: data.status ?? "active", ...(rate ? { rateToman: Math.round(rate.toman), lastRateAt: rate.fetchedAt } : {}) },
-            create: { coinName, coinSymbol, networkName, displayName, displayOrder, walletAddress, status: data.status ?? "active", rateToman: rate ? Math.round(rate.toman) : 0, lastRateAt: rate?.fetchedAt },
+    static async get(walletId) {
+        return prisma_1.prisma.cryptoWallet.findUnique({ where: { id: walletId } });
+    }
+    static async getUsage(walletId) {
+        const [pendingDeposits, submittedDeposits, deposits] = await Promise.all([
+            prisma_1.prisma.deposit.count({ where: { cryptoWalletId: walletId, status: "pending" } }),
+            prisma_1.prisma.deposit.count({ where: { cryptoWalletId: walletId, status: "submitted" } }),
+            prisma_1.prisma.deposit.count({ where: { cryptoWalletId: walletId } }),
+        ]);
+        const activePayments = pendingDeposits + submittedDeposits;
+        return { pendingDeposits, submittedDeposits, activePayments, deposits };
+    }
+    static async create(data, actorId) {
+        const payload = normalizeCryptoWalletInput(data);
+        const rate = await system_service_1.CryptoRateService.getRateToman(payload.coinName).catch(() => undefined);
+        const wallet = await prisma_1.prisma.cryptoWallet.create({
+            data: { ...payload, rateToman: rate ? Math.round(rate.toman) : 0, lastRateAt: rate?.fetchedAt },
         });
-        await prisma_1.prisma.auditLog.create({ data: { actorId, action: "crypto_wallet.upsert", metadata: JSON.stringify({ walletId: wallet.id, coinName, networkName }) } });
+        await prisma_1.prisma.auditLog.create({ data: { actorId, action: "crypto_wallet.create", metadata: JSON.stringify({ walletId: wallet.id, coinName: wallet.coinName, symbol: wallet.coinSymbol, networkName: wallet.networkName }) } });
         return wallet;
+    }
+    static async update(walletId, data, actorId) {
+        const current = await prisma_1.prisma.cryptoWallet.findUnique({ where: { id: walletId } });
+        if (!current)
+            throw new Error("کیف پول پیدا نشد");
+        const payload = normalizeCryptoWalletInput({
+            coinName: data.coinName ?? current.coinName,
+            coinSymbol: data.coinSymbol ?? current.coinSymbol ?? current.coinName,
+            networkName: data.networkName ?? current.networkName,
+            displayName: data.displayName ?? current.displayName ?? undefined,
+            walletAddress: data.walletAddress ?? current.walletAddress,
+            displayOrder: data.displayOrder ?? current.displayOrder,
+            status: data.status ?? current.status,
+        });
+        const rate = payload.coinName !== current.coinName ? await system_service_1.CryptoRateService.getRateToman(payload.coinName).catch(() => undefined) : undefined;
+        const wallet = await prisma_1.prisma.cryptoWallet.update({
+            where: { id: walletId },
+            data: { ...payload, ...(rate ? { rateToman: Math.round(rate.toman), lastRateAt: rate.fetchedAt } : {}) },
+        });
+        await prisma_1.prisma.auditLog.create({ data: { actorId, action: "crypto_wallet.update", metadata: JSON.stringify({ walletId, coinName: wallet.coinName, symbol: wallet.coinSymbol, networkName: wallet.networkName }) } });
+        return wallet;
+    }
+    static async upsert(data, actorId) {
+        const payload = normalizeCryptoWalletInput(data);
+        const existing = await prisma_1.prisma.cryptoWallet.findUnique({ where: { coinName_networkName: { coinName: payload.coinName, networkName: payload.networkName } } });
+        return existing ? this.update(existing.id, payload, actorId) : this.create(payload, actorId);
     }
     static async setStatus(walletId, status, actorId) {
         const wallet = await prisma_1.prisma.cryptoWallet.update({ where: { id: walletId }, data: { status } });
-        await prisma_1.prisma.auditLog.create({ data: { actorId, action: "crypto_wallet.status", metadata: JSON.stringify({ walletId, status }) } });
+        await prisma_1.prisma.auditLog.create({ data: { actorId, action: status === "active" ? "crypto_wallet.enable" : "crypto_wallet.disable", metadata: JSON.stringify({ walletId, status }) } });
         return wallet;
+    }
+    static enable(walletId, actorId) {
+        return this.setStatus(walletId, "active", actorId);
+    }
+    static disable(walletId, actorId) {
+        return this.setStatus(walletId, "inactive", actorId);
+    }
+    static async delete(walletId, actorId) {
+        const wallet = await prisma_1.prisma.cryptoWallet.findUnique({ where: { id: walletId } });
+        if (!wallet)
+            throw new Error("کیف پول پیدا نشد");
+        const usage = await this.getUsage(walletId);
+        if (usage.activePayments > 0) {
+            throw new Error("این کیف پول در پرداخت فعال استفاده شده است. ابتدا پرداخت‌های در انتظار یا ارسال‌شده را تعیین وضعیت کنید");
+        }
+        const deleted = await prisma_1.prisma.cryptoWallet.delete({ where: { id: walletId } });
+        await prisma_1.prisma.auditLog.create({ data: { actorId, action: "crypto_wallet.delete", metadata: JSON.stringify({ walletId, activePayments: usage.activePayments, deposits: usage.deposits }) } });
+        return deleted;
     }
     static async quote(walletId, amount) {
         await FinancialSettingsService.validateTopupAmount(amount);

@@ -95,6 +95,19 @@ enum StoreStatus {
   inactive
 }
 
+enum PaymentInvoiceType {
+  WALLET_TOPUP
+  PRODUCT_PURCHASE
+}
+
+enum PaymentInvoiceStatus {
+  PENDING
+  PAID
+  COMPLETED
+  EXPIRED
+  FAILED
+}
+
 model User {
   id           String   @id @default(auto()) @map("_id") @db.ObjectId
   telegramId   String   @unique
@@ -119,6 +132,8 @@ model User {
   referralRewards    ReferralReward[]
   freeConfigRewards  FreeConfigReward[]
   freeAccountAssignments FreeAccountAssignment[]
+  paymentInvoices    PaymentInvoice[]
+  paymentAuditLogs   PaymentAuditLog[]
 
   @@index([role])
   @@index([referredById])
@@ -256,6 +271,69 @@ model FinancialSetting {
   updatedAt          DateTime    @updatedAt
 }
 
+
+model PaymentGatewayConfig {
+  id           String   @id @default("singleton") @map("_id")
+  enabled      Boolean  @default(false)
+  apiBaseUrl   String
+  apiKey       String
+  callbackUrl  String
+  gatewayName  String   @default("پرداخت آنی")
+  displayOrder Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([enabled, displayOrder])
+}
+
+model PaymentInvoice {
+  id             String               @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String               @db.ObjectId
+  amount         Int
+  gatewayAmount  Int?
+  payId          String?              @unique
+  paymentLink    String?
+  callbackToken  String               @unique
+  type           PaymentInvoiceType
+  status         PaymentInvoiceStatus @default(PENDING)
+  productId      String?              @db.ObjectId
+  depositId      String?              @db.ObjectId
+  orderId        String?              @db.ObjectId
+  createdAt      DateTime             @default(now())
+  paidAt         DateTime?
+  verifiedAt     DateTime?
+  completedAt    DateTime?
+  updatedAt      DateTime             @updatedAt
+
+  user    User              @relation(fields: [userId], references: [id])
+  product Product?          @relation(fields: [productId], references: [id])
+  order   Order?            @relation(fields: [orderId], references: [id])
+  audits  PaymentAuditLog[]
+
+  @@index([userId, status, createdAt])
+  @@index([status, createdAt])
+  @@index([type, status, createdAt])
+  @@index([productId, status])
+  @@index([orderId])
+  @@index([depositId])
+}
+
+model PaymentAuditLog {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String?  @db.ObjectId
+  invoiceId String   @db.ObjectId
+  action    String
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  user    User?          @relation(fields: [userId], references: [id])
+  invoice PaymentInvoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([invoiceId, createdAt])
+  @@index([action, createdAt])
+}
+
 model Ticket {
   id        String       @id @default(auto()) @map("_id") @db.ObjectId
   userId    String       @db.ObjectId
@@ -351,6 +429,7 @@ model Product {
   accounts        ProductAccount[]
   orders          Order[]
   orderItems      OrderItem[]
+  paymentInvoices PaymentInvoice[]
 
   @@index([categoryId])
   @@index([isActive, deletedAt])
@@ -413,6 +492,7 @@ model Order {
   product Product     @relation(fields: [productId], references: [id])
   coupon  Coupon?     @relation(fields: [couponId], references: [id])
   items   OrderItem[]
+  paymentInvoices PaymentInvoice[]
 
   @@index([userId, createdAt])
   @@index([productId, createdAt])

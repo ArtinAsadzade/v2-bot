@@ -10,6 +10,8 @@ const referral_service_1 = require("../../modules/referral/referral.service");
 const free_account_service_1 = require("../../modules/free-account/free-account.service");
 const support_service_1 = require("../../modules/support/support.service");
 const coupon_service_1 = require("../../modules/coupon/coupon.service");
+const broadcast_service_1 = require("../../modules/broadcast/broadcast.service");
+const payment_service_1 = require("../../modules/payment/payment.service");
 const divider = "━━━━━━━━━━━━━━━━";
 const money = (value) => `${value.toLocaleString("fa-IR")} تومان`;
 const page = (params) => Math.max(Number(params.page ?? 1), 1);
@@ -18,6 +20,16 @@ const userLine = (user) => `${user.firstName ?? "کاربر"} ${user.username ? 
 const stockLabel = (count) => (count > 5 ? "آماده تحویل" : count > 0 ? `فقط ${count.toLocaleString("fa-IR")} عدد` : "ناموجود");
 const shortId = (id) => id.slice(-6).toUpperCase();
 const freeAccountExpiry = (item) => item.expiresAt ?? (0, free_account_service_1.freeAccountExpiresAt)(item.assignedAt ?? item.createdAt, item.account.durationDays);
+const yesNo = (value) => (value ? "فعال ✅" : "غیرفعال ⛔");
+const accountStatusLabel = (status) => ({ available: "آماده", reserved: "رزرو", sold: "فروخته", disabled: "غیرفعال", expired: "منقضی" })[status] ?? status;
+const walletStatusLabel = (status) => (status === "active" ? "فعال ✅" : "غیرفعال ⛔");
+const purchasedAccountStatusLabel = (item) => {
+    if (item.productAccount?.status === "disabled")
+        return "غیرفعال";
+    if (item.productAccount?.status === "expired" || !item.isActive || (item.expiresAt && item.expiresAt <= new Date()))
+        return "منقضی شده";
+    return "فعال";
+};
 function registerModernViews() {
     (0, panel_ui_1.registerView)("home", async (ctx) => {
         const user = ctx.from ? await user_service_1.UserService.findOrCreateUser(ctx) : undefined;
@@ -30,9 +42,18 @@ function registerModernViews() {
         const keyboard = [
             ...featuredKeyboard,
             [{ text: "🛍 مشاهده همه محصولات", action: (0, panel_ui_1.callbackFor)("shop.categories") }],
-            [{ text: "🔎 جستجوی محصول", action: "flow:start:product_search" }, { text: "💳 شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") }],
-            [{ text: "📦 اکانت‌های من", action: (0, panel_ui_1.callbackFor)("account.details") }, { text: "👤 حساب کاربری", action: (0, panel_ui_1.callbackFor)("account") }],
-            [{ text: "🆓 دریافت اکانت تست", action: (0, panel_ui_1.callbackFor)("freeAccount") }, { text: "🎁 دعوت دوستان", action: (0, panel_ui_1.callbackFor)("referral") }],
+            [
+                { text: "🔎 جستجوی محصول", action: "flow:start:product_search" },
+                { text: "💳 شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") },
+            ],
+            [
+                { text: "📦 اکانت‌های من", action: (0, panel_ui_1.callbackFor)("account.details") },
+                { text: "👤 حساب کاربری", action: (0, panel_ui_1.callbackFor)("account") },
+            ],
+            [
+                { text: "🆓 دریافت اکانت تست", action: (0, panel_ui_1.callbackFor)("freeAccount") },
+                { text: "🎁 دعوت دوستان", action: (0, panel_ui_1.callbackFor)("referral") },
+            ],
             [{ text: "🎧 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }],
         ];
         if (isAdmin)
@@ -48,7 +69,12 @@ function registerModernViews() {
             text: `🛍 فروشگاه نیمه‌شب\n\n${divider}\nدسته‌بندی موردنظر را انتخاب کنید. همه سرویس‌های نمایش‌داده‌شده فعال و آماده تحویل خودکار هستند.`,
             keyboard: [
                 [{ text: "🔎 جستجوی محصول", action: "flow:start:product_search" }],
-                ...categories.map((category) => [{ text: `📁 ${category.name} (${category.products.length.toLocaleString("fa-IR")})`, action: (0, panel_ui_1.callbackFor)("shop.products", { categoryId: category.id }) }]),
+                ...categories.map((category) => [
+                    {
+                        text: `📁 ${category.name} (${category.products.length.toLocaleString("fa-IR")})`,
+                        action: (0, panel_ui_1.callbackFor)("shop.products", { categoryId: category.id }),
+                    },
+                ]),
             ],
         };
     });
@@ -56,7 +82,12 @@ function registerModernViews() {
         const products = await product_service_1.ProductService.getProductsByCategory(params.categoryId);
         return {
             text: `📦 انتخاب سرویس\n\n${divider}\nیک سرویس را انتخاب کنید تا جزئیات، موجودی و پیش‌فاکتور را ببینید.`,
-            keyboard: products.map((product) => [{ text: `${product.title} · ${money(product.price)} · ${stockLabel(product._count.accounts)}`, action: (0, panel_ui_1.callbackFor)("shop.product", { productId: product.id }) }]),
+            keyboard: products.map((product) => [
+                {
+                    text: `${product.title} · ${money(product.price)} · ${stockLabel(product._count.accounts)}`,
+                    action: (0, panel_ui_1.callbackFor)("shop.product", { productId: product.id }),
+                },
+            ]),
         };
     });
     (0, panel_ui_1.registerView)("shop.searchResults", async (ctx, params) => {
@@ -65,7 +96,12 @@ function registerModernViews() {
         return {
             text: `🔎 نتیجه جستجو\n\nعبارت: ${query || "—"}\n${divider}\n${products.length ? "از نتایج زیر یک محصول را انتخاب کنید:" : "موردی پیدا نشد. لطفاً با نام کوتاه‌تر سرویس یا دسته‌بندی دوباره جستجو کنید."}`,
             keyboard: [
-                ...products.map((product) => [{ text: `${product.title} · ${money(product.price)} · ${product.category.name}`, action: (0, panel_ui_1.callbackFor)("shop.product", { productId: product.id }) }]),
+                ...products.map((product) => [
+                    {
+                        text: `${product.title} · ${money(product.price)} · ${product.category.name}`,
+                        action: (0, panel_ui_1.callbackFor)("shop.product", { productId: product.id }),
+                    },
+                ]),
                 [{ text: "🔎 جستجوی جدید", action: "flow:start:product_search" }],
             ],
         };
@@ -81,7 +117,10 @@ function registerModernViews() {
             text: `📦 ${product.title}\n\n${divider}\n🏷 دسته‌بندی: ${product.category.name}\n📅 اعتبار سرویس: ${product.duration.toLocaleString("fa-IR")} روز\n💰 قیمت نهایی: ${money(product.price)}\n🚀 تحویل: فوری و خودکار\n📊 موجودی: ${stockLabel(stock)}\n${divider}\n\nپس از پرداخت، اطلاعات اکانت همین‌جا نمایش داده می‌شود و همیشه از بخش «اکانت‌های من» قابل مشاهده است.`,
             keyboard: [
                 [{ text: "✅ ادامه خرید", action: (0, panel_ui_1.callbackFor)("shop.checkout", { productId: product.id }) }],
-                [{ text: "🎟 اعمال کد تخفیف", action: `flow:start:coupon_code:${product.id}` }, { text: isFavorite ? "💛 حذف از علاقه‌مندی" : "🤍 افزودن به علاقه‌مندی", action: `favorite:toggle:${product.id}` }],
+                [
+                    { text: "🎟 اعمال کد تخفیف", action: `flow:start:coupon_code:${product.id}` },
+                    { text: isFavorite ? "💛 حذف از علاقه‌مندی" : "🤍 افزودن به علاقه‌مندی", action: `favorite:toggle:${product.id}` },
+                ],
             ],
         };
     });
@@ -124,8 +163,14 @@ ${divider}
 
 با تأیید نهایی، مبلغ از کیف پول کسر و اکانت به‌صورت فوری تخصیص داده می‌شود.`,
             keyboard: [
-                [{ text: "✅ تأیید نهایی و دریافت اکانت", action: `buy:confirm:${product.id}` }],
-                [{ text: "🎟 اعمال/تغییر کد تخفیف", action: `flow:start:coupon_code:${product.id}` }, { text: "💳 شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") }],
+                [
+                    { text: "💰 کیف پول", action: `buy:confirm:${product.id}` },
+                    { text: "⚡ پرداخت آنی", action: `buy:instant:${product.id}` },
+                ],
+                [
+                    { text: "🎟 اعمال/تغییر کد تخفیف", action: `flow:start:coupon_code:${product.id}` },
+                    { text: "💳 شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") },
+                ],
             ],
         };
     });
@@ -137,9 +182,18 @@ ${divider}
         return {
             text: `👤 داشبورد حساب کاربری\n\n${divider}\n💰 موجودی کیف پول: ${money(dashboard.user.balance)}\n👥 تعداد دعوت‌ها: ${dashboard.referralCount.toLocaleString("fa-IR")} نفر\n🎁 جوایز فعال: ${dashboard.freeRewards.toLocaleString("fa-IR")}\n📦 اکانت‌های فعال: ${(dashboard.activeAccounts.length + dashboard.activeFreeAccounts.length).toLocaleString("fa-IR")}\n🧾 خریدهای اخیر: ${dashboard.recentOrders.length.toLocaleString("fa-IR")} سفارش\n💎 پاداش قابل برداشت: ${money(dashboard.pendingReferralAmount)}\n${divider}\n\nاز میان اقدام‌های سریع زیر انتخاب کنید:`,
             keyboard: [
-                [{ text: "🛒 خرید سرویس", action: (0, panel_ui_1.callbackFor)("shop.categories") }, { text: "💳 شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") }],
-                [{ text: "📦 اکانت‌های من", action: (0, panel_ui_1.callbackFor)("account.details") }, { text: "🎁 دعوت دوستان", action: (0, panel_ui_1.callbackFor)("referral") }],
-                [{ text: "🧾 خریدها", action: (0, panel_ui_1.callbackFor)("account.history") }, { text: "📜 گردش کیف پول", action: (0, panel_ui_1.callbackFor)("wallet.history") }],
+                [
+                    { text: "🛒 خرید سرویس", action: (0, panel_ui_1.callbackFor)("shop.categories") },
+                    { text: "💳 شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") },
+                ],
+                [
+                    { text: "📦 اکانت‌های من", action: (0, panel_ui_1.callbackFor)("account.details") },
+                    { text: "🎁 دعوت دوستان", action: (0, panel_ui_1.callbackFor)("referral") },
+                ],
+                [
+                    { text: "🧾 خریدها", action: (0, panel_ui_1.callbackFor)("account.history") },
+                    { text: "📜 گردش کیف پول", action: (0, panel_ui_1.callbackFor)("wallet.history") },
+                ],
             ],
         };
     });
@@ -150,12 +204,14 @@ ${divider}
         await free_account_service_1.FreeAccountService.expireDueAccounts();
         const dashboard = await user_service_1.UserService.dashboard(user.id);
         const activeFreeAccounts = await free_account_service_1.FreeAccountService.assignedForUser(user.id, true);
+        const purchasedAccounts = dashboard.purchasedAccounts;
         return {
             text: `📦 اکانت‌های من
 
 ${divider}
 
-${[...activeFreeAccounts.map((item) => `🆓 اکانت تست رایگان
+${[
+                ...activeFreeAccounts.map((item) => `🆓 اکانت تست رایگان
 
 👤 نام کاربری:
 ${item.account.username}
@@ -170,8 +226,9 @@ ${item.account.configLink}
 ${freeAccountExpiry(item).toLocaleDateString("fa-IR")}
 
 📌 وضعیت:
-فعال و قابل استفاده`), ...dashboard.activeAccounts.map((item) => `🛒 خریداری شده
-📦 ${item.product.title}
+فعال و قابل استفاده`),
+                ...purchasedAccounts.map((item) => `🛒 خریداری شده
+📦 محصول: ${item.product.title}
 
 👤 نام کاربری:
 ${item.deliveredUsername}
@@ -189,14 +246,21 @@ ${item.purchaseDate.toLocaleString("fa-IR")}
 ${item.expiresAt ? `تا ${item.expiresAt.toLocaleDateString("fa-IR")}` : "نامحدود"}
 
 📌 وضعیت:
-فعال`)].join(`
+${purchasedAccountStatusLabel(item)}`),
+            ].join(`
 
 ${divider}
 
-`) || "در حال حاضر اکانت فعالی برای نمایش وجود ندارد. می‌توانید از فروشگاه سرویس جدید تهیه کنید یا اکانت تست دریافت کنید."}
+`) || "هنوز اکانتی برای نمایش وجود ندارد. می‌توانید از فروشگاه سرویس جدید تهیه کنید یا اکانت تست دریافت کنید."}
 
 ${divider}`,
-            keyboard: [[{ text: "🛒 خرید سرویس", action: (0, panel_ui_1.callbackFor)("shop.categories") }, { text: "🆓 اکانت تست", action: (0, panel_ui_1.callbackFor)("freeAccount") }], [{ text: "🎧 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }]],
+            keyboard: [
+                [
+                    { text: "🛒 خرید سرویس", action: (0, panel_ui_1.callbackFor)("shop.categories") },
+                    { text: "🆓 اکانت تست", action: (0, panel_ui_1.callbackFor)("freeAccount") },
+                ],
+                [{ text: "🎧 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }],
+            ],
         };
     });
     (0, panel_ui_1.registerView)("account.history", async (ctx) => {
@@ -204,20 +268,37 @@ ${divider}`,
         if (!user)
             return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
         const dashboard = await user_service_1.UserService.dashboard(user.id);
-        return { text: `🧾 تاریخچه خرید\n\n${dashboard.recentOrders.map((order) => `• #${shortId(order.id)} · ${order.product.title}\n  مبلغ: ${money(order.finalPaidAmount)} · تاریخ: ${order.createdAt.toLocaleDateString("fa-IR")}`).join("\n") || "هنوز خریدی ثبت نشده است."}\n\n⏳ اکانت‌های منقضی‌شده: ${dashboard.expiredAccounts.length.toLocaleString("fa-IR")}`, keyboard: [[{ text: "🛒 خرید جدید", action: (0, panel_ui_1.callbackFor)("shop.categories") }]] };
+        return {
+            text: `🧾 تاریخچه خرید\n\n${dashboard.recentOrders.map((order) => `• #${shortId(order.id)} · ${order.product.title}\n  مبلغ: ${money(order.finalPaidAmount)} · تاریخ: ${order.createdAt.toLocaleDateString("fa-IR")}`).join("\n") || "هنوز خریدی ثبت نشده است."}\n\n⏳ اکانت‌های منقضی‌شده: ${dashboard.expiredAccounts.length.toLocaleString("fa-IR")}`,
+            keyboard: [[{ text: "🛒 خرید جدید", action: (0, panel_ui_1.callbackFor)("shop.categories") }]],
+        };
     });
     (0, panel_ui_1.registerView)("wallet", async (ctx) => {
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
-        return { text: `💳 کیف پول\n\n${divider}\nموجودی قابل استفاده: ${money(user?.balance ?? 0)}\n\nشارژ کیف پول از طریق پرداخت رمزارزی انجام می‌شود و پس از تأیید رسید، موجودی شما به‌روزرسانی خواهد شد.`, keyboard: [[{ text: "➕ شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") }, { text: "📜 گردش کیف پول", action: (0, panel_ui_1.callbackFor)("wallet.history") }]] };
+        return {
+            text: `💳 کیف پول\n\n${divider}\nموجودی قابل استفاده: ${money(user?.balance ?? 0)}\n\nشارژ کیف پول از طریق پرداخت رمزارزی انجام می‌شود و پس از تأیید رسید، موجودی شما به‌روزرسانی خواهد شد.`,
+            keyboard: [
+                [
+                    { text: "➕ شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") },
+                    { text: "📜 گردش کیف پول", action: (0, panel_ui_1.callbackFor)("wallet.history") },
+                ],
+            ],
+        };
     });
     (0, panel_ui_1.registerView)("wallet.history", async (ctx) => {
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
         if (!user)
             return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
         const dashboard = await user_service_1.UserService.dashboard(user.id);
-        return { text: `📜 گردش کیف پول\n\n${dashboard.walletTransactions.map((tx) => `${tx.type === "credit" || tx.type === "transfer_in" ? "🟢" : "🔴"} ${tx.description}\n${money(tx.amount)} · ${tx.createdAt.toLocaleString("fa-IR")}`).join("\n\n") || "هنوز تراکنشی ثبت نشده است."}`, keyboard: [[{ text: "➕ شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") }]] };
+        return {
+            text: `📜 گردش کیف پول\n\n${dashboard.walletTransactions.map((tx) => `${tx.type === "credit" || tx.type === "transfer_in" ? "🟢" : "🔴"} ${tx.description}\n${money(tx.amount)} · ${tx.createdAt.toLocaleString("fa-IR")}`).join("\n\n") || "هنوز تراکنشی ثبت نشده است."}`,
+            keyboard: [[{ text: "➕ شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") }]],
+        };
     });
-    (0, panel_ui_1.registerView)("deposit", async () => ({ text: `➕ شارژ کیف پول\n\n${divider}\nمبلغ شارژ را به تومان وارد می‌کنید، سپس شبکه پرداخت را انتخاب و رسید را ارسال می‌کنید.\n\n⏳ درخواست‌ها زمان‌دار هستند تا پرداخت‌ها دقیق و قابل پیگیری بمانند.`, keyboard: [[{ text: "💳 شروع شارژ", action: "flow:start:deposit_submit" }]] }));
+    (0, panel_ui_1.registerView)("deposit", async () => ({
+        text: `➕ شارژ کیف پول\n\n${divider}\nمبلغ شارژ را به تومان وارد می‌کنید، سپس شبکه پرداخت را انتخاب و رسید را ارسال می‌کنید.\n\n⏳ درخواست‌ها زمان‌دار هستند تا پرداخت‌ها دقیق و قابل پیگیری بمانند.`,
+        keyboard: [[{ text: "💳 شروع شارژ", action: "flow:start:deposit_submit" }]],
+    }));
     (0, panel_ui_1.registerView)("support", async (ctx) => {
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
         if (!user)
@@ -233,8 +314,10 @@ ${divider}
 
 📌 وضعیت آخرین تیکت: ${latestOpen ? `باز (#${shortId(latestOpen.id)})` : "تیکت باز ندارید"}
 
-${tickets.map((ticket) => `• #${shortId(ticket.id)} · ${ticket.status === "open" ? "باز ✅" : "بسته 🔒"} · ${ticket.updatedAt.toLocaleString("fa-IR")}
-  ${ticket.messages[0]?.message ?? "بدون پیام"}`).join("\n") || "هنوز تیکتی ثبت نشده است."}`,
+${tickets
+                .map((ticket) => `• #${shortId(ticket.id)} · ${ticket.status === "open" ? "باز ✅" : "بسته 🔒"} · ${ticket.updatedAt.toLocaleString("fa-IR")}
+  ${ticket.messages[0]?.message ?? "بدون پیام"}`)
+                .join("\n") || "هنوز تیکتی ثبت نشده است."}`,
             keyboard: [
                 [{ text: latestOpen ? "💬 ادامه گفتگو" : "✉️ ایجاد تیکت جدید", action: "support:chat:start" }],
                 ...tickets.slice(0, 3).map((ticket) => [{ text: `👁 تیکت #${shortId(ticket.id)}`, action: `support:chat:${ticket.id}` }]),
@@ -248,7 +331,10 @@ ${tickets.map((ticket) => `• #${shortId(ticket.id)} · ${ticket.status === "op
         const stats = await referral_service_1.ReferralService.getStats(user.id);
         const botUsername = process.env.BOT_USERNAME ?? "BOT";
         const link = `https://t.me/${botUsername}?start=${user.referralCode}`;
-        return { text: `🎁 دعوت دوستان\n\n${divider}\nکد دعوت شما:\n${user.referralCode ?? "در حال ساخت"}\n\nلینک دعوت آماده کپی:\n${link}\n\n👥 دعوت‌های موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر\n💎 پاداش قابل برداشت: ${money(stats.pendingAmount)}\n${divider}\n\nاین لینک را برای دوستانتان ارسال کنید؛ پس از ثبت‌نام موفق، وضعیت دعوت‌ها و پاداش‌ها در همین بخش نمایش داده می‌شود.`, keyboard: [[{ text: "💎 درخواست برداشت پاداش", action: "referral:claim" }]] };
+        return {
+            text: `🎁 دعوت دوستان\n\n${divider}\nکد دعوت شما:\n${user.referralCode ?? "در حال ساخت"}\n\nلینک دعوت آماده کپی:\n${link}\n\n👥 دعوت‌های موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر\n💎 پاداش قابل برداشت: ${money(stats.pendingAmount)}\n${divider}\n\nاین لینک را برای دوستانتان ارسال کنید؛ پس از ثبت‌نام موفق، وضعیت دعوت‌ها و پاداش‌ها در همین بخش نمایش داده می‌شود.`,
+            keyboard: [[{ text: "💎 درخواست برداشت پاداش", action: "referral:claim" }]],
+        };
     });
     (0, panel_ui_1.registerView)("freeAccount", async (ctx) => {
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
@@ -341,42 +427,359 @@ ${divider}
     });
     (0, panel_ui_1.registerView)("admin.dashboard", async () => {
         const stats = await admin_service_1.AdminService.dashboard(true);
-        return { text: `⚙️ مرکز مدیریت\n\n${divider}\n📊 نمای کلی عملیات\n\n👥 کاربران: ${stats.users.toLocaleString("fa-IR")}\n💰 درآمد موفق: ${money(stats.revenue)}\n🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}\n🎧 تیکت‌های فعال: ${stats.openTickets.toLocaleString("fa-IR")}\n💳 واریزی‌های منتظر: ${stats.submittedDeposits.toLocaleString("fa-IR")}\n📦 موجودی آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}\n${divider}\n\nماژول مدیریتی را انتخاب کنید:`, keyboard: [[{ text: "💰 مالی", action: (0, panel_ui_1.callbackFor)("admin.deposits") }, { text: "🛒 فروشگاه", action: (0, panel_ui_1.callbackFor)("admin.products") }], [{ text: "👥 کاربران", action: (0, panel_ui_1.callbackFor)("admin.users") }, { text: "🎁 رفرال", action: (0, panel_ui_1.callbackFor)("admin.referrals") }], [{ text: "🆓 رایگان", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts") }, { text: "📊 آمار", action: (0, panel_ui_1.callbackFor)("admin.analytics") }], [{ text: "🎧 تیکت‌ها", action: (0, panel_ui_1.callbackFor)("admin.tickets") }, { text: "🎟 کوپن‌ها", action: (0, panel_ui_1.callbackFor)("admin.coupons") }], [{ text: "🔐 اکانت‌ها", action: (0, panel_ui_1.callbackFor)("admin.accounts") }, { text: "⚙️ تنظیمات", action: (0, panel_ui_1.callbackFor)("admin.crypto") }, { text: "📢 عضویت", action: (0, panel_ui_1.callbackFor)("admin.forcedJoin") }]] };
+        return {
+            text: `⚙️ مرکز مدیریت
+
+${divider}
+📊 نمای کلی عملیات
+
+👥 کاربران: ${stats.users.toLocaleString("fa-IR")}
+💰 درآمد موفق: ${money(stats.revenue)}
+🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}
+🎧 تیکت‌های فعال: ${stats.openTickets.toLocaleString("fa-IR")}
+💳 واریزی‌های منتظر: ${stats.submittedDeposits.toLocaleString("fa-IR")}
+📦 موجودی آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}
+${divider}
+
+ماژول مدیریتی را انتخاب کنید:`,
+            keyboard: [
+                [
+                    { text: "📊 آمار", action: (0, panel_ui_1.callbackFor)("admin.analytics") },
+                    { text: "👥 کاربران", action: (0, panel_ui_1.callbackFor)("admin.users") },
+                ],
+                [
+                    { text: "📦 محصولات", action: (0, panel_ui_1.callbackFor)("admin.products") },
+                    { text: "📂 دسته‌بندی‌ها", action: (0, panel_ui_1.callbackFor)("admin.categories") },
+                ],
+                [{ text: "🗄 مدیریت موجودی اکانت‌ها", action: (0, panel_ui_1.callbackFor)("admin.accounts") }],
+                [
+                    { text: "💳 کیف پول‌ها", action: (0, panel_ui_1.callbackFor)("admin.wallets") },
+                    { text: "⚡ درگاه پرداخت", action: (0, panel_ui_1.callbackFor)("admin.paymentGateway") },
+                    { text: "💰 تراکنش‌ها", action: (0, panel_ui_1.callbackFor)("admin.transactions") },
+                ],
+                [
+                    { text: "🎟 کوپن‌ها", action: (0, panel_ui_1.callbackFor)("admin.coupons") },
+                    { text: "🎁 رفرال", action: (0, panel_ui_1.callbackFor)("admin.referrals") },
+                ],
+                [
+                    { text: "🆓 اکانت تست", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts") },
+                    { text: "📢 اطلاع‌رسانی", action: (0, panel_ui_1.callbackFor)("admin.notifications") },
+                ],
+                [
+                    { text: "⚙️ تنظیمات", action: (0, panel_ui_1.callbackFor)("admin.settings") },
+                    { text: "🎫 تیکت‌ها", action: (0, panel_ui_1.callbackFor)("admin.tickets") },
+                ],
+            ],
+        };
     });
     (0, panel_ui_1.registerView)("admin.users", async (_ctx, params) => {
         const current = page(params);
         const [users, total] = await admin_service_1.AdminService.listUsers(current);
-        const keyboard = users.map((user) => [{ text: `👤 ${userLine(user)} · ${money(user.balance)}`, action: (0, panel_ui_1.callbackFor)("admin.user", { userId: user.id }) }]);
-        keyboard.push([{ text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.users", { page: Math.max(current - 1, 1) }) }, { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.users", { page: current + 1 }) }]);
+        const keyboard = users.map((user) => [
+            { text: `👤 ${userLine(user)} · ${money(user.balance)}`, action: (0, panel_ui_1.callbackFor)("admin.user", { userId: user.id }) },
+        ]);
+        keyboard.push([
+            { text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.users", { page: Math.max(current - 1, 1) }) },
+            { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.users", { page: current + 1 }) },
+        ]);
         return { text: `👥 کاربران\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}`, keyboard };
     });
     (0, panel_ui_1.registerView)("admin.user", async (_ctx, params) => {
         const profile = await admin_service_1.AdminService.userProfile(params.userId);
         if (!profile.user)
             return { text: "⚠️ کاربر پیدا نشد.", keyboard: [] };
-        return { text: `👤 خلاصه حساب شما\n\n${userLine(profile.user)}\nموجودی: ${money(profile.user.balance)}\nدعوت موفق: ${profile.referralCount.toLocaleString("fa-IR")}\nوضعیت: ${profile.user.isBanned ? "مسدود" : "فعال"}\n\nخریدهای اخیر:\n${profile.orders.map((order) => `• ${order.product.title} · ${money(order.totalAmount)}`).join("\n") || "خریدی ندارد"}\n\nتراکنش‌های کیف پول:\n${profile.transactions.map((tx) => `• ${tx.description}: ${money(tx.amount)}`).join("\n") || "تراکنشی ندارد"}`, keyboard: [[{ text: "➕ افزودن موجودی", action: `flow:start:wallet_adjust:${profile.user.id}:credit` }, { text: "➖ کسر موجودی", action: `flow:start:wallet_adjust:${profile.user.id}:debit` }], [{ text: profile.user.isBanned ? "✅ رفع مسدودی" : "⛔ مسدودسازی", action: `admin:user:ban:${profile.user.id}:${profile.user.isBanned ? "0" : "1"}` }], [{ text: "📜 سوابق مسدودی", action: (0, panel_ui_1.callbackFor)("admin.user.blocks", { userId: profile.user.id }) }]] };
+        return {
+            text: `👤 خلاصه حساب شما\n\n${userLine(profile.user)}\nموجودی: ${money(profile.user.balance)}\nدعوت موفق: ${profile.referralCount.toLocaleString("fa-IR")}\nوضعیت: ${profile.user.isBanned ? "مسدود" : "فعال"}\n\nخریدهای اخیر:\n${profile.orders.map((order) => `• ${order.product.title} · ${money(order.totalAmount)}`).join("\n") || "خریدی ندارد"}\n\nتراکنش‌های کیف پول:\n${profile.transactions.map((tx) => `• ${tx.description}: ${money(tx.amount)}`).join("\n") || "تراکنشی ندارد"}`,
+            keyboard: [
+                [
+                    { text: "➕ افزودن موجودی", action: `flow:start:wallet_adjust:${profile.user.id}:credit` },
+                    { text: "➖ کسر موجودی", action: `flow:start:wallet_adjust:${profile.user.id}:debit` },
+                ],
+                [
+                    {
+                        text: profile.user.isBanned ? "✅ رفع مسدودی" : "⛔ مسدودسازی",
+                        action: `admin:user:ban:${profile.user.id}:${profile.user.isBanned ? "0" : "1"}`,
+                    },
+                ],
+                [{ text: "📜 سوابق مسدودی", action: (0, panel_ui_1.callbackFor)("admin.user.blocks", { userId: profile.user.id }) }],
+            ],
+        };
     });
     (0, panel_ui_1.registerView)("admin.user.blocks", async (_ctx, params) => {
         const history = await admin_service_1.AdminService.userBlockHistory(params.userId);
-        return { text: `📜 سوابق مسدودی\n\n${history.map((item) => `• ${item.blocked ? "مسدود" : "رفع مسدودی"} · مدیر: ${item.actorId} · ${item.createdAt.toLocaleString("fa-IR")}${item.reason ? ` · ${item.reason}` : ""}`).join("\n") || "سابقه‌ای ثبت نشده است."}`, keyboard: [] };
+        return {
+            text: `📜 سوابق مسدودی\n\n${history.map((item) => `• ${item.blocked ? "مسدود" : "رفع مسدودی"} · مدیر: ${item.actorId} · ${item.createdAt.toLocaleString("fa-IR")}${item.reason ? ` · ${item.reason}` : ""}`).join("\n") || "سابقه‌ای ثبت نشده است."}`,
+            keyboard: [],
+        };
     });
     (0, panel_ui_1.registerView)("admin.products", async (_ctx, params) => {
         const current = page(params);
         const [products, total] = await admin_service_1.AdminService.listProducts(current);
-        const keyboard = products.map((product) => [{ text: `📦 ${product.title} · ${money(product.price)}`, action: (0, panel_ui_1.callbackFor)("admin.product", { productId: product.id }) }]);
+        const keyboard = products.map((product) => [
+            { text: `📦 ${product.title} · ${money(product.price)}`, action: (0, panel_ui_1.callbackFor)("admin.product", { productId: product.id }) },
+        ]);
         keyboard.push([{ text: "➕ محصول جدید", action: "flow:start:product_create" }]);
-        keyboard.push([{ text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.products", { page: Math.max(current - 1, 1) }) }, { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.products", { page: current + 1 }) }]);
-        return { text: `🛒 مدیریت فروشگاه\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}`, keyboard };
+        keyboard.push([
+            { text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.products", { page: Math.max(current - 1, 1) }) },
+            { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.products", { page: current + 1 }) },
+        ]);
+        return {
+            text: `📦 محصولات
+
+صفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}
+
+${products.map((product) => `• ${product.title}
+  دسته‌بندی: ${product.category.name}
+  قیمت: ${money(product.price)}
+  موجودی: ${product.inventoryCount.toLocaleString("fa-IR")} · فروخته‌شده: ${product.soldCount.toLocaleString("fa-IR")} · فعال: ${product.activeCount.toLocaleString("fa-IR")}`).join("\n\n") || "محصولی ثبت نشده است."}`,
+            keyboard,
+        };
     });
     (0, panel_ui_1.registerView)("admin.product", async (_ctx, params) => {
         const detail = await admin_service_1.AdminService.productDetail(params.productId);
         if (!detail.product)
             return { text: "⚠️ محصول پیدا نشد.", keyboard: [] };
-        return { text: `📦 ${detail.product.title}\n\nدسته‌بندی: ${detail.product.category.name}\nقیمت: ${money(detail.product.price)}\nمدت: ${detail.product.duration.toLocaleString("fa-IR")} روز\nموجودی قابل فروش: ${detail.available.toLocaleString("fa-IR")}\nفروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}\nوضعیت: ${detail.product.isActive ? "فعال" : "غیرفعال"}`, keyboard: [[{ text: "🔐 افزودن اکانت", action: `flow:start:account_create:${detail.product.id}` }, { text: "💰 تغییر قیمت", action: `flow:start:product_price:${detail.product.id}` }], [{ text: detail.product.isActive ? "غیرفعال‌سازی" : "فعال‌سازی", action: `admin:product:active:${detail.product.id}:${detail.product.isActive ? "0" : "1"}` }, { text: "🗑 حذف نرم", action: `admin:product:delete:${detail.product.id}` }], [{ text: "🧨 حذف دائمی", action: `admin:product:hard_delete:confirm:${detail.product.id}` }]] };
+        return {
+            text: `📦 ${detail.product.title}
+
+دسته‌بندی: ${detail.product.category.name}
+قیمت: ${money(detail.product.price)}
+مدت: ${detail.product.duration.toLocaleString("fa-IR")} روز
+موجودی قابل فروش: ${detail.available.toLocaleString("fa-IR")}
+فروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}
+اکانت فعال: ${detail.activeCount.toLocaleString("fa-IR")}
+رزرو: ${detail.reserved.toLocaleString("fa-IR")} · غیرفعال: ${detail.disabled.toLocaleString("fa-IR")} · منقضی: ${detail.expired.toLocaleString("fa-IR")}
+وضعیت: ${detail.product.isActive ? "فعال" : "غیرفعال"}`,
+            keyboard: [
+                [
+                    { text: "✏️ ویرایش", action: `flow:start:product_edit:${detail.product.id}` },
+                    { text: "📋 کپی محصول", action: `admin:product:duplicate:${detail.product.id}` },
+                ],
+                [
+                    { text: "🔐 افزودن اکانت", action: `flow:start:account_create:${detail.product.id}` },
+                    { text: "💰 تغییر قیمت", action: `flow:start:product_price:${detail.product.id}` },
+                ],
+                [{ text: "🗄 اکانت‌های محصول", action: (0, panel_ui_1.callbackFor)("admin.accounts", { productId: detail.product.id }) }],
+                [
+                    {
+                        text: detail.product.isActive ? "غیرفعال‌سازی" : "فعال‌سازی",
+                        action: `admin:product:active:${detail.product.id}:${detail.product.isActive ? "0" : "1"}`,
+                    },
+                    { text: "🗑 حذف نرم", action: `admin:product:delete:${detail.product.id}` },
+                ],
+                [{ text: "🧨 حذف دائمی", action: `admin:product:hard_delete:confirm:${detail.product.id}` }],
+            ],
+        };
     });
-    (0, panel_ui_1.registerView)("admin.accounts", async () => {
-        const stats = await admin_service_1.AdminService.accountStats();
-        return { text: `🔐 مدیریت اکانت‌ها\n\nاکانت آماده فروش: ${stats.available.toLocaleString("fa-IR")}\nاکانت فروخته‌شده: ${stats.sold.toLocaleString("fa-IR")}\n\nبرای افزودن اکانت، محصول را انتخاب کنید.`, keyboard: stats.products.map((product) => [{ text: `➕ ${product.title}`, action: `flow:start:account_create:${product.id}` }]) };
+    (0, panel_ui_1.registerView)("admin.categories", async (_ctx, params) => {
+        const current = page(params);
+        const [categories, total] = await admin_service_1.AdminService.listCategories(current);
+        return {
+            text: `📂 مدیریت دسته‌بندی‌ها\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n\n${categories.map((category) => `${category.icon ?? "📂"} ${category.name} · ${yesNo(category.isActive)} · محصول: ${category._count.products.toLocaleString("fa-IR")}`).join("\n") || "دسته‌بندی ثبت نشده است."}`,
+            keyboard: [
+                [{ text: "➕ دسته‌بندی جدید", action: "flow:start:category_create" }],
+                ...categories.map((category) => [
+                    { text: `${category.icon ?? "📂"} مدیریت ${category.name}`, action: (0, panel_ui_1.callbackFor)("admin.category", { categoryId: category.id }) },
+                ]),
+                [
+                    { text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.categories", { page: Math.max(current - 1, 1) }) },
+                    { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.categories", { page: current + 1 }) },
+                ],
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.category", async (_ctx, params) => {
+        const productPage = Math.max(Number(params.productPage ?? 1), 1);
+        const detail = await admin_service_1.AdminService.categoryDetail(params.categoryId, productPage, 6);
+        if (!detail.category) {
+            return { text: "⚠️ دسته‌بندی پیدا نشد.", keyboard: [] };
+        }
+        return {
+            text: `${detail.category.icon ?? "📂"} ${detail.category.name}
+
+توضیحات: ${detail.category.description ?? "—"}
+ترتیب نمایش: ${detail.category.displayOrder.toLocaleString("fa-IR")}
+وضعیت: ${yesNo(detail.category.isActive)}
+
+📦 محصولات: ${detail.productCount.toLocaleString("fa-IR")}
+✅ محصولات فعال: ${detail.activeProductCount.toLocaleString("fa-IR")}
+🧾 فروش موفق: ${detail.salesCount.toLocaleString("fa-IR")}
+
+محصولات این دسته:
+${detail.products.map((product) => `• ${product.title} · ${product.isActive ? "فعال" : "غیرفعال"} · فروش ${product._count.orders.toLocaleString("fa-IR")}`).join("\n") || "محصولی در این دسته نیست."}`,
+            keyboard: [
+                [
+                    {
+                        text: "✏️ ویرایش",
+                        action: `flow:start:category_edit:${detail.category.id}`,
+                    },
+                    {
+                        text: detail.category.isActive ? "غیرفعال‌سازی" : "فعال‌سازی",
+                        action: `admin:category:status:${detail.category.id}:${detail.category.isActive ? "0" : "1"}`,
+                    },
+                ],
+                [
+                    {
+                        text: "🗑 حذف نرم",
+                        action: `admin:category:delete:${detail.category.id}`,
+                    },
+                    {
+                        text: "🧨 حذف دائمی",
+                        action: `admin:category:hard_delete:confirm:${detail.category.id}`,
+                    },
+                ],
+                [
+                    {
+                        text: "◀️ محصولات قبلی",
+                        action: (0, panel_ui_1.callbackFor)("admin.category", {
+                            categoryId: detail.category.id,
+                            productPage: Math.max(productPage - 1, 1),
+                        }),
+                    },
+                    {
+                        text: "محصولات بعدی ▶️",
+                        action: (0, panel_ui_1.callbackFor)("admin.category", {
+                            categoryId: detail.category.id,
+                            productPage: productPage + 1,
+                        }),
+                    },
+                ],
+                [
+                    {
+                        text: "📂 همه دسته‌بندی‌ها",
+                        action: (0, panel_ui_1.callbackFor)("admin.categories"),
+                    },
+                ],
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.accounts", async (_ctx, params) => {
+        const current = page(params);
+        const status = ["available", "reserved", "sold", "disabled", "expired"].includes(params.status)
+            ? params.status
+            : undefined;
+        const productId = params.productId || undefined;
+        const [accounts, total] = await admin_service_1.AdminService.listAccounts(current, 8, undefined, status, productId);
+        const stats = await admin_service_1.AdminService.accountStats(productId);
+        const products = stats.products.slice(0, 10);
+        return {
+            text: `🗄 مدیریت موجودی اکانت‌ها\n\nکل: ${stats.total.toLocaleString("fa-IR")} · آماده: ${stats.available.toLocaleString("fa-IR")} · رزرو: ${stats.reserved.toLocaleString("fa-IR")} · فروخته: ${stats.sold.toLocaleString("fa-IR")} · غیرفعال: ${stats.disabled.toLocaleString("fa-IR")} · منقضی: ${stats.expired.toLocaleString("fa-IR")}\n${status ? `\nفیلتر وضعیت: ${accountStatusLabel(status)}` : ""}\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n\n${accounts.map((account) => `• ${account.username} · ${account.product.title}
+  وضعیت: ${accountStatusLabel(account.status)}
+  کاربر: ${account.assignedUser ? userLine(account.assignedUser) : "—"}
+  تاریخ تخصیص: ${account.assignedDate ? account.assignedDate.toLocaleString("fa-IR") : "—"}`).join("\n") || "اکانتی ثبت نشده است."}`,
+            keyboard: [
+                [
+                    { text: "✅ آماده", action: (0, panel_ui_1.callbackFor)("admin.accounts", { status: "available", productId }) },
+                    { text: "⏳ رزرو", action: (0, panel_ui_1.callbackFor)("admin.accounts", { status: "reserved", productId }) },
+                    { text: "💰 فروخته", action: (0, panel_ui_1.callbackFor)("admin.accounts", { status: "sold", productId }) },
+                ],
+                [
+                    { text: "⏸ غیرفعال", action: (0, panel_ui_1.callbackFor)("admin.accounts", { status: "disabled", productId }) },
+                    { text: "⌛ منقضی", action: (0, panel_ui_1.callbackFor)("admin.accounts", { status: "expired", productId }) },
+                    { text: "نمایش همه", action: (0, panel_ui_1.callbackFor)("admin.accounts", { productId }) },
+                ],
+                ...accounts.map((account) => [{ text: `👁 ${account.username}`, action: (0, panel_ui_1.callbackFor)("admin.account", { accountId: account.id }) }]),
+                ...products.map((product) => [{ text: `➕ افزودن به ${product.title}`, action: `flow:start:account_create:${product.id}` }]),
+                [
+                    { text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.accounts", { page: Math.max(current - 1, 1), status, productId }) },
+                    { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.accounts", { page: current + 1, status, productId }) },
+                ],
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.account", async (_ctx, params) => {
+        const account = await admin_service_1.AdminService.accountDetail(params.accountId);
+        if (!account)
+            return { text: "⚠️ اکانت پیدا نشد.", keyboard: [] };
+        const history = account.history
+            .map((item) => `• ${item.createdAt.toLocaleString("fa-IR")} · ${item.action} · ${item.fromValue ?? "—"} ← ${item.toValue ?? "—"}`)
+            .join("\n") || "تاریخچه‌ای ثبت نشده است.";
+        return {
+            text: `🗄 جزئیات اکانت
+
+👤 نام کاربری: ${account.username}
+📦 محصول: ${account.product.title}
+📌 وضعیت: ${accountStatusLabel(account.status)}
+👥 کاربر: ${account.assignedUser ? userLine(account.assignedUser) : "—"}
+📅 تاریخ تخصیص: ${account.assignedDate ? account.assignedDate.toLocaleString("fa-IR") : "—"}
+
+🔗 لینک اشتراک:
+${account.subscriptionLink}
+
+⚙️ کانفیگ:
+${account.configLink}
+
+📜 تاریخچه:
+${history}`,
+            keyboard: [
+                [
+                    { text: "✏️ ویرایش", action: `flow:start:account_edit:${account.id}` },
+                    { text: "🚚 انتقال", action: (0, panel_ui_1.callbackFor)("admin.account.move", { accountId: account.id }) },
+                ],
+                [
+                    { text: "✅ آماده", action: `admin:account:status:${account.id}:available` },
+                    { text: "⏸ غیرفعال", action: `admin:account:status:${account.id}:disabled` },
+                    { text: "⌛ منقضی", action: `admin:account:status:${account.id}:expired` },
+                ],
+                [
+                    { text: "🗑 حذف", action: `admin:account:delete:confirm:${account.id}` },
+                    { text: "🗄 موجودی", action: (0, panel_ui_1.callbackFor)("admin.accounts") },
+                ],
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.account.move", async (_ctx, params) => {
+        const account = await admin_service_1.AdminService.accountDetail(params.accountId);
+        if (!account)
+            return { text: "⚠️ اکانت پیدا نشد.", keyboard: [] };
+        const products = await product_service_1.ProductService.listActiveProducts(50);
+        return {
+            text: `🚚 انتقال اکانت ${account.username}\n\nمحصول فعلی: ${account.product.title}\nمحصول مقصد را انتخاب کنید:`,
+            keyboard: [
+                ...products
+                    .filter((product) => product.id !== account.productId)
+                    .map((product) => [{ text: `${product.title} · ${product.category.name}`, action: `admin:account:move_to:${account.id}:${product.id}` }]),
+                [{ text: "↩️ بازگشت به اکانت", action: (0, panel_ui_1.callbackFor)("admin.account", { accountId: account.id }) }],
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.wallets", async (_ctx, params) => {
+        const current = page(params);
+        const [wallets, total] = await admin_service_1.AdminService.listCryptoWallets(current);
+        return {
+            text: `💳 مدیریت کیف پول‌ها\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n\n${wallets.map((wallet) => `• ${wallet.displayName ?? wallet.coinName} · ${wallet.networkName} · ${walletStatusLabel(wallet.status)}`).join("\n") || "کیف پولی ثبت نشده است."}`,
+            keyboard: [
+                [{ text: "➕ کیف پول جدید", action: "flow:start:crypto_wallet_create" }],
+                ...wallets.map((wallet) => [
+                    { text: `👁 ${wallet.displayName ?? wallet.coinName}`, action: (0, panel_ui_1.callbackFor)("admin.wallet", { walletId: wallet.id }) },
+                ]),
+                [
+                    { text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.wallets", { page: Math.max(current - 1, 1) }) },
+                    { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.wallets", { page: current + 1 }) },
+                ],
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.wallet", async (_ctx, params) => {
+        const detail = await admin_service_1.AdminService.walletDetail(params.walletId);
+        if (!detail.wallet)
+            return { text: "⚠️ کیف پول پیدا نشد.", keyboard: [] };
+        return {
+            text: `💳 جزئیات کیف پول\n\nنام: ${detail.wallet.displayName ?? detail.wallet.coinName}\nنماد: ${detail.wallet.coinSymbol ?? detail.wallet.coinName}\nشبکه: ${detail.wallet.networkName}\nوضعیت: ${walletStatusLabel(detail.wallet.status)}\nترتیب: ${detail.wallet.displayOrder.toLocaleString("fa-IR")}\nنرخ: ${detail.wallet.rateToman > 0 ? money(detail.wallet.rateToman) : "—"}\nآخرین نرخ: ${detail.wallet.lastRateAt ? detail.wallet.lastRateAt.toLocaleString("fa-IR") : "—"}\n\nآدرس:\n${detail.wallet.walletAddress}\n\nپرداخت‌های فعال: ${detail.activePayments.toLocaleString("fa-IR")}\nواریزی‌های کل: ${detail.deposits.toLocaleString("fa-IR")}`,
+            keyboard: [
+                [
+                    { text: "✏️ ویرایش", action: `flow:start:crypto_wallet_edit:${detail.wallet.id}` },
+                    {
+                        text: detail.wallet.status === "active" ? "غیرفعال‌سازی" : "فعال‌سازی",
+                        action: `admin:wallet:status:${detail.wallet.id}:${detail.wallet.status === "active" ? "inactive" : "active"}`,
+                    },
+                ],
+                [
+                    { text: "🗑 حذف", action: `admin:wallet:delete:confirm:${detail.wallet.id}` },
+                    { text: "💳 همه کیف پول‌ها", action: (0, panel_ui_1.callbackFor)("admin.wallets") },
+                ],
+            ],
+        };
     });
     (0, panel_ui_1.registerView)("admin.freeAccounts", async (_ctx, params) => {
         await free_account_service_1.FreeAccountService.expireDueAccounts();
@@ -406,27 +809,54 @@ ${stats.recentAssignments.map((item) => `• ${item.user.telegramId} ← ${item.
 ${inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleString("fa-IR")} روز · ${free_account_service_1.FREE_ACCOUNT_STATUS_LABELS[item.status]}`).join("\n") || "موجودی ثبت نشده است."}`,
             keyboard: [
                 [{ text: "➕ افزودن اکانت تست", action: "flow:start:free_account_create" }],
-                ...inventory.map((item) => [{ text: `👁 ${item.username} · ${free_account_service_1.FREE_ACCOUNT_STATUS_LABELS[item.status]}`, action: `admin:free_account:view:${item.id}` }]),
-                [{ text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts", { page: Math.max(current - 1, 1) }) }, { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts", { page: current + 1 }) }],
+                ...inventory.map((item) => [
+                    { text: `👁 ${item.username} · ${free_account_service_1.FREE_ACCOUNT_STATUS_LABELS[item.status]}`, action: `admin:free_account:view:${item.id}` },
+                ]),
+                [
+                    { text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts", { page: Math.max(current - 1, 1) }) },
+                    { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts", { page: current + 1 }) },
+                ],
             ],
         };
     });
     (0, panel_ui_1.registerView)("admin.crypto", async () => {
         const stats = await admin_service_1.AdminService.cryptoWalletStats();
-        return { text: `⚙️ تنظیمات مالی و پرداخت\n\nحداقل شارژ کیف پول: ${money(stats.setting.minimumTopupAmount)}\n\n${stats.wallets.map((wallet) => `• ${wallet.coinName} · شبکه ${wallet.networkName}\n  وضعیت: ${wallet.status === "active" ? "فعال" : "غیرفعال"}\n  نرخ: ${wallet.rateToman > 0 ? money(wallet.rateToman) : "در انتظار دریافت"}\n  آخرین بروزرسانی: ${wallet.lastRateAt ? wallet.lastRateAt.toLocaleString("fa-IR") : "—"}\n  آدرس: ${wallet.walletAddress}`).join("\n\n") || "هنوز کیف پولی ثبت نشده است."}`, keyboard: [[{ text: "➕ کیف پول", action: "flow:start:crypto_wallet_create" }], [{ text: "⚙️ حداقل شارژ", action: "flow:start:minimum_topup" }, { text: "⚙️ وضعیت فروشگاه", action: (0, panel_ui_1.callbackFor)("admin.store") }]] };
+        return {
+            text: `⚙️ تنظیمات مالی و پرداخت
+
+حداقل شارژ کیف پول: ${money(stats.setting.minimumTopupAmount)}
+کیف پول‌های ثبت‌شده: ${stats.wallets.length.toLocaleString("fa-IR")}`,
+            keyboard: [
+                [{ text: "💳 مدیریت کیف پول‌ها", action: (0, panel_ui_1.callbackFor)("admin.wallets") }],
+                [
+                    { text: "⚙️ حداقل شارژ", action: "flow:start:minimum_topup" },
+                    { text: "⚙️ وضعیت فروشگاه", action: (0, panel_ui_1.callbackFor)("admin.store") },
+                ],
+            ],
+        };
     });
     (0, panel_ui_1.registerView)("admin.store", async () => {
         const stats = await admin_service_1.AdminService.cryptoWalletStats();
-        return { text: `⚙️ وضعیت فروشگاه\n\nوضعیت فعلی: ${stats.setting.storeStatus === "active" ? "فعال" : "غیرفعال"}\n\nدر حالت غیرفعال، کاربران عادی به خرید دسترسی ندارند اما مدیران همچنان می‌توانند عملیات را مدیریت کنند.`, keyboard: [[{ text: "✅ فعال", action: "admin:store:status:active" }, { text: "⛔ غیرفعال", action: "admin:store:status:inactive" }]] };
+        return {
+            text: `⚙️ وضعیت فروشگاه\n\nوضعیت فعلی: ${stats.setting.storeStatus === "active" ? "فعال" : "غیرفعال"}\n\nدر حالت غیرفعال، کاربران عادی به خرید دسترسی ندارند اما مدیران همچنان می‌توانند عملیات را مدیریت کنند.`,
+            keyboard: [
+                [
+                    { text: "✅ فعال", action: "admin:store:status:active" },
+                    { text: "⛔ غیرفعال", action: "admin:store:status:inactive" },
+                ],
+            ],
+        };
     });
     (0, panel_ui_1.registerView)("admin.forcedJoin", async () => {
         const channels = await admin_service_1.AdminService.forcedJoinChannels();
         const activeCount = channels.filter((channel) => channel.status === "active").length;
         const inactiveCount = channels.length - activeCount;
-        const channelLines = channels.map((channel, index) => `• ${index + 1}. ${channel.title}
+        const channelLines = channels
+            .map((channel, index) => `• ${index + 1}. ${channel.title}
   شناسه: ${channel.chatId}
   وضعیت: ${channel.status === "active" ? "✅ فعال" : "⛔ غیرفعال"}
-  لینک: ${channel.inviteLink || (channel.chatId.startsWith("@") ? `https://t.me/${channel.chatId.slice(1)}` : "ثبت نشده")}`).join("\n\n");
+  لینک: ${channel.inviteLink || (channel.chatId.startsWith("@") ? `https://t.me/${channel.chatId.slice(1)}` : "ثبت نشده")}`)
+            .join("\n\n");
         return {
             text: `📢 مدیریت عضویت اجباری
 
@@ -435,23 +865,54 @@ ${inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleS
 ${channelLines || "کانالی ثبت نشده است."}
 
 کاربران بدون ارسال دوباره /start می‌توانند با دکمه «✅ عضو شدم» همان لحظه تایید شوند.`,
-            keyboard: [[{ text: "➕ افزودن کانال", action: "flow:start:forced_join_create" }], ...channels.map((channel) => [{ text: channel.status === "active" ? `غیرفعال‌سازی ${channel.title}` : `فعال‌سازی ${channel.title}`, action: `admin:forced_join:status:${channel.id}:${channel.status === "active" ? "inactive" : "active"}` }, { text: "🗑 حذف", action: `admin:forced_join:delete:${channel.id}` }])],
+            keyboard: [
+                [{ text: "➕ افزودن کانال", action: "flow:start:forced_join_create" }],
+                ...channels.map((channel) => [
+                    {
+                        text: channel.status === "active" ? `غیرفعال‌سازی ${channel.title}` : `فعال‌سازی ${channel.title}`,
+                        action: `admin:forced_join:status:${channel.id}:${channel.status === "active" ? "inactive" : "active"}`,
+                    },
+                    { text: "🗑 حذف", action: `admin:forced_join:delete:${channel.id}` },
+                ]),
+            ],
         };
     });
     (0, panel_ui_1.registerView)("admin.referrals", async () => {
         const tiers = await referral_service_1.ReferralService.listTiers();
-        return { text: `🎁 مدیریت رفرال\n\n${tiers.map((tier) => `• ${tier.threshold.toLocaleString("fa-IR")} دعوت ← ${money(tier.amount)} · ${tier.isActive ? "فعال" : "غیرفعال"}`).join("\n") || "سطحی ثبت نشده است."}`, keyboard: [[{ text: "➕ سطح جدید/ویرایش", action: "flow:start:referral_tier_create" }], ...tiers.map((tier) => [{ text: tier.isActive ? `غیرفعال‌سازی ${tier.threshold}` : `فعال‌سازی ${tier.threshold}`, action: `admin:referral:tier:status:${tier.id}:${tier.isActive ? "0" : "1"}` }, { text: `حذف ${tier.threshold}`, action: `admin:referral:tier:delete:${tier.id}` }])] };
+        return {
+            text: `🎁 مدیریت رفرال\n\n${tiers.map((tier) => `• ${tier.threshold.toLocaleString("fa-IR")} دعوت ← ${money(tier.amount)} · ${tier.isActive ? "فعال" : "غیرفعال"}`).join("\n") || "سطحی ثبت نشده است."}`,
+            keyboard: [
+                [{ text: "➕ سطح جدید/ویرایش", action: "flow:start:referral_tier_create" }],
+                ...tiers.map((tier) => [
+                    {
+                        text: tier.isActive ? `غیرفعال‌سازی ${tier.threshold}` : `فعال‌سازی ${tier.threshold}`,
+                        action: `admin:referral:tier:status:${tier.id}:${tier.isActive ? "0" : "1"}`,
+                    },
+                    { text: `حذف ${tier.threshold}`, action: `admin:referral:tier:delete:${tier.id}` },
+                ]),
+            ],
+        };
     });
     (0, panel_ui_1.registerView)("admin.analytics", async () => {
         const stats = await admin_service_1.AdminService.dashboard(true);
-        return { text: `📊 آمار عملیاتی\n\n💰 درآمد موفق: ${money(stats.revenue)}\n📦 اکانت آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}\n✅ اکانت فروخته‌شده: ${stats.soldAccounts.toLocaleString("fa-IR")}\n🎁 مجموع پاداش دعوت: ${money(stats.referralRewards)}\n🆓 اکانت تست تخصیص‌یافته: ${stats.freeAccountsAssigned.toLocaleString("fa-IR")}\n💳 واریزی در انتظار: ${stats.submittedDeposits.toLocaleString("fa-IR")}`, keyboard: [] };
+        return {
+            text: `📊 آمار عملیاتی\n\n💰 درآمد موفق: ${money(stats.revenue)}\n📦 اکانت آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}\n✅ اکانت فروخته‌شده: ${stats.soldAccounts.toLocaleString("fa-IR")}\n🎁 مجموع پاداش دعوت: ${money(stats.referralRewards)}\n🆓 اکانت تست تخصیص‌یافته: ${stats.freeAccountsAssigned.toLocaleString("fa-IR")}\n💳 واریزی در انتظار: ${stats.submittedDeposits.toLocaleString("fa-IR")}`,
+            keyboard: [],
+        };
     });
     (0, panel_ui_1.registerView)("admin.coupons", async (_ctx, params) => {
         const current = page(params);
         const [coupons, total] = await admin_service_1.AdminService.listCoupons(current);
         return {
             text: `🎟 مدیریت کوپن‌ها\n\n${coupons.map((coupon) => `• ${coupon.code} · ${coupon.type === "percentage" ? `${(coupon.value || coupon.discountPercent || 0).toLocaleString("fa-IR")}%` : money(coupon.value)} · ${coupon.status} · ${coupon.usedCount.toLocaleString("fa-IR")}/${coupon.maxUses.toLocaleString("fa-IR")} · هر کاربر ${coupon.perUserLimit.toLocaleString("fa-IR")}`).join("\n") || "کوپنی ثبت نشده است."}\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}`,
-            keyboard: [[{ text: "➕ کوپن جدید", action: "flow:start:coupon_create" }], ...coupons.map((coupon) => [{ text: `مدیریت ${coupon.code}`, action: (0, panel_ui_1.callbackFor)("admin.coupon", { couponId: coupon.id }) }]), [{ text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.coupons", { page: Math.max(current - 1, 1) }) }, { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.coupons", { page: current + 1 }) }]],
+            keyboard: [
+                [{ text: "➕ کوپن جدید", action: "flow:start:coupon_create" }],
+                ...coupons.map((coupon) => [{ text: `مدیریت ${coupon.code}`, action: (0, panel_ui_1.callbackFor)("admin.coupon", { couponId: coupon.id }) }]),
+                [
+                    { text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.coupons", { page: Math.max(current - 1, 1) }) },
+                    { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.coupons", { page: current + 1 }) },
+                ],
+            ],
         };
     });
     (0, panel_ui_1.registerView)("admin.coupon", async (_ctx, params) => {
@@ -460,24 +921,188 @@ ${channelLines || "کانالی ثبت نشده است."}
             return { text: "⚠️ کوپن پیدا نشد.", keyboard: [] };
         return {
             text: `🎟 جزئیات کوپن ${direct.code}\n\nنوع: ${direct.type === "percentage" ? "درصدی" : "مبلغ ثابت"}\nمقدار: ${direct.type === "percentage" ? `${(direct.value || direct.discountPercent || 0).toLocaleString("fa-IR")}%` : money(direct.value)}\nوضعیت: ${direct.status}\nمصرف: ${direct.usedCount.toLocaleString("fa-IR")}/${direct.maxUses.toLocaleString("fa-IR")}\nسقف هر کاربر: ${direct.perUserLimit.toLocaleString("fa-IR")}\nحداقل خرید: ${money(direct.minimumPurchaseAmount)}\nانقضا: ${direct.expiresAt.toLocaleDateString("fa-IR")}`,
-            keyboard: [[{ text: "✏️ ویرایش", action: `flow:start:coupon_edit:${direct.id}` }, { text: direct.status === "active" ? "⛔ غیرفعال" : "✅ فعال", action: `admin:coupon:status:${direct.id}:${direct.status === "active" ? "inactive" : "active"}` }], [{ text: "🗑 حذف نرم", action: `admin:coupon:soft_delete:${direct.id}` }, { text: "🧨 حذف دائمی", action: `admin:coupon:hard_delete:${direct.id}` }]],
+            keyboard: [
+                [
+                    { text: "✏️ ویرایش", action: `flow:start:coupon_edit:${direct.id}` },
+                    {
+                        text: direct.status === "active" ? "⛔ غیرفعال" : "✅ فعال",
+                        action: `admin:coupon:status:${direct.id}:${direct.status === "active" ? "inactive" : "active"}`,
+                    },
+                ],
+                [
+                    { text: "🗑 حذف نرم", action: `admin:coupon:soft_delete:${direct.id}` },
+                    { text: "🧨 حذف دائمی", action: `admin:coupon:hard_delete:${direct.id}` },
+                ],
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.transactions", async () => {
+        const stats = await admin_service_1.AdminService.dashboard(true);
+        return {
+            text: `💰 تراکنش‌ها
+
+واریزی‌های منتظر بررسی: ${stats.submittedDeposits.toLocaleString("fa-IR")}
+سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}
+درآمد موفق: ${money(stats.revenue)}
+
+بخش موردنظر را انتخاب کنید:`,
+            keyboard: [
+                [
+                    { text: "💳 واریزی‌ها", action: (0, panel_ui_1.callbackFor)("admin.deposits") },
+                    { text: "🧾 سفارش‌ها", action: (0, panel_ui_1.callbackFor)("admin.orders") },
+                ],
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.notifications", async () => {
+        const [targets, recent] = await Promise.all([broadcast_service_1.BroadcastService.targetStats(), broadcast_service_1.BroadcastService.recent(5)]);
+        const targetLines = targets.map((item) => `• ${item.label}: ${item.count.toLocaleString("fa-IR")} نفر`).join("\n");
+        const recentLines = recent
+            .map((item) => `• ${item.createdAt.toLocaleString("fa-IR")} · ${item.targetLabel}
+  ارسال: ${item.sent.toLocaleString("fa-IR")} · تحویل: ${item.delivered.toLocaleString("fa-IR")} · ناموفق: ${item.failed.toLocaleString("fa-IR")}`)
+            .join("\n") || "هنوز اطلاع‌رسانی ثبت نشده است.";
+        return {
+            text: `📢 اطلاع‌رسانی همگانی
+
+از این بخش می‌توانید پیام مدیریتی را برای گروه‌های مشخص ارسال کنید.
+
+آمار مخاطبان:
+${targetLines}
+
+آخرین ارسال‌ها:
+${recentLines}`,
+            keyboard: [
+                [
+                    {
+                        text: `📣 ${broadcast_service_1.BROADCAST_TARGET_LABELS.all_users}`,
+                        action: "flow:start:broadcast_create:all_users",
+                    },
+                ],
+                [
+                    {
+                        text: `✅ ${broadcast_service_1.BROADCAST_TARGET_LABELS.active_customers}`,
+                        action: "flow:start:broadcast_create:active_customers",
+                    },
+                    {
+                        text: `🕒 ${broadcast_service_1.BROADCAST_TARGET_LABELS.inactive_customers}`,
+                        action: "flow:start:broadcast_create:inactive_customers",
+                    },
+                ],
+                [
+                    {
+                        text: `🗄 ${broadcast_service_1.BROADCAST_TARGET_LABELS.users_with_active_accounts}`,
+                        action: "flow:start:broadcast_create:users_with_active_accounts",
+                    },
+                ],
+                [
+                    {
+                        text: `📭 ${broadcast_service_1.BROADCAST_TARGET_LABELS.users_without_active_accounts}`,
+                        action: "flow:start:broadcast_create:users_without_active_accounts",
+                    },
+                ],
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.settings", async () => {
+        const stats = await admin_service_1.AdminService.cryptoWalletStats();
+        return {
+            text: `⚙️ تنظیمات
+
+وضعیت فروشگاه: ${stats.setting.storeStatus === "active" ? "فعال ✅" : "غیرفعال ⛔"}
+حداقل شارژ کیف پول: ${money(stats.setting.minimumTopupAmount)}
+کیف پول‌ها: ${stats.wallets.length.toLocaleString("fa-IR")}
+
+بخش تنظیمات را انتخاب کنید:`,
+            keyboard: [
+                [
+                    { text: "🏪 وضعیت فروشگاه", action: (0, panel_ui_1.callbackFor)("admin.store") },
+                    { text: "💳 حداقل شارژ", action: "flow:start:minimum_topup" },
+                ],
+                [
+                    { text: "💳 کیف پول‌ها", action: (0, panel_ui_1.callbackFor)("admin.wallets") },
+                    { text: "⚙️ تنظیمات مالی", action: (0, panel_ui_1.callbackFor)("admin.crypto") },
+                ],
+                [{ text: "📢 عضویت اجباری", action: (0, panel_ui_1.callbackFor)("admin.forcedJoin") }],
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.paymentGateway", async () => {
+        const gateway = await payment_service_1.PaymentGatewayService.get();
+        const stats = await payment_service_1.PaymentInvoiceService.stats();
+        return {
+            text: `⚡ تنظیمات درگاه پرداخت\n\nوضعیت: ${gateway.enabled ? "فعال ✅" : "غیرفعال ⛔"}\nنام نمایشی: ${gateway.gatewayName}\nترتیب نمایش: ${gateway.displayOrder.toLocaleString("fa-IR")}\nAPI Base URL: ${gateway.apiBaseUrl || "—"}\nCallback URL: ${gateway.callbackUrl || "—"}\nAPI Key: ${gateway.apiKey ? "ثبت شده (محرمانه)" : "ثبت نشده"}\n\n📊 آمار فاکتورها\n✅ موفق: ${stats.successful.toLocaleString("fa-IR")}\n❌ ناموفق: ${stats.failed.toLocaleString("fa-IR")}\n⏳ در انتظار: ${stats.pending.toLocaleString("fa-IR")}\n\nآخرین پرداخت‌ها:\n${stats.recent.map((invoice) => `• #${shortId(invoice.id)} · ${invoice.user.telegramId} · ${invoice.status} · ${money(invoice.amount)}`).join("\n") || "پرداختی ثبت نشده است."}`,
+            keyboard: [
+                [{ text: "✏️ ویرایش تنظیمات", action: "flow:start:payment_gateway_update" }],
+                [{ text: gateway.enabled ? "⏸ غیرفعال‌سازی" : "▶️ فعال‌سازی", action: `admin:payment_gateway:status:${gateway.enabled ? "disabled" : "enabled"}` }],
+                [{ text: "🧾 مدیریت فاکتورها", action: (0, panel_ui_1.callbackFor)("admin.invoices") }],
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.invoices", async (_ctx, params) => {
+        const current = page(params);
+        const status = ["PENDING", "PAID", "COMPLETED", "EXPIRED", "FAILED"].includes(params.status) ? params.status : undefined;
+        const [invoices, total] = await payment_service_1.PaymentInvoiceService.list(current, 8, status);
+        return {
+            text: `🧾 مدیریت فاکتورهای پرداخت آنی\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n${status ? `\nفیلتر: ${status}` : ""}\n\n${invoices.map((invoice) => `• #${shortId(invoice.id)} · ${invoice.user.telegramId} · ${invoice.type} · ${invoice.status} · ${money(invoice.amount)}`).join("\n") || "فاکتوری ثبت نشده است."}`,
+            keyboard: [
+                [
+                    { text: "⏳ Pending", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "PENDING" }) },
+                    { text: "✅ Success", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "COMPLETED" }) },
+                    { text: "❌ Failed", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "FAILED" }) },
+                ],
+                ...invoices.map((invoice) => [{ text: `👁 #${shortId(invoice.id)}`, action: (0, panel_ui_1.callbackFor)("admin.invoice", { invoiceId: invoice.id }) }]),
+                [
+                    { text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.invoices", { page: Math.max(current - 1, 1), status }) },
+                    { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.invoices", { page: current + 1, status }) },
+                ],
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.invoice", async (_ctx, params) => {
+        const invoice = await payment_service_1.PaymentInvoiceService.detail(params.invoiceId);
+        if (!invoice)
+            return { text: "⚠️ فاکتور پیدا نشد.", keyboard: [] };
+        return {
+            text: `🧾 جزئیات فاکتور پرداخت آنی\n\nشناسه: ${invoice.id}\nکاربر: ${invoice.user.telegramId}\nنوع: ${invoice.type}\nوضعیت: ${invoice.status}\nمبلغ: ${money(invoice.amount)}\nمبلغ درگاه: ${invoice.gatewayAmount ? money(invoice.gatewayAmount) : "—"}\nPay ID: ${invoice.payId ?? "—"}\nمحصول: ${invoice.product?.title ?? "—"}\nسفارش: ${invoice.orderId ?? "—"}\nایجاد: ${invoice.createdAt.toLocaleString("fa-IR")}\nپرداخت: ${invoice.paidAt ? invoice.paidAt.toLocaleString("fa-IR") : "—"}\nتکمیل: ${invoice.completedAt ? invoice.completedAt.toLocaleString("fa-IR") : "—"}\n\n📜 Audit:\n${invoice.audits.map((audit) => `• ${audit.createdAt.toLocaleString("fa-IR")} · ${audit.action}`).join("\n") || "رخدادی ثبت نشده است."}`,
+            keyboard: [[{ text: "🧾 همه فاکتورها", action: (0, panel_ui_1.callbackFor)("admin.invoices") }]],
         };
     });
     (0, panel_ui_1.registerView)("admin.deposits", async (_ctx, params) => {
         const current = page(params);
         const [deposits, total] = await admin_service_1.AdminService.listSubmittedDeposits(current);
-        return { text: `💰 مدیریت واریزی‌ها\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}`, keyboard: deposits.map((deposit) => [{ text: `💳 ${deposit.user.telegramId} · ${money(deposit.amount)}`, action: (0, panel_ui_1.callbackFor)("admin.deposit", { depositId: deposit.id }) }]) };
+        return {
+            text: `💰 مدیریت واریزی‌ها\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}`,
+            keyboard: deposits.map((deposit) => [
+                { text: `💳 ${deposit.user.telegramId} · ${money(deposit.amount)}`, action: (0, panel_ui_1.callbackFor)("admin.deposit", { depositId: deposit.id }) },
+            ]),
+        };
     });
     (0, panel_ui_1.registerView)("admin.deposit", async (_ctx, params) => {
         const deposit = await admin_service_1.AdminService.depositDetail(params.depositId);
         if (!deposit)
             return { text: "⚠️ واریزی پیدا نشد.", keyboard: [] };
-        return { text: `💳 جزئیات واریزی\n\nکاربر: ${deposit.user.telegramId}\nمبلغ: ${money(deposit.amount)}\nارز: ${deposit.cryptoType.toUpperCase()}\nوضعیت: ${deposit.status}\nرسید: ${deposit.receipt ? "ثبت شده" : "ثبت نشده"}`, keyboard: [[{ text: "✅ تأیید", action: `admin:deposit:approve:${deposit.id}` }, { text: "❌ رد", action: `admin:deposit:reject:${deposit.id}` }]] };
+        return {
+            text: `💳 جزئیات واریزی\n\nکاربر: ${deposit.user.telegramId}\nمبلغ: ${money(deposit.amount)}\nارز: ${deposit.cryptoType.toUpperCase()}\nوضعیت: ${deposit.status}\nرسید: ${deposit.receipt ? "ثبت شده" : "ثبت نشده"}`,
+            keyboard: [
+                [
+                    { text: "✅ تأیید", action: `admin:deposit:approve:${deposit.id}` },
+                    { text: "❌ رد", action: `admin:deposit:reject:${deposit.id}` },
+                ],
+            ],
+        };
     });
     (0, panel_ui_1.registerView)("admin.orders", async (_ctx, params) => {
         const current = page(params);
         const [orders, total] = await admin_service_1.AdminService.listRecentOrders(current);
-        return { text: `🧾 سفارش‌ها\n\n${orders.map((order) => `• #${shortId(order.id)} · ${order.user.telegramId} · ${order.product.title} · ${money(order.totalAmount)}`).join("\n") || "سفارشی ثبت نشده است."}\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}`, keyboard: [[{ text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.orders", { page: Math.max(current - 1, 1) }) }, { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.orders", { page: current + 1 }) }]] };
+        return {
+            text: `🧾 سفارش‌ها\n\n${orders.map((order) => `• #${shortId(order.id)} · ${order.user.telegramId} · ${order.product.title} · ${money(order.totalAmount)}`).join("\n") || "سفارشی ثبت نشده است."}\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}`,
+            keyboard: [
+                [
+                    { text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.orders", { page: Math.max(current - 1, 1) }) },
+                    { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.orders", { page: current + 1 }) },
+                ],
+            ],
+        };
     });
     (0, panel_ui_1.registerView)("admin.tickets", async (_ctx, params) => {
         const current = page(params);
@@ -492,8 +1117,16 @@ ${divider}
 ✅ تیکت‌های باز این صفحه: ${openCount.toLocaleString("fa-IR")}
 📄 صفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}`,
             keyboard: [
-                ...tickets.map((ticket) => [{ text: `${ticket.status === "open" ? "🟢" : "⚫️"} ${ticket.user.telegramId} · #${shortId(ticket.id)}`, action: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: ticket.id }) }]),
-                [{ text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.tickets", { page: Math.max(current - 1, 1) }) }, { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.tickets", { page: current + 1 }) }],
+                ...tickets.map((ticket) => [
+                    {
+                        text: `${ticket.status === "open" ? "🟢" : "⚫️"} ${ticket.user.telegramId} · #${shortId(ticket.id)}`,
+                        action: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: ticket.id }),
+                    },
+                ]),
+                [
+                    { text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.tickets", { page: Math.max(current - 1, 1) }) },
+                    { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.tickets", { page: current + 1 }) },
+                ],
             ],
         };
     });
@@ -501,7 +1134,9 @@ ${divider}
         const ticket = await support_service_1.SupportService.getTicketWithUser(params.ticketId);
         if (!ticket)
             return { text: "⚠️ تیکت پیدا نشد.", keyboard: [] };
-        const statusAction = ticket.status === "open" ? { text: "✅ بستن", action: `admin:ticket:close:${ticket.id}` } : { text: "🔄 باز کردن مجدد", action: `admin:ticket:reopen:${ticket.id}` };
+        const statusAction = ticket.status === "open"
+            ? { text: "✅ بستن", action: `admin:ticket:close:${ticket.id}` }
+            : { text: "🔄 باز کردن مجدد", action: `admin:ticket:reopen:${ticket.id}` };
         return {
             text: `🎫 تیکت #${shortId(ticket.id)}
 ${divider}
@@ -510,9 +1145,17 @@ ${divider}
 ⚡ وضعیت: ${ticket.status === "open" ? "باز ✅" : "بسته 🔒"}
 🕒 آخرین بروزرسانی: ${ticket.updatedAt.toLocaleString("fa-IR")}
 
-${ticket.messages.map((message) => `${message.senderRole === "admin" ? "👨‍💼 پشتیبانی" : "👤 کاربر"} · ${message.createdAt.toLocaleString("fa-IR")}
-${message.message}`).join("\n\n") || "بدون پیام"}`,
-            keyboard: [[{ text: "💬 ورود به چت", action: `support:admin:chat:${ticket.id}` }, { text: "↩️ پاسخ سریع", action: `flow:start:ticket_reply:${ticket.id}` }], [statusAction]],
+${ticket.messages
+                .map((message) => `${message.senderRole === "admin" ? "👨‍💼 پشتیبانی" : "👤 کاربر"} · ${message.createdAt.toLocaleString("fa-IR")}
+${message.message}`)
+                .join("\n\n") || "بدون پیام"}`,
+            keyboard: [
+                [
+                    { text: "💬 ورود به چت", action: `support:admin:chat:${ticket.id}` },
+                    { text: "↩️ پاسخ سریع", action: `flow:start:ticket_reply:${ticket.id}` },
+                ],
+                [statusAction],
+            ],
         };
     });
 }

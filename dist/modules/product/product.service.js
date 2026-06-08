@@ -2,25 +2,26 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ProductService = void 0;
 const prisma_1 = require("../../services/prisma");
+const visibility_1 = require("./visibility");
 class ProductService {
     static async getCategories() {
         return prisma_1.prisma.category.findMany({
-            where: { isActive: true, deletedAt: null, products: { some: { isActive: true, deletedAt: null, accounts: { some: { status: "available" } } } } },
+            where: { AND: [(0, visibility_1.activeCategoryWhere)(), { products: { some: { AND: [(0, visibility_1.activeProductWhere)(), { accounts: { some: (0, visibility_1.availableInventoryWhere)() } }] } } }] },
             orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
-            include: { products: { where: { isActive: true, deletedAt: null, accounts: { some: { status: "available" } } }, orderBy: { title: "asc" } } },
+            include: { products: { where: { AND: [(0, visibility_1.activeProductWhere)(), { accounts: { some: (0, visibility_1.availableInventoryWhere)() } }] }, orderBy: { title: "asc" } } },
         });
     }
     static async getProductsByCategory(categoryId) {
         return prisma_1.prisma.product.findMany({
-            where: { categoryId, isActive: true, deletedAt: null, category: { is: { isActive: true, deletedAt: null } }, accounts: { some: { status: "available" } } },
-            include: { _count: { select: { accounts: { where: { status: "available" } } } } },
+            where: { categoryId, AND: [(0, visibility_1.activeProductWhere)(), { category: { is: (0, visibility_1.activeCategoryWhere)() } }, { accounts: { some: (0, visibility_1.availableInventoryWhere)() } }] },
+            include: { _count: { select: { accounts: { where: (0, visibility_1.availableInventoryWhere)() } } } },
             orderBy: { title: "asc" },
         });
     }
     static async listFeaturedProducts(take = 6) {
         return prisma_1.prisma.product.findMany({
-            where: { isActive: true, deletedAt: null, category: { is: { isActive: true, deletedAt: null } }, accounts: { some: { status: "available" } } },
-            include: { category: true, _count: { select: { accounts: { where: { status: "available" } } } } },
+            where: { AND: [(0, visibility_1.activeProductWhere)(), { category: { is: (0, visibility_1.activeCategoryWhere)() } }, { accounts: { some: (0, visibility_1.availableInventoryWhere)() } }] },
+            include: { category: true, _count: { select: { accounts: { where: (0, visibility_1.availableInventoryWhere)() } } } },
             orderBy: [{ orders: { _count: "desc" } }, { price: "asc" }],
             take,
         });
@@ -31,13 +32,10 @@ class ProductService {
             return [];
         return prisma_1.prisma.product.findMany({
             where: {
-                isActive: true,
-                deletedAt: null,
-                category: { is: { isActive: true, deletedAt: null } },
-                accounts: { some: { status: "available" } },
+                AND: [(0, visibility_1.activeProductWhere)(), { category: { is: (0, visibility_1.activeCategoryWhere)() } }, { accounts: { some: (0, visibility_1.availableInventoryWhere)() } }],
                 OR: [{ title: { contains: normalized } }, { category: { is: { name: { contains: normalized } } } }],
             },
-            include: { category: true, _count: { select: { accounts: { where: { status: "available" } } } } },
+            include: { category: true, _count: { select: { accounts: { where: (0, visibility_1.availableInventoryWhere)() } } } },
             orderBy: [{ price: "asc" }, { title: "asc" }],
             take,
         });
@@ -47,8 +45,8 @@ class ProductService {
     }
     static async create(data) {
         const category = data.categoryId
-            ? await prisma_1.prisma.category.findUniqueOrThrow({ where: { id: data.categoryId } })
-            : await prisma_1.prisma.category.upsert({ where: { name: (data.categoryName ?? "عمومی").trim() }, update: { deletedAt: null }, create: { name: (data.categoryName ?? "عمومی").trim() } });
+            ? await prisma_1.prisma.category.findFirstOrThrow({ where: { id: data.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } })
+            : await prisma_1.prisma.category.upsert({ where: { name: (data.categoryName ?? "عمومی").trim() }, update: { isActive: true, deletedAt: null }, create: { name: (data.categoryName ?? "عمومی").trim(), isActive: true } });
         return prisma_1.prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: data.duration } });
     }
     static async addAccount(productId, data) {
@@ -84,13 +82,13 @@ class ProductService {
         return validRows.length;
     }
     static async listActiveProducts(take = 25) {
-        return prisma_1.prisma.product.findMany({ where: { isActive: true, deletedAt: null }, include: { category: true }, orderBy: { title: "asc" }, take });
+        return prisma_1.prisma.product.findMany({ where: { AND: [(0, visibility_1.activeProductWhere)(), { category: { is: (0, visibility_1.activeCategoryWhere)() } }] }, include: { category: true }, orderBy: { title: "asc" }, take });
     }
     static async availableStock(productId) {
-        return prisma_1.prisma.productAccount.count({ where: { productId, status: "available" } });
+        return prisma_1.prisma.productAccount.count({ where: (0, visibility_1.availableInventoryWhere)(productId) });
     }
     static async listCategoriesForAdmin(take = 100) {
-        return prisma_1.prisma.category.findMany({ where: { deletedAt: null }, orderBy: [{ displayOrder: "asc" }, { name: "asc" }], take });
+        return prisma_1.prisma.category.findMany({ where: (0, visibility_1.categoryNotDeletedWhere)(), orderBy: [{ displayOrder: "asc" }, { name: "asc" }], take });
     }
 }
 exports.ProductService = ProductService;
