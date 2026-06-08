@@ -98,7 +98,11 @@ const definitions: Record<FlowName, FlowDefinition> = {
     firstStep: "amount",
     prompt: async () => {
       const setting = await FinancialSettingsService.get();
-      return `💳 مبلغ شارژ را به تومان وارد کنید:\n\nحداقل شارژ: ${money(setting.minimumTopupAmount)}\n\nپس از پرداخت، کیف پول شما به صورت خودکار شارژ خواهد شد.`;
+      return `💰 شارژ کیف پول با پرداخت آنی
+
+حداقل شارژ: ${money(setting.minimumTopupAmount)}
+
+مبلغ را فقط به تومان وارد کنید. پس از پرداخت موفق، callback رسمی درگاه تأیید پرداخت محسوب می‌شود و کیف پول شما خودکار شارژ خواهد شد.`;
     },
     async handleText(ctx, text) {
       const user = await requireUser(ctx);
@@ -108,7 +112,18 @@ const definitions: Record<FlowName, FlowDefinition> = {
         const invoice = await PaymentInvoiceService.createWalletTopupInvoice(user.id, amount);
         return {
           done: true,
-          text: `💳 مبلغ شارژ:\n${money(amount)}\n\n⚡ روش پرداخت:\nپرداخت آنی\n\nپس از پرداخت، کیف پول شما به صورت خودکار شارژ خواهد شد.\n\n⚡ لینک پرداخت:\n${invoice.paymentLink}`,
+          text: `🧾 خلاصه پرداخت
+
+مبلغ: ${money(amount)}
+روش پرداخت: پرداخت آنی
+وضعیت: در انتظار پرداخت
+شناسه پرداخت: ${invoice.payId ?? "—"}
+زمان ایجاد: ${invoice.createdAt.toLocaleString("fa-IR")}
+
+پس از پرداخت موفق، کیف پول شما به صورت خودکار شارژ خواهد شد.
+
+⚡ لینک پرداخت:
+${invoice.paymentLink}`,
           returnTo: { id: "wallet" },
         };
       } catch (error) {
@@ -806,7 +821,7 @@ status: ${detail.wallet.status}`;
 
   payment_gateway_update: {
     firstStep: "fields",
-    prompt: `⚡ تنظیمات درگاه پرداخت را ارسال کنید.\n\nهر خط به شکل field: value\n\nenabled: true\napiBaseUrl: https://gateway.example.com\napiKey: کلید_درگاه\ncallbackUrl: https://your-domain.com/payments/callback\ngatewayName: پرداخت آنی\ndisplayOrder: 1`,
+    prompt: `⚡ تنظیمات درگاه پرداخت را ارسال کنید.\n\nهر خط به شکل field: value\n\nenabled: true\napiBaseUrl: http://136.244.104.77:5000/api/v1\napiKey: کلید_درگاه\ncallbackUrl: https://your-domain.com/payments/callback\ngatewayName: پرداخت آنی\ndisplayOrder: 1`,
     async handleText(ctx, text) {
       const data = parseKeyValueLines(text);
       const enabled = parseActive(data.enabled ?? data.active ?? data.status ?? data["وضعیت"]);

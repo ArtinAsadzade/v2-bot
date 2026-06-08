@@ -8,7 +8,7 @@ const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
 
 function invoiceIdFromRequest(req: http.IncomingMessage) {
   const url = new URL(req.url ?? "/", "http://localhost");
-  return url.searchParams.get("invoice_id") ?? url.searchParams.get("id") ?? url.pathname.split("/").filter(Boolean).pop() ?? "";
+  return url.searchParams.get("invoice_id") ?? "";
 }
 
 async function notifyUser(bot: AppBot, result: Awaited<ReturnType<typeof PaymentInvoiceService.processCallback>>["result"]) {
@@ -37,8 +37,7 @@ export function startPaymentCallbackServer(bot: AppBot) {
     }
 
     const invoiceId = invoiceIdFromRequest(req);
-    const url = new URL(req.url ?? "/", "http://localhost");
-    const result = await PaymentInvoiceService.processCallback(invoiceId, { url: req.url, remoteAddress: req.socket.remoteAddress, token: url.searchParams.get("token") });
+    const result = await PaymentInvoiceService.processCallback(invoiceId, { url: req.url, remoteAddress: req.socket.remoteAddress });
     if (result.result) await notifyUser(bot, result.result);
     res.writeHead(result.statusCode, { "Content-Type": "text/plain; charset=utf-8" });
     res.end(result.text);

@@ -147,6 +147,10 @@ function registerModernViews() {
             }
         }
         const shortage = Math.max(payableAmount - user.balance, 0);
+        const gateway = await payment_service_1.PaymentGatewayService.get();
+        const paymentMethods = [[{ text: "1️⃣ کیف پول", action: `buy:confirm:${product.id}` }]];
+        if (gateway.enabled)
+            paymentMethods[0].push({ text: "2️⃣ پرداخت آنی", action: `buy:instant:${product.id}` });
         return {
             text: `🧾 پیش‌فاکتور خرید
 
@@ -161,12 +165,12 @@ ${divider}
 ${shortage ? `\n⚠️ کسری موجودی: ${money(shortage)}` : "\n✅ موجودی شما برای خرید کافی است."}
 ${divider}
 
-با تأیید نهایی، مبلغ از کیف پول کسر و اکانت به‌صورت فوری تخصیص داده می‌شود.`,
+💳 روش پرداخت
+1. کیف پول${gateway.enabled ? "\n2. پرداخت آنی" : ""}
+
+لطفاً روش پرداخت را انتخاب کنید.`,
             keyboard: [
-                [
-                    { text: "💰 کیف پول", action: `buy:confirm:${product.id}` },
-                    { text: "⚡ پرداخت آنی", action: `buy:instant:${product.id}` },
-                ],
+                ...paymentMethods,
                 [
                     { text: "🎟 اعمال/تغییر کد تخفیف", action: `flow:start:coupon_code:${product.id}` },
                     { text: "💳 شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") },
@@ -295,10 +299,21 @@ ${divider}`,
             keyboard: [[{ text: "➕ شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") }]],
         };
     });
-    (0, panel_ui_1.registerView)("deposit", async () => ({
-        text: `➕ شارژ کیف پول\n\n${divider}\nمبلغ شارژ را به تومان وارد می‌کنید، سپس شبکه پرداخت را انتخاب و رسید را ارسال می‌کنید.\n\n⏳ درخواست‌ها زمان‌دار هستند تا پرداخت‌ها دقیق و قابل پیگیری بمانند.`,
-        keyboard: [[{ text: "💳 شروع شارژ", action: "flow:start:deposit_submit" }]],
-    }));
+    (0, panel_ui_1.registerView)("deposit", async () => {
+        const gateway = await payment_service_1.PaymentGatewayService.get();
+        const keyboard = [[{ text: "1️⃣ رمز ارز", action: "flow:start:deposit_submit" }]];
+        if (gateway.enabled)
+            keyboard[0].push({ text: "2️⃣ پرداخت آنی", action: "flow:start:instant_topup" });
+        return {
+            text: `💰 روش شارژ
+
+${divider}
+1. رمز ارز${gateway.enabled ? "\n2. پرداخت آنی" : ""}
+
+مبلغ شارژ را وارد کنید و سپس یکی از روش‌های فعال را انتخاب کنید. پرداخت آنی فقط پس از callback رسمی درگاه به‌صورت خودکار به کیف پول اضافه می‌شود.`,
+            keyboard,
+        };
+    });
     (0, panel_ui_1.registerView)("support", async (ctx) => {
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
         if (!user)
@@ -454,7 +469,7 @@ ${divider}
                 [{ text: "🗄 مدیریت موجودی اکانت‌ها", action: (0, panel_ui_1.callbackFor)("admin.accounts") }],
                 [
                     { text: "💳 کیف پول‌ها", action: (0, panel_ui_1.callbackFor)("admin.wallets") },
-                    { text: "⚡ درگاه پرداخت", action: (0, panel_ui_1.callbackFor)("admin.paymentGateway") },
+                    { text: "⚡ مدیریت پرداخت آنی", action: (0, panel_ui_1.callbackFor)("admin.paymentGateway") },
                     { text: "💰 تراکنش‌ها", action: (0, panel_ui_1.callbackFor)("admin.transactions") },
                 ],
                 [
@@ -1028,27 +1043,78 @@ ${recentLines}`,
     });
     (0, panel_ui_1.registerView)("admin.paymentGateway", async () => {
         const gateway = await payment_service_1.PaymentGatewayService.get();
+        return {
+            text: `⚡ مدیریت پرداخت آنی
+
+${divider}
+در این بخش وضعیت و تنظیمات اتصال مستقیم به درگاه پرداخت آنی مدیریت می‌شود.
+
+وضعیت درگاه: ${gateway.enabled ? "فعال ✅" : "غیرفعال ⛔"}
+نام نمایشی: ${gateway.gatewayName}
+ترتیب نمایش: ${gateway.displayOrder.toLocaleString("fa-IR")}
+API Base URL: ${gateway.apiBaseUrl || "—"}
+Callback Base URL: ${gateway.callbackUrl || "—"}
+API Key: ${(0, payment_service_1.maskApiKey)(gateway.apiKey)}
+
+📡 وضعیت اتصال: ${gateway.lastConnectionStatus === "success" ? "✅ اتصال موفق" : gateway.lastConnectionStatus === "failed" ? "❌ اتصال ناموفق" : "—"}
+آخرین درخواست موفق: ${gateway.lastSuccessfulRequest ? gateway.lastSuccessfulRequest.toLocaleString("fa-IR") : "—"}
+آخرین درخواست ناموفق: ${gateway.lastFailedRequest ? gateway.lastFailedRequest.toLocaleString("fa-IR") : "—"}
+${gateway.lastConnectionError ? `آخرین خطا: ${gateway.lastConnectionError}` : ""}`,
+            keyboard: [
+                [{ text: "1️⃣ وضعیت درگاه", action: (0, panel_ui_1.callbackFor)("admin.paymentGateway") }],
+                [{ text: "2️⃣ تنظیمات درگاه", action: "flow:start:payment_gateway_update" }],
+                [{ text: "3️⃣ فاکتورهای پرداخت", action: (0, panel_ui_1.callbackFor)("admin.invoices") }],
+                [{ text: "4️⃣ آمار پرداخت", action: (0, panel_ui_1.callbackFor)("admin.paymentStats") }],
+                [{ text: "5️⃣ 🧪 تست اتصال", action: "admin:payment_gateway:test" }],
+                [{ text: gateway.enabled ? "⏸ غیرفعال‌سازی" : "▶️ فعال‌سازی", action: `admin:payment_gateway:status:${gateway.enabled ? "disabled" : "enabled"}` }],
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.paymentStats", async () => {
         const stats = await payment_service_1.PaymentInvoiceService.stats();
         return {
-            text: `⚡ تنظیمات درگاه پرداخت\n\nوضعیت: ${gateway.enabled ? "فعال ✅" : "غیرفعال ⛔"}\nنام نمایشی: ${gateway.gatewayName}\nترتیب نمایش: ${gateway.displayOrder.toLocaleString("fa-IR")}\nAPI Base URL: ${gateway.apiBaseUrl || "—"}\nCallback URL: ${gateway.callbackUrl || "—"}\nAPI Key: ${gateway.apiKey ? "ثبت شده (محرمانه)" : "ثبت نشده"}\n\n📊 آمار فاکتورها\n✅ موفق: ${stats.successful.toLocaleString("fa-IR")}\n❌ ناموفق: ${stats.failed.toLocaleString("fa-IR")}\n⏳ در انتظار: ${stats.pending.toLocaleString("fa-IR")}\n\nآخرین پرداخت‌ها:\n${stats.recent.map((invoice) => `• #${shortId(invoice.id)} · ${invoice.user.telegramId} · ${invoice.status} · ${money(invoice.amount)}`).join("\n") || "پرداختی ثبت نشده است."}`,
-            keyboard: [
-                [{ text: "✏️ ویرایش تنظیمات", action: "flow:start:payment_gateway_update" }],
-                [{ text: gateway.enabled ? "⏸ غیرفعال‌سازی" : "▶️ فعال‌سازی", action: `admin:payment_gateway:status:${gateway.enabled ? "disabled" : "enabled"}` }],
-                [{ text: "🧾 مدیریت فاکتورها", action: (0, panel_ui_1.callbackFor)("admin.invoices") }],
-            ],
+            text: `📊 آمار پرداخت آنی
+
+${divider}
+✅ پرداخت شده: ${stats.successful.toLocaleString("fa-IR")}
+❌ ناموفق: ${stats.failed.toLocaleString("fa-IR")}
+⏳ در انتظار: ${stats.pending.toLocaleString("fa-IR")}
+
+آخرین فاکتورها:
+${stats.recent.map((invoice) => `• #${shortId(invoice.id)} · ${invoice.user.telegramId} · ${invoice.status} · ${money(invoice.amount)}`).join("\n") || "فاکتوری ثبت نشده است."}`,
+            keyboard: [[{ text: "⚡ مدیریت پرداخت آنی", action: (0, panel_ui_1.callbackFor)("admin.paymentGateway") }]],
         };
     });
     (0, panel_ui_1.registerView)("admin.invoices", async (_ctx, params) => {
         const current = page(params);
-        const status = ["PENDING", "PAID", "COMPLETED", "EXPIRED", "FAILED"].includes(params.status) ? params.status : undefined;
+        const status = ["PENDING", "PAID", "CANCELED", "FAILED"].includes(params.status) ? params.status : undefined;
         const [invoices, total] = await payment_service_1.PaymentInvoiceService.list(current, 8, status);
+        const statusLabel = (value) => ({ PENDING: "در انتظار", PAID: "پرداخت شده", CANCELED: "لغو شده", FAILED: "ناموفق", COMPLETED: "پرداخت شده" }[value] ?? value);
+        const typeLabel = (value) => value === "WALLET_TOPUP" ? "شارژ کیف پول" : "خرید محصول";
         return {
-            text: `🧾 مدیریت فاکتورهای پرداخت آنی\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n${status ? `\nفیلتر: ${status}` : ""}\n\n${invoices.map((invoice) => `• #${shortId(invoice.id)} · ${invoice.user.telegramId} · ${invoice.type} · ${invoice.status} · ${money(invoice.amount)}`).join("\n") || "فاکتوری ثبت نشده است."}`,
+            text: `🧾 فاکتورهای پرداخت آنی
+
+صفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}
+${status ? `
+فیلتر: ${statusLabel(status)}` : "\nفیلتر: همه"}
+
+${invoices.map((invoice) => `• شناسه: #${shortId(invoice.id)}
+  Pay ID: ${invoice.payId ?? "—"}
+  کاربر: ${invoice.user.telegramId}
+  مبلغ: ${money(invoice.amount)}
+  نوع: ${typeLabel(invoice.type)}
+  وضعیت: ${statusLabel(invoice.status)}
+  ایجاد: ${invoice.createdAt.toLocaleString("fa-IR")}
+  پرداخت: ${invoice.paidAt ? invoice.paidAt.toLocaleString("fa-IR") : "—"}`).join("\n\n") || "فاکتوری ثبت نشده است."}`,
             keyboard: [
                 [
-                    { text: "⏳ Pending", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "PENDING" }) },
-                    { text: "✅ Success", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "COMPLETED" }) },
-                    { text: "❌ Failed", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "FAILED" }) },
+                    { text: "همه", action: (0, panel_ui_1.callbackFor)("admin.invoices") },
+                    { text: "در انتظار", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "PENDING" }) },
+                ],
+                [
+                    { text: "پرداخت شده", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "PAID" }) },
+                    { text: "لغو شده", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "CANCELED" }) },
+                    { text: "ناموفق", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "FAILED" }) },
                 ],
                 ...invoices.map((invoice) => [{ text: `👁 #${shortId(invoice.id)}`, action: (0, panel_ui_1.callbackFor)("admin.invoice", { invoiceId: invoice.id }) }]),
                 [
@@ -1063,7 +1129,26 @@ ${recentLines}`,
         if (!invoice)
             return { text: "⚠️ فاکتور پیدا نشد.", keyboard: [] };
         return {
-            text: `🧾 جزئیات فاکتور پرداخت آنی\n\nشناسه: ${invoice.id}\nکاربر: ${invoice.user.telegramId}\nنوع: ${invoice.type}\nوضعیت: ${invoice.status}\nمبلغ: ${money(invoice.amount)}\nمبلغ درگاه: ${invoice.gatewayAmount ? money(invoice.gatewayAmount) : "—"}\nPay ID: ${invoice.payId ?? "—"}\nمحصول: ${invoice.product?.title ?? "—"}\nسفارش: ${invoice.orderId ?? "—"}\nایجاد: ${invoice.createdAt.toLocaleString("fa-IR")}\nپرداخت: ${invoice.paidAt ? invoice.paidAt.toLocaleString("fa-IR") : "—"}\nتکمیل: ${invoice.completedAt ? invoice.completedAt.toLocaleString("fa-IR") : "—"}\n\n📜 Audit:\n${invoice.audits.map((audit) => `• ${audit.createdAt.toLocaleString("fa-IR")} · ${audit.action}`).join("\n") || "رخدادی ثبت نشده است."}`,
+            text: `🧾 جزئیات فاکتور پرداخت آنی
+
+شناسه فاکتور: ${invoice.id}
+شناسه پرداخت (Pay ID): ${invoice.payId ?? "—"}
+کاربر: ${invoice.user.telegramId}
+نوع: ${invoice.type === "WALLET_TOPUP" ? "شارژ کیف پول" : "خرید محصول"}
+وضعیت: ${invoice.status}
+مبلغ: ${money(invoice.amount)}
+مبلغ ثبت‌شده درگاه: ${invoice.gatewayAmount ? money(invoice.gatewayAmount) : "—"}
+محصول: ${invoice.product?.title ?? "—"}
+سفارش: ${invoice.orderId ?? "—"}
+زمان ایجاد: ${invoice.createdAt.toLocaleString("fa-IR")}
+زمان پرداخت: ${invoice.paidAt ? invoice.paidAt.toLocaleString("fa-IR") : "—"}
+زمان تکمیل: ${invoice.completedAt ? invoice.completedAt.toLocaleString("fa-IR") : "—"}
+
+Gateway Response:
+${invoice.gatewayResponse ?? "—"}
+
+📜 Audit:
+${invoice.audits.map((audit) => `• ${audit.createdAt.toLocaleString("fa-IR")} · ${audit.action}`).join("\n") || "رخدادی ثبت نشده است."}`,
             keyboard: [[{ text: "🧾 همه فاکتورها", action: (0, panel_ui_1.callbackFor)("admin.invoices") }]],
         };
     });

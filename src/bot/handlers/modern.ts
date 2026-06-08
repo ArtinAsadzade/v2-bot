@@ -157,6 +157,17 @@ ${invoice.amount.toLocaleString("fa-IR")} تومان
     }
   });
 
+  bot.action("admin:payment_gateway:test", async (ctx) => {
+    await ctx.answerCbQuery("در حال تست اتصال...");
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return void (await ctx.answerCbQuery("دسترسی غیرمجاز"));
+    const result = await PaymentGatewayService.testConnection(String(ctx.from.id));
+    await ctx.reply(`${result.message}
+
+جزئیات:
+${result.ok ? JSON.stringify(result.details) : result.error}`);
+    await renderPanel(ctx, { id: "admin.paymentGateway" }, "replace");
+  });
+
   bot.action(/^favorite:toggle:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     const productId = ctx.match[1];

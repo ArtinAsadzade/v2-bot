@@ -72,6 +72,7 @@ const PANEL_VIEW_IDS = new Set([
     "admin.notifications",
     "admin.settings",
     "admin.paymentGateway",
+    "admin.paymentStats",
     "admin.invoices",
     "admin.invoice",
     "admin.deposits",

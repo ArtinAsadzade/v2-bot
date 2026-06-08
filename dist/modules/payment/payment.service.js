@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentInvoiceService = exports.PaymentService = exports.PaymentGatewayService = void 0;
+exports.maskApiKey = maskApiKey;
 const crypto_1 = __importDefault(require("crypto"));
 const prisma_1 = require("../../services/prisma");
 const wallet_service_1 = require("../wallet/wallet.service");
@@ -13,8 +14,8 @@ const admin_service_1 = require("../admin/admin.service");
 const event_bus_service_1 = require("../../services/event-bus.service");
 const visibility_1 = require("../product/visibility");
 const CALLBACK_TOKEN_PARAM = "invoice_id";
-const CALLBACK_SECRET_PARAM = "token";
-const ALREADY_PROCESSED_FA = "⚠️ این پرداخت قبلاً پردازش شده است.";
+const ALREADY_PROCESSED_FA = "Already processed.";
+const DEFAULT_GATEWAY_API_BASE_URL = "http://136.244.104.77:5000/api/v1";
 function assertPositiveAmount(amount) {
     if (!Number.isInteger(amount) || amount <= 0)
         throw new Error("مبلغ پرداخت معتبر نیست");
@@ -36,21 +37,34 @@ function parseGatewayResponse(body) {
     if (!body || typeof body !== "object")
         throw new Error("پاسخ درگاه معتبر نیست");
     const data = body;
-    const nested = typeof data.data === "object" && data.data ? data.data : data;
-    const payId = String(nested.pay_id ?? nested.payId ?? nested.id ?? "").trim();
-    const paymentLink = String(nested.payment_link ?? nested.paymentLink ?? nested.link ?? nested.url ?? "").trim();
-    const gatewayAmount = Number(nested.price ?? nested.amount ?? data.price ?? data.amount ?? 0);
+    if (String(data.status ?? "").toLowerCase() !== "true")
+        throw new Error(String(data.message ?? "درگاه ایجاد فاکتور را تأیید نکرد"));
+    const payId = String(data.pay_id ?? "").trim();
+    const paymentLink = String(data.payment_link ?? "").trim();
     if (!payId || !paymentLink)
         throw new Error("شناسه یا لینک پرداخت از درگاه دریافت نشد");
     validateUrl(paymentLink, "لینک پرداخت");
-    return { payId, paymentLink, gatewayAmount: Number.isFinite(gatewayAmount) && gatewayAmount > 0 ? Math.round(gatewayAmount) : undefined };
+    return { payId, paymentLink };
 }
-function invoiceCallbackUrl(baseCallbackUrl, invoiceId, callbackToken) {
+function invoiceCallbackUrl(baseCallbackUrl, invoiceId) {
     const withId = baseCallbackUrl.includes("{invoiceId}") ? baseCallbackUrl.split("{invoiceId}").join(encodeURIComponent(invoiceId)) : baseCallbackUrl;
     const url = new URL(withId);
     url.searchParams.set(CALLBACK_TOKEN_PARAM, invoiceId);
-    url.searchParams.set(CALLBACK_SECRET_PARAM, callbackToken);
     return url.toString();
+}
+function safeJson(value) {
+    try {
+        return JSON.stringify(value);
+    }
+    catch {
+        return JSON.stringify({ error: "unserializable" });
+    }
+}
+function maskApiKey(apiKey) {
+    if (!apiKey)
+        return "ثبت نشده";
+    const suffix = apiKey.slice(-4).toUpperCase();
+    return `********${suffix}`;
 }
 async function audit(tx, data) {
     if (data.invoiceId) {
@@ -76,7 +90,7 @@ class PaymentGatewayService {
         return prisma_1.prisma.paymentGatewayConfig.upsert({
             where: { id: "singleton" },
             update: {},
-            create: { id: "singleton", enabled: false, apiBaseUrl: "", apiKey: "", callbackUrl: "", gatewayName: "پرداخت آنی", displayOrder: 1 },
+            create: { id: "singleton", enabled: false, apiBaseUrl: DEFAULT_GATEWAY_API_BASE_URL, apiKey: "", callbackUrl: "", gatewayName: "پرداخت آنی", displayOrder: 1 },
         });
     }
     static validateConfig(input) {
@@ -116,9 +130,41 @@ class PaymentGatewayService {
         await prisma_1.prisma.auditLog.create({ data: { actorId, action: enabled ? "payment_gateway.enable" : "payment_gateway.disable", metadata: JSON.stringify({ gatewayName: updated.gatewayName }) } });
         return updated;
     }
+    static async testConnection(actorId) {
+        const gateway = await this.get();
+        this.validateConfig({ ...gateway, enabled: true });
+        const callbackUrl = invoiceCallbackUrl(gateway.callbackUrl, `test-${Date.now()}`);
+        try {
+            const { parsed, raw } = await PaymentService.requestGatewayInvoice(gateway, 1000, callbackUrl);
+            await prisma_1.prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastSuccessfulRequest: new Date(), lastConnectionStatus: "success", lastConnectionError: null } });
+            await prisma_1.prisma.auditLog.create({ data: { actorId, action: "payment_gateway.connection_test.success", metadata: JSON.stringify({ payId: parsed.payId }) } });
+            return { ok: true, message: "✅ اتصال موفق", details: raw };
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            await prisma_1.prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastFailedRequest: new Date(), lastConnectionStatus: "failed", lastConnectionError: message } });
+            await prisma_1.prisma.auditLog.create({ data: { actorId, action: "payment_gateway.connection_test.failed", metadata: JSON.stringify({ error: message }) } });
+            return { ok: false, message: "❌ اتصال ناموفق", error: message };
+        }
+    }
 }
 exports.PaymentGatewayService = PaymentGatewayService;
 class PaymentService {
+    static async requestGatewayInvoice(gateway, price, callbackUrl) {
+        const payload = { price, callback_url: callbackUrl };
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        const response = await fetch(`${normalizeBaseUrl(gateway.apiBaseUrl)}/invoice/create`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-API-KEY": gateway.apiKey },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+        }).finally(() => clearTimeout(timeout));
+        const raw = await response.json().catch(() => ({}));
+        if (!response.ok)
+            throw new Error(`Gateway error ${response.status}: ${safeJson(raw)}`);
+        return { parsed: parseGatewayResponse(raw), raw, payload };
+    }
     static async createInvoice(data) {
         assertPositiveAmount(data.amount);
         const gateway = await PaymentGatewayService.get();
@@ -131,40 +177,22 @@ class PaymentService {
         const invoice = await prisma_1.prisma.paymentInvoice.create({
             data: { userId: data.userId, amount: data.amount, gatewayAmount: data.amount, callbackToken: crypto_1.default.randomBytes(32).toString("hex"), type: data.type, status: "PENDING", productId: data.productId },
         });
-        await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "Invoice Created", metadata: { type: data.type, amount: data.amount } });
-        const callbackUrl = invoiceCallbackUrl(gateway.callbackUrl, invoice.id, invoice.callbackToken);
+        await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "Invoice Created", metadata: { type: data.type, amount: data.amount, status: "PENDING" } });
+        const callbackUrl = invoiceCallbackUrl(gateway.callbackUrl, invoice.id);
+        await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "Gateway Request", metadata: { endpoint: "/invoice/create", price: data.amount, callback_url: callbackUrl } });
         try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 15000);
-            const response = await fetch(`${normalizeBaseUrl(gateway.apiBaseUrl)}/invoice/create`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "X-API-KEY": gateway.apiKey },
-                body: JSON.stringify({ price: data.amount, callback_url: callbackUrl }),
-                signal: controller.signal,
-            }).finally(() => clearTimeout(timeout));
-            if (!response.ok)
-                throw new Error(`Gateway error ${response.status}`);
-            const parsed = parseGatewayResponse(await response.json());
-            if (parsed.gatewayAmount !== undefined && parsed.gatewayAmount !== data.amount)
-                throw new Error("مبلغ ثبت‌شده درگاه با فاکتور همخوانی ندارد");
-            return prisma_1.prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { payId: parsed.payId, paymentLink: parsed.paymentLink, gatewayAmount: data.amount } });
+            const gatewayResult = await this.requestGatewayInvoice(gateway, data.amount, callbackUrl);
+            await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "Gateway Response", metadata: gatewayResult.raw });
+            await prisma_1.prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastSuccessfulRequest: new Date(), lastConnectionStatus: "success", lastConnectionError: null } });
+            return prisma_1.prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { payId: gatewayResult.parsed.payId, paymentLink: gatewayResult.parsed.paymentLink, gatewayAmount: data.amount, gatewayResponse: safeJson(gatewayResult.raw) } });
         }
         catch (error) {
-            await prisma_1.prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { status: "FAILED" } });
-            await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "Payment Failed", metadata: { stage: "create", error: error instanceof Error ? error.message : String(error) } });
+            const message = error instanceof Error ? error.message : String(error);
+            await prisma_1.prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { status: "FAILED", gatewayResponse: safeJson({ error: message }) } });
+            await prisma_1.prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastFailedRequest: new Date(), lastConnectionStatus: "failed", lastConnectionError: message } });
+            await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "Failed Processing", metadata: { stage: "gateway_create", error: message } });
             throw new Error("ارتباط با درگاه پرداخت برقرار نشد. لطفاً چند دقیقه دیگر دوباره تلاش کنید");
         }
-    }
-    static async verifyPayment(invoice, metadata) {
-        if (metadata.token !== invoice.callbackToken) {
-            await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "Payment Failed", metadata: { stage: "callback_security", reason: "invalid_callback_token" } });
-            return false;
-        }
-        if (invoice.gatewayAmount !== null && invoice.gatewayAmount !== invoice.amount) {
-            await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "Payment Failed", metadata: { stage: "callback_security", reason: "amount_mismatch", gatewayAmount: invoice.gatewayAmount, amount: invoice.amount } });
-            return false;
-        }
-        return true;
     }
     static async completePayment(invoiceId, metadata = {}) {
         if (!invoiceId)
@@ -172,9 +200,11 @@ class PaymentService {
         const invoice = await prisma_1.prisma.paymentInvoice.findUnique({ where: { id: invoiceId } });
         if (!invoice)
             return { statusCode: 404, text: "Payment invoice not found." };
-        await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "Callback Received", metadata });
-        if (!(await this.verifyPayment(invoice, metadata)))
-            return { statusCode: 403, text: "Invalid payment callback." };
+        await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "Callback Received", metadata: { invoice_id: invoiceId, ...metadata } });
+        if (invoice.gatewayAmount !== null && invoice.gatewayAmount !== invoice.amount) {
+            await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "Failed Processing", metadata: { stage: "callback_security", reason: "amount_mismatch", gatewayAmount: invoice.gatewayAmount, amount: invoice.amount } });
+            return { statusCode: 409, text: "Invoice amount mismatch." };
+        }
         if (invoice.status !== "PENDING")
             return { statusCode: 200, text: ALREADY_PROCESSED_FA };
         try {
@@ -188,14 +218,15 @@ class PaymentService {
                 const fresh = await tx.paymentInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
                 if (fresh.status !== "PAID")
                     return { alreadyProcessed: true };
-                await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "Payment Verified", metadata: { payId: fresh.payId, amount: fresh.amount } });
+                await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "Payment Confirmed", metadata: { payId: fresh.payId, amount: fresh.amount } });
                 if (fresh.type === "WALLET_TOPUP") {
                     const user = await this.creditWallet(tx, { userId: fresh.userId, amount: fresh.amount, reason: `شارژ کیف پول با پرداخت آنی - فاکتور ${fresh.id}`, actorId: fresh.userId, invoiceId: fresh.id, referenceId: `invoice:${fresh.id}` });
-                    const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date() } });
+                    const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { completedAt: new Date(), verifiedAt: new Date() } });
                     return { invoice: completed, user, type: fresh.type };
                 }
                 const delivered = await this.purchaseProduct(tx, { userId: fresh.userId, productId: fresh.productId ?? "", method: "INSTANT", invoice: fresh });
-                const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), orderId: delivered.order.id } });
+                const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { completedAt: new Date(), verifiedAt: new Date(), orderId: delivered.order.id } });
+                await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "Order Delivered", metadata: { orderId: delivered.order.id, productId: delivered.product.id, accountId: delivered.account.id } });
                 return { invoice: completed, ...delivered, type: fresh.type };
             });
             if ("alreadyProcessed" in result)
@@ -205,7 +236,7 @@ class PaymentService {
         }
         catch (error) {
             await prisma_1.prisma.paymentInvoice.updateMany({ where: { id: invoice.id, status: { in: ["PENDING", "PAID"] } }, data: { status: "FAILED", verifiedAt: new Date() } });
-            await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "Payment Failed", metadata: { stage: "process", error: error instanceof Error ? error.message : String(error) } });
+            await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "Failed Processing", metadata: { stage: "process", error: error instanceof Error ? error.message : String(error) } });
             return { statusCode: 500, text: "Payment processing failed." };
         }
     }
@@ -360,7 +391,7 @@ class PaymentInvoiceService {
     }
     static async stats() {
         const [successful, failed, pending, recent] = await Promise.all([
-            prisma_1.prisma.paymentInvoice.count({ where: { status: "COMPLETED" } }),
+            prisma_1.prisma.paymentInvoice.count({ where: { status: { in: ["PAID", "COMPLETED"] } } }),
             prisma_1.prisma.paymentInvoice.count({ where: { status: "FAILED" } }),
             prisma_1.prisma.paymentInvoice.count({ where: { status: "PENDING" } }),
             prisma_1.prisma.paymentInvoice.findMany({ include: { user: true, product: true }, orderBy: { createdAt: "desc" }, take: 5 }),

@@ -158,6 +158,17 @@ ${invoice.amount.toLocaleString("fa-IR")} تومان
             await ctx.reply(`❌ ${error instanceof Error ? error.message : "تغییر وضعیت درگاه ناموفق بود"}`);
         }
     });
+    bot.action("admin:payment_gateway:test", async (ctx) => {
+        await ctx.answerCbQuery("در حال تست اتصال...");
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return void (await ctx.answerCbQuery("دسترسی غیرمجاز"));
+        const result = await payment_service_1.PaymentGatewayService.testConnection(String(ctx.from.id));
+        await ctx.reply(`${result.message}
+
+جزئیات:
+${result.ok ? JSON.stringify(result.details) : result.error}`);
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.paymentGateway" }, "replace");
+    });
     bot.action(/^favorite:toggle:(.+)$/, async (ctx) => {
         var _a;
         await ctx.answerCbQuery();
