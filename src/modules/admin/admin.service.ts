@@ -40,6 +40,10 @@ function containsQuery(query?: string) {
   return query?.trim() || undefined;
 }
 
+function cleanUndefined<T extends Record<string, unknown>>(data: T): Partial<T> {
+  return Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
+
 export class AdminService {
   static async dashboard(forceRefresh = false) {
     if (!forceRefresh && dashboardCache && dashboardCache.expiresAt > Date.now()) return dashboardCache.stats;
@@ -125,34 +129,61 @@ export class AdminService {
     ]);
   }
 
-  static async categoryDetail(categoryId: string) {
+  static async categoryDetail(categoryId: string, productPage = 1, productTake = 8) {
+    const skip = (productPage - 1) * productTake;
     const [category, productCount, activeProductCount, salesCount, products] = await Promise.all([
       prisma.category.findUnique({ where: { id: categoryId } }),
       prisma.product.count({ where: { categoryId, deletedAt: null } }),
       prisma.product.count({ where: { categoryId, deletedAt: null, isActive: true } }),
       prisma.order.count({ where: { product: { is: { categoryId } }, status: "completed" } }),
-      prisma.product.findMany({ where: { categoryId, deletedAt: null }, include: { _count: { select: { accounts: true, orders: true } } }, orderBy: { createdAt: "desc" }, take: 10 }),
+      prisma.product.findMany({ where: { categoryId, deletedAt: null }, include: { _count: { select: { accounts: true, orders: true } } }, orderBy: { createdAt: "desc" }, skip, take: productTake }),
     ]);
-    return { category, productCount, activeProductCount, salesCount, products };
+    return { category, productCount, activeProductCount, salesCount, products, productPage, productTake };
   }
 
   static async saveCategory(data: CategoryInput, actorId: string, categoryId?: string) {
-    const payload = { name: data.name.trim(), description: data.description?.trim(), icon: data.icon?.trim(), displayOrder: data.displayOrder ?? 0, isActive: data.isActive ?? true, deletedAt: null };
-    if (!payload.name) throw new Error("عنوان دسته‌بندی الزامی است");
-    const category = categoryId ? await prisma.category.update({ where: { id: categoryId }, data: payload }) : await prisma.category.create({ data: payload });
+    const name = data.name?.trim();
+    if (!categoryId && !name) throw new Error("عنوان دسته‌بندی الزامی است");
+    const updateData = cleanUndefined({
+      name: name || undefined,
+      description: data.description?.trim(),
+      icon: data.icon?.trim(),
+      displayOrder: data.displayOrder,
+      isActive: data.isActive,
+      deletedAt: null,
+    });
+
+    const category = categoryId
+      ? await prisma.category.update({ where: { id: categoryId }, data: updateData })
+      : await prisma.category.upsert({
+        where: { name: name as string },
+        update: { ...updateData, deletedAt: null },
+        create: { name: name as string, description: data.description?.trim(), icon: data.icon?.trim(), displayOrder: data.displayOrder ?? 0, isActive: data.isActive ?? true },
+      });
     await this.audit(actorId, categoryId ? "category.update" : "category.create", { categoryId: category.id });
     return category;
   }
 
   static async setCategoryActive(categoryId: string, isActive: boolean, actorId: string) {
-    const category = await prisma.category.update({ where: { id: categoryId }, data: { isActive } });
-    await this.audit(actorId, isActive ? "category.activate" : "category.deactivate", { categoryId });
+    const category = await prisma.$transaction(async (tx) => {
+      const updated = await tx.category.update({ where: { id: categoryId }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
+      await tx.product.updateMany({ where: { categoryId, ...(isActive ? {} : { deletedAt: null }) }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
+      await tx.auditLog.create({ data: { actorId, action: isActive ? "category.activate" : "category.deactivate", metadata: JSON.stringify({ categoryId, synchronizedProducts: true }) } });
+      return updated;
+    });
+    this.invalidateDashboardCache();
     return category;
   }
 
   static async deleteCategory(categoryId: string, actorId: string) {
-    const category = await prisma.category.update({ where: { id: categoryId }, data: { isActive: false, deletedAt: new Date() } });
-    await this.audit(actorId, "category.delete.soft", { categoryId });
+    const deletedAt = new Date();
+    const category = await prisma.$transaction(async (tx) => {
+      const updated = await tx.category.update({ where: { id: categoryId }, data: { isActive: false, deletedAt } });
+      await tx.product.updateMany({ where: { categoryId, deletedAt: null }, data: { isActive: false, deletedAt } });
+      await tx.auditLog.create({ data: { actorId, action: "category.delete.soft", metadata: JSON.stringify({ categoryId, synchronizedProducts: true }) } });
+      return updated;
+    });
+    this.invalidateDashboardCache();
     return category;
   }
 
@@ -163,6 +194,9 @@ export class AdminService {
       if (force) {
         const products = await tx.product.findMany({ where: { categoryId }, select: { id: true } });
         for (const product of products) {
+          const orders = await tx.order.findMany({ where: { productId: product.id }, select: { id: true } });
+          const orderIds = orders.map((order) => order.id);
+          if (orderIds.length) await tx.couponUsage.updateMany({ where: { orderId: { in: orderIds } }, data: { orderId: null } });
           await tx.orderItem.deleteMany({ where: { productId: product.id } });
           await tx.order.deleteMany({ where: { productId: product.id } });
           await tx.productAccountHistory.deleteMany({ where: { account: { is: { productId: product.id } } } });
@@ -202,12 +236,26 @@ export class AdminService {
   }
 
   static async updateProduct(productId: string, data: ProductInput, actorId: string) {
-    const product = await prisma.product.update({ where: { id: productId }, data });
-    await this.audit(actorId, "product.update", { productId, data });
+    const updateData: Partial<ProductInput> & { deletedAt?: Date | null } = cleanUndefined(data);
+    if (updateData.categoryId) {
+      await prisma.category.findFirstOrThrow({ where: { id: updateData.categoryId as string, deletedAt: null } });
+    }
+    if (updateData.isActive) {
+      const product = await prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
+      const categoryId = (updateData.categoryId as string | undefined) ?? product.categoryId;
+      await prisma.category.findFirstOrThrow({ where: { id: categoryId, isActive: true, deletedAt: null } });
+      updateData.deletedAt = null;
+    }
+    const product = await prisma.product.update({ where: { id: productId }, data: updateData });
+    await this.audit(actorId, "product.update", { productId, data: updateData });
     return product;
   }
 
   static async setProductActive(productId: string, isActive: boolean, actorId: string) {
+    if (isActive) {
+      const current = await prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
+      await prisma.category.findFirstOrThrow({ where: { id: current.categoryId, isActive: true, deletedAt: null } });
+    }
     const product = await prisma.product.update({ where: { id: productId }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
     await this.audit(actorId, isActive ? "product.activate" : "product.deactivate", { productId });
     return product;
@@ -390,7 +438,7 @@ export class AdminService {
       prisma.productAccount.count({ where: { status: "sold" } }),
       prisma.productAccount.count({ where: { status: "disabled" } }),
       prisma.productAccount.count({ where: { status: "expired" } }),
-      prisma.product.findMany({ where: { isActive: true, deletedAt: null }, include: { _count: { select: { accounts: true } } }, orderBy: { title: "asc" }, take: 20 }),
+      prisma.product.findMany({ where: { isActive: true, deletedAt: null, category: { is: { isActive: true, deletedAt: null } } }, include: { _count: { select: { accounts: true } } }, orderBy: { title: "asc" }, take: 20 }),
     ]);
     return { available, sold, disabled, expired, products };
   }
