@@ -1,7 +1,7 @@
 import type { AppContext } from "../../../types/bot";
 import { CouponService } from "../../../modules/coupon/coupon.service";
 import { ProductService } from "../../../modules/product/product.service";
-import { AdminService } from "../../../modules/admin/admin.service";
+import { AdminService, type ProductAccountAdminStatus } from "../../../modules/admin/admin.service";
 import { resetFlow, getFlow } from "./admin.flow";
 import { navigationKeyboard } from "../../keyboards/main.keyboard";
 
@@ -28,6 +28,12 @@ function optionalPositiveInteger(value: string | undefined): number | undefined 
 function parseActive(value: string | undefined): boolean | undefined {
   if (!value) return undefined;
   return ["1", "true", "active", "فعال", "بله"].includes(value.toLowerCase()) ? true : ["0", "false", "inactive", "غیرفعال", "خیر"].includes(value.toLowerCase()) ? false : undefined;
+}
+
+function parseAccountStatus(value: string | undefined): ProductAccountAdminStatus | undefined {
+  if (!value) return undefined;
+  const normalized = value.toLowerCase();
+  return ["available", "reserved", "sold", "disabled", "expired"].includes(normalized) ? normalized as ProductAccountAdminStatus : undefined;
 }
 
 export async function handleAdminFlow(ctx: AppContext): Promise<boolean> {
@@ -127,7 +133,7 @@ export async function handleAdminFlow(ctx: AppContext): Promise<boolean> {
         subscriptionLink: data.subscriptionLink ?? data.sub ?? data["ساب"],
         configLink: data.configLink ?? data.config ?? data["کانفیگ"],
         productId: data.productId ?? data.product ?? data["محصول"],
-        status: (data.status as never) ?? undefined,
+        status: parseAccountStatus(data.status ?? data["وضعیت"]),
       },
       String(ctx.from?.id ?? "system"),
     );

@@ -20,11 +20,8 @@ export function getFlow(ctx: AppContext): AdminFlowState | undefined {
   const flow = ctx.session.adminFlow;
   if (!flow || !isAdminFlowName(flow.flow)) return undefined;
 
-  return {
-    flow: flow.flow,
-    step: flow.step,
-    data: normalizeFlowData(flow.data),
-  };
+  flow.data = normalizeFlowData(flow.data);
+  return flow as AdminFlowState;
 }
 
 function isAdminFlowName(value: string): value is AdminFlowName {

@@ -67,7 +67,16 @@ function walletInputHelp() {
 }
 
 function accountInputHelp() {
-  return "هر خط را به شکل key:value ارسال کنید.\nمثال:\nusername:user1\nsubscriptionLink:https://...\nconfigLink:vless://...\nproductId:شناسه محصول\nstatus:available";
+  return "هر خط را به شکل key:value ارسال کنید.\nمثال:\nusername:user1\nsubscriptionLink:https://...\nconfigLink:vless://...\nproductId:شناسه محصول مقصد برای انتقال\nstatus:available";
+}
+
+function inventoryStatsLine(stats: { total: number; available: number; reserved: number; sold: number; disabled: number; expired: number }) {
+  return `کل: ${stats.total.toLocaleString("fa-IR")} | آماده: ${stats.available.toLocaleString("fa-IR")} | رزرو: ${stats.reserved.toLocaleString("fa-IR")} | فروخته: ${stats.sold.toLocaleString("fa-IR")} | غیرفعال: ${stats.disabled.toLocaleString("fa-IR")} | منقضی: ${stats.expired.toLocaleString("fa-IR")}`;
+}
+
+function accountStatusFilterKeyboard(currentStatus?: ProductAccountAdminStatus) {
+  const statuses: Array<[ProductAccountAdminStatus, string]> = [["available", "✅ آماده"], ["reserved", "⏳ رزرو"], ["sold", "💰 فروخته"], ["disabled", "⏸ غیرفعال"], ["expired", "⌛ منقضی"]];
+  return statuses.map(([status, label]) => Markup.button.callback(`${currentStatus === status ? "• " : ""}${label}`, `admin:accounts:status:${status}:page:1`));
 }
 
 export function registerAdminHandlers(bot: AppBot) {
@@ -76,7 +85,7 @@ export function registerAdminHandlers(bot: AppBot) {
     await ctx.answerCbQuery();
     const stats = await AdminService.dashboard();
     await ctx.reply(
-      `👨‍💼 پنل مدیریت\n\n👥 کاربران: ${stats.users.toLocaleString("fa-IR")}\n📂 دسته‌بندی‌ها: ${stats.categories.toLocaleString("fa-IR")}\n📦 محصولات: ${stats.products.toLocaleString("fa-IR")}\n🗄 اکانت آماده/فروخته/غیرفعال: ${stats.availableAccounts.toLocaleString("fa-IR")} / ${stats.soldAccounts.toLocaleString("fa-IR")} / ${stats.disabledAccounts.toLocaleString("fa-IR")}\n💳 کیف پول‌ها: ${stats.wallets.toLocaleString("fa-IR")}\n💳 واریزی‌های در انتظار: ${stats.submittedDeposits.toLocaleString("fa-IR")}\n🎧 تیکت‌های باز: ${stats.openTickets.toLocaleString("fa-IR")}\n🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}\n💰 درآمد: ${stats.revenue.toLocaleString("fa-IR")} تومان`,
+      `👨‍💼 پنل مدیریت\n\n👥 کاربران: ${stats.users.toLocaleString("fa-IR")}\n📂 دسته‌بندی‌ها: ${stats.categories.toLocaleString("fa-IR")}\n📦 محصولات: ${stats.products.toLocaleString("fa-IR")}\n🗄 موجودی کل: ${stats.totalAccounts.toLocaleString("fa-IR")}\n✅ آماده: ${stats.availableAccounts.toLocaleString("fa-IR")} | ⏳ رزرو: ${stats.reservedAccounts.toLocaleString("fa-IR")} | 💰 فروخته: ${stats.soldAccounts.toLocaleString("fa-IR")} | ⏸ غیرفعال: ${stats.disabledAccounts.toLocaleString("fa-IR")} | ⌛ منقضی: ${stats.expiredAccounts.toLocaleString("fa-IR")}\n💳 کیف پول‌ها: ${stats.wallets.toLocaleString("fa-IR")}\n💳 واریزی‌های در انتظار: ${stats.submittedDeposits.toLocaleString("fa-IR")}\n🎧 تیکت‌های باز: ${stats.openTickets.toLocaleString("fa-IR")}\n🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}\n💰 درآمد: ${stats.revenue.toLocaleString("fa-IR")} تومان`,
       adminKeyboard(),
     );
   });
@@ -207,10 +216,11 @@ export function registerAdminHandlers(bot: AppBot) {
     const detail = await AdminService.productDetail(ctx.match[1]);
     if (!detail.product) return void (await ctx.reply("محصول پیدا نشد.", navigationKeyboard("admin:products")));
     await ctx.reply(
-      `📦 اطلاعات محصول\n\nنام: ${detail.product.title}\nدسته‌بندی: ${detail.product.category.name}\nقیمت: ${detail.product.price.toLocaleString("fa-IR")} تومان\nمدت: ${detail.product.duration} روز\nوضعیت: ${statusFa(detail.product.isActive)}\nتاریخ ایجاد: ${dateFa(detail.product.createdAt)}\n\n📊 آمار موجودی\nکل: ${detail.product._count.accounts.toLocaleString("fa-IR")}\nفعال/آماده: ${detail.available.toLocaleString("fa-IR")}\nفروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}\nغیرفعال: ${detail.disabled.toLocaleString("fa-IR")}\nمنقضی: ${detail.expired.toLocaleString("fa-IR")}\nدرآمد: ${detail.revenue.toLocaleString("fa-IR")} تومان`,
+      `📦 اطلاعات محصول\n\nنام: ${detail.product.title}\nدسته‌بندی: ${detail.product.category.name}\nقیمت: ${detail.product.price.toLocaleString("fa-IR")} تومان\nمدت: ${detail.product.duration} روز\nوضعیت: ${statusFa(detail.product.isActive)}\nتاریخ ایجاد: ${dateFa(detail.product.createdAt)}\n\n📊 آمار موجودی\nکل: ${detail.product._count.accounts.toLocaleString("fa-IR")}\nآماده: ${detail.available.toLocaleString("fa-IR")}\nرزرو: ${detail.reserved.toLocaleString("fa-IR")}\nفروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}\nغیرفعال: ${detail.disabled.toLocaleString("fa-IR")}\nمنقضی: ${detail.expired.toLocaleString("fa-IR")}\nسفارش موفق: ${detail.orderCount.toLocaleString("fa-IR")}\nدرآمد: ${detail.revenue.toLocaleString("fa-IR")} تومان`,
       Markup.inlineKeyboard([
         [Markup.button.callback("✏️ ویرایش", `admin:product:edit:${detail.product.id}`), Markup.button.callback(detail.product.isActive ? "⏸ غیرفعال" : "▶️ فعال", `admin:product:status:${detail.product.id}:${detail.product.isActive ? "off" : "on"}`)],
-        [Markup.button.callback("📋 کپی محصول", `admin:product:duplicate:${detail.product.id}`), Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${detail.product.id}`)],
+        [Markup.button.callback("🗄 اکانت‌های محصول", `admin:product:accounts:${detail.product.id}:page:1`), Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${detail.product.id}`)],
+        [Markup.button.callback("📋 کپی محصول", `admin:product:duplicate:${detail.product.id}`)],
         [Markup.button.callback("🗑 حذف نرم", `admin:product:delete:${detail.product.id}`), Markup.button.callback("🔥 حذف دائمی", `admin:product:hard:${detail.product.id}`)],
         [Markup.button.callback("⬅️ بازگشت", "admin:products")],
       ]),
@@ -256,15 +266,53 @@ export function registerAdminHandlers(bot: AppBot) {
     }
   });
 
-  bot.action(["admin:accounts", /^admin:accounts:page:(\d+)$/], async (ctx) => {
+  bot.action(["admin:accounts", /^admin:accounts:page:(\d+)$/, /^admin:accounts:status:(available|reserved|sold|disabled|expired):page:(\d+)$/], async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
-    const page = "match" in ctx && ctx.match ? Number(ctx.match[1]) : 1;
+    const status = "match" in ctx && ctx.match?.[1] && !/^\d+$/.test(ctx.match[1]) ? ctx.match[1] as ProductAccountAdminStatus : undefined;
+    const page = "match" in ctx && ctx.match ? Number(status ? ctx.match[2] : ctx.match[1]) || 1 : 1;
     const { take, pageSize } = getPagination(page);
-    const [accounts, total] = await AdminService.listAccounts(page, take);
+    const [accounts, total] = await AdminService.listAccounts(page, take, undefined, status);
     const stats = await AdminService.accountStats();
-    const text = `🗄 مدیریت موجودی اکانت‌ها\n📊 آماده: ${stats.available.toLocaleString("fa-IR")} | فروخته: ${stats.sold.toLocaleString("fa-IR")} | غیرفعال: ${stats.disabled.toLocaleString("fa-IR")} | منقضی: ${stats.expired.toLocaleString("fa-IR")}\n\n${accounts.map((account) => `👤 ${account.username} | ${account.product.title} | ${statusFa(account.status)} | کاربر: ${account.soldTo ?? account.reservedBy ?? "-"} | تاریخ: ${dateFa(account.soldAt ?? account.reservedAt)}`).join("\n") || "اکانتی وجود ندارد."}`;
-    await ctx.reply(text, entityListKeyboard(accounts.map((account) => [Markup.button.callback(`👁 ${account.username}`, `admin:account:${account.id}`)]), "admin:accounts", page, total, pageSize, "admin:dashboard", [[Markup.button.callback("➕ افزودن اکانت", "admin:accounts:add")]]));
+    const prefix = status ? `admin:accounts:status:${status}` : "admin:accounts";
+    const text = `🗄 مدیریت موجودی اکانت‌ها\n📊 ${inventoryStatsLine(stats)}\n${status ? `🔎 فیلتر فعلی: ${statusFa(status)}\n` : ""}\n${accounts.map((account) => `👤 ${account.username} | ${account.product.title} | ${statusFa(account.status)} | کاربر: ${account.soldTo ?? account.reservedBy ?? "-"} | تاریخ: ${dateFa(account.soldAt ?? account.reservedAt)}`).join("\n") || "اکانتی وجود ندارد."}`;
+    await ctx.reply(
+      text,
+      entityListKeyboard(
+        accounts.map((account) => [Markup.button.callback(`👁 ${account.username}`, `admin:account:${account.id}`)]),
+        prefix,
+        page,
+        total,
+        pageSize,
+        "admin:dashboard",
+        [
+          [Markup.button.callback("➕ افزودن اکانت", "admin:accounts:add"), Markup.button.callback("📊 آمار موجودی", "admin:inventory:stats")],
+          accountStatusFilterKeyboard(status),
+          [Markup.button.callback("نمایش همه", "admin:accounts")],
+        ],
+      ),
+    );
+  });
+
+  bot.action("admin:inventory:stats", async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    await ctx.answerCbQuery();
+    const stats = await AdminService.accountStats();
+    const productLines = stats.products.map((product) => `• ${product.title} | ${statusFa(product.isActive)} | کل اکانت: ${product._count.accounts.toLocaleString("fa-IR")}`).join("\n") || "محصولی وجود ندارد.";
+    await ctx.reply(`📊 آمار کامل موجودی\n${inventoryStatsLine(stats)}\n\n📦 موجودی بر اساس محصول:\n${productLines}`, navigationKeyboard("admin:accounts"));
+  });
+
+  bot.action(/^admin:product:accounts:([^:]+):page:(\d+)$/, async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    await ctx.answerCbQuery();
+    const productId = ctx.match[1];
+    const page = Number(ctx.match[2]) || 1;
+    const { take, pageSize } = getPagination(page);
+    const [accounts, total] = await AdminService.listAccounts(page, take, undefined, undefined, productId);
+    const stats = await AdminService.accountStats(productId);
+    const title = accounts[0]?.product.title ?? (await AdminService.productDetail(productId)).product?.title ?? "محصول";
+    const text = `🗄 اکانت‌های محصول: ${title}\n📊 ${inventoryStatsLine(stats)}\n\n${accounts.map((account) => `👤 ${account.username} | ${statusFa(account.status)} | کاربر: ${account.soldTo ?? account.reservedBy ?? "-"}`).join("\n") || "اکانتی برای این محصول وجود ندارد."}`;
+    await ctx.reply(text, entityListKeyboard(accounts.map((account) => [Markup.button.callback(`👁 ${account.username}`, `admin:account:${account.id}`)]), `admin:product:accounts:${productId}`, page, total, pageSize, `admin:product:${productId}`, [[Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${productId}`)]]));
   });
 
   bot.action("admin:accounts:search", async (ctx) => {
@@ -297,9 +345,10 @@ export function registerAdminHandlers(bot: AppBot) {
     await ctx.reply(
       `🗄 جزئیات اکانت\n\nUsername: ${account.username}\nSubscription: ${account.subscriptionLink}\nConfig: ${account.configLink}\nProduct: ${account.product.title}\nStatus: ${statusFa(account.status)}\nAssigned User: ${account.soldTo ?? account.reservedBy ?? "-"}\nAssigned Date: ${dateFa(account.soldAt ?? account.reservedAt)}\n\n📜 تاریخچه تخصیص/تغییر:\n${history}`,
       Markup.inlineKeyboard([
-        [Markup.button.callback("✏️ ویرایش/انتقال", `admin:account:edit:${account.id}`), Markup.button.callback(account.status === "disabled" ? "▶️ فعال" : "⏸ غیرفعال", `admin:account:status:${account.id}:${account.status === "disabled" ? "available" : "disabled"}`)],
-        [Markup.button.callback("✅ AVAILABLE", `admin:account:status:${account.id}:available`), Markup.button.callback("⏳ EXPIRED", `admin:account:status:${account.id}:expired`)],
-        [Markup.button.callback("🗑 حذف", `admin:account:delete:${account.id}`), Markup.button.callback("⬅️ بازگشت", "admin:accounts")],
+        [Markup.button.callback("✏️ ویرایش", `admin:account:edit:${account.id}`), Markup.button.callback("🚚 انتقال", `admin:account:move:${account.id}`)],
+        [Markup.button.callback(account.status === "disabled" ? "▶️ فعال" : "⏸ غیرفعال", `admin:account:status:${account.id}:${account.status === "disabled" ? "available" : "disabled"}`), Markup.button.callback("✅ AVAILABLE", `admin:account:status:${account.id}:available`)],
+        [Markup.button.callback("⏳ EXPIRED", `admin:account:status:${account.id}:expired`), Markup.button.callback("🗑 حذف", `admin:account:delete:${account.id}`)],
+        [Markup.button.callback("⬅️ بازگشت", "admin:accounts")],
       ]),
     );
   });
@@ -309,6 +358,25 @@ export function registerAdminHandlers(bot: AppBot) {
     await ctx.answerCbQuery();
     setFlow(ctx, { flow: "account_edit", step: "details", data: { accountId: ctx.match[1] } });
     await ctx.reply(`✏️ ویرایش یا انتقال اکانت\n\n${accountInputHelp()}`, navigationKeyboard(`admin:account:${ctx.match[1]}`));
+  });
+
+  bot.action(/^admin:account:move:(.+)$/, async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    await ctx.answerCbQuery();
+    const account = await AdminService.accountDetail(ctx.match[1]);
+    if (!account) return void (await ctx.reply("اکانت پیدا نشد.", navigationKeyboard("admin:accounts")));
+    const products = await ProductService.listActiveProducts(50);
+    const rows = products
+      .filter((product) => product.id !== account.productId)
+      .map((product) => [Markup.button.callback(`${product.title} (${product.category.name})`, `admin:account:move-to:${account.id}:${product.id}`)]);
+    await ctx.reply(`🚚 انتقال اکانت ${account.username}\nمحصول فعلی: ${account.product.title}\n\nمحصول مقصد را انتخاب کنید:`, Markup.inlineKeyboard([...rows, [Markup.button.callback("⬅️ بازگشت", `admin:account:${account.id}`)]]));
+  });
+
+  bot.action(/^admin:account:move-to:([^:]+):([^:]+)$/, async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    await ctx.answerCbQuery();
+    const account = await AdminService.moveAccount(ctx.match[1], ctx.match[2], actor(ctx));
+    await ctx.reply("✅ اکانت به محصول مقصد منتقل شد.", navigationKeyboard(`admin:account:${account.id}`));
   });
 
   bot.action(/^admin:account:status:(.+):(available|reserved|sold|disabled|expired)$/, async (ctx) => {
