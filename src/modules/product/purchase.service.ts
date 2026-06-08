@@ -3,11 +3,12 @@ import { CouponService } from "../coupon/coupon.service";
 import { WalletService } from "../wallet/wallet.service";
 import { eventBus } from "../../services/event-bus.service";
 import { AdminService } from "../admin/admin.service";
+import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, unassignedInventoryWhere } from "./visibility";
 
 export class PurchaseService {
   static async buyProduct(userId: string, productId: string, couponCode?: string) {
     return prisma.$transaction(async (tx) => {
-      const product = await tx.product.findFirst({ where: { id: productId, isActive: true, deletedAt: null, category: { is: { isActive: true, deletedAt: null } } } });
+      const product = await tx.product.findFirst({ where: { id: productId, AND: [activeProductWhere(), { category: { is: activeCategoryWhere() } }] } });
       if (!product) throw new Error("محصول پیدا نشد");
 
       let discountAmount = 0;
@@ -24,14 +25,14 @@ export class PurchaseService {
         couponMaxUses = coupon.maxUses;
       }
       const account = await tx.productAccount.findFirst({
-        where: { productId, status: "available" },
+        where: { AND: [availableInventoryWhere(productId), unassignedInventoryWhere()] },
         orderBy: { createdAt: "asc" },
       });
       if (!account) throw new Error("موجودی این محصول تمام شده است");
 
       const reservedAt = new Date();
       const reserved = await tx.productAccount.updateMany({
-        where: { id: account.id, productId, status: "available", soldTo: null, soldAt: null },
+        where: { id: account.id, AND: [availableInventoryWhere(productId), unassignedInventoryWhere()] },
         data: { status: "reserved", reservedBy: userId, reservedAt },
       });
       if (reserved.count !== 1) throw new Error("این اکانت هم‌اکنون رزرو شد؛ دوباره تلاش کنید");
@@ -89,7 +90,7 @@ export class PurchaseService {
 
       const soldAt = new Date();
       const sold = await tx.productAccount.updateMany({
-        where: { id: account.id, productId, status: "reserved", reservedBy: userId, soldTo: null, soldAt: null },
+        where: { id: account.id, productId, status: "reserved", reservedBy: userId, AND: [unassignedInventoryWhere()] },
         data: { status: "sold", soldTo: userId, soldAt, reservedBy: null, reservedAt: null },
       });
       if (sold.count !== 1) throw new Error("تحویل اکانت ناموفق بود");
