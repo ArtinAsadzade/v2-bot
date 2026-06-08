@@ -222,7 +222,9 @@ ${invoice.paymentLink}`,
       const productId = String(ctx.session.flow?.data.productId ?? "");
 
       try {
-        await CouponService.validateForUser(text.trim(), user.id);
+        const product = await ProductService.getProduct(productId);
+        if (!product) throw new Error("محصول پیدا نشد");
+        await CouponService.validateForUser(text.trim(), user.id, undefined, product.price);
 
         ctx.session.selectedCoupons ??= {};
         ctx.session.selectedCoupons[productId] = text.trim().toUpperCase();

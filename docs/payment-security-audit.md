@@ -61,3 +61,24 @@ Prisma schema was updated to add `CouponUsage.usageSlot` and `@@unique([couponId
 3. Crypto deposits still rely on admin receipt approval rather than blockchain confirmation. For high volume, integrate chain transaction hash validation and reject reused hashes.
 4. Optional unique idempotency keys for wallet transactions would further strengthen ledger replay protection if the schema can be migrated safely with existing data.
 5. Before applying the new coupon unique index to production, scan existing `CouponUsage` data for duplicate `(couponId, userId, usageSlot=0)` rows and backfill slots where needed.
+
+## Full payment + coupon audit update
+
+This pass hardens the product/wallet/instant-payment/coupon relationship with these production rules:
+
+- Product instant-payment invoices are now quoted server-side from the product price and optional coupon before the invoice is created. `PaymentInvoice.amount` stores the final payable amount, not the raw product price.
+- `PaymentInvoice` now stores reconciliation fields: `originalAmount`, `discountAmount`, `couponId`, and `couponCode`, so the gateway amount, order amount, and coupon discount can be audited after payment.
+- Wallet top-up invoice creation does not accept coupon input; bonus-campaign top-ups remain intentionally unsupported by the default top-up path.
+- Payment callbacks check invoice amount integrity (`originalAmount - discountAmount == amount`), gateway amount equality, and any callback-reported paid amount before fulfillment. Mismatches are marked `FAILED`, audited, and do not deliver products or credit wallets.
+- Invoice completion is idempotent: callback processing still locks only `PENDING` invoices, then moves them through `PAID` to `COMPLETED`; duplicate callbacks are ignored.
+- Coupon usage is still written only inside successful product fulfillment, after wallet debit or gateway payment success, never when a coupon is entered or when a payment link is opened.
+- Admin invoice details now expose original amount, discount amount, coupon code, final amount, payment type, status, user, product, order, gateway amount, and audit events.
+
+### Required scenario coverage
+
+- 150k product + 20% coupon => invoice final amount is 120k.
+- 150k product + 50k fixed coupon => invoice final amount is 100k.
+- Expired/inactive coupons are rejected during quote validation.
+- Duplicate callback cannot redeliver a product or re-credit a wallet because only `PENDING` invoices can be locked for fulfillment.
+- Direct payment delivery and wallet top-up credit both happen only after callback amount integrity succeeds.
+- CouponUsage is created only during successful product fulfillment.

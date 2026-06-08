@@ -1242,8 +1242,12 @@ ${invoices.map((invoice) => `• شناسه: #${shortId(invoice.id)}
 کاربر: ${invoice.user.telegramId}
 نوع: ${invoice.type === "WALLET_TOPUP" ? "شارژ کیف پول" : "خرید محصول"}
 وضعیت: ${invoice.status}
-مبلغ: ${money(invoice.amount)}
+مبلغ اصلی: ${money(invoice.originalAmount)}
+مقدار تخفیف: ${money(invoice.discountAmount)}
+کد تخفیف: ${invoice.couponCode ?? invoice.coupon?.code ?? "—"}
+مبلغ نهایی: ${money(invoice.amount)}
 مبلغ ثبت‌شده درگاه: ${invoice.gatewayAmount ? money(invoice.gatewayAmount) : "—"}
+نوع پرداخت: ${invoice.type === "WALLET_TOPUP" ? "پرداخت آنی / شارژ کیف پول" : "پرداخت آنی / خرید محصول"}
 محصول: ${invoice.product?.title ?? "—"}
 سفارش: ${invoice.orderId ?? "—"}
 زمان ایجاد: ${invoice.createdAt.toLocaleString("fa-IR")}
