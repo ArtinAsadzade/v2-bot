@@ -375,6 +375,85 @@ ${account.configLink}
     await renderPanel(ctx, { id: "admin.store" }, "replace");
   });
 
+  bot.action(/^admin:category:status:([^:]+):([01])$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await AdminService.setCategoryActive(ctx.match[1], ctx.match[2] === "1", String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.category", params: { categoryId: ctx.match[1] } }, "replace");
+  });
+
+  bot.action(/^admin:category:delete:([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await AdminService.deleteCategory(ctx.match[1], String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.categories" }, "replace");
+  });
+
+  bot.action(/^admin:category:hard_delete:confirm:([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await ctx.reply("⚠️ حذف دائمی دسته‌بندی غیرقابل بازگشت است و محصولات وابسته را هم حذف می‌کند.", { reply_markup: { inline_keyboard: [[{ text: "تایید حذف دائمی", callback_data: `admin:category:hard_delete:force:${ctx.match[1]}` }, { text: "لغو", callback_data: callbackFor("admin.category", { categoryId: ctx.match[1] }) }]] } });
+  });
+
+  bot.action(/^admin:category:hard_delete:force:([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await AdminService.hardDeleteCategory(ctx.match[1], String(ctx.from.id), true);
+    await renderPanel(ctx, { id: "admin.categories" }, "replace");
+  });
+
+  bot.action(/^admin:account:status:([^:]+):(available|reserved|sold|disabled|expired)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await AdminService.setAccountStatus(ctx.match[1], ctx.match[2] as "available" | "reserved" | "sold" | "disabled" | "expired", String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.account", params: { accountId: ctx.match[1] } }, "replace");
+  });
+
+  bot.action(/^admin:account:move_to:([^:]+):([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    const account = await AdminService.moveAccount(ctx.match[1], ctx.match[2], String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.account", params: { accountId: account.id } }, "replace");
+  });
+
+  bot.action(/^admin:account:delete:confirm:([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await ctx.reply("⚠️ این اکانت از موجودی حذف شود؟", { reply_markup: { inline_keyboard: [[{ text: "تایید حذف", callback_data: `admin:account:delete:force:${ctx.match[1]}` }, { text: "لغو", callback_data: callbackFor("admin.account", { accountId: ctx.match[1] }) }]] } });
+  });
+
+  bot.action(/^admin:account:delete:force:([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await AdminService.deleteAccount(ctx.match[1], String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.accounts" }, "replace");
+  });
+
+  bot.action(/^admin:wallet:status:([^:]+):(active|inactive)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await AdminService.setCryptoWalletStatus(ctx.match[1], ctx.match[2] as "active" | "inactive", String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.wallet", params: { walletId: ctx.match[1] } }, "replace");
+  });
+
+  bot.action(/^admin:wallet:delete:confirm:([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await ctx.reply("⚠️ این کیف پول حذف شود؟ اگر پرداخت فعال داشته باشد حذف انجام نمی‌شود.", { reply_markup: { inline_keyboard: [[{ text: "تایید حذف", callback_data: `admin:wallet:delete:force:${ctx.match[1]}` }, { text: "لغو", callback_data: callbackFor("admin.wallet", { walletId: ctx.match[1] }) }]] } });
+  });
+
+  bot.action(/^admin:wallet:delete:force:([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    try {
+      await AdminService.deleteCryptoWallet(ctx.match[1], String(ctx.from.id));
+      await renderPanel(ctx, { id: "admin.wallets" }, "replace");
+    } catch (error) {
+      await ctx.reply(error instanceof Error ? `⚠️ ${error.message}` : "⚠️ حذف کیف پول ناموفق بود.");
+      await renderPanel(ctx, { id: "admin.wallet", params: { walletId: ctx.match[1] } }, "replace");
+    }
+  });
+
 
 
   bot.action(/^admin:coupon:status:([^:]+):(active|inactive)$/, async (ctx) => {
@@ -432,6 +511,13 @@ ${account.configLink}
     await ctx.answerCbQuery();
     await AdminService.setProductActive(ctx.match[1], ctx.match[2] === "1", String(ctx.from.id));
     await renderPanel(ctx, { id: "admin.product", params: { productId: ctx.match[1] } }, "replace");
+  });
+
+  bot.action(/^admin:product:duplicate:([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    const product = await AdminService.duplicateProduct(ctx.match[1], String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.product", params: { productId: product.id } }, "replace");
   });
 
   bot.action(/^admin:product:delete:([^:]+)$/, async (ctx) => {

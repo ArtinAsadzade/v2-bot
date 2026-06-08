@@ -7,6 +7,7 @@ import { ReferralService } from "../../modules/referral/referral.service";
 import { FreeAccountService, FREE_ACCOUNT_STATUS_LABELS, formatFreeAccountDate, freeAccountExpiresAt } from "../../modules/free-account/free-account.service";
 import { SupportService } from "../../modules/support/support.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
+import { BroadcastService, BROADCAST_TARGET_LABELS } from "../../modules/broadcast/broadcast.service";
 
 const divider = "━━━━━━━━━━━━━━━━";
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
@@ -16,6 +17,9 @@ const userLine = (user: { telegramId: string; username?: string | null; firstNam
 const stockLabel = (count: number) => (count > 5 ? "آماده تحویل" : count > 0 ? `فقط ${count.toLocaleString("fa-IR")} عدد` : "ناموجود");
 const shortId = (id: string) => id.slice(-6).toUpperCase();
 const freeAccountExpiry = (item: { assignedAt?: Date | null; createdAt: Date; expiresAt?: Date | null; account: { durationDays: number } }) => item.expiresAt ?? freeAccountExpiresAt(item.assignedAt ?? item.createdAt, item.account.durationDays);
+const yesNo = (value: boolean) => value ? "فعال ✅" : "غیرفعال ⛔";
+const accountStatusLabel = (status: string) => ({ available: "آماده", reserved: "رزرو", sold: "فروخته", disabled: "غیرفعال", expired: "منقضی" }[status] ?? status);
+const walletStatusLabel = (status: string) => status === "active" ? "فعال ✅" : "غیرفعال ⛔";
 
 export function registerModernViews() {
   registerView("home", async (ctx) => {
@@ -345,7 +349,31 @@ ${divider}
 
   registerView("admin.dashboard", async () => {
     const stats = await AdminService.dashboard(true);
-    return { text: `⚙️ مرکز مدیریت\n\n${divider}\n📊 نمای کلی عملیات\n\n👥 کاربران: ${stats.users.toLocaleString("fa-IR")}\n💰 درآمد موفق: ${money(stats.revenue)}\n🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}\n🎧 تیکت‌های فعال: ${stats.openTickets.toLocaleString("fa-IR")}\n💳 واریزی‌های منتظر: ${stats.submittedDeposits.toLocaleString("fa-IR")}\n📦 موجودی آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}\n${divider}\n\nماژول مدیریتی را انتخاب کنید:`, keyboard: [[{ text: "💰 مالی", action: callbackFor("admin.deposits") }, { text: "🛒 فروشگاه", action: callbackFor("admin.products") }], [{ text: "👥 کاربران", action: callbackFor("admin.users") }, { text: "🎁 رفرال", action: callbackFor("admin.referrals") }], [{ text: "🆓 رایگان", action: callbackFor("admin.freeAccounts") }, { text: "📊 آمار", action: callbackFor("admin.analytics") }], [{ text: "🎧 تیکت‌ها", action: callbackFor("admin.tickets") }, { text: "🎟 کوپن‌ها", action: callbackFor("admin.coupons") }], [{ text: "🔐 اکانت‌ها", action: callbackFor("admin.accounts") }, { text: "⚙️ تنظیمات", action: callbackFor("admin.crypto") }, { text: "📢 عضویت", action: callbackFor("admin.forcedJoin") }]] };
+    return {
+      text: `⚙️ مرکز مدیریت
+
+${divider}
+📊 نمای کلی عملیات
+
+👥 کاربران: ${stats.users.toLocaleString("fa-IR")}
+💰 درآمد موفق: ${money(stats.revenue)}
+🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}
+🎧 تیکت‌های فعال: ${stats.openTickets.toLocaleString("fa-IR")}
+💳 واریزی‌های منتظر: ${stats.submittedDeposits.toLocaleString("fa-IR")}
+📦 موجودی آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}
+${divider}
+
+ماژول مدیریتی را انتخاب کنید:`,
+      keyboard: [
+        [{ text: "📊 آمار", action: callbackFor("admin.analytics") }, { text: "👥 کاربران", action: callbackFor("admin.users") }],
+        [{ text: "📦 محصولات", action: callbackFor("admin.products") }, { text: "📂 دسته‌بندی‌ها", action: callbackFor("admin.categories") }],
+        [{ text: "🗄 مدیریت موجودی اکانت‌ها", action: callbackFor("admin.accounts") }],
+        [{ text: "💳 کیف پول‌ها", action: callbackFor("admin.wallets") }, { text: "💰 تراکنش‌ها", action: callbackFor("admin.transactions") }],
+        [{ text: "🎟 کوپن‌ها", action: callbackFor("admin.coupons") }, { text: "🎁 رفرال", action: callbackFor("admin.referrals") }],
+        [{ text: "🆓 اکانت تست", action: callbackFor("admin.freeAccounts") }, { text: "📢 اطلاع‌رسانی", action: callbackFor("admin.notifications") }],
+        [{ text: "⚙️ تنظیمات", action: callbackFor("admin.settings") }, { text: "🎫 تیکت‌ها", action: callbackFor("admin.tickets") }],
+      ],
+    };
   });
 
   registerView("admin.users", async (_ctx, params) => {
@@ -379,12 +407,113 @@ ${divider}
   registerView("admin.product", async (_ctx, params) => {
     const detail = await AdminService.productDetail(params.productId);
     if (!detail.product) return { text: "⚠️ محصول پیدا نشد.", keyboard: [] };
-    return { text: `📦 ${detail.product.title}\n\nدسته‌بندی: ${detail.product.category.name}\nقیمت: ${money(detail.product.price)}\nمدت: ${detail.product.duration.toLocaleString("fa-IR")} روز\nموجودی قابل فروش: ${detail.available.toLocaleString("fa-IR")}\nفروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}\nوضعیت: ${detail.product.isActive ? "فعال" : "غیرفعال"}`, keyboard: [[{ text: "🔐 افزودن اکانت", action: `flow:start:account_create:${detail.product.id}` }, { text: "💰 تغییر قیمت", action: `flow:start:product_price:${detail.product.id}` }], [{ text: detail.product.isActive ? "غیرفعال‌سازی" : "فعال‌سازی", action: `admin:product:active:${detail.product.id}:${detail.product.isActive ? "0" : "1"}` }, { text: "🗑 حذف نرم", action: `admin:product:delete:${detail.product.id}` }], [{ text: "🧨 حذف دائمی", action: `admin:product:hard_delete:confirm:${detail.product.id}` }]] };
+    return { text: `📦 ${detail.product.title}
+
+دسته‌بندی: ${detail.product.category.name}
+قیمت: ${money(detail.product.price)}
+مدت: ${detail.product.duration.toLocaleString("fa-IR")} روز
+موجودی قابل فروش: ${detail.available.toLocaleString("fa-IR")}
+فروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}
+وضعیت: ${detail.product.isActive ? "فعال" : "غیرفعال"}`, keyboard: [[{ text: "✏️ ویرایش", action: `flow:start:product_edit:${detail.product.id}` }, { text: "📋 کپی محصول", action: `admin:product:duplicate:${detail.product.id}` }], [{ text: "🔐 افزودن اکانت", action: `flow:start:account_create:${detail.product.id}` }, { text: "💰 تغییر قیمت", action: `flow:start:product_price:${detail.product.id}` }], [{ text: "🗄 اکانت‌های محصول", action: callbackFor("admin.accounts", { productId: detail.product.id }) }], [{ text: detail.product.isActive ? "غیرفعال‌سازی" : "فعال‌سازی", action: `admin:product:active:${detail.product.id}:${detail.product.isActive ? "0" : "1"}` }, { text: "🗑 حذف نرم", action: `admin:product:delete:${detail.product.id}` }], [{ text: "🧨 حذف دائمی", action: `admin:product:hard_delete:confirm:${detail.product.id}` }]] };
   });
 
-  registerView("admin.accounts", async () => {
-    const stats = await AdminService.accountStats();
-    return { text: `🔐 مدیریت اکانت‌ها\n\nاکانت آماده فروش: ${stats.available.toLocaleString("fa-IR")}\nاکانت فروخته‌شده: ${stats.sold.toLocaleString("fa-IR")}\n\nبرای افزودن اکانت، محصول را انتخاب کنید.`, keyboard: stats.products.map((product) => [{ text: `➕ ${product.title}`, action: `flow:start:account_create:${product.id}` }]) };
+  registerView("admin.categories", async (_ctx, params) => {
+    const current = page(params);
+    const [categories, total] = await AdminService.listCategories(current);
+    return {
+      text: `📂 مدیریت دسته‌بندی‌ها\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n\n${categories.map((category) => `${category.icon ?? "📂"} ${category.name} · ${yesNo(category.isActive)} · محصول: ${category._count.products.toLocaleString("fa-IR")}`).join("\n") || "دسته‌بندی ثبت نشده است."}`,
+      keyboard: [
+        [{ text: "➕ دسته‌بندی جدید", action: "flow:start:category_create" }],
+        ...categories.map((category) => [{ text: `${category.icon ?? "📂"} مدیریت ${category.name}`, action: callbackFor("admin.category", { categoryId: category.id }) }]),
+        [{ text: "◀️ قبلی", action: callbackFor("admin.categories", { page: Math.max(current - 1, 1) }) }, { text: "بعدی ▶️", action: callbackFor("admin.categories", { page: current + 1 }) }],
+      ],
+    };
+  });
+
+  registerView("admin.category", async (_ctx, params) => {
+    const productPage = Math.max(Number(params.productPage ?? 1), 1);
+    const detail = await AdminService.categoryDetail(params.categoryId, productPage, 6);
+    if (!detail.category) return { text: "⚠️ دسته‌بندی پیدا نشد.", keyboard: [] };
+    return {
+      text: `${detail.category.icon ?? "📂"} ${detail.category.name}\n\nتوضیحات: ${detail.category.description ?? "—"}\nترتیب نمایش: ${detail.category.displayOrder.toLocaleString("fa-IR")}\nوضعیت: ${yesNo(detail.category.isActive)}\n\n📦 محصولات: ${detail.productCount.toLocaleString("fa-IR")}\n✅ محصولات فعال: ${detail.activeProductCount.toLocaleString("fa-IR")}\n🧾 فروش موفق: ${detail.salesCount.toLocaleString("fa-IR")}\n\nمحصولات این دسته:\n${detail.products.map((product) => `• ${product.title} · ${product.isActive ? "فعال" : "غیرفعال"} · فروش ${product._count.orders.toLocaleString("fa-IR")}`).join("\n") || "محصولی در این دسته نیست."}`,
+      keyboard: [
+        [{ text: "✏️ ویرایش", action: `flow:start:category_edit:${detail.category.id}` }, { text: detail.category.isActive ? "غیرفعال‌سازی" : "فعال‌سازی", action: `admin:category:status:${detail.category.id}:${detail.category.isActive ? "0" : "1"}` }],
+        [{ text: "🗑 حذف نرم", action: `admin:category:delete:${detail.category.id}` }, { text: "🧨 حذف دائمی", action: `admin:category:hard_delete:confirm:${detail.category.id}` }],
+        [{ text: "◀️ محصولات قبلی", action: callbackFor("admin.category", { categoryId: detail.category.id, productPage: Math.max(productPage - 1, 1) }) }, { text: "محصولات بعدی ▶️", action: callbackFor("admin.category", { categoryId: detail.category.id, productPage: productPage + 1 }) }],
+        [{ text: "📂 همه دسته‌بندی‌ها", action: callbackFor("admin.categories") }],
+      ],
+    };
+  });
+
+  registerView("admin.accounts", async (_ctx, params) => {
+    const current = page(params);
+    const status = ["available", "reserved", "sold", "disabled", "expired"].includes(params.status) ? params.status as "available" | "reserved" | "sold" | "disabled" | "expired" : undefined;
+    const productId = params.productId || undefined;
+    const [accounts, total] = await AdminService.listAccounts(current, 8, undefined, status, productId);
+    const stats = await AdminService.accountStats(productId);
+    const products = stats.products.slice(0, 10);
+    return {
+      text: `🗄 مدیریت موجودی اکانت‌ها\n\nکل: ${stats.total.toLocaleString("fa-IR")} · آماده: ${stats.available.toLocaleString("fa-IR")} · رزرو: ${stats.reserved.toLocaleString("fa-IR")} · فروخته: ${stats.sold.toLocaleString("fa-IR")} · غیرفعال: ${stats.disabled.toLocaleString("fa-IR")} · منقضی: ${stats.expired.toLocaleString("fa-IR")}\n${status ? `\nفیلتر وضعیت: ${accountStatusLabel(status)}` : ""}\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n\n${accounts.map((account) => `• ${account.username} · ${account.product.title} · ${accountStatusLabel(account.status)}`).join("\n") || "اکانتی ثبت نشده است."}`,
+      keyboard: [
+        [{ text: "✅ آماده", action: callbackFor("admin.accounts", { status: "available", productId }) }, { text: "⏳ رزرو", action: callbackFor("admin.accounts", { status: "reserved", productId }) }, { text: "💰 فروخته", action: callbackFor("admin.accounts", { status: "sold", productId }) }],
+        [{ text: "⏸ غیرفعال", action: callbackFor("admin.accounts", { status: "disabled", productId }) }, { text: "⌛ منقضی", action: callbackFor("admin.accounts", { status: "expired", productId }) }, { text: "نمایش همه", action: callbackFor("admin.accounts", { productId }) }],
+        ...accounts.map((account) => [{ text: `👁 ${account.username}`, action: callbackFor("admin.account", { accountId: account.id }) }]),
+        ...products.map((product) => [{ text: `➕ افزودن به ${product.title}`, action: `flow:start:account_create:${product.id}` }]),
+        [{ text: "◀️ قبلی", action: callbackFor("admin.accounts", { page: Math.max(current - 1, 1), status, productId }) }, { text: "بعدی ▶️", action: callbackFor("admin.accounts", { page: current + 1, status, productId }) }],
+      ],
+    };
+  });
+
+  registerView("admin.account", async (_ctx, params) => {
+    const account = await AdminService.accountDetail(params.accountId);
+    if (!account) return { text: "⚠️ اکانت پیدا نشد.", keyboard: [] };
+    const history = account.history.map((item) => `• ${item.createdAt.toLocaleString("fa-IR")} · ${item.action} · ${item.fromValue ?? "—"} ← ${item.toValue ?? "—"}`).join("\n") || "تاریخچه‌ای ثبت نشده است.";
+    return {
+      text: `🗄 جزئیات اکانت\n\n👤 نام کاربری: ${account.username}\n📦 محصول: ${account.product.title}\n📌 وضعیت: ${accountStatusLabel(account.status)}\n👥 کاربر: ${account.soldTo ?? account.reservedBy ?? "—"}\n\n🔗 لینک اشتراک:\n${account.subscriptionLink}\n\n⚙️ کانفیگ:\n${account.configLink}\n\n📜 تاریخچه:\n${history}`,
+      keyboard: [
+        [{ text: "✏️ ویرایش", action: `flow:start:account_edit:${account.id}` }, { text: "🚚 انتقال", action: callbackFor("admin.account.move", { accountId: account.id }) }],
+        [{ text: "✅ آماده", action: `admin:account:status:${account.id}:available` }, { text: "⏸ غیرفعال", action: `admin:account:status:${account.id}:disabled` }, { text: "⌛ منقضی", action: `admin:account:status:${account.id}:expired` }],
+        [{ text: "🗑 حذف", action: `admin:account:delete:confirm:${account.id}` }, { text: "🗄 موجودی", action: callbackFor("admin.accounts") }],
+      ],
+    };
+  });
+
+  registerView("admin.account.move", async (_ctx, params) => {
+    const account = await AdminService.accountDetail(params.accountId);
+    if (!account) return { text: "⚠️ اکانت پیدا نشد.", keyboard: [] };
+    const products = await ProductService.listActiveProducts(50);
+    return {
+      text: `🚚 انتقال اکانت ${account.username}\n\nمحصول فعلی: ${account.product.title}\nمحصول مقصد را انتخاب کنید:`,
+      keyboard: [
+        ...products.filter((product) => product.id !== account.productId).map((product) => [{ text: `${product.title} · ${product.category.name}`, action: `admin:account:move_to:${account.id}:${product.id}` }]),
+        [{ text: "↩️ بازگشت به اکانت", action: callbackFor("admin.account", { accountId: account.id }) }],
+      ],
+    };
+  });
+
+  registerView("admin.wallets", async (_ctx, params) => {
+    const current = page(params);
+    const [wallets, total] = await AdminService.listCryptoWallets(current);
+    return {
+      text: `💳 مدیریت کیف پول‌ها\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n\n${wallets.map((wallet) => `• ${wallet.displayName ?? wallet.coinName} · ${wallet.networkName} · ${walletStatusLabel(wallet.status)}`).join("\n") || "کیف پولی ثبت نشده است."}`,
+      keyboard: [
+        [{ text: "➕ کیف پول جدید", action: "flow:start:crypto_wallet_create" }],
+        ...wallets.map((wallet) => [{ text: `👁 ${wallet.displayName ?? wallet.coinName}`, action: callbackFor("admin.wallet", { walletId: wallet.id }) }]),
+        [{ text: "◀️ قبلی", action: callbackFor("admin.wallets", { page: Math.max(current - 1, 1) }) }, { text: "بعدی ▶️", action: callbackFor("admin.wallets", { page: current + 1 }) }],
+      ],
+    };
+  });
+
+  registerView("admin.wallet", async (_ctx, params) => {
+    const detail = await AdminService.walletDetail(params.walletId);
+    if (!detail.wallet) return { text: "⚠️ کیف پول پیدا نشد.", keyboard: [] };
+    return {
+      text: `💳 جزئیات کیف پول\n\nنام: ${detail.wallet.displayName ?? detail.wallet.coinName}\nنماد: ${detail.wallet.coinSymbol ?? detail.wallet.coinName}\nشبکه: ${detail.wallet.networkName}\nوضعیت: ${walletStatusLabel(detail.wallet.status)}\nترتیب: ${detail.wallet.displayOrder.toLocaleString("fa-IR")}\nنرخ: ${detail.wallet.rateToman > 0 ? money(detail.wallet.rateToman) : "—"}\nآخرین نرخ: ${detail.wallet.lastRateAt ? detail.wallet.lastRateAt.toLocaleString("fa-IR") : "—"}\n\nآدرس:\n${detail.wallet.walletAddress}\n\nپرداخت‌های فعال: ${detail.activePayments.toLocaleString("fa-IR")}\nواریزی‌های کل: ${detail.deposits.toLocaleString("fa-IR")}`,
+      keyboard: [
+        [{ text: "✏️ ویرایش", action: `flow:start:crypto_wallet_edit:${detail.wallet.id}` }, { text: detail.wallet.status === "active" ? "غیرفعال‌سازی" : "فعال‌سازی", action: `admin:wallet:status:${detail.wallet.id}:${detail.wallet.status === "active" ? "inactive" : "active"}` }],
+        [{ text: "🗑 حذف", action: `admin:wallet:delete:confirm:${detail.wallet.id}` }, { text: "💳 همه کیف پول‌ها", action: callbackFor("admin.wallets") }],
+      ],
+    };
   });
 
   registerView("admin.freeAccounts", async (_ctx, params) => {
@@ -423,7 +552,10 @@ ${inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleS
 
   registerView("admin.crypto", async () => {
     const stats = await AdminService.cryptoWalletStats();
-    return { text: `⚙️ تنظیمات مالی و پرداخت\n\nحداقل شارژ کیف پول: ${money(stats.setting.minimumTopupAmount)}\n\n${stats.wallets.map((wallet) => `• ${wallet.coinName} · شبکه ${wallet.networkName}\n  وضعیت: ${wallet.status === "active" ? "فعال" : "غیرفعال"}\n  نرخ: ${wallet.rateToman > 0 ? money(wallet.rateToman) : "در انتظار دریافت"}\n  آخرین بروزرسانی: ${wallet.lastRateAt ? wallet.lastRateAt.toLocaleString("fa-IR") : "—"}\n  آدرس: ${wallet.walletAddress}`).join("\n\n") || "هنوز کیف پولی ثبت نشده است."}`, keyboard: [[{ text: "➕ کیف پول", action: "flow:start:crypto_wallet_create" }], [{ text: "⚙️ حداقل شارژ", action: "flow:start:minimum_topup" }, { text: "⚙️ وضعیت فروشگاه", action: callbackFor("admin.store") }]] };
+    return { text: `⚙️ تنظیمات مالی و پرداخت
+
+حداقل شارژ کیف پول: ${money(stats.setting.minimumTopupAmount)}
+کیف پول‌های ثبت‌شده: ${stats.wallets.length.toLocaleString("fa-IR")}`, keyboard: [[{ text: "💳 مدیریت کیف پول‌ها", action: callbackFor("admin.wallets") }], [{ text: "⚙️ حداقل شارژ", action: "flow:start:minimum_topup" }, { text: "⚙️ وضعیت فروشگاه", action: callbackFor("admin.store") }]] };
   });
 
   registerView("admin.store", async () => {
@@ -479,6 +611,49 @@ ${channelLines || "کانالی ثبت نشده است."}
     return {
       text: `🎟 جزئیات کوپن ${direct.code}\n\nنوع: ${direct.type === "percentage" ? "درصدی" : "مبلغ ثابت"}\nمقدار: ${direct.type === "percentage" ? `${(direct.value || direct.discountPercent || 0).toLocaleString("fa-IR")}%` : money(direct.value)}\nوضعیت: ${direct.status}\nمصرف: ${direct.usedCount.toLocaleString("fa-IR")}/${direct.maxUses.toLocaleString("fa-IR")}\nسقف هر کاربر: ${direct.perUserLimit.toLocaleString("fa-IR")}\nحداقل خرید: ${money(direct.minimumPurchaseAmount)}\nانقضا: ${direct.expiresAt.toLocaleDateString("fa-IR")}`,
       keyboard: [[{ text: "✏️ ویرایش", action: `flow:start:coupon_edit:${direct.id}` }, { text: direct.status === "active" ? "⛔ غیرفعال" : "✅ فعال", action: `admin:coupon:status:${direct.id}:${direct.status === "active" ? "inactive" : "active"}` }], [{ text: "🗑 حذف نرم", action: `admin:coupon:soft_delete:${direct.id}` }, { text: "🧨 حذف دائمی", action: `admin:coupon:hard_delete:${direct.id}` }]],
+    };
+  });
+
+  registerView("admin.transactions", async () => {
+    const stats = await AdminService.dashboard(true);
+    return {
+      text: `💰 تراکنش‌ها
+
+واریزی‌های منتظر بررسی: ${stats.submittedDeposits.toLocaleString("fa-IR")}
+سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}
+درآمد موفق: ${money(stats.revenue)}
+
+بخش موردنظر را انتخاب کنید:`,
+      keyboard: [[{ text: "💳 واریزی‌ها", action: callbackFor("admin.deposits") }, { text: "🧾 سفارش‌ها", action: callbackFor("admin.orders") }]],
+    };
+  });
+
+  registerView("admin.notifications", async () => {
+    const [targets, recent] = await Promise.all([BroadcastService.targetStats(), BroadcastService.recent(5)]);
+    const targetLines = targets.map((item) => `• ${item.label}: ${item.count.toLocaleString("fa-IR")} نفر`).join("\n");
+    const recentLines = recent.map((item) => `• ${item.createdAt.toLocaleString("fa-IR")} · ${item.targetLabel}\n  ارسال: ${item.sent.toLocaleString("fa-IR")} · تحویل: ${item.delivered.toLocaleString("fa-IR")} · ناموفق: ${item.failed.toLocaleString("fa-IR")}`).join("\n") || "هنوز اطلاع‌رسانی ثبت نشده است.";
+    return {
+      text: `📢 اطلاع‌رسانی همگانی\n\nاز این بخش می‌توانید پیام مدیریتی را برای گروه‌های مشخص ارسال کنید.\n\nآمار مخاطبان:\n${targetLines}\n\nآخرین ارسال‌ها:\n${recentLines}`,
+      keyboard: [
+        [{ text: `📣 ${BROADCAST_TARGET_LABELS.all_users}`, action: "flow:start:broadcast_create:all_users" }],
+        [{ text: `✅ ${BROADCAST_TARGET_LABELS.active_customers}`, action: "flow:start:broadcast_create:active_customers" }, { text: `🕒 ${BROADCAST_TARGET_LABELS.inactive_customers}`, action: "flow:start:broadcast_create:inactive_customers" }],
+        [{ text: `🗄 ${BROADCAST_TARGET_LABELS.users_with_active_accounts}`, action: "flow:start:broadcast_create:users_with_active_accounts" }],
+        [{ text: `📭 ${BROADCAST_TARGET_LABELS.users_without_active_accounts}`, action: "flow:start:broadcast_create:users_without_active_accounts" }],
+      ],
+    };
+  });
+
+  registerView("admin.settings", async () => {
+    const stats = await AdminService.cryptoWalletStats();
+    return {
+      text: `⚙️ تنظیمات
+
+وضعیت فروشگاه: ${stats.setting.storeStatus === "active" ? "فعال ✅" : "غیرفعال ⛔"}
+حداقل شارژ کیف پول: ${money(stats.setting.minimumTopupAmount)}
+کیف پول‌ها: ${stats.wallets.length.toLocaleString("fa-IR")}
+
+بخش تنظیمات را انتخاب کنید:`,
+      keyboard: [[{ text: "🏪 وضعیت فروشگاه", action: callbackFor("admin.store") }, { text: "💳 حداقل شارژ", action: "flow:start:minimum_topup" }], [{ text: "💳 کیف پول‌ها", action: callbackFor("admin.wallets") }, { text: "⚙️ تنظیمات مالی", action: callbackFor("admin.crypto") }], [{ text: "📢 عضویت اجباری", action: callbackFor("admin.forcedJoin") }]],
     };
   });
 

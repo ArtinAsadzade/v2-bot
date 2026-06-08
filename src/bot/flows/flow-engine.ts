@@ -5,9 +5,10 @@ import { ProductService } from "../../modules/product/product.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
 import { CryptoWalletService, DepositService, FinancialSettingsService } from "../../modules/deposit/deposit.service";
 import { SupportService } from "../../modules/support/support.service";
-import { AdminService } from "../../modules/admin/admin.service";
+import { AdminService, type ProductAccountAdminStatus } from "../../modules/admin/admin.service";
 import { FreeAccountService } from "../../modules/free-account/free-account.service";
 import { ReferralService } from "../../modules/referral/referral.service";
+import { BroadcastService } from "../../modules/broadcast/broadcast.service";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
@@ -26,6 +27,30 @@ const parseCouponType = (value?: string) => {
   if (normalized === "percentage" || normalized.includes("درصد")) return "percentage" as const;
   return undefined;
 };
+
+
+function parseKeyValueLines(text: string): Record<string, string> {
+  return Object.fromEntries(
+    text
+      .split(/\n+/)
+      .map((line) => line.split(/[:=：]/, 2).map((part) => part.trim()))
+      .filter((parts): parts is [string, string] => parts.length === 2 && Boolean(parts[0]) && Boolean(parts[1])),
+  );
+}
+
+function parseActive(value?: string): boolean | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "active", "فعال", "بله", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "inactive", "غیرفعال", "خیر", "no", "off"].includes(normalized) || normalized.includes("غیر")) return false;
+  return undefined;
+}
+
+function parseProductAccountStatus(value?: string): ProductAccountAdminStatus | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  return ["available", "reserved", "sold", "disabled", "expired"].includes(normalized) ? normalized as ProductAccountAdminStatus : undefined;
+}
 
 
 type FlowStepResult = { done?: boolean; text: string; nextStep?: string; returnTo?: ViewState; keyboard?: UiKeyboard };
@@ -51,6 +76,20 @@ function requireUser(ctx: AppContext) {
     if (!user) throw new Error("کاربر پیدا نشد");
     return user;
   });
+}
+
+async function completeBroadcast(ctx: AppContext) {
+  const flow = ctx.session.flow;
+  const target = String(flow?.data.target ?? "");
+  const message = String(flow?.data.message ?? "").trim();
+  if (!BroadcastService.isTarget(target)) return "⚠️ گروه دریافت‌کنندگان معتبر نیست.";
+  const stats = await BroadcastService.send(target, message, String(ctx.from?.id ?? "admin"), (telegramId, text) => ctx.telegram.sendMessage(Number(telegramId), text));
+  return `✅ اطلاع‌رسانی پایان یافت
+
+گروه: ${stats.targetLabel}
+ارسال‌شده: ${stats.sent.toLocaleString("fa-IR")}
+تحویل موفق: ${stats.delivered.toLocaleString("fa-IR")}
+ناموفق: ${stats.failed.toLocaleString("fa-IR")}`;
 }
 
 const definitions: Record<FlowName, FlowDefinition> = {
@@ -146,6 +185,110 @@ const definitions: Record<FlowName, FlowDefinition> = {
     },
   },
 
+  broadcast_create: {
+    firstStep: "message",
+    prompt: async (ctx) => {
+      const target = String(ctx.session.flow?.data.target ?? "");
+      if (!BroadcastService.isTarget(target)) return "⚠️ گروه دریافت‌کنندگان معتبر نیست. لطفاً دوباره از منوی اطلاع‌رسانی اقدام کنید.";
+      const count = await BroadcastService.countRecipients(target);
+      return `📢 ارسال اطلاع‌رسانی
+
+گروه مخاطب: ${BroadcastService.targetLabel(target)}
+تعداد گیرندگان: ${count.toLocaleString("fa-IR")} نفر
+
+متن پیام را ارسال کنید. قبل از ارسال نهایی، پیش‌نمایش و دکمه تایید نمایش داده می‌شود.`;
+    },
+    async handleText(ctx, text) {
+      const flow = ctx.session.flow!;
+      const target = String(flow.data.target ?? "");
+      if (!BroadcastService.isTarget(target)) return { done: true, text: "⚠️ گروه دریافت‌کنندگان معتبر نیست.", returnTo: { id: "admin.notifications" } };
+      if (flow.step === "message") {
+        const message = text.trim();
+        if (message.length < 3) return { text: "متن اطلاع‌رسانی خیلی کوتاه است. لطفاً متن کامل‌تری ارسال کنید:" };
+        flow.data.message = message;
+        flow.step = "confirm";
+        const count = await BroadcastService.countRecipients(target);
+        return {
+          text: `📢 پیش‌نمایش اطلاع‌رسانی
+
+گروه: ${BroadcastService.targetLabel(target)}
+گیرندگان: ${count.toLocaleString("fa-IR")} نفر
+
+متن پیام:
+${message}
+
+برای ارسال نهایی تایید کنید.`,
+          nextStep: "confirm",
+          keyboard: [[{ text: "✅ تایید و ارسال", action: "broadcast:confirm" }]],
+        };
+      }
+      if (["ارسال", "تایید", "confirm", "send"].includes(text.trim().toLowerCase())) {
+        const result = await completeBroadcast(ctx);
+        return { done: true, text: result, returnTo: { id: "admin.notifications" } };
+      }
+      return { text: "برای ارسال نهایی از دکمه «✅ تایید و ارسال» استفاده کنید یا کلمه «ارسال» را بفرستید." };
+    },
+  },
+  category_create: {
+    firstStep: "fields",
+    prompt: `📂 اطلاعات دسته‌بندی را ارسال کنید.
+
+هر خط به شکل field: value
+
+name: عنوان
+description: توضیحات
+icon: 📂
+order: 1
+active: true`,
+    async handleText(ctx, text) {
+      const data = parseKeyValueLines(text);
+      const category = await AdminService.saveCategory(
+        {
+          name: data.name ?? data.title ?? data["عنوان"] ?? text.trim(),
+          description: data.description ?? data["توضیحات"],
+          icon: data.icon ?? data.emoji ?? data["آیکون"],
+          displayOrder: data.order || data.sort || data["ترتیب"] ? parseInteger(data.order ?? data.sort ?? data["ترتیب"] ?? "0") : undefined,
+          isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
+        },
+        String(ctx.from?.id ?? "admin"),
+      );
+      return { done: true, text: "✅ دسته‌بندی ذخیره شد.", returnTo: { id: "admin.category", params: { categoryId: category.id } } };
+    },
+  },
+  category_edit: {
+    firstStep: "fields",
+    prompt: async (ctx) => {
+      const categoryId = String(ctx.session.flow?.data.categoryId ?? "");
+      const detail = categoryId ? await AdminService.categoryDetail(categoryId) : undefined;
+      if (!detail?.category) return "⚠️ دسته‌بندی پیدا نشد.";
+      return `✏️ ویرایش دسته‌بندی ${detail.category.name}
+
+هر فیلدی را که می‌خواهید تغییر کند در یک خط بفرستید.
+
+name: ${detail.category.name}
+description: ${detail.category.description ?? ""}
+icon: ${detail.category.icon ?? ""}
+order: ${detail.category.displayOrder}
+active: ${detail.category.isActive}`;
+    },
+    async handleText(ctx, text) {
+      const flow = ctx.session.flow!;
+      const data = parseKeyValueLines(text);
+      const categoryId = String(flow.data.categoryId);
+      const category = await AdminService.saveCategory(
+        {
+          name: data.name ?? data.title ?? data["عنوان"],
+          description: data.description ?? data["توضیحات"],
+          icon: data.icon ?? data.emoji ?? data["آیکون"],
+          displayOrder: data.order || data.sort || data["ترتیب"] ? parseInteger(data.order ?? data.sort ?? data["ترتیب"] ?? "0") : undefined,
+          isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
+        },
+        String(ctx.from?.id ?? "admin"),
+        categoryId,
+      );
+      return { done: true, text: "✅ دسته‌بندی به‌روزرسانی شد.", returnTo: { id: "admin.category", params: { categoryId: category.id } } };
+    },
+  },
   product_create: {
     firstStep: "category",
     prompt: "📦 نام دسته‌بندی محصول را وارد کنید:",
@@ -179,6 +322,40 @@ const definitions: Record<FlowName, FlowDefinition> = {
       return { done: true, text: "✅ محصول جدید ثبت شد.", returnTo: { id: "admin.products" } };
     },
   },
+  product_edit: {
+    firstStep: "fields",
+    prompt: async (ctx) => {
+      const productId = String(ctx.session.flow?.data.productId ?? "");
+      const detail = productId ? await AdminService.productDetail(productId) : undefined;
+      if (!detail?.product) return "⚠️ محصول پیدا نشد.";
+      return `✏️ ویرایش محصول ${detail.product.title}
+
+هر فیلدی را که می‌خواهید تغییر کند در یک خط بفرستید.
+
+title: ${detail.product.title}
+categoryId: ${detail.product.categoryId}
+price: ${detail.product.price}
+duration: ${detail.product.duration}
+active: ${detail.product.isActive}`;
+    },
+    async handleText(ctx, text) {
+      const flow = ctx.session.flow!;
+      const data = parseKeyValueLines(text);
+      const productId = String(flow.data.productId);
+      const product = await AdminService.updateProduct(
+        productId,
+        {
+          title: data.title ?? data.name ?? data["عنوان"],
+          categoryId: data.categoryId ?? data.category ?? data["دسته"],
+          price: data.price || data["قیمت"] ? parseInteger(data.price ?? data["قیمت"] ?? "0") : undefined,
+          duration: data.duration || data["مدت"] ? parseInteger(data.duration ?? data["مدت"] ?? "0") : undefined,
+          isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
+        },
+        String(ctx.from?.id ?? "admin"),
+      );
+      return { done: true, text: "✅ محصول به‌روزرسانی شد.", returnTo: { id: "admin.product", params: { productId: product.id } } };
+    },
+  },
   account_create: {
     firstStep: "username",
     prompt: "🔐 نام کاربری اکانت را وارد کنید:",
@@ -201,6 +378,42 @@ const definitions: Record<FlowName, FlowDefinition> = {
         configLink: text.trim(),
       });
       return { done: true, text: "✅ اکانت به موجودی محصول اضافه شد.", returnTo: { id: "admin.product", params: { productId } } };
+    },
+  },
+  account_edit: {
+    firstStep: "fields",
+    prompt: async (ctx) => {
+      const accountId = String(ctx.session.flow?.data.accountId ?? "");
+      const account = accountId ? await AdminService.accountDetail(accountId) : undefined;
+      if (!account) return "⚠️ اکانت پیدا نشد.";
+      return `✏️ ویرایش اکانت ${account.username}
+
+هر فیلدی را که می‌خواهید تغییر کند در یک خط بفرستید.
+
+username: ${account.username}
+subscriptionLink: ${account.subscriptionLink}
+configLink: ${account.configLink}
+productId: ${account.productId}
+status: ${account.status}
+
+وضعیت‌ها: available, reserved, sold, disabled, expired`;
+    },
+    async handleText(ctx, text) {
+      const flow = ctx.session.flow!;
+      const data = parseKeyValueLines(text);
+      const accountId = String(flow.data.accountId);
+      const account = await AdminService.updateAccount(
+        accountId,
+        {
+          username: data.username ?? data["نام کاربری"],
+          subscriptionLink: data.subscriptionLink ?? data.sub ?? data["ساب"],
+          configLink: data.configLink ?? data.config ?? data["کانفیگ"],
+          productId: data.productId ?? data.product ?? data["محصول"],
+          status: parseProductAccountStatus(data.status ?? data["وضعیت"]),
+        },
+        String(ctx.from?.id ?? "admin"),
+      );
+      return { done: true, text: "✅ اکانت ذخیره شد.", returnTo: { id: "admin.account", params: { accountId: account.id } } };
     },
   },
   free_account_create: {
@@ -425,7 +638,45 @@ status: ${coupon.status} (active/inactive)`;
         { coinName: String(flow.data.coinName), networkName: String(flow.data.networkName), walletAddress: String(flow.data.walletAddress), status },
         String(ctx.from?.id ?? "admin"),
       );
-      return { done: true, text: "✅ کیف پول رمز ارزی ذخیره شد. نرخ به‌صورت خودکار دریافت می‌شود.", returnTo: { id: "admin.crypto" } };
+      return { done: true, text: "✅ کیف پول رمز ارزی ذخیره شد. نرخ به‌صورت خودکار دریافت می‌شود.", returnTo: { id: "admin.wallets" } };
+    },
+  },
+  crypto_wallet_edit: {
+    firstStep: "fields",
+    prompt: async (ctx) => {
+      const walletId = String(ctx.session.flow?.data.walletId ?? "");
+      const detail = walletId ? await AdminService.walletDetail(walletId) : undefined;
+      if (!detail?.wallet) return "⚠️ کیف پول پیدا نشد.";
+      return `✏️ ویرایش کیف پول ${detail.wallet.displayName ?? detail.wallet.coinName}
+
+هر فیلدی را که می‌خواهید تغییر کند در یک خط بفرستید.
+
+coinName: ${detail.wallet.coinName}
+coinSymbol: ${detail.wallet.coinSymbol ?? detail.wallet.coinName}
+networkName: ${detail.wallet.networkName}
+displayName: ${detail.wallet.displayName ?? ""}
+walletAddress: ${detail.wallet.walletAddress}
+displayOrder: ${detail.wallet.displayOrder}
+status: ${detail.wallet.status}`;
+    },
+    async handleText(ctx, text) {
+      const flow = ctx.session.flow!;
+      const data = parseKeyValueLines(text);
+      const walletId = String(flow.data.walletId);
+      const wallet = await AdminService.saveCryptoWallet(
+        {
+          coinName: data.coinName ?? data.coin ?? data["نام ارز"],
+          coinSymbol: data.coinSymbol ?? data.symbol ?? data["نماد"],
+          networkName: data.networkName ?? data.network ?? data["شبکه"],
+          displayName: data.displayName ?? data.display ?? data["نام نمایشی"],
+          walletAddress: data.walletAddress ?? data.address ?? data["آدرس"],
+          displayOrder: data.displayOrder || data.order || data.sort || data["ترتیب"] ? parseInteger(data.displayOrder ?? data.order ?? data.sort ?? data["ترتیب"] ?? "0") : undefined,
+          status: parseStatus(data.status ?? data.active ?? data["وضعیت"]),
+        },
+        String(ctx.from?.id ?? "admin"),
+        walletId,
+      );
+      return { done: true, text: "✅ کیف پول به‌روزرسانی شد.", returnTo: { id: "admin.wallet", params: { walletId: wallet.id } } };
     },
   },
   minimum_topup: {
@@ -556,6 +807,23 @@ export function registerFlowEngine(bot: AppBot) {
     await renderPanel(ctx, currentReturnTo(ctx), "replace");
   });
 
+  bot.action("broadcast:confirm", async (ctx) => {
+    const flow = ctx.session.flow;
+    if (!flow || flow.name !== "broadcast_create" || flow.step !== "confirm") {
+      await ctx.answerCbQuery("درخواست ارسال فعالی وجود ندارد");
+      return;
+    }
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
+      await ctx.answerCbQuery("دسترسی غیرمجاز");
+      return;
+    }
+    await ctx.answerCbQuery("در حال ارسال...");
+    const result = await completeBroadcast(ctx);
+    ctx.session.flow = undefined;
+    await ctx.reply(result);
+    await renderPanel(ctx, { id: "admin.notifications" }, "replace");
+  });
+
   bot.action(/^flow:start:([^:]+)(?::([^:]+))?(?::([^:]+))?$/, async (ctx) => {
     await ctx.answerCbQuery();
     const name = ctx.match[1];
@@ -564,13 +832,18 @@ export function registerFlowEngine(bot: AppBot) {
       return;
     }
     if (name === "coupon_code") return startFlow(ctx, "coupon_code", { productId: ctx.match[2] });
-    const adminOnlyFlows: FlowName[] = ["product_create", "account_create", "coupon_create", "coupon_edit", "product_price", "crypto_wallet_create", "minimum_topup", "referral_tier_create", "store_status", "forced_join_create", "wallet_adjust", "free_account_create", "free_account_edit"];
+    const adminOnlyFlows: FlowName[] = ["product_create", "product_edit", "account_create", "account_edit", "coupon_create", "coupon_edit", "category_create", "category_edit", "product_price", "crypto_wallet_create", "crypto_wallet_edit", "minimum_topup", "referral_tier_create", "store_status", "forced_join_create", "wallet_adjust", "broadcast_create", "free_account_create", "free_account_edit"];
     if (adminOnlyFlows.includes(name) && (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))) {
       await ctx.answerCbQuery("دسترسی غیرمجاز");
       return;
     }
     if (name === "coupon_edit") return startFlow(ctx, "coupon_edit", { couponId: ctx.match[2] });
+    if (name === "broadcast_create") return startFlow(ctx, "broadcast_create", { target: ctx.match[2] });
+    if (name === "category_edit") return startFlow(ctx, "category_edit", { categoryId: ctx.match[2] });
+    if (name === "product_edit") return startFlow(ctx, "product_edit", { productId: ctx.match[2] });
     if (name === "account_create") return startFlow(ctx, "account_create", { productId: ctx.match[2] });
+    if (name === "account_edit") return startFlow(ctx, "account_edit", { accountId: ctx.match[2] });
+    if (name === "crypto_wallet_edit") return startFlow(ctx, "crypto_wallet_edit", { walletId: ctx.match[2] });
     if (name === "free_account_create" || name === "free_account_edit") {
       if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
         await ctx.answerCbQuery("دسترسی غیرمجاز");

@@ -26,7 +26,13 @@ export type PanelViewId =
   | "admin.user.blocks"
   | "admin.products"
   | "admin.product"
+  | "admin.categories"
+  | "admin.category"
   | "admin.accounts"
+  | "admin.account"
+  | "admin.account.move"
+  | "admin.wallets"
+  | "admin.wallet"
   | "admin.freeAccounts"
   | "admin.coupons"
   | "admin.coupon"
@@ -35,6 +41,9 @@ export type PanelViewId =
   | "admin.forcedJoin"
   | "admin.referrals"
   | "admin.analytics"
+  | "admin.transactions"
+  | "admin.notifications"
+  | "admin.settings"
   | "admin.deposits"
   | "admin.deposit"
   | "admin.orders"
@@ -95,7 +104,13 @@ const PANEL_VIEW_IDS = new Set<string>([
   "admin.user.blocks",
   "admin.products",
   "admin.product",
+  "admin.categories",
+  "admin.category",
   "admin.accounts",
+  "admin.account",
+  "admin.account.move",
+  "admin.wallets",
+  "admin.wallet",
   "admin.freeAccounts",
   "admin.coupons",
   "admin.coupon",
@@ -104,6 +119,9 @@ const PANEL_VIEW_IDS = new Set<string>([
   "admin.forcedJoin",
   "admin.referrals",
   "admin.analytics",
+  "admin.transactions",
+  "admin.notifications",
+  "admin.settings",
   "admin.deposits",
   "admin.deposit",
   "admin.orders",
