@@ -123,9 +123,9 @@ export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?
   const normalized: InlineKeyboardButton.CallbackButton[][] = rows.map((row) => row.map((button) => Markup.button.callback(button.text, button.action)));
   const nav: InlineKeyboardButton.CallbackButton[] = [];
   if (options.back) nav.push(Markup.button.callback("⬅️ بازگشت", "nav:back"));
-  if (options.home) nav.push(Markup.button.callback("🏠 خانه", callbackFor("home")));
+  if (options.home) nav.push(Markup.button.callback("🏠 منوی اصلی", callbackFor("home")));
   if (nav.length) normalized.push(nav);
-  if (options.cancel) normalized.push([Markup.button.callback("❌ لغو", "flow:cancel")]);
+  if (options.cancel) normalized.push([Markup.button.callback("❌ لغو عملیات", "flow:cancel")]);
   return Markup.inlineKeyboard(normalized);
 }
 
@@ -142,16 +142,32 @@ export async function renderPanel(ctx: AppContext, state: ViewState, mode: "push
   if (mode === "push") ctx.session.navigation.stack.push(state);
   if (mode === "replace") ctx.session.navigation.stack = [state];
 
-  const extra = { parse_mode: result.parseMode, ...panelKeyboard(result.keyboard, { back: state.id !== "home", home: state.id !== "home" }) };
+  const keyboard = panelKeyboard(result.keyboard, { back: state.id !== "home", home: state.id !== "home" });
+  const extra = { parse_mode: result.parseMode, ...keyboard };
+  const fallbackReply = async () => {
+    const sent = await ctx.reply(result.text, extra);
+    ctx.session.navigation!.panelMessageId = sent.message_id;
+  };
+
   if (ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message) {
     await ctx.editMessageText(result.text, extra).catch(async () => {
-      await ctx.editMessageReplyMarkup(panelKeyboard(result.keyboard, { back: state.id !== "home", home: state.id !== "home" }).reply_markup).catch(() => undefined);
-      await ctx.reply(result.text, extra);
+      await ctx.editMessageReplyMarkup(keyboard.reply_markup).catch(() => undefined);
+      await fallbackReply();
     });
     return;
   }
-  const sent = await ctx.reply(result.text, extra);
-  ctx.session.navigation.panelMessageId = sent.message_id;
+
+  const chatId = ctx.chat?.id;
+  const panelMessageId = ctx.session.navigation.panelMessageId;
+  if (chatId && panelMessageId) {
+    const edited = await ctx.telegram
+      .editMessageText(chatId, panelMessageId, undefined, result.text, extra)
+      .then(() => true)
+      .catch(() => false);
+    if (edited) return;
+  }
+
+  await fallbackReply();
 }
 
 export async function goBack(ctx: AppContext): Promise<void> {
