@@ -3,7 +3,6 @@ import type { Prisma, PaymentInvoice } from "@prisma/client";
 import { PaymentInvoiceStatus, PaymentInvoiceType } from "@prisma/client";
 import { prisma } from "../../services/prisma";
 import { WalletService } from "../wallet/wallet.service";
-import { ProductService } from "../product/product.service";
 import { CouponService } from "../coupon/coupon.service";
 import { AdminService } from "../admin/admin.service";
 import { eventBus } from "../../services/event-bus.service";
@@ -25,6 +24,14 @@ type AuditData = { userId?: string | null; invoiceId?: string | null; action: st
 
 type PurchaseMethod = "WALLET" | "INSTANT";
 
+type ProductInvoiceQuote = {
+  originalAmount: number;
+  discountAmount: number;
+  finalAmount: number;
+  couponId: string | null;
+  couponCode: string | null;
+};
+
 class GatewayHttpError extends Error {
   constructor(public readonly status: number, message: string) {
     super(message);
@@ -38,7 +45,7 @@ class GatewayConnectionError extends Error {
 }
 
 const CALLBACK_TOKEN_PARAM = "invoice_id";
-const ALREADY_PROCESSED_FA = "Already processed.";
+const ALREADY_PROCESSED_FA = "⚠️ این پرداخت قبلاً پردازش شده است.";
 const DEFAULT_GATEWAY_API_BASE_URL = "http://136.244.104.77:5000/api/v1";
 
 function assertPositiveAmount(amount: number) {
@@ -94,6 +101,18 @@ function invoiceCallbackUrl(baseCallbackUrl: string, invoiceId: string) {
   const url = new URL(withId);
   url.searchParams.set(CALLBACK_TOKEN_PARAM, invoiceId);
   return url.toString();
+}
+
+
+function metadataAmount(metadata: Record<string, unknown>) {
+  const query = metadata.query && typeof metadata.query === "object" ? (metadata.query as Record<string, unknown>) : {};
+  for (const key of ["amount", "price", "paid_amount", "gatewayAmount"]) {
+    const raw = metadata[key] ?? query[key];
+    if (raw === undefined || raw === null || raw === "") continue;
+    const value = typeof raw === "number" ? raw : Number(String(raw).replace(/[,،\s]/g, ""));
+    if (Number.isInteger(value) && value > 0) return value;
+  }
+  return undefined;
 }
 
 function safeJson(value: unknown) {
@@ -336,22 +355,66 @@ export class PaymentService {
     return { parsed: parseGatewayResponse(raw), raw, payload };
   }
 
-  static async createInvoice(data: { userId: string; amount: number; type: PaymentInvoiceType; productId?: string }) {
+  static async quoteProductInvoice(tx: DbClient, data: { userId: string; productId: string; couponCode?: string }): Promise<ProductInvoiceQuote> {
+    const product = await this.validateProductForPurchase(data.userId, data.productId, undefined, tx);
+    const originalAmount = product.price;
+    let discountAmount = 0;
+    let finalAmount = originalAmount;
+    let couponId: string | null = null;
+    let couponCode: string | null = null;
+    if (data.couponCode?.trim()) {
+      const coupon = await CouponService.validateForUser(data.couponCode, data.userId, tx, originalAmount);
+      const calculation = CouponService.calculate(coupon, originalAmount);
+      couponId = coupon.id;
+      couponCode = coupon.code;
+      discountAmount = calculation.discountAmount;
+      finalAmount = calculation.finalAmount;
+    }
+
+    assertPositiveAmount(finalAmount);
+    return { originalAmount, discountAmount, finalAmount, couponId, couponCode };
+  }
+
+  private static assertInvoiceAmountIntegrity(invoice: Pick<PaymentInvoice, "amount" | "originalAmount" | "discountAmount" | "gatewayAmount">) {
+    const expectedAmount = invoice.originalAmount > 0 ? invoice.originalAmount - invoice.discountAmount : invoice.amount;
+    if (expectedAmount !== invoice.amount) return { ok: false as const, reason: "stored_final_amount_mismatch", expectedAmount };
+    if (invoice.gatewayAmount !== null && invoice.gatewayAmount !== invoice.amount) return { ok: false as const, reason: "gateway_amount_mismatch", expectedAmount };
+    return { ok: true as const, expectedAmount };
+  }
+
+  static async createInvoice(data: { userId: string; amount: number; type: PaymentInvoiceType; productId?: string; originalAmount?: number; discountAmount?: number; couponId?: string | null; couponCode?: string | null }) {
     assertPositiveAmount(data.amount);
     const gateway = await PaymentGatewayService.get();
     if (!gateway.enabled) throw new Error("پرداخت آنی در حال حاضر غیرفعال است");
     PaymentGatewayService.validateConfig(gateway);
 
     await this.assertUserCanPay(data.userId);
-    if (data.type === "PRODUCT_PURCHASE") await this.validateProductForPurchase(data.userId, data.productId, data.amount);
+    if (data.type === "PRODUCT_PURCHASE") await this.validateProductForPurchase(data.userId, data.productId, undefined);
+
+    const originalAmount = data.originalAmount ?? data.amount;
+    const discountAmount = data.discountAmount ?? 0;
+    if (originalAmount - discountAmount !== data.amount) throw new Error("مبلغ نهایی فاکتور با تخفیف همخوانی ندارد");
 
     const invoice = await prisma.paymentInvoice.create({
-      data: { userId: data.userId, amount: data.amount, gatewayAmount: data.amount, callbackToken: crypto.randomBytes(32).toString("hex"), type: data.type, status: "PENDING", productId: data.productId },
+      data: {
+        userId: data.userId,
+        amount: data.amount,
+        originalAmount,
+        discountAmount,
+        couponId: data.couponId ?? undefined,
+        couponCode: data.couponCode ?? undefined,
+        gatewayAmount: data.amount,
+        callbackToken: crypto.randomBytes(32).toString("hex"),
+        type: data.type,
+        status: "PENDING",
+        productId: data.productId,
+      },
     });
-    await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "Invoice Created", metadata: { type: data.type, amount: data.amount, status: "PENDING" } });
+    await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "INVOICE_CREATED", metadata: { type: data.type, originalAmount, discountAmount, finalAmount: data.amount, couponId: data.couponId, couponCode: data.couponCode, status: "PENDING" } });
+    if (data.couponId) await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "COUPON_APPLIED", metadata: { couponId: data.couponId, couponCode: data.couponCode, originalAmount, discountAmount, finalAmount: data.amount, usageRecorded: false } });
 
     const callbackUrl = invoiceCallbackUrl(gateway.callbackUrl, invoice.id);
-    await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "Gateway Request", metadata: { endpoint: "/invoice/create", price: data.amount, callback_url: callbackUrl } });
+    await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_LINK_CREATED", metadata: { endpoint: "/invoice/create", price: data.amount, callback_url: callbackUrl } });
     try {
       const gatewayResult = await this.requestGatewayInvoice(gateway, data.amount, callbackUrl);
       await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "Gateway Response", metadata: gatewayResult.raw as Record<string, unknown> });
@@ -372,8 +435,11 @@ export class PaymentService {
     if (!invoice) return { statusCode: 404, text: "Payment invoice not found." };
 
     await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "Callback Received", metadata: { invoice_id: invoiceId, ...metadata } });
-    if (invoice.gatewayAmount !== null && invoice.gatewayAmount !== invoice.amount) {
-      await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "Failed Processing", metadata: { stage: "callback_security", reason: "amount_mismatch", gatewayAmount: invoice.gatewayAmount, amount: invoice.amount } });
+    const callbackAmount = metadataAmount(metadata);
+    const integrity = this.assertInvoiceAmountIntegrity(invoice);
+    if (!integrity.ok || (callbackAmount !== undefined && callbackAmount !== integrity.expectedAmount)) {
+      await prisma.paymentInvoice.updateMany({ where: { id: invoice.id, status: "PENDING" }, data: { status: "FAILED", verifiedAt: new Date() } });
+      await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "Failed Processing", metadata: { stage: "callback_security", reason: !integrity.ok ? integrity.reason : "callback_amount_mismatch", gatewayAmount: invoice.gatewayAmount, callbackAmount, amount: invoice.amount, originalAmount: invoice.originalAmount, discountAmount: invoice.discountAmount, amountExpected: integrity.expectedAmount } });
       return { statusCode: 409, text: "Invoice amount mismatch." };
     }
 
@@ -389,17 +455,19 @@ export class PaymentService {
 
         const fresh = await tx.paymentInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
         if (fresh.status !== "PAID") return { alreadyProcessed: true as const };
-        await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "Payment Confirmed", metadata: { payId: fresh.payId, amount: fresh.amount } });
+        await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PAYMENT_SUCCESS", metadata: { payId: fresh.payId, amount: fresh.amount } });
 
         if (fresh.type === "WALLET_TOPUP") {
           const user = await this.creditWallet(tx, { userId: fresh.userId, amount: fresh.amount, reason: `شارژ کیف پول با پرداخت آنی - فاکتور ${fresh.id}`, actorId: fresh.userId, invoiceId: fresh.id, referenceId: `invoice:${fresh.id}` });
-          const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { completedAt: new Date(), verifiedAt: new Date() } });
+          const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date() } });
+          await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "INVOICE_COMPLETED", metadata: { amount: fresh.amount, type: fresh.type } });
           return { invoice: completed, user, type: fresh.type as PaymentInvoiceType };
         }
 
-        const delivered = await this.purchaseProduct(tx, { userId: fresh.userId, productId: fresh.productId ?? "", method: "INSTANT", invoice: fresh });
-        const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { completedAt: new Date(), verifiedAt: new Date(), orderId: delivered.order.id } });
-        await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "Order Delivered", metadata: { orderId: delivered.order.id, productId: delivered.product.id, accountId: delivered.account.id } });
+        const delivered = await this.purchaseProduct(tx, { userId: fresh.userId, productId: fresh.productId ?? "", couponCode: fresh.couponCode ?? undefined, method: "INSTANT", invoice: fresh });
+        const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), orderId: delivered.order.id } });
+        await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PRODUCT_DELIVERED", metadata: { orderId: delivered.order.id, productId: delivered.product.id, accountId: delivered.account.id } });
+        await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "INVOICE_COMPLETED", metadata: { orderId: delivered.order.id, amount: fresh.amount, type: fresh.type } });
         return { invoice: completed, ...delivered, type: fresh.type as PaymentInvoiceType };
       });
       if ("alreadyProcessed" in result) return { statusCode: 200, text: ALREADY_PROCESSED_FA };
@@ -414,7 +482,7 @@ export class PaymentService {
 
   static async creditWallet(tx: TxClient, data: { userId: string; amount: number; reason: string; actorId: string; invoiceId?: string; referenceId?: string }) {
     const user = await WalletService.credit(data.userId, data.amount, data.reason, tx, { actorId: data.actorId, referenceId: data.referenceId });
-    await audit(tx, { userId: data.userId, invoiceId: data.invoiceId, action: "Wallet Credited", actorId: data.actorId, metadata: { amount: data.amount, balance: user.balance, reason: data.reason, referenceId: data.referenceId } });
+    await audit(tx, { userId: data.userId, invoiceId: data.invoiceId, action: "WALLET_CREDITED", actorId: data.actorId, metadata: { amount: data.amount, balance: user.balance, reason: data.reason, referenceId: data.referenceId } });
     return user;
   }
 
@@ -426,11 +494,11 @@ export class PaymentService {
 
   static async purchaseProduct(
     tx: TxClient,
-    data: { userId: string; productId: string; couponCode?: string; method: PurchaseMethod; invoice?: Pick<PaymentInvoice, "id" | "amount" | "productId" | "userId" | "status"> },
+    data: { userId: string; productId: string; couponCode?: string; method: PurchaseMethod; invoice?: Pick<PaymentInvoice, "id" | "amount" | "originalAmount" | "discountAmount" | "couponId" | "couponCode" | "productId" | "userId" | "status"> },
   ) {
     if (!data.productId) throw new Error("محصول فاکتور مشخص نیست");
     await this.assertUserCanPay(data.userId, tx);
-    const product = await this.validateProductForPurchase(data.userId, data.productId, data.invoice?.amount, tx);
+    const product = await this.validateProductForPurchase(data.userId, data.productId, undefined, tx);
 
     let discountAmount = 0;
     let couponId: string | null = null;
@@ -439,7 +507,7 @@ export class PaymentService {
     let totalAmount = originalAmount;
 
     if (data.couponCode) {
-      if (data.method !== "WALLET") throw new Error("کد تخفیف فقط برای پرداخت با کیف پول پشتیبانی می‌شود");
+      if (data.method === "INSTANT" && !data.invoice) throw new Error("کد تخفیف برای پرداخت آنی فقط از مسیر فاکتور معتبر است");
       const coupon = await CouponService.validateForUser(data.couponCode, data.userId, tx, originalAmount);
       couponId = coupon.id;
       couponMaxUses = coupon.maxUses;
@@ -450,7 +518,7 @@ export class PaymentService {
 
     if (data.invoice) {
       if (data.invoice.userId !== data.userId || data.invoice.productId !== data.productId) throw new Error("فاکتور با خرید همخوانی ندارد");
-      if (data.invoice.amount !== totalAmount) throw new Error("مبلغ فاکتور با مبلغ خرید همخوانی ندارد");
+      if (data.invoice.amount !== totalAmount || data.invoice.originalAmount !== originalAmount || data.invoice.discountAmount !== discountAmount || (data.invoice.couponId ?? null) !== couponId) throw new Error("مبلغ فاکتور با مبلغ خرید همخوانی ندارد");
       if (data.invoice.status !== "PAID") throw new Error("پرداخت تایید نشده است");
     }
 
@@ -482,14 +550,14 @@ export class PaymentService {
       const usageSlot = await tx.couponUsage.count({ where: { couponId, userId: data.userId } });
       if (usageSlot >= (await tx.coupon.findUniqueOrThrow({ where: { id: couponId }, select: { perUserLimit: true } })).perUserLimit) throw new Error("سقف استفاده شما از این کد تخفیف تکمیل شده است");
       await tx.couponUsage.create({ data: { couponId, userId: data.userId, orderId: order.id, usageSlot } });
-      await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Coupon Used", metadata: { couponId, orderId: order.id, usageSlot, originalAmount, discountAmount, finalAmount: totalAmount } });
+      await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "COUPON_USAGE_RECORDED", metadata: { couponId, orderId: order.id, usageSlot, originalAmount, discountAmount, finalAmount: totalAmount } });
     }
 
     const soldAt = new Date();
     const sold = await tx.productAccount.updateMany({ where: { id: account.id, productId: product.id, status: "reserved", reservedBy: data.userId, AND: [unassignedInventoryWhere()] }, data: { status: "sold", soldTo: data.userId, soldAt, reservedBy: null, reservedAt: null } });
     if (sold.count !== 1) throw new Error("تحویل اکانت ناموفق بود");
     await tx.productAccountHistory.create({ data: { accountId: account.id, actorId: data.userId, action: "Inventory Sold", fromValue: "reserved", toValue: "sold", metadata: JSON.stringify({ invoiceId: data.invoice?.id, orderId: order.id, orderItemId: orderItem.id, productId: product.id, soldAt, expiresAt, method: data.method }) } });
-    await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Product Purchased", metadata: { productId: product.id, orderId: order.id, accountId: account.id, method: data.method, originalAmount, discountAmount, finalAmount: totalAmount } });
+    await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "PRODUCT_DELIVERED", metadata: { productId: product.id, orderId: order.id, accountId: account.id, method: data.method, originalAmount, discountAmount, finalAmount: totalAmount } });
     await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Sold", metadata: { accountId: account.id, orderId: order.id } });
 
     const deliveredAccount = await tx.productAccount.findUniqueOrThrow({ where: { id: account.id } });
@@ -537,13 +605,21 @@ export class PaymentService {
 
 export class PaymentInvoiceService {
   static async createWalletTopupInvoice(userId: string, amount: number) {
-    return PaymentService.createInvoice({ userId, amount, type: "WALLET_TOPUP" });
+    return PaymentService.createInvoice({ userId, amount, originalAmount: amount, discountAmount: 0, type: "WALLET_TOPUP" });
   }
 
-  static async createProductInvoice(userId: string, productId: string) {
-    const product = await ProductService.getProduct(productId);
-    if (!product) throw new Error("محصول پیدا نشد");
-    return PaymentService.createInvoice({ userId, amount: product.price, type: "PRODUCT_PURCHASE", productId });
+  static async createProductInvoice(userId: string, productId: string, couponCode?: string) {
+    const quote = await prisma.$transaction((tx) => PaymentService.quoteProductInvoice(tx, { userId, productId, couponCode }));
+    return PaymentService.createInvoice({
+      userId,
+      amount: quote.finalAmount,
+      originalAmount: quote.originalAmount,
+      discountAmount: quote.discountAmount,
+      couponId: quote.couponId,
+      couponCode: quote.couponCode,
+      type: "PRODUCT_PURCHASE",
+      productId,
+    });
   }
 
   static async processCallback(invoiceId: string, metadata: Record<string, unknown> = {}) {
@@ -555,13 +631,13 @@ export class PaymentInvoiceService {
     const where: Prisma.PaymentInvoiceWhereInput = { ...(status ? { status } : {}) };
     if (query) where.OR = [{ id: query }, { payId: query }, { user: { is: { telegramId: query } } }];
     return Promise.all([
-      prisma.paymentInvoice.findMany({ where, include: { user: true, product: true }, orderBy: { createdAt: "desc" }, skip, take }),
+      prisma.paymentInvoice.findMany({ where, include: { user: true, product: true, coupon: true }, orderBy: { createdAt: "desc" }, skip, take }),
       prisma.paymentInvoice.count({ where }),
     ]);
   }
 
   static async detail(invoiceId: string) {
-    return prisma.paymentInvoice.findUnique({ where: { id: invoiceId }, include: { user: true, product: true, order: true, audits: { orderBy: { createdAt: "desc" }, take: 20 } } });
+    return prisma.paymentInvoice.findUnique({ where: { id: invoiceId }, include: { user: true, product: true, coupon: true, order: true, audits: { orderBy: { createdAt: "desc" }, take: 20 } } });
   }
 
   static async stats() {
@@ -569,7 +645,7 @@ export class PaymentInvoiceService {
       prisma.paymentInvoice.count({ where: { status: { in: ["PAID", "COMPLETED"] } } }),
       prisma.paymentInvoice.count({ where: { status: "FAILED" } }),
       prisma.paymentInvoice.count({ where: { status: "PENDING" } }),
-      prisma.paymentInvoice.findMany({ include: { user: true, product: true }, orderBy: { createdAt: "desc" }, take: 5 }),
+      prisma.paymentInvoice.findMany({ include: { user: true, product: true, coupon: true }, orderBy: { createdAt: "desc" }, take: 5 }),
     ]);
     return { successful, failed, pending, recent };
   }

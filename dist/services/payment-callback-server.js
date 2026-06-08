@@ -9,9 +9,14 @@ const payment_service_1 = require("../modules/payment/payment.service");
 const prisma_1 = require("./prisma");
 const logger_1 = require("./logger");
 const money = (value) => `${value.toLocaleString("fa-IR")} تومان`;
-function invoiceIdFromRequest(req) {
-    const url = new URL(req.url ?? "/", "http://localhost");
+function parsedCallbackUrl(req) {
+    return new URL(req.url ?? "/", "http://localhost");
+}
+function invoiceIdFromUrl(url) {
     return url.searchParams.get("invoice_id") ?? "";
+}
+function callbackQueryMetadata(url) {
+    return Object.fromEntries(url.searchParams.entries());
 }
 async function notifyUser(bot, result) {
     if (!result)
@@ -36,8 +41,9 @@ function startPaymentCallbackServer(bot) {
             res.end("Not found");
             return;
         }
-        const invoiceId = invoiceIdFromRequest(req);
-        const result = await payment_service_1.PaymentInvoiceService.processCallback(invoiceId, { url: req.url, remoteAddress: req.socket.remoteAddress });
+        const callbackUrl = parsedCallbackUrl(req);
+        const invoiceId = invoiceIdFromUrl(callbackUrl);
+        const result = await payment_service_1.PaymentInvoiceService.processCallback(invoiceId, { url: req.url, remoteAddress: req.socket.remoteAddress, query: callbackQueryMetadata(callbackUrl) });
         if (result.result)
             await notifyUser(bot, result.result);
         res.writeHead(result.statusCode, { "Content-Type": "text/plain; charset=utf-8" });
