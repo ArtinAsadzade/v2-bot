@@ -16,16 +16,19 @@ export async function deactivateExpiredAccounts() {
   isRunning = true;
   try {
     await sendExpirationReminders();
-    const [result, freeResult] = await Promise.all([
+    const now = new Date();
+    const [result, expiredInventory, freeResult] = await Promise.all([
       prisma.orderItem.updateMany({
-        where: { isActive: true, expiresAt: { lte: new Date() } },
+        where: { isActive: true, expiresAt: { lte: now } },
         data: { isActive: false },
       }),
+      expirePurchasedInventory(now),
       FreeAccountService.expireDueAccounts(),
     ]);
     if (result.count > 0) logger.info("Expired purchased accounts deactivated", { count: result.count });
+    if (expiredInventory.count > 0) logger.info("Expired purchased inventory marked", { count: expiredInventory.count });
     if (freeResult.count > 0) logger.info("Expired free test accounts archived", { count: freeResult.count });
-    return { count: result.count + freeResult.count };
+    return { count: result.count + expiredInventory.count + freeResult.count };
   } finally {
     isRunning = false;
   }
@@ -55,4 +58,36 @@ async function sendExpirationReminders() {
       });
     }
   }
+}
+
+async function expirePurchasedInventory(now: Date) {
+  return prisma.$transaction(async (tx) => {
+    const dueItems = await tx.orderItem.findMany({
+      where: { expiresAt: { lte: now }, productAccount: { is: { status: "sold" } } },
+      select: { id: true, productAccountId: true, productId: true, orderId: true, expiresAt: true },
+      take: 500,
+    });
+    const accountIds = [...new Set(dueItems.map((item) => item.productAccountId))];
+    if (!accountIds.length) return { count: 0 };
+
+    const updated = await tx.productAccount.updateMany({
+      where: { id: { in: accountIds }, status: "sold" },
+      data: { status: "expired" },
+    });
+
+    if (updated.count > 0) {
+      await tx.productAccountHistory.createMany({
+        data: dueItems.map((item) => ({
+          accountId: item.productAccountId,
+          actorId: "system",
+          action: "account.expire",
+          fromValue: "sold",
+          toValue: "expired",
+          metadata: JSON.stringify({ orderId: item.orderId, orderItemId: item.id, productId: item.productId, expiresAt: item.expiresAt }),
+        })),
+      });
+    }
+
+    return { count: updated.count };
+  });
 }

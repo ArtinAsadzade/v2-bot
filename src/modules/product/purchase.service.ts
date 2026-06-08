@@ -28,11 +28,23 @@ export class PurchaseService {
       });
       if (!account) throw new Error("موجودی این محصول تمام شده است");
 
+      const reservedAt = new Date();
       const reserved = await tx.productAccount.updateMany({
-        where: { id: account.id, status: "available" },
-        data: { status: "reserved", reservedBy: userId, reservedAt: new Date() },
+        where: { id: account.id, productId, status: "available", soldTo: null, soldAt: null },
+        data: { status: "reserved", reservedBy: userId, reservedAt },
       });
       if (reserved.count !== 1) throw new Error("این اکانت هم‌اکنون رزرو شد؛ دوباره تلاش کنید");
+
+      await tx.productAccountHistory.create({
+        data: {
+          accountId: account.id,
+          actorId: userId,
+          action: "account.reserve",
+          fromValue: "available",
+          toValue: "reserved",
+          metadata: JSON.stringify({ productId, reservedAt }),
+        },
+      });
 
       if (totalAmount > 0) {
         await WalletService.debit(userId, totalAmount, `خرید محصول ${product.title}`, tx);
@@ -54,7 +66,7 @@ export class PurchaseService {
       const durationDays = account.durationDays ?? product.duration;
       const expiresAt = new Date(purchaseDate.getTime() + durationDays * 86_400_000);
 
-      await tx.orderItem.create({
+      const orderItem = await tx.orderItem.create({
         data: {
           orderId: order.id,
           productId,
@@ -74,13 +86,27 @@ export class PurchaseService {
         await tx.couponUsage.create({ data: { couponId, userId, orderId: order.id } });
       }
 
+      const soldAt = new Date();
       const sold = await tx.productAccount.updateMany({
-        where: { id: account.id, status: "reserved", reservedBy: userId },
-        data: { status: "sold", soldTo: userId, soldAt: new Date() },
+        where: { id: account.id, productId, status: "reserved", reservedBy: userId, soldTo: null, soldAt: null },
+        data: { status: "sold", soldTo: userId, soldAt, reservedBy: null, reservedAt: null },
       });
       if (sold.count !== 1) throw new Error("تحویل اکانت ناموفق بود");
 
-      return { order, product, account, totalAmount, originalAmount, discountAmount, couponId, couponCode, expiresAt };
+      await tx.productAccountHistory.create({
+        data: {
+          accountId: account.id,
+          actorId: userId,
+          action: "account.deliver",
+          fromValue: "reserved",
+          toValue: "sold",
+          metadata: JSON.stringify({ orderId: order.id, orderItemId: orderItem.id, productId, soldAt, expiresAt }),
+        },
+      });
+
+      const deliveredAccount = await tx.productAccount.findUniqueOrThrow({ where: { id: account.id } });
+
+      return { order, product, account: deliveredAccount, totalAmount, originalAmount, discountAmount, couponId, couponCode, expiresAt };
     }).then((result) => {
       eventBus.emit("order.created", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });
       eventBus.emit("order.completed", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });

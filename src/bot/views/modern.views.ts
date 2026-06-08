@@ -28,6 +28,11 @@ const yesNo = (value: boolean) => (value ? "فعال ✅" : "غیرفعال ⛔"
 const accountStatusLabel = (status: string) =>
   ({ available: "آماده", reserved: "رزرو", sold: "فروخته", disabled: "غیرفعال", expired: "منقضی" })[status] ?? status;
 const walletStatusLabel = (status: string) => (status === "active" ? "فعال ✅" : "غیرفعال ⛔");
+const purchasedAccountStatusLabel = (item: { isActive: boolean; expiresAt?: Date | null; productAccount?: { status: string } | null }) => {
+  if (item.productAccount?.status === "disabled") return "غیرفعال";
+  if (item.productAccount?.status === "expired" || !item.isActive || (item.expiresAt && item.expiresAt <= new Date())) return "منقضی شده";
+  return "فعال";
+};
 
 export function registerModernViews() {
   registerView("home", async (ctx) => {
@@ -205,6 +210,7 @@ ${divider}
     await FreeAccountService.expireDueAccounts();
     const dashboard = await UserService.dashboard(user.id);
     const activeFreeAccounts = await FreeAccountService.assignedForUser(user.id, true);
+    const purchasedAccounts = dashboard.purchasedAccounts;
     return {
       text: `📦 اکانت‌های من
 
@@ -230,9 +236,9 @@ ${freeAccountExpiry(item).toLocaleDateString("fa-IR")}
 📌 وضعیت:
 فعال و قابل استفاده`,
     ),
-    ...dashboard.activeAccounts.map(
+    ...purchasedAccounts.map(
       (item) => `🛒 خریداری شده
-📦 ${item.product.title}
+📦 محصول: ${item.product.title}
 
 👤 نام کاربری:
 ${item.deliveredUsername}
@@ -250,13 +256,13 @@ ${item.purchaseDate.toLocaleString("fa-IR")}
 ${item.expiresAt ? `تا ${item.expiresAt.toLocaleDateString("fa-IR")}` : "نامحدود"}
 
 📌 وضعیت:
-فعال`,
+${purchasedAccountStatusLabel(item)}`,
     ),
   ].join(`
 
 ${divider}
 
-`) || "در حال حاضر اکانت فعالی برای نمایش وجود ندارد. می‌توانید از فروشگاه سرویس جدید تهیه کنید یا اکانت تست دریافت کنید."
+`) || "هنوز اکانتی برای نمایش وجود ندارد. می‌توانید از فروشگاه سرویس جدید تهیه کنید یا اکانت تست دریافت کنید."
 }
 
 ${divider}`,
@@ -538,7 +544,17 @@ ${divider}
       { text: "◀️ قبلی", action: callbackFor("admin.products", { page: Math.max(current - 1, 1) }) },
       { text: "بعدی ▶️", action: callbackFor("admin.products", { page: current + 1 }) },
     ]);
-    return { text: `🛒 مدیریت فروشگاه\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}`, keyboard };
+    return {
+      text: `📦 محصولات
+
+صفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}
+
+${products.map((product) => `• ${product.title}
+  دسته‌بندی: ${product.category.name}
+  قیمت: ${money(product.price)}
+  موجودی: ${product.inventoryCount.toLocaleString("fa-IR")} · فروخته‌شده: ${product.soldCount.toLocaleString("fa-IR")} · فعال: ${product.activeCount.toLocaleString("fa-IR")}`).join("\n\n") || "محصولی ثبت نشده است."}`,
+      keyboard,
+    };
   });
 
   registerView("admin.product", async (_ctx, params) => {
@@ -552,6 +568,8 @@ ${divider}
 مدت: ${detail.product.duration.toLocaleString("fa-IR")} روز
 موجودی قابل فروش: ${detail.available.toLocaleString("fa-IR")}
 فروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}
+اکانت فعال: ${detail.activeCount.toLocaleString("fa-IR")}
+رزرو: ${detail.reserved.toLocaleString("fa-IR")} · غیرفعال: ${detail.disabled.toLocaleString("fa-IR")} · منقضی: ${detail.expired.toLocaleString("fa-IR")}
 وضعیت: ${detail.product.isActive ? "فعال" : "غیرفعال"}`,
       keyboard: [
         [
@@ -669,7 +687,10 @@ ${detail.products.map((product) => `• ${product.title} · ${product.isActive ?
     const stats = await AdminService.accountStats(productId);
     const products = stats.products.slice(0, 10);
     return {
-      text: `🗄 مدیریت موجودی اکانت‌ها\n\nکل: ${stats.total.toLocaleString("fa-IR")} · آماده: ${stats.available.toLocaleString("fa-IR")} · رزرو: ${stats.reserved.toLocaleString("fa-IR")} · فروخته: ${stats.sold.toLocaleString("fa-IR")} · غیرفعال: ${stats.disabled.toLocaleString("fa-IR")} · منقضی: ${stats.expired.toLocaleString("fa-IR")}\n${status ? `\nفیلتر وضعیت: ${accountStatusLabel(status)}` : ""}\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n\n${accounts.map((account) => `• ${account.username} · ${account.product.title} · ${accountStatusLabel(account.status)}`).join("\n") || "اکانتی ثبت نشده است."}`,
+      text: `🗄 مدیریت موجودی اکانت‌ها\n\nکل: ${stats.total.toLocaleString("fa-IR")} · آماده: ${stats.available.toLocaleString("fa-IR")} · رزرو: ${stats.reserved.toLocaleString("fa-IR")} · فروخته: ${stats.sold.toLocaleString("fa-IR")} · غیرفعال: ${stats.disabled.toLocaleString("fa-IR")} · منقضی: ${stats.expired.toLocaleString("fa-IR")}\n${status ? `\nفیلتر وضعیت: ${accountStatusLabel(status)}` : ""}\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n\n${accounts.map((account) => `• ${account.username} · ${account.product.title}
+  وضعیت: ${accountStatusLabel(account.status)}
+  کاربر: ${account.assignedUser ? userLine(account.assignedUser) : "—"}
+  تاریخ تخصیص: ${account.assignedDate ? account.assignedDate.toLocaleString("fa-IR") : "—"}`).join("\n") || "اکانتی ثبت نشده است."}`,
       keyboard: [
         [
           { text: "✅ آماده", action: callbackFor("admin.accounts", { status: "available", productId }) },
@@ -699,7 +720,22 @@ ${detail.products.map((product) => `• ${product.title} · ${product.isActive ?
         .map((item) => `• ${item.createdAt.toLocaleString("fa-IR")} · ${item.action} · ${item.fromValue ?? "—"} ← ${item.toValue ?? "—"}`)
         .join("\n") || "تاریخچه‌ای ثبت نشده است.";
     return {
-      text: `🗄 جزئیات اکانت\n\n👤 نام کاربری: ${account.username}\n📦 محصول: ${account.product.title}\n📌 وضعیت: ${accountStatusLabel(account.status)}\n👥 کاربر: ${account.soldTo ?? account.reservedBy ?? "—"}\n\n🔗 لینک اشتراک:\n${account.subscriptionLink}\n\n⚙️ کانفیگ:\n${account.configLink}\n\n📜 تاریخچه:\n${history}`,
+      text: `🗄 جزئیات اکانت
+
+👤 نام کاربری: ${account.username}
+📦 محصول: ${account.product.title}
+📌 وضعیت: ${accountStatusLabel(account.status)}
+👥 کاربر: ${account.assignedUser ? userLine(account.assignedUser) : "—"}
+📅 تاریخ تخصیص: ${account.assignedDate ? account.assignedDate.toLocaleString("fa-IR") : "—"}
+
+🔗 لینک اشتراک:
+${account.subscriptionLink}
+
+⚙️ کانفیگ:
+${account.configLink}
+
+📜 تاریخچه:
+${history}`,
       keyboard: [
         [
           { text: "✏️ ویرایش", action: `flow:start:account_edit:${account.id}` },
