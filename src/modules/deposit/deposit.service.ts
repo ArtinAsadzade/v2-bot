@@ -6,6 +6,7 @@ import { CryptoRateService } from "../system/system.service";
 
 const DEFAULT_MINIMUM_TOPUP = 100_000;
 const CRYPTO_DECIMALS = 8;
+const CRYPTO_DECIMAL_FACTOR = 10 ** CRYPTO_DECIMALS;
 
 export type DepositQuote = {
   amount: number;
@@ -28,7 +29,14 @@ function assertPositiveToman(amount: number) {
 }
 
 function roundCrypto(value: number) {
-  return Number(value.toFixed(CRYPTO_DECIMALS));
+  if (!Number.isFinite(value) || value <= 0) throw new Error("مبلغ رمز ارز معتبر نیست");
+  return Math.ceil(value * CRYPTO_DECIMAL_FACTOR) / CRYPTO_DECIMAL_FACTOR;
+}
+
+function finalTomanAmount(amount: number, cryptoAmount: number, exchangeRate: number) {
+  const finalAmount = Math.round(cryptoAmount * exchangeRate);
+  if (!Number.isInteger(finalAmount) || finalAmount < amount) return amount;
+  return finalAmount;
 }
 
 export class FinancialSettingsService {
@@ -105,15 +113,16 @@ export class CryptoWalletService {
     if (!wallet) throw new Error("کیف پول انتخابی فعال نیست");
     const rate = await CryptoRateService.getRateToman(wallet.coinName);
     const exchangeRate = Math.round(rate.toman);
-    if (exchangeRate <= 0) throw new Error("نرخ این رمز ارز در دسترس نیست");
+    if (!Number.isInteger(exchangeRate) || exchangeRate <= 0) throw new Error("نرخ این رمز ارز در دسترس نیست");
+    const cryptoAmount = roundCrypto(amount / exchangeRate);
     return {
-      amount,
+      amount: finalTomanAmount(amount, cryptoAmount, exchangeRate),
       exchangeRate,
       coinUsdPrice: rate.usd,
       usdTomanRate: rate.usdToman,
       rateSource: rate.source,
       stale: rate.stale,
-      cryptoAmount: roundCrypto(amount / exchangeRate),
+      cryptoAmount,
       wallet: { id: wallet.id, coinName: wallet.coinName, networkName: wallet.networkName, walletAddress: wallet.walletAddress },
     };
   }
@@ -127,7 +136,7 @@ export class DepositService {
     const deposit = await prisma.deposit.create({
       data: {
         userId,
-        amount,
+        amount: quote.amount,
         cryptoType: quote.wallet.coinName,
         wallet: quote.wallet.walletAddress,
         networkName: quote.wallet.networkName,
@@ -139,19 +148,20 @@ export class DepositService {
       },
     });
 
-    eventBus.emit("deposit.created", { depositId: deposit.id, userId, amount, cryptoType: deposit.cryptoType, wallet: deposit.wallet, networkName: deposit.networkName });
+    eventBus.emit("deposit.created", { depositId: deposit.id, userId, amount: deposit.amount, cryptoType: deposit.cryptoType, wallet: deposit.wallet, networkName: deposit.networkName });
     return deposit;
   }
 
   static async submitReceipt(depositId: string, userId: string, receipt: string) {
-    const deposit = await prisma.deposit.findFirst({
+    const submitted = await prisma.deposit.updateMany({
       where: { id: depositId, userId, status: "pending", expiresAt: { gt: new Date() } },
-      include: { user: true },
+      data: { receipt, status: "submitted" },
     });
 
-    if (!deposit) throw new Error("درخواست شارژ فعال یا معتبر نیست");
+    if (submitted.count !== 1) throw new Error("درخواست شارژ فعال یا معتبر نیست");
 
-    const updatedDeposit = await prisma.deposit.update({ where: { id: deposit.id }, data: { receipt, status: "submitted" }, include: { user: true } });
+    const updatedDeposit = await prisma.deposit.findUnique({ where: { id: depositId }, include: { user: true } });
+    if (!updatedDeposit || updatedDeposit.userId !== userId || updatedDeposit.status !== "submitted") throw new Error("درخواست شارژ فعال یا معتبر نیست");
 
     await notificationService.notifyAdmins({
       text: `💳 رسید شارژ جدید\n\nکاربر: ${updatedDeposit.user.telegramId}\nمبلغ: ${updatedDeposit.amount.toLocaleString("fa-IR")} تومان\nرمز ارز: ${updatedDeposit.cryptoType}\nشبکه: ${updatedDeposit.networkName ?? "-"}\nمبلغ کریپتو: ${updatedDeposit.cryptoAmount ?? "-"}\nشناسه: ${updatedDeposit.id}`,
@@ -163,21 +173,22 @@ export class DepositService {
   }
 
   static async approve(depositId: string, adminTelegramId: string) {
-    return prisma.$transaction(async (tx) => {
-      const deposit = await tx.deposit.findUnique({ where: { id: depositId } });
-      if (!deposit) throw new Error("درخواست شارژ پیدا نشد");
-      if (deposit.status !== "submitted") throw new Error("⚠️ این پرداخت قبلاً تعیین وضعیت شده است.");
-
+    const deposit = await prisma.$transaction(async (tx) => {
       const now = new Date();
       const approved = await tx.deposit.updateMany({ where: { id: depositId, status: "submitted" }, data: { status: "approved", reviewedBy: adminTelegramId, reviewedAt: now, reviewAction: "APPROVED" } });
       if (approved.count !== 1) throw new Error("⚠️ این پرداخت قبلاً تعیین وضعیت شده است.");
+
+      const deposit = await tx.deposit.findUnique({ where: { id: depositId } });
+      if (!deposit) throw new Error("درخواست شارژ پیدا نشد");
+
       await WalletService.credit(deposit.userId, deposit.amount, `تایید شارژ ${deposit.id}`, tx);
       await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.approve", metadata: JSON.stringify({ depositId, action: "APPROVED", reviewedAt: now.toISOString() }) } });
-
-      await notificationService.notifyUser(deposit.userId, `✅ شارژ ${deposit.amount.toLocaleString("fa-IR")} تومانی شما تایید شد.`);
-      eventBus.emit("deposit.approved", { depositId: deposit.id, userId: deposit.userId, amount: deposit.amount, adminTelegramId });
       return deposit;
     });
+
+    await notificationService.notifyUser(deposit.userId, `✅ شارژ ${deposit.amount.toLocaleString("fa-IR")} تومانی شما تایید شد.`);
+    eventBus.emit("deposit.approved", { depositId: deposit.id, userId: deposit.userId, amount: deposit.amount, adminTelegramId });
+    return deposit;
   }
 
   static async reject(depositId: string, adminTelegramId: string) {

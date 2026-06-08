@@ -48,6 +48,24 @@ const SUPPORTED_COINS = ["USDT", "BTC", "ETH", "TON", "TRX"];
 const COINGECKO_IDS = { USDT: "tether", BTC: "bitcoin", ETH: "ethereum", TON: "the-open-network", TRX: "tron" };
 const rateCache = new Map();
 let lastAdminRateAlertAt = 0;
+function readUsdTomanRate() {
+    const raw = process.env.USD_TOMAN_RATE ?? process.env.USDT_TOMAN_RATE ?? "60000";
+    const normalized = raw.replace(/[,،\s]/g, "");
+    const usdToman = Number(normalized);
+    if (!Number.isFinite(usdToman) || usdToman <= 0)
+        throw new Error("USD_TOMAN_RATE is invalid");
+    return usdToman;
+}
+function toTomanRate(usd, usdToman) {
+    if (!Number.isFinite(usd) || usd <= 0)
+        throw new Error("USD price is invalid");
+    if (!Number.isFinite(usdToman) || usdToman <= 0)
+        throw new Error("USD_TOMAN_RATE is invalid");
+    const toman = usd * usdToman;
+    if (!Number.isFinite(toman) || toman <= 0)
+        throw new Error("Toman rate is invalid");
+    return toman;
+}
 function normalizeCoin(coin) {
     const normalized = coin.trim().toUpperCase();
     if (!SUPPORTED_COINS.includes(normalized))
@@ -104,15 +122,13 @@ class CryptoRateService {
         if (!response.ok)
             throw new Error(`Coingecko returned ${response.status}`);
         const prices = await response.json();
-        const usdToman = Number(process.env.USD_TOMAN_RATE ?? process.env.USDT_TOMAN_RATE ?? 60000);
-        if (!Number.isFinite(usdToman) || usdToman <= 0)
-            throw new Error("USD_TOMAN_RATE is invalid");
+        const usdToman = readUsdTomanRate();
         const fetchedAt = new Date();
         return coins.map((coin) => {
             const usd = prices[COINGECKO_IDS[coin]]?.usd;
             if (!usd || usd <= 0)
                 throw new Error(`Missing price for ${coin}`);
-            return { coin, usd, usdToman, toman: usd * usdToman, fetchedAt, source: "coingecko", stale: false };
+            return { coin, usd, usdToman, toman: toTomanRate(usd, usdToman), fetchedAt, source: "coingecko", stale: false };
         });
     }
     static async getDbFallback(coin) {
