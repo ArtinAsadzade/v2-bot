@@ -50,8 +50,8 @@ export class ProductService {
 
   static async create(data: { categoryId?: string; categoryName?: string; title: string; price: number; duration: number }) {
     const category = data.categoryId
-      ? await prisma.category.findUniqueOrThrow({ where: { id: data.categoryId } })
-      : await prisma.category.upsert({ where: { name: (data.categoryName ?? "عمومی").trim() }, update: { deletedAt: null }, create: { name: (data.categoryName ?? "عمومی").trim() } });
+      ? await prisma.category.findFirstOrThrow({ where: { id: data.categoryId, isActive: true, deletedAt: null } })
+      : await prisma.category.upsert({ where: { name: (data.categoryName ?? "عمومی").trim() }, update: { isActive: true, deletedAt: null }, create: { name: (data.categoryName ?? "عمومی").trim(), isActive: true } });
 
     return prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: data.duration } });
   }
@@ -89,7 +89,7 @@ export class ProductService {
   }
 
   static async listActiveProducts(take = 25) {
-    return prisma.product.findMany({ where: { isActive: true, deletedAt: null }, include: { category: true }, orderBy: { title: "asc" }, take });
+    return prisma.product.findMany({ where: { isActive: true, deletedAt: null, category: { is: { isActive: true, deletedAt: null } } }, include: { category: true }, orderBy: { title: "asc" }, take });
   }
 
   static async availableStock(productId: string) {

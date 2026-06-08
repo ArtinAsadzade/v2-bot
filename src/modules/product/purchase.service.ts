@@ -6,7 +6,7 @@ import { eventBus } from "../../services/event-bus.service";
 export class PurchaseService {
   static async buyProduct(userId: string, productId: string, couponCode?: string) {
     return prisma.$transaction(async (tx) => {
-      const product = await tx.product.findFirst({ where: { id: productId, isActive: true } });
+      const product = await tx.product.findFirst({ where: { id: productId, isActive: true, deletedAt: null, category: { is: { isActive: true, deletedAt: null } } } });
       if (!product) throw new Error("محصول پیدا نشد");
 
       let discountAmount = 0;

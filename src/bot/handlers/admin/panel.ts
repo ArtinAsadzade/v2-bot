@@ -121,15 +121,22 @@ export function registerAdminHandlers(bot: AppBot) {
     await ctx.reply(`📂 ایجاد دسته‌بندی\n\n${categoryInputHelp()}`, navigationKeyboard("admin:categories"));
   });
 
-  bot.action(/^admin:category:([^:]+)$/, async (ctx) => {
+  bot.action([/^admin:category:([^:]+)$/, /^admin:category:products:([^:]+):page:(\d+)$/], async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
-    const detail = await AdminService.categoryDetail(ctx.match[1]);
+    const categoryId = ctx.match[1];
+    const productPage = ctx.match[2] ? Number(ctx.match[2]) : 1;
+    const detail = await AdminService.categoryDetail(categoryId, productPage, 8);
     if (!detail.category) return void (await ctx.reply("دسته‌بندی پیدا نشد.", navigationKeyboard("admin:categories")));
+    const productTotalPages = getTotalPages(detail.productCount, detail.productTake);
     const products = detail.products.map((product) => `• ${product.title} | ${statusFa(product.isActive)} | فروش ${product._count.orders.toLocaleString("fa-IR")}`).join("\n") || "بدون محصول";
+    const productNav: InlineKeyboardButton.CallbackButton[] = [];
+    if (productPage > 1) productNav.push(Markup.button.callback("⬅️ محصولات قبلی", `admin:category:products:${detail.category.id}:page:${productPage - 1}`));
+    if (productPage < productTotalPages) productNav.push(Markup.button.callback("محصولات بعدی ➡️", `admin:category:products:${detail.category.id}:page:${productPage + 1}`));
     await ctx.reply(
-      `${detail.category.icon ?? "📂"} ${detail.category.name}\nتوضیحات: ${detail.category.description ?? "-"}\nترتیب نمایش: ${detail.category.displayOrder.toLocaleString("fa-IR")}\nوضعیت: ${statusFa(detail.category.isActive)}\n\n📊 آمار فروشگاه\nمحصولات: ${detail.productCount.toLocaleString("fa-IR")}\nمحصولات فعال: ${detail.activeProductCount.toLocaleString("fa-IR")}\nتعداد فروش: ${detail.salesCount.toLocaleString("fa-IR")}\n\n📦 محصولات داخل دسته:\n${products}`,
+      `${detail.category.icon ?? "📂"} ${detail.category.name}\nتوضیحات: ${detail.category.description ?? "-"}\nترتیب نمایش: ${detail.category.displayOrder.toLocaleString("fa-IR")}\nوضعیت: ${statusFa(detail.category.isActive)}\n\n📊 آمار فروشگاه\nمحصولات: ${detail.productCount.toLocaleString("fa-IR")}\nمحصولات فعال: ${detail.activeProductCount.toLocaleString("fa-IR")}\nتعداد فروش: ${detail.salesCount.toLocaleString("fa-IR")}\n\n📦 محصولات داخل دسته (صفحه ${productPage.toLocaleString("fa-IR")} از ${productTotalPages.toLocaleString("fa-IR")}):\n${products}`,
       Markup.inlineKeyboard([
+        ...(productNav.length ? [productNav] : []),
         [Markup.button.callback("✏️ ویرایش", `admin:category:edit:${detail.category.id}`), Markup.button.callback(detail.category.isActive ? "⏸ غیرفعال" : "▶️ فعال", `admin:category:status:${detail.category.id}:${detail.category.isActive ? "off" : "on"}`)],
         [Markup.button.callback("🗑 حذف نرم", `admin:category:delete:${detail.category.id}`), Markup.button.callback("🔥 حذف دائمی", `admin:category:hard:${detail.category.id}`)],
         [Markup.button.callback("⬅️ بازگشت", "admin:categories")],
