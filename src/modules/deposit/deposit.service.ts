@@ -1,5 +1,5 @@
 import { prisma } from "../../services/prisma";
-import { WalletService } from "../wallet/wallet.service";
+import { PaymentService } from "../payment/payment.service";
 import { notificationService } from "../../services/notification.service";
 import { eventBus } from "../../services/event-bus.service";
 import { CryptoRateService } from "../system/system.service";
@@ -262,8 +262,8 @@ export class DepositService {
       const deposit = await tx.deposit.findUnique({ where: { id: depositId } });
       if (!deposit) throw new Error("درخواست شارژ پیدا نشد");
 
-      await WalletService.credit(deposit.userId, deposit.amount, `تایید شارژ ${deposit.id}`, tx);
-      await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.approve", metadata: JSON.stringify({ depositId, action: "APPROVED", reviewedAt: now.toISOString() }) } });
+      await PaymentService.creditWallet(tx, { userId: deposit.userId, amount: deposit.amount, reason: `تایید شارژ ${deposit.id}`, actorId: adminTelegramId, referenceId: `deposit:${deposit.id}` });
+      await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.approve", metadata: JSON.stringify({ depositId, userId: deposit.userId, amount: deposit.amount, action: "APPROVED", reviewedAt: now.toISOString(), reason: "admin_crypto_receipt_approval" }) } });
       return deposit;
     });
 
@@ -280,7 +280,7 @@ export class DepositService {
       const now = new Date();
       const rejected = await tx.deposit.updateMany({ where: { id: depositId, status: "submitted" }, data: { status: "rejected", reviewedBy: adminTelegramId, reviewedAt: now, reviewAction: "REJECTED" } });
       if (rejected.count !== 1) throw new Error("⚠️ این پرداخت قبلاً تعیین وضعیت شده است.");
-      await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.reject", metadata: JSON.stringify({ depositId, action: "REJECTED", reviewedAt: now.toISOString() }) } });
+      await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.reject", metadata: JSON.stringify({ depositId, userId: current.userId, amount: current.amount, action: "REJECTED", reviewedAt: now.toISOString(), reason: "admin_crypto_receipt_rejection" }) } });
       return current;
     });
     await notificationService.notifyUser(deposit.userId, "❌ رسید شارژ شما رد شد.");

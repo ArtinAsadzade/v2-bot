@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DepositService = exports.CryptoWalletService = exports.FinancialSettingsService = void 0;
 const prisma_1 = require("../../services/prisma");
-const wallet_service_1 = require("../wallet/wallet.service");
+const payment_service_1 = require("../payment/payment.service");
 const notification_service_1 = require("../../services/notification.service");
 const event_bus_service_1 = require("../../services/event-bus.service");
 const system_service_1 = require("../system/system.service");
@@ -216,8 +216,8 @@ class DepositService {
             const deposit = await tx.deposit.findUnique({ where: { id: depositId } });
             if (!deposit)
                 throw new Error("درخواست شارژ پیدا نشد");
-            await wallet_service_1.WalletService.credit(deposit.userId, deposit.amount, `تایید شارژ ${deposit.id}`, tx);
-            await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.approve", metadata: JSON.stringify({ depositId, action: "APPROVED", reviewedAt: now.toISOString() }) } });
+            await payment_service_1.PaymentService.creditWallet(tx, { userId: deposit.userId, amount: deposit.amount, reason: `تایید شارژ ${deposit.id}`, actorId: adminTelegramId, referenceId: `deposit:${deposit.id}` });
+            await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.approve", metadata: JSON.stringify({ depositId, userId: deposit.userId, amount: deposit.amount, action: "APPROVED", reviewedAt: now.toISOString(), reason: "admin_crypto_receipt_approval" }) } });
             return deposit;
         });
         await notification_service_1.notificationService.notifyUser(deposit.userId, `✅ شارژ ${deposit.amount.toLocaleString("fa-IR")} تومانی شما تایید شد.`);
@@ -235,7 +235,7 @@ class DepositService {
             const rejected = await tx.deposit.updateMany({ where: { id: depositId, status: "submitted" }, data: { status: "rejected", reviewedBy: adminTelegramId, reviewedAt: now, reviewAction: "REJECTED" } });
             if (rejected.count !== 1)
                 throw new Error("⚠️ این پرداخت قبلاً تعیین وضعیت شده است.");
-            await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.reject", metadata: JSON.stringify({ depositId, action: "REJECTED", reviewedAt: now.toISOString() }) } });
+            await tx.auditLog.create({ data: { actorId: adminTelegramId, action: "deposit.reject", metadata: JSON.stringify({ depositId, userId: current.userId, amount: current.amount, action: "REJECTED", reviewedAt: now.toISOString(), reason: "admin_crypto_receipt_rejection" }) } });
             return current;
         });
         await notification_service_1.notificationService.notifyUser(deposit.userId, "❌ رسید شارژ شما رد شد.");

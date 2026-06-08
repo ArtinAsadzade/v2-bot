@@ -389,11 +389,13 @@ model CouponUsage {
   couponId  String   @db.ObjectId
   userId    String   @db.ObjectId
   orderId   String?  @db.ObjectId
+  usageSlot Int      @default(0)
   createdAt DateTime @default(now())
 
   coupon Coupon @relation(fields: [couponId], references: [id])
   user   User   @relation(fields: [userId], references: [id])
 
+  @@unique([couponId, userId, usageSlot])
   @@index([couponId, userId])
   @@index([userId, createdAt])
 }
