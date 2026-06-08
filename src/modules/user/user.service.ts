@@ -32,7 +32,7 @@ export class UserService {
           order: { userId, status: "completed" },
           isActive: true,
           OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-          productAccount: { is: { status: "sold", soldTo: userId } },
+          NOT: { productAccount: { is: { status: { in: ["disabled", "expired"] } } } },
         },
         include: { order: true, product: true, productAccount: true },
         orderBy: { purchaseDate: "desc" },
@@ -48,7 +48,6 @@ export class UserService {
         where: { order: { userId, status: "completed" } },
         include: { order: true, product: true, productAccount: true },
         orderBy: { purchaseDate: "desc" },
-        take: 50,
       }),
       prisma.freeAccountAssignment.findMany({
         where: { userId, account: { is: { status: "assigned" } } },
