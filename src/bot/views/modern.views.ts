@@ -433,8 +433,21 @@ ${inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleS
 
   registerView("admin.forcedJoin", async () => {
     const channels = await AdminService.forcedJoinChannels();
+    const activeCount = channels.filter((channel) => channel.status === "active").length;
+    const inactiveCount = channels.length - activeCount;
+    const channelLines = channels.map((channel, index) => `• ${index + 1}. ${channel.title}
+  شناسه: ${channel.chatId}
+  وضعیت: ${channel.status === "active" ? "✅ فعال" : "⛔ غیرفعال"}
+  لینک: ${channel.inviteLink || (channel.chatId.startsWith("@") ? `https://t.me/${channel.chatId.slice(1)}` : "ثبت نشده")}`).join("\n\n");
+
     return {
-      text: `📢 مدیریت عضویت اجباری\n\n${channels.map((channel) => `• ${channel.title} · ${channel.chatId} · ${channel.status === "active" ? "فعال" : "غیرفعال"}`).join("\n") || "کانالی ثبت نشده است."}`,
+      text: `📢 مدیریت عضویت اجباری
+
+کانال فعال: ${activeCount.toLocaleString("fa-IR")} · غیرفعال: ${inactiveCount.toLocaleString("fa-IR")}
+
+${channelLines || "کانالی ثبت نشده است."}
+
+کاربران بدون ارسال دوباره /start می‌توانند با دکمه «✅ عضو شدم» همان لحظه تایید شوند.`,
       keyboard: [[{ text: "➕ افزودن کانال", action: "flow:start:forced_join_create" }], ...channels.map((channel) => [{ text: channel.status === "active" ? `غیرفعال‌سازی ${channel.title}` : `فعال‌سازی ${channel.title}`, action: `admin:forced_join:status:${channel.id}:${channel.status === "active" ? "inactive" : "active"}` }, { text: "حذف", action: `admin:forced_join:delete:${channel.id}` }])],
     };
   });

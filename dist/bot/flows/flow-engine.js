@@ -15,6 +15,27 @@ const free_account_service_1 = require("../../modules/free-account/free-account.
 const referral_service_1 = require("../../modules/referral/referral.service");
 const admin_middleware_1 = require("../middlewares/admin.middleware");
 const money = (value) => `${value.toLocaleString("fa-IR")} تومان`;
+const parseInteger = (value) => Number(value.replace(/[,،\s]/g, ""));
+const parseStatus = (value) => {
+    if (!value)
+        return undefined;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "active" || normalized === "فعال")
+        return "active";
+    if (normalized === "inactive" || normalized.includes("غیر"))
+        return "inactive";
+    return undefined;
+};
+const parseCouponType = (value) => {
+    if (!value)
+        return undefined;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "fixed" || normalized.includes("ثابت"))
+        return "fixed";
+    if (normalized === "percentage" || normalized.includes("درصد"))
+        return "percentage";
+    return undefined;
+};
 function currentReturnTo(ctx) {
     const stack = ctx.session.navigation?.stack ?? [];
     return stack[stack.length - 1] ?? { id: "home" };
@@ -317,6 +338,52 @@ status: ${account.status}
             return { done: true, text: "✅ کوپن جدید ساخته شد.", returnTo: { id: "admin.coupons" } };
         },
     },
+    coupon_edit: {
+        firstStep: "fields",
+        prompt: async (ctx) => {
+            const couponId = String(ctx.session.flow?.data.couponId ?? "");
+            const coupon = couponId ? await admin_service_1.AdminService.couponDetail(couponId) : undefined;
+            if (!coupon)
+                return "⚠️ کوپن پیدا نشد.";
+            return `✏️ ویرایش کوپن ${coupon.code}
+
+هر فیلدی را که می‌خواهید تغییر کند در یک خط و به شکل field: value بفرستید.
+
+فیلدهای مجاز:
+code: ${coupon.code}
+type: ${coupon.type} (percentage/fixed)
+value: ${coupon.value}
+maxUses: ${coupon.maxUses}
+perUserLimit: ${coupon.perUserLimit}
+minimumPurchaseAmount: ${coupon.minimumPurchaseAmount}
+expiresInDays: تعداد روز اعتبار جدید
+status: ${coupon.status} (active/inactive)`;
+        },
+        async handleText(ctx, text) {
+            const flow = ctx.session.flow;
+            const data = Object.fromEntries(text
+                .split(/\n+/)
+                .map((line) => line.split(/[:=：]/, 2).map((part) => part.trim()))
+                .filter((parts) => parts.length === 2 && Boolean(parts[0]) && Boolean(parts[1])));
+            const type = parseCouponType(data.type ?? data["نوع"]);
+            const expiresInDaysText = data.expiresInDays ?? data.days ?? data["روز"] ?? data["اعتبار"];
+            const expiresInDays = expiresInDaysText ? parseInteger(expiresInDaysText) : undefined;
+            const patch = {
+                code: data.code ?? data["کد"],
+                type,
+                value: data.value ? parseInteger(data.value) : data["مقدار"] ? parseInteger(data["مقدار"]) : undefined,
+                maxUses: data.maxUses ? parseInteger(data.maxUses) : data["حداکثر"] ? parseInteger(data["حداکثر"]) : undefined,
+                perUserLimit: data.perUserLimit ? parseInteger(data.perUserLimit) : data["هر کاربر"] ? parseInteger(data["هر کاربر"]) : undefined,
+                minimumPurchaseAmount: data.minimumPurchaseAmount ? parseInteger(data.minimumPurchaseAmount) : data.minimum ? parseInteger(data.minimum) : data["حداقل خرید"] ? parseInteger(data["حداقل خرید"]) : undefined,
+                expiresAt: expiresInDays ? new Date(Date.now() + expiresInDays * 86400000) : undefined,
+                status: parseStatus(data.status ?? data["وضعیت"]),
+            };
+            if (!Object.values(patch).some((value) => value !== undefined))
+                return { text: "هیچ فیلد معتبری دریافت نشد. مثال:\nvalue: 20\nmaxUses: 100" };
+            await coupon_service_1.CouponService.update(String(flow.data.couponId), patch, String(ctx.from?.id ?? "admin"));
+            return { done: true, text: "✅ کوپن با موفقیت ویرایش شد.", returnTo: { id: "admin.coupon", params: { couponId: String(flow.data.couponId) } } };
+        },
+    },
     product_price: {
         firstStep: "price",
         prompt: "💰 قیمت جدید محصول را به تومان وارد کنید:",
@@ -407,9 +474,16 @@ status: ${account.status}
             if (flow.step === "title") {
                 flow.data.title = text.trim();
                 flow.step = "inviteLink";
-                return { text: "لینک عضویت کانال را وارد کنید (اگر عمومی است لینک t.me):", nextStep: "inviteLink" };
+                return { text: "لینک عضویت کانال را وارد کنید. برای کانال عمومیِ @username می‌توانید «-» بفرستید:", nextStep: "inviteLink" };
             }
-            await admin_service_1.AdminService.saveForcedJoinChannel({ chatId: String(flow.data.chatId), title: String(flow.data.title), inviteLink: text.trim(), status: "active" }, String(ctx.from?.id ?? "admin"));
+            try {
+                await admin_service_1.AdminService.saveForcedJoinChannel({ chatId: String(flow.data.chatId), title: String(flow.data.title), inviteLink: text.trim() === "-" ? undefined : text.trim(), status: "active" }, String(ctx.from?.id ?? "admin"));
+            }
+            catch (error) {
+                return { text: error instanceof Error ? `⚠️ ${error.message}
+
+لینک عضویت معتبر را وارد کنید:` : "⚠️ ذخیره کانال ناموفق بود. لینک عضویت را دوباره وارد کنید:" };
+            }
             return { done: true, text: "✅ کانال عضویت اجباری ذخیره شد.", returnTo: { id: "admin.forcedJoin" } };
         },
     },
@@ -484,6 +558,13 @@ function registerFlowEngine(bot) {
         }
         if (name === "coupon_code")
             return startFlow(ctx, "coupon_code", { productId: ctx.match[2] });
+        const adminOnlyFlows = ["product_create", "account_create", "coupon_create", "coupon_edit", "product_price", "crypto_wallet_create", "minimum_topup", "referral_tier_create", "store_status", "forced_join_create", "wallet_adjust", "free_account_create", "free_account_edit"];
+        if (adminOnlyFlows.includes(name) && (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))) {
+            await ctx.answerCbQuery("دسترسی غیرمجاز");
+            return;
+        }
+        if (name === "coupon_edit")
+            return startFlow(ctx, "coupon_edit", { couponId: ctx.match[2] });
         if (name === "account_create")
             return startFlow(ctx, "account_create", { productId: ctx.match[2] });
         if (name === "free_account_create" || name === "free_account_edit") {
