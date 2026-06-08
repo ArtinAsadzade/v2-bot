@@ -40,7 +40,7 @@ export class PurchaseService {
 
       if (couponId) {
         const couponUpdated = await tx.coupon.updateMany({
-          where: { id: couponId, usedCount: { lt: couponMaxUses }, expiresAt: { gt: new Date() } },
+          where: { id: couponId, status: "active", usedCount: { lt: couponMaxUses }, expiresAt: { gt: new Date() } },
           data: { usedCount: { increment: 1 } },
         });
         if (couponUpdated.count !== 1) throw new Error("کد تخفیف دیگر قابل استفاده نیست");
