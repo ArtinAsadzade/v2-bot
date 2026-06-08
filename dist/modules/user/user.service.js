@@ -24,19 +24,29 @@ class UserService {
     }
     static async dashboard(userId) {
         const now = new Date();
-        const [user, activeAccounts, expiredAccounts, activeFreeAccounts, recentOrders, walletTransactions, referralCount, pendingReferralRewards, freeRewards] = await Promise.all([
+        const [user, activeAccounts, expiredAccounts, purchasedAccounts, activeFreeAccounts, recentOrders, walletTransactions, referralCount, pendingReferralRewards, freeRewards] = await Promise.all([
             prisma_1.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { balance: true, referralCode: true } }),
             prisma_1.prisma.orderItem.findMany({
-                where: { order: { userId }, isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
-                include: { order: true, product: true },
+                where: {
+                    order: { userId, status: "completed" },
+                    isActive: true,
+                    OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+                    NOT: { productAccount: { is: { status: { in: ["disabled", "expired"] } } } },
+                },
+                include: { order: true, product: true, productAccount: true },
                 orderBy: { purchaseDate: "desc" },
                 take: 20,
             }),
             prisma_1.prisma.orderItem.findMany({
-                where: { order: { userId }, OR: [{ isActive: false }, { expiresAt: { lte: now } }] },
-                include: { order: true, product: true },
+                where: { order: { userId, status: "completed" }, OR: [{ isActive: false }, { expiresAt: { lte: now } }, { productAccount: { is: { status: "expired" } } }] },
+                include: { order: true, product: true, productAccount: true },
                 orderBy: { purchaseDate: "desc" },
                 take: 10,
+            }),
+            prisma_1.prisma.orderItem.findMany({
+                where: { order: { userId, status: "completed" } },
+                include: { order: true, product: true, productAccount: true },
+                orderBy: { purchaseDate: "desc" },
             }),
             prisma_1.prisma.freeAccountAssignment.findMany({
                 where: { userId, account: { is: { status: "assigned" } } },
@@ -59,6 +69,7 @@ class UserService {
             activeAccounts,
             expiredAccounts,
             activeFreeAccounts,
+            purchasedAccounts,
             recentOrders,
             walletTransactions,
             referralCount,

@@ -7,28 +7,66 @@ const deposit_service_1 = require("../deposit/deposit.service");
 const system_service_1 = require("../system/system.service");
 const coupon_service_1 = require("../coupon/coupon.service");
 const forced_join_service_1 = require("../system/forced-join.service");
+const visibility_1 = require("../product/visibility");
 const DASHBOARD_CACHE_TTL_MS = 30000;
 let dashboardCache;
 function containsQuery(query) {
     return query?.trim() || undefined;
+}
+function cleanUndefined(data) {
+    return Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+}
+const COMPLETED_PURCHASED_ACCOUNT_WHERE = { items: { some: { order: { is: { status: "completed" } } } } };
+function purchasedInventoryWhere(productId) {
+    return {
+        ...(productId ? { productId } : {}),
+        OR: [{ status: "sold" }, COMPLETED_PURCHASED_ACCOUNT_WHERE],
+    };
+}
+function sellableInventoryWhere(productId) {
+    return {
+        ...(productId ? { productId } : {}),
+        AND: [(0, visibility_1.availableInventoryWhere)(productId), (0, visibility_1.unassignedInventoryWhere)()],
+        NOT: COMPLETED_PURCHASED_ACCOUNT_WHERE,
+    };
+}
+function activePurchasedInventoryWhere(productId, now = new Date()) {
+    return {
+        ...(productId ? { productId } : {}),
+        NOT: { status: { in: ["disabled", "expired"] } },
+        items: { some: { order: { is: { status: "completed" } }, isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } },
+    };
+}
+function normalizePurchasedStatus(account, now = new Date()) {
+    const completedItem = account.items?.find((item) => item.order.status === "completed");
+    if (!completedItem)
+        return account.status;
+    if (account.status === "disabled")
+        return "disabled";
+    if (account.status === "expired" || !completedItem.isActive || (completedItem.expiresAt && completedItem.expiresAt <= now))
+        return "expired";
+    return "sold";
 }
 class AdminService {
     static async dashboard(forceRefresh = false) {
         if (!forceRefresh && dashboardCache && dashboardCache.expiresAt > Date.now())
             return dashboardCache.stats;
         const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000);
-        const [users, products, categories, wallets, submittedDeposits, openTickets, orders, revenue, availableAccounts, soldAccounts, disabledAccounts, referralRewards, freeAccountsAvailable, freeAccountsAssigned, freeAccountsExpired, freeAccountsMonthly, freeAccountUniqueRows] = await Promise.all([
+        const [users, products, categories, wallets, submittedDeposits, openTickets, orders, revenue, totalAccounts, availableAccounts, reservedAccounts, soldAccounts, disabledAccounts, expiredAccounts, referralRewards, freeAccountsAvailable, freeAccountsAssigned, freeAccountsExpired, freeAccountsMonthly, freeAccountUniqueRows] = await Promise.all([
             prisma_1.prisma.user.count(),
-            prisma_1.prisma.product.count({ where: { deletedAt: null } }),
-            prisma_1.prisma.category.count({ where: { deletedAt: null } }),
+            prisma_1.prisma.product.count({ where: (0, visibility_1.productNotDeletedWhere)() }),
+            prisma_1.prisma.category.count({ where: (0, visibility_1.categoryNotDeletedWhere)() }),
             prisma_1.prisma.cryptoWallet.count(),
             prisma_1.prisma.deposit.count({ where: { status: "submitted" } }),
             prisma_1.prisma.ticket.count({ where: { status: "open" } }),
             prisma_1.prisma.order.count(),
             prisma_1.prisma.order.aggregate({ where: { status: "completed" }, _sum: { finalPaidAmount: true } }),
-            prisma_1.prisma.productAccount.count({ where: { status: "available" } }),
+            prisma_1.prisma.productAccount.count(),
+            prisma_1.prisma.productAccount.count({ where: (0, visibility_1.availableInventoryWhere)() }),
+            prisma_1.prisma.productAccount.count({ where: { status: "reserved" } }),
             prisma_1.prisma.productAccount.count({ where: { status: "sold" } }),
             prisma_1.prisma.productAccount.count({ where: { status: "disabled" } }),
+            prisma_1.prisma.productAccount.count({ where: { status: "expired" } }),
             prisma_1.prisma.referralReward.aggregate({ _sum: { amount: true }, _count: true }),
             prisma_1.prisma.freeAccount.count({ where: { status: "available" } }),
             prisma_1.prisma.freeAccount.count({ where: { status: "assigned" } }),
@@ -36,7 +74,7 @@ class AdminService {
             prisma_1.prisma.freeAccountAssignment.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
             prisma_1.prisma.freeAccountAssignment.findMany({ distinct: ["userId"], select: { userId: true } }),
         ]);
-        const stats = { users, products, categories, wallets, submittedDeposits, openTickets, orders, revenue: revenue._sum.finalPaidAmount ?? 0, availableAccounts, soldAccounts, disabledAccounts, referralRewards: referralRewards._sum.amount ?? 0, freeAccountsAvailable, freeAccountsAssigned, freeAccountsExpired, freeAccountsMonthly, freeAccountsUniqueUsers: freeAccountUniqueRows.length };
+        const stats = { users, products, categories, wallets, submittedDeposits, openTickets, orders, revenue: revenue._sum.finalPaidAmount ?? 0, totalAccounts, availableAccounts, reservedAccounts, soldAccounts, disabledAccounts, expiredAccounts, referralRewards: referralRewards._sum.amount ?? 0, freeAccountsAvailable, freeAccountsAssigned, freeAccountsExpired, freeAccountsMonthly, freeAccountsUniqueUsers: freeAccountUniqueRows.length };
         dashboardCache = { expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS, stats };
         return stats;
     }
@@ -82,38 +120,64 @@ class AdminService {
     static async listCategories(page = 1, take = 8, query) {
         const skip = (page - 1) * take;
         const q = containsQuery(query);
-        const where = { deletedAt: null, ...(q ? { OR: [{ name: { contains: q } }, { description: { contains: q } }] } : {}) };
+        const where = { AND: [(0, visibility_1.categoryNotDeletedWhere)(), ...(q ? [{ OR: [{ name: { contains: q } }, { description: { contains: q } }] }] : [])] };
         return Promise.all([
             prisma_1.prisma.category.findMany({ where, include: { _count: { select: { products: true } } }, orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }], skip, take }),
             prisma_1.prisma.category.count({ where }),
         ]);
     }
-    static async categoryDetail(categoryId) {
+    static async categoryDetail(categoryId, productPage = 1, productTake = 8) {
+        const skip = (productPage - 1) * productTake;
         const [category, productCount, activeProductCount, salesCount, products] = await Promise.all([
             prisma_1.prisma.category.findUnique({ where: { id: categoryId } }),
-            prisma_1.prisma.product.count({ where: { categoryId, deletedAt: null } }),
-            prisma_1.prisma.product.count({ where: { categoryId, deletedAt: null, isActive: true } }),
+            prisma_1.prisma.product.count({ where: { categoryId, AND: [(0, visibility_1.productNotDeletedWhere)()] } }),
+            prisma_1.prisma.product.count({ where: { categoryId, AND: [(0, visibility_1.activeProductWhere)()] } }),
             prisma_1.prisma.order.count({ where: { product: { is: { categoryId } }, status: "completed" } }),
-            prisma_1.prisma.product.findMany({ where: { categoryId, deletedAt: null }, include: { _count: { select: { accounts: true, orders: true } } }, orderBy: { createdAt: "desc" }, take: 10 }),
+            prisma_1.prisma.product.findMany({ where: { categoryId, AND: [(0, visibility_1.productNotDeletedWhere)()] }, include: { _count: { select: { accounts: true, orders: true } } }, orderBy: { createdAt: "desc" }, skip, take: productTake }),
         ]);
-        return { category, productCount, activeProductCount, salesCount, products };
+        return { category, productCount, activeProductCount, salesCount, products, productPage, productTake };
     }
     static async saveCategory(data, actorId, categoryId) {
-        const payload = { name: data.name.trim(), description: data.description?.trim(), icon: data.icon?.trim(), displayOrder: data.displayOrder ?? 0, isActive: data.isActive ?? true, deletedAt: null };
-        if (!payload.name)
+        const name = data.name?.trim();
+        if (!categoryId && !name)
             throw new Error("عنوان دسته‌بندی الزامی است");
-        const category = categoryId ? await prisma_1.prisma.category.update({ where: { id: categoryId }, data: payload }) : await prisma_1.prisma.category.create({ data: payload });
+        const updateData = cleanUndefined({
+            name: name || undefined,
+            description: data.description?.trim(),
+            icon: data.icon?.trim(),
+            displayOrder: data.displayOrder,
+            isActive: data.isActive,
+            deletedAt: null,
+        });
+        const category = categoryId
+            ? await prisma_1.prisma.category.update({ where: { id: categoryId }, data: updateData })
+            : await prisma_1.prisma.category.upsert({
+                where: { name: name },
+                update: { ...updateData, deletedAt: null },
+                create: { name: name, description: data.description?.trim(), icon: data.icon?.trim(), displayOrder: data.displayOrder ?? 0, isActive: data.isActive ?? true },
+            });
         await this.audit(actorId, categoryId ? "category.update" : "category.create", { categoryId: category.id });
         return category;
     }
     static async setCategoryActive(categoryId, isActive, actorId) {
-        const category = await prisma_1.prisma.category.update({ where: { id: categoryId }, data: { isActive } });
-        await this.audit(actorId, isActive ? "category.activate" : "category.deactivate", { categoryId });
+        const category = await prisma_1.prisma.$transaction(async (tx) => {
+            const updated = await tx.category.update({ where: { id: categoryId }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
+            await tx.product.updateMany({ where: { categoryId, ...(isActive ? {} : (0, visibility_1.productNotDeletedWhere)()) }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
+            await tx.auditLog.create({ data: { actorId, action: isActive ? "category.activate" : "category.deactivate", metadata: JSON.stringify({ categoryId, synchronizedProducts: true }) } });
+            return updated;
+        });
+        this.invalidateDashboardCache();
         return category;
     }
     static async deleteCategory(categoryId, actorId) {
-        const category = await prisma_1.prisma.category.update({ where: { id: categoryId }, data: { isActive: false, deletedAt: new Date() } });
-        await this.audit(actorId, "category.delete.soft", { categoryId });
+        const deletedAt = new Date();
+        const category = await prisma_1.prisma.$transaction(async (tx) => {
+            const updated = await tx.category.update({ where: { id: categoryId }, data: { isActive: false, deletedAt } });
+            await tx.product.updateMany({ where: { categoryId, AND: [(0, visibility_1.productNotDeletedWhere)()] }, data: { isActive: false, deletedAt } });
+            await tx.auditLog.create({ data: { actorId, action: "category.delete.soft", metadata: JSON.stringify({ categoryId, synchronizedProducts: true }) } });
+            return updated;
+        });
+        this.invalidateDashboardCache();
         return category;
     }
     static async hardDeleteCategory(categoryId, actorId, force = false) {
@@ -124,6 +188,10 @@ class AdminService {
             if (force) {
                 const products = await tx.product.findMany({ where: { categoryId }, select: { id: true } });
                 for (const product of products) {
+                    const orders = await tx.order.findMany({ where: { productId: product.id }, select: { id: true } });
+                    const orderIds = orders.map((order) => order.id);
+                    if (orderIds.length)
+                        await tx.couponUsage.updateMany({ where: { orderId: { in: orderIds } }, data: { orderId: null } });
                     await tx.orderItem.deleteMany({ where: { productId: product.id } });
                     await tx.order.deleteMany({ where: { productId: product.id } });
                     await tx.productAccountHistory.deleteMany({ where: { account: { is: { productId: product.id } } } });
@@ -139,31 +207,83 @@ class AdminService {
     static async listProducts(page = 1, take = 8, query, status) {
         const skip = (page - 1) * take;
         const q = containsQuery(query);
-        const where = { ...(status === "deleted" ? { deletedAt: { not: null } } : { deletedAt: null }), ...(status === "active" ? { isActive: true } : {}), ...(status === "inactive" ? { isActive: false } : {}), ...(q ? { OR: [{ title: { contains: q } }, { category: { is: { name: { contains: q } } } }] } : {}) };
-        return Promise.all([prisma_1.prisma.product.findMany({ where, include: { category: true, _count: { select: { accounts: true, orders: true } } }, orderBy: { createdAt: "desc" }, skip, take }), prisma_1.prisma.product.count({ where })]);
+        const where = {
+            AND: [
+                status === "deleted" ? { deletedAt: { not: null } } : (0, visibility_1.productNotDeletedWhere)(),
+                ...(status === "active" ? [(0, visibility_1.activeProductWhere)()] : []),
+                ...(status === "inactive" ? [{ isActive: false }] : []),
+                ...(q ? [{ OR: [{ title: { contains: q } }, { category: { is: { name: { contains: q } } } }] }] : []),
+            ],
+        };
+        const [products, total] = await Promise.all([
+            prisma_1.prisma.product.findMany({ where, include: { category: true, _count: { select: { accounts: true, orders: true } } }, orderBy: { createdAt: "desc" }, skip, take }),
+            prisma_1.prisma.product.count({ where }),
+        ]);
+        const productIds = products.map((product) => product.id);
+        if (!productIds.length)
+            return [[], total];
+        const now = new Date();
+        const productIdWhere = { productId: { in: productIds } };
+        const [availableGroups, soldGroups, activeGroups] = await Promise.all([
+            prisma_1.prisma.productAccount.groupBy({ by: ["productId"], where: { AND: [productIdWhere, sellableInventoryWhere()] }, _count: { _all: true } }),
+            prisma_1.prisma.productAccount.groupBy({ by: ["productId"], where: { AND: [productIdWhere, purchasedInventoryWhere()] }, _count: { _all: true } }),
+            prisma_1.prisma.productAccount.groupBy({ by: ["productId"], where: { AND: [productIdWhere, activePurchasedInventoryWhere(undefined, now)] }, _count: { _all: true } }),
+        ]);
+        const availableCounts = new Map(availableGroups.map((group) => [group.productId, group._count._all]));
+        const soldCounts = new Map(soldGroups.map((group) => [group.productId, group._count._all]));
+        const activeCounts = new Map(activeGroups.map((group) => [group.productId, group._count._all]));
+        return [
+            products.map((product) => {
+                return {
+                    ...product,
+                    inventoryCount: availableCounts.get(product.id) ?? 0,
+                    soldCount: soldCounts.get(product.id) ?? 0,
+                    activeCount: activeCounts.get(product.id) ?? 0,
+                };
+            }),
+            total,
+        ];
     }
     static async productDetail(productId) {
-        const [product, available, sold, disabled, expired, activeAccounts, soldAccounts, revenue] = await Promise.all([
+        const now = new Date();
+        const [product, available, reserved, sold, disabled, expired, activeAccounts, soldAccounts, orderCount, activeCount, revenue] = await Promise.all([
             prisma_1.prisma.product.findUnique({ where: { id: productId }, include: { category: true, _count: { select: { accounts: true, orders: true } } } }),
-            prisma_1.prisma.productAccount.count({ where: { productId, status: "available" } }),
-            prisma_1.prisma.productAccount.count({ where: { productId, status: "sold" } }),
+            prisma_1.prisma.productAccount.count({ where: sellableInventoryWhere(productId) }),
+            prisma_1.prisma.productAccount.count({ where: { productId, status: "reserved" } }),
+            prisma_1.prisma.productAccount.count({ where: purchasedInventoryWhere(productId) }),
             prisma_1.prisma.productAccount.count({ where: { productId, status: "disabled" } }),
             prisma_1.prisma.productAccount.count({ where: { productId, status: "expired" } }),
-            prisma_1.prisma.productAccount.findMany({ where: { productId, status: { in: ["available", "reserved"] } }, orderBy: { createdAt: "desc" }, take: 5 }),
-            prisma_1.prisma.productAccount.findMany({ where: { productId, status: "sold" }, orderBy: { soldAt: "desc" }, take: 5 }),
+            prisma_1.prisma.productAccount.findMany({ where: { OR: [sellableInventoryWhere(productId), { productId, status: "reserved" }] }, orderBy: { createdAt: "desc" }, take: 5 }),
+            prisma_1.prisma.productAccount.findMany({ where: purchasedInventoryWhere(productId), orderBy: { soldAt: "desc" }, take: 5 }),
+            prisma_1.prisma.order.count({ where: { productId, status: "completed" } }),
+            prisma_1.prisma.productAccount.count({ where: activePurchasedInventoryWhere(productId, now) }),
             prisma_1.prisma.order.aggregate({ where: { productId, status: "completed" }, _sum: { finalPaidAmount: true } }),
         ]);
-        return { product, available, sold, disabled, expired, activeAccounts, soldAccounts, revenue: revenue._sum.finalPaidAmount ?? 0 };
+        return { product, available, reserved, sold, disabled, expired, activeAccounts, soldAccounts, orderCount, activeCount, revenue: revenue._sum.finalPaidAmount ?? 0 };
     }
     static async searchProducts(query) {
-        return prisma_1.prisma.product.findMany({ where: { deletedAt: null, OR: [{ title: { contains: query } }, { category: { is: { name: { contains: query } } } }] }, include: { category: true }, orderBy: { createdAt: "desc" }, take: 10 });
+        return prisma_1.prisma.product.findMany({ where: { AND: [(0, visibility_1.productNotDeletedWhere)()], OR: [{ title: { contains: query } }, { category: { is: { name: { contains: query } } } }] }, include: { category: true }, orderBy: { createdAt: "desc" }, take: 10 });
     }
     static async updateProduct(productId, data, actorId) {
-        const product = await prisma_1.prisma.product.update({ where: { id: productId }, data });
-        await this.audit(actorId, "product.update", { productId, data });
+        const updateData = cleanUndefined(data);
+        if (updateData.categoryId) {
+            await prisma_1.prisma.category.findFirstOrThrow({ where: { id: updateData.categoryId, AND: [(0, visibility_1.categoryNotDeletedWhere)()] } });
+        }
+        if (updateData.isActive) {
+            const product = await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
+            const categoryId = updateData.categoryId ?? product.categoryId;
+            await prisma_1.prisma.category.findFirstOrThrow({ where: { id: categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
+            updateData.deletedAt = null;
+        }
+        const product = await prisma_1.prisma.product.update({ where: { id: productId }, data: updateData });
+        await this.audit(actorId, "product.update", { productId, data: updateData });
         return product;
     }
     static async setProductActive(productId, isActive, actorId) {
+        if (isActive) {
+            const current = await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
+            await prisma_1.prisma.category.findFirstOrThrow({ where: { id: current.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
+        }
         const product = await prisma_1.prisma.product.update({ where: { id: productId }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
         await this.audit(actorId, isActive ? "product.activate" : "product.deactivate", { productId });
         return product;
@@ -200,18 +320,43 @@ class AdminService {
             return product;
         });
     }
-    static async listAccounts(page = 1, take = 8, query, status) {
+    static async listAccounts(page = 1, take = 8, query, status, productId) {
         const skip = (page - 1) * take;
         const q = containsQuery(query);
-        const where = { ...(status ? { status } : {}), ...(q ? { OR: [{ username: { contains: q } }, { subscriptionLink: { contains: q } }, { configLink: { contains: q } }, { product: { is: { title: { contains: q } } } }] } : {}) };
-        return Promise.all([prisma_1.prisma.productAccount.findMany({ where, include: { product: true }, orderBy: { createdAt: "desc" }, skip, take }), prisma_1.prisma.productAccount.count({ where })]);
+        const queryWhere = q ? { OR: [{ username: { contains: q } }, { subscriptionLink: { contains: q } }, { configLink: { contains: q } }, { product: { is: { title: { contains: q } } } }] } : {};
+        const productWhere = productId ? { productId } : {};
+        const statusWhere = status === "available" ? sellableInventoryWhere(productId) : status === "sold" ? purchasedInventoryWhere(productId) : status ? { ...productWhere, status } : productWhere;
+        const where = { AND: [statusWhere, queryWhere] };
+        const include = { product: true, items: { where: { order: { is: { status: "completed" } } }, include: { order: { include: { user: true } } }, orderBy: { purchaseDate: "desc" }, take: 1 } };
+        const [accounts, total] = await Promise.all([
+            prisma_1.prisma.productAccount.findMany({ where, include, orderBy: [{ soldAt: "desc" }, { createdAt: "desc" }], skip, take }),
+            prisma_1.prisma.productAccount.count({ where }),
+        ]);
+        const assignedUserIds = [...new Set(accounts.map((account) => account.items[0]?.order.userId ?? account.soldTo ?? account.reservedBy).filter((id) => Boolean(id)))];
+        const users = assignedUserIds.length
+            ? await prisma_1.prisma.user.findMany({ where: { id: { in: assignedUserIds } }, select: { id: true, telegramId: true, username: true, firstName: true } })
+            : [];
+        const userMap = new Map(users.map((user) => [user.id, user]));
+        const now = new Date();
+        return [accounts.map((account) => {
+                const purchase = account.items[0];
+                const assignedUserId = purchase?.order.userId ?? account.soldTo ?? account.reservedBy ?? "";
+                const effectiveStatus = normalizePurchasedStatus(account, now);
+                return { ...account, status: effectiveStatus, assignedUser: userMap.get(assignedUserId) ?? purchase?.order.user ?? null, assignedDate: purchase?.purchaseDate ?? account.soldAt ?? account.reservedAt ?? null };
+            }), total];
     }
     static async accountDetail(accountId) {
-        return prisma_1.prisma.productAccount.findUnique({ where: { id: accountId }, include: { product: true, history: { orderBy: { createdAt: "desc" }, take: 10 } } });
+        const account = await prisma_1.prisma.productAccount.findUnique({ where: { id: accountId }, include: { product: true, items: { where: { order: { is: { status: "completed" } } }, include: { order: { include: { user: true } }, product: true }, orderBy: { purchaseDate: "desc" }, take: 1 }, history: { orderBy: { createdAt: "desc" }, take: 10 } } });
+        const purchase = account?.items[0];
+        const assignedUserId = purchase?.order.userId ?? account?.soldTo ?? account?.reservedBy;
+        const assignedUser = assignedUserId ? await prisma_1.prisma.user.findUnique({ where: { id: assignedUserId }, select: { id: true, telegramId: true, username: true, firstName: true } }) : null;
+        return account ? { ...account, status: normalizePurchasedStatus(account), assignedUser: assignedUser ?? purchase?.order.user ?? null, assignedDate: purchase?.purchaseDate ?? account.soldAt ?? account.reservedAt ?? null } : null;
     }
     static async updateAccount(accountId, data, actorId) {
         return prisma_1.prisma.$transaction(async (tx) => {
             const current = await tx.productAccount.findUniqueOrThrow({ where: { id: accountId } });
+            if (data.productId && data.productId !== current.productId)
+                await tx.product.findFirstOrThrow({ where: { id: data.productId, AND: [(0, visibility_1.productNotDeletedWhere)()] } });
             const update = { ...data, ...(data.configLink ? { config: data.configLink } : {}) };
             const account = await tx.productAccount.update({ where: { id: accountId }, data: update });
             if (data.productId && data.productId !== current.productId)
@@ -221,10 +366,20 @@ class AdminService {
             return account;
         });
     }
+    static async moveAccount(accountId, productId, actorId) {
+        return this.updateAccount(accountId, { productId }, actorId);
+    }
     static async setAccountStatus(accountId, status, actorId) {
         const account = await prisma_1.prisma.$transaction(async (tx) => {
             const current = await tx.productAccount.findUniqueOrThrow({ where: { id: accountId } });
-            const updated = await tx.productAccount.update({ where: { id: accountId }, data: { status, ...(status === "available" ? { reservedBy: null, reservedAt: null } : {}) } });
+            const updated = await tx.productAccount.update({
+                where: { id: accountId },
+                data: {
+                    status,
+                    ...(status === "available" ? { reservedBy: null, reservedAt: null, soldTo: null, soldAt: null } : {}),
+                    ...(status === "sold" ? { reservedBy: null, reservedAt: null, soldAt: current.soldAt ?? new Date() } : {}),
+                },
+            });
             await tx.productAccountHistory.create({ data: { accountId, actorId, action: "account.status", fromValue: current.status, toValue: status } });
             return updated;
         });
@@ -271,40 +426,22 @@ class AdminService {
         return Promise.all([prisma_1.prisma.cryptoWallet.findMany({ where, orderBy: [{ displayOrder: "asc" }, { coinName: "asc" }], skip, take }), prisma_1.prisma.cryptoWallet.count({ where })]);
     }
     static async walletDetail(walletId) {
-        const [wallet, pendingDeposits, activePayments, deposits] = await Promise.all([
-            prisma_1.prisma.cryptoWallet.findUnique({ where: { id: walletId } }),
-            prisma_1.prisma.deposit.count({ where: { cryptoWalletId: walletId, status: { in: ["pending", "submitted"] } } }),
-            prisma_1.prisma.deposit.count({ where: { cryptoWalletId: walletId, status: "submitted" } }),
-            prisma_1.prisma.deposit.count({ where: { cryptoWalletId: walletId } }),
-        ]);
-        return { wallet, pendingDeposits, activePayments, deposits };
+        const [wallet, usage] = await Promise.all([deposit_service_1.CryptoWalletService.get(walletId), deposit_service_1.CryptoWalletService.getUsage(walletId)]);
+        return { wallet, pendingDeposits: usage.pendingDeposits, submittedDeposits: usage.submittedDeposits, activePayments: usage.activePayments, deposits: usage.deposits };
     }
     static async saveCryptoWallet(data, actorId, walletId) {
-        const coinName = data.coinName.trim().toUpperCase();
-        const networkName = data.networkName.trim().toUpperCase();
-        const walletAddress = data.walletAddress.trim();
-        if (!coinName || !networkName || !walletAddress)
-            throw new Error("اطلاعات کیف پول کامل نیست");
-        const payload = { coinName, coinSymbol: (data.coinSymbol ?? coinName).trim().toUpperCase(), networkName, displayName: data.displayName?.trim() || `${coinName} ${networkName}`, walletAddress, displayOrder: data.displayOrder ?? 0, status: data.status ?? "active" };
-        const wallet = walletId ? await prisma_1.prisma.cryptoWallet.update({ where: { id: walletId }, data: payload }) : await deposit_service_1.CryptoWalletService.upsert(payload, actorId);
-        if (walletId)
-            await this.audit(actorId, "crypto_wallet.update", { walletId });
+        const wallet = walletId ? await deposit_service_1.CryptoWalletService.update(walletId, data, actorId) : await deposit_service_1.CryptoWalletService.create(data, actorId);
         this.invalidateDashboardCache();
         return wallet;
     }
     static async setCryptoWalletStatus(walletId, status, actorId) {
-        const wallet = await deposit_service_1.CryptoWalletService.setStatus(walletId, status, actorId);
+        const wallet = status === "active" ? await deposit_service_1.CryptoWalletService.enable(walletId, actorId) : await deposit_service_1.CryptoWalletService.disable(walletId, actorId);
         this.invalidateDashboardCache();
         return wallet;
     }
-    static async deleteCryptoWallet(walletId, actorId, force = false) {
-        const safety = await this.walletDetail(walletId);
-        if (!safety.wallet)
-            throw new Error("کیف پول پیدا نشد");
-        if ((safety.pendingDeposits > 0 || safety.activePayments > 0) && !force)
-            throw new Error("این کیف پول پرداخت در جریان دارد. ابتدا پرداخت‌ها را تعیین وضعیت کنید یا تایید نهایی حذف را بزنید");
-        const wallet = await prisma_1.prisma.cryptoWallet.delete({ where: { id: walletId } });
-        await this.audit(actorId, "crypto_wallet.delete", { walletId, force, pendingDeposits: safety.pendingDeposits, activePayments: safety.activePayments });
+    static async deleteCryptoWallet(walletId, actorId) {
+        const wallet = await deposit_service_1.CryptoWalletService.delete(walletId, actorId);
+        this.invalidateDashboardCache();
         return wallet;
     }
     static async cryptoWalletStats() {
@@ -333,15 +470,23 @@ class AdminService {
     static async deleteForcedJoinChannel(channelId, actorId) {
         return forced_join_service_1.ForcedJoinService.delete(channelId, actorId);
     }
-    static async accountStats() {
-        const [available, sold, disabled, expired, products] = await Promise.all([
-            prisma_1.prisma.productAccount.count({ where: { status: "available" } }),
-            prisma_1.prisma.productAccount.count({ where: { status: "sold" } }),
-            prisma_1.prisma.productAccount.count({ where: { status: "disabled" } }),
-            prisma_1.prisma.productAccount.count({ where: { status: "expired" } }),
-            prisma_1.prisma.product.findMany({ where: { isActive: true, deletedAt: null }, include: { _count: { select: { accounts: true } } }, orderBy: { title: "asc" }, take: 20 }),
+    static async accountStats(productId) {
+        const where = productId ? { productId } : {};
+        const [total, available, reserved, sold, disabled, expired, products] = await Promise.all([
+            prisma_1.prisma.productAccount.count({ where }),
+            prisma_1.prisma.productAccount.count({ where: sellableInventoryWhere(productId) }),
+            prisma_1.prisma.productAccount.count({ where: { ...where, status: "reserved" } }),
+            prisma_1.prisma.productAccount.count({ where: purchasedInventoryWhere(productId) }),
+            prisma_1.prisma.productAccount.count({ where: { ...where, status: "disabled" } }),
+            prisma_1.prisma.productAccount.count({ where: { ...where, status: "expired" } }),
+            prisma_1.prisma.product.findMany({
+                where: (0, visibility_1.productNotDeletedWhere)(),
+                include: { _count: { select: { accounts: true } } },
+                orderBy: [{ isActive: "desc" }, { title: "asc" }],
+                take: 50,
+            }),
         ]);
-        return { available, sold, disabled, expired, products };
+        return { total, available, reserved, sold, disabled, expired, products };
     }
     static invalidateDashboardCache() {
         dashboardCache = undefined;

@@ -12,6 +12,7 @@ const accountExpiration_1 = require("./jobs/accountExpiration");
 const logger_1 = require("./services/logger");
 const system_service_1 = require("./modules/system/system.service");
 const prisma_1 = require("./services/prisma");
+const payment_callback_server_1 = require("./services/payment-callback-server");
 async function bootstrap() {
     try {
         logger_1.logger.info("Bot starting...");
@@ -26,8 +27,11 @@ async function bootstrap() {
         setInterval(() => {
             system_service_1.CryptoRateService.refreshAll().catch((error) => logger_1.logger.error("Crypto rate refresh failed", { error: error instanceof Error ? error.message : String(error) }));
         }, 5 * 60000);
+        const paymentServer = (0, payment_callback_server_1.startPaymentCallbackServer)(bot_1.bot);
         await bot_1.bot.launch();
         logger_1.logger.info("Bot is running");
+        process.once("SIGINT", () => paymentServer.close());
+        process.once("SIGTERM", () => paymentServer.close());
     }
     catch (error) {
         logger_1.logger.error("Failed to start bot", { error: error instanceof Error ? error.message : String(error) });

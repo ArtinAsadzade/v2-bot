@@ -13,11 +13,8 @@ function getFlow(ctx) {
     const flow = ctx.session.adminFlow;
     if (!flow || !isAdminFlowName(flow.flow))
         return undefined;
-    return {
-        flow: flow.flow,
-        step: flow.step,
-        data: normalizeFlowData(flow.data),
-    };
+    flow.data = normalizeFlowData(flow.data);
+    return flow;
 }
 function isAdminFlowName(value) {
     return value === "product_create" || value === "coupon_create" || value === "account_create" || value === "ticket_reply" || value === "category_create" || value === "category_edit" || value === "product_edit" || value === "account_edit" || value === "wallet_create" || value === "wallet_edit";

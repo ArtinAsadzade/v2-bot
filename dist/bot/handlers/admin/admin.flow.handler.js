@@ -26,6 +26,12 @@ function parseActive(value) {
         return undefined;
     return ["1", "true", "active", "فعال", "بله"].includes(value.toLowerCase()) ? true : ["0", "false", "inactive", "غیرفعال", "خیر"].includes(value.toLowerCase()) ? false : undefined;
 }
+function parseAccountStatus(value) {
+    if (!value)
+        return undefined;
+    const normalized = value.toLowerCase();
+    return ["available", "reserved", "sold", "disabled", "expired"].includes(normalized) ? normalized : undefined;
+}
 async function handleAdminFlow(ctx) {
     const flow = (0, admin_flow_1.getFlow)(ctx);
     if (!flow)
@@ -106,7 +112,7 @@ async function handleAdminFlow(ctx) {
             subscriptionLink: data.subscriptionLink ?? data.sub ?? data["ساب"],
             configLink: data.configLink ?? data.config ?? data["کانفیگ"],
             productId: data.productId ?? data.product ?? data["محصول"],
-            status: data.status ?? undefined,
+            status: parseAccountStatus(data.status ?? data["وضعیت"]),
         }, String(ctx.from?.id ?? "system"));
         (0, admin_flow_1.resetFlow)(ctx);
         await ctx.reply(`✅ اکانت ${updated.username} ذخیره شد.`, (0, main_keyboard_1.navigationKeyboard)(`admin:account:${updated.id}`));
@@ -114,15 +120,17 @@ async function handleAdminFlow(ctx) {
     }
     if (flow.flow === "wallet_create" || flow.flow === "wallet_edit") {
         const data = parseKeyValueLines(text);
-        const wallet = await admin_service_1.AdminService.saveCryptoWallet({
-            coinName: data.coinName ?? data.coin ?? data["نام ارز"] ?? "",
+        const active = parseActive(data.active ?? data.status ?? data["وضعیت"]);
+        const walletData = {
+            coinName: data.coinName ?? data.coin ?? data["نام ارز"],
             coinSymbol: data.coinSymbol ?? data.symbol ?? data["نماد"],
-            networkName: data.networkName ?? data.network ?? data["شبکه"] ?? "",
+            networkName: data.networkName ?? data.network ?? data["شبکه"],
             displayName: data.displayName ?? data.display ?? data["نام نمایشی"],
-            walletAddress: data.walletAddress ?? data.address ?? data["آدرس"] ?? "",
+            walletAddress: data.walletAddress ?? data.address ?? data["آدرس"],
             displayOrder: optionalPositiveInteger(data.order ?? data.sort ?? data["ترتیب"]),
-            status: parseActive(data.active ?? data.status ?? data["وضعیت"]) === false ? "inactive" : "active",
-        }, String(ctx.from?.id ?? "system"), flow.flow === "wallet_edit" ? String(flow.data.walletId) : undefined);
+            status: active === undefined ? undefined : active ? "active" : "inactive",
+        };
+        const wallet = await admin_service_1.AdminService.saveCryptoWallet(flow.flow === "wallet_create" ? { ...walletData, coinName: walletData.coinName ?? "", networkName: walletData.networkName ?? "", walletAddress: walletData.walletAddress ?? "" } : walletData, String(ctx.from?.id ?? "system"), flow.flow === "wallet_edit" ? String(flow.data.walletId) : undefined);
         (0, admin_flow_1.resetFlow)(ctx);
         await ctx.reply(`✅ کیف پول ${wallet.coinName}/${wallet.networkName} ذخیره شد.`, (0, main_keyboard_1.navigationKeyboard)(`admin:wallet:${wallet.id}`));
         return true;

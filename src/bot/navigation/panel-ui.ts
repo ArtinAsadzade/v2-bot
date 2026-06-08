@@ -44,6 +44,9 @@ export type PanelViewId =
   | "admin.transactions"
   | "admin.notifications"
   | "admin.settings"
+  | "admin.paymentGateway"
+  | "admin.invoices"
+  | "admin.invoice"
   | "admin.deposits"
   | "admin.deposit"
   | "admin.orders"
@@ -122,6 +125,9 @@ const PANEL_VIEW_IDS = new Set<string>([
   "admin.transactions",
   "admin.notifications",
   "admin.settings",
+  "admin.paymentGateway",
+  "admin.invoices",
+  "admin.invoice",
   "admin.deposits",
   "admin.deposit",
   "admin.orders",

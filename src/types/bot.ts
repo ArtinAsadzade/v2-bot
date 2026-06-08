@@ -21,6 +21,7 @@ export type FlowName =
   | "coupon_create"
   | "coupon_edit"
   | "deposit_submit"
+  | "instant_topup"
   | "ticket_reply"
   | "coupon_code"
   | "product_search"
@@ -36,7 +37,8 @@ export type FlowName =
   | "minimum_topup"
   | "referral_tier_create"
   | "store_status"
-  | "forced_join_create";
+  | "forced_join_create"
+  | "payment_gateway_update";
 
 export interface ActiveFlow {
   name: FlowName;

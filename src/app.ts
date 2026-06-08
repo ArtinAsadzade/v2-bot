@@ -9,6 +9,7 @@ import { deactivateExpiredAccounts } from "./jobs/accountExpiration";
 import { logger } from "./services/logger";
 import { CryptoRateService } from "./modules/system/system.service";
 import { prisma } from "./services/prisma";
+import { startPaymentCallbackServer } from "./services/payment-callback-server";
 
 async function bootstrap() {
   try {
@@ -26,8 +27,11 @@ async function bootstrap() {
       CryptoRateService.refreshAll().catch((error) => logger.error("Crypto rate refresh failed", { error: error instanceof Error ? error.message : String(error) }));
     }, 5 * 60_000);
 
+    const paymentServer = startPaymentCallbackServer(bot);
     await bot.launch();
     logger.info("Bot is running");
+    process.once("SIGINT", () => paymentServer.close());
+    process.once("SIGTERM", () => paymentServer.close());
   } catch (error) {
     logger.error("Failed to start bot", { error: error instanceof Error ? error.message : String(error) });
     process.exit(1);
