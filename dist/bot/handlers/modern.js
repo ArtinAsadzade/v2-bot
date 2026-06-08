@@ -15,9 +15,52 @@ const support_service_1 = require("../../modules/support/support.service");
 const free_account_service_1 = require("../../modules/free-account/free-account.service");
 const payment_service_1 = require("../../modules/payment/payment.service");
 const admin_middleware_1 = require("../middlewares/admin.middleware");
+const reply_keyboard_1 = require("../keyboards/reply.keyboard");
 function registerModernHandlers(bot) {
     (0, modern_views_1.registerModernViews)();
     (0, flow_engine_1.registerFlowEngine)(bot);
+    async function handleQuickReplyNavigation(ctx, text) {
+        const target = (0, reply_keyboard_1.quickReplyTarget)(text);
+        if (!target)
+            return false;
+        if (target === "refresh") {
+            const stack = ctx.session.navigation?.stack ?? [];
+            const current = stack[stack.length - 1] ?? { id: "home" };
+            await (0, panel_ui_1.renderPanel)(ctx, current, "replace");
+            return true;
+        }
+        if (target === "claimFree") {
+            await (0, panel_ui_1.renderPanel)(ctx, { id: "freeAccount" }, "replace");
+            return true;
+        }
+        if (target === "newTicket") {
+            if (!ctx.from)
+                return true;
+            const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
+            if (!user)
+                return true;
+            const ticket = await support_service_1.SupportService.getOrCreateOpenTicket(user.id);
+            ctx.session.liveTicketId = ticket.id;
+            ctx.session.liveTicketRole = "user";
+            await ctx.reply(`💬 گفتگوی پشتیبانی فعال شد
+
+تیکت: #${ticket.id.slice(-6).toUpperCase()}
+
+پیام خود را ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: `support:close:${ticket.id}` }], [{ text: "🏠 منوی اصلی", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+            return true;
+        }
+        if (target.id.startsWith("admin") && (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))) {
+            await ctx.reply("⛔ دسترسی غیرمجاز");
+            return true;
+        }
+        if (target.id === "home") {
+            ctx.session.liveTicketId = undefined;
+            ctx.session.liveTicketRole = undefined;
+            ctx.session.flow = undefined;
+        }
+        await (0, panel_ui_1.renderPanel)(ctx, target, "replace");
+        return true;
+    }
     const legacyViews = new Map([
         ["home", { id: "home" }],
         ["shop", { id: "shop.categories" }],
@@ -652,6 +695,8 @@ ${account.configLink}
     });
     bot.on("text", async (ctx, next) => {
         const text = ctx.message.text.trim();
+        if (await handleQuickReplyNavigation(ctx, text))
+            return;
         if (await (0, flow_engine_1.handleActiveFlowText)(ctx, text))
             return;
         if (ctx.session.liveTicketId && ctx.session.liveTicketRole) {

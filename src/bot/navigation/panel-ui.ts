@@ -1,6 +1,7 @@
 import { Markup } from "telegraf";
 import type { InlineKeyboardButton } from "telegraf/types";
 import type { AppContext } from "../../types/bot";
+import { replyKeyboard, replyKeyboardSignature, type ReplyKeyboardScope } from "../keyboards/reply.keyboard";
 
 export type UiButton = { text: string; action: string };
 export type UiKeyboard = UiButton[][];
@@ -55,7 +56,7 @@ export type PanelViewId =
   | "admin.ticket";
 
 export type ViewState = { id: PanelViewId; params?: Record<string, string | number | boolean | undefined> };
-export type ViewRenderResult = { text: string; keyboard: UiKeyboard; parseMode?: "HTML" };
+export type ViewRenderResult = { text: string; keyboard: UiKeyboard; parseMode?: "HTML"; replyKeyboard?: ReplyKeyboardScope };
 export type ViewRenderer = (ctx: AppContext, params: Record<string, string>) => Promise<ViewRenderResult>;
 
 const registry = new Map<PanelViewId, ViewRenderer>();
@@ -167,6 +168,14 @@ export async function renderPanel(ctx: AppContext, state: ViewState, mode: "push
   ctx.session.navigation ??= { stack: [] };
   if (mode === "push") ctx.session.navigation.stack.push(state);
   if (mode === "replace") ctx.session.navigation.stack = [state];
+
+  if (result.replyKeyboard) {
+    const signature = replyKeyboardSignature(result.replyKeyboard);
+    if (ctx.session.quickKeyboardSignature !== signature) {
+      ctx.session.quickKeyboardSignature = signature;
+      await ctx.reply("⌨️ منوی دسترسی سریع به‌روزرسانی شد.", replyKeyboard(result.replyKeyboard));
+    }
+  }
 
   const keyboard = panelKeyboard(result.keyboard, { back: state.id !== "home", home: state.id !== "home" });
   const extra = { parse_mode: result.parseMode, ...keyboard };
