@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../services/prisma";
 import { WalletService } from "../wallet/wallet.service";
 import { CryptoWalletService, FinancialSettingsService, type CryptoWalletInput } from "../deposit/deposit.service";
@@ -45,6 +46,41 @@ function containsQuery(query?: string) {
 
 function cleanUndefined<T extends Record<string, unknown>>(data: T): Partial<T> {
   return Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
+
+const COMPLETED_PURCHASED_ACCOUNT_WHERE = { items: { some: { order: { is: { status: "completed" as const } } } } };
+
+function purchasedInventoryWhere(productId?: string): Prisma.ProductAccountWhereInput {
+  return {
+    ...(productId ? { productId } : {}),
+    OR: [{ status: "sold" }, COMPLETED_PURCHASED_ACCOUNT_WHERE],
+  };
+}
+
+function sellableInventoryWhere(productId?: string): Prisma.ProductAccountWhereInput {
+  return {
+    ...(productId ? { productId } : {}),
+    status: "available",
+    soldTo: null,
+    soldAt: null,
+    NOT: COMPLETED_PURCHASED_ACCOUNT_WHERE,
+  };
+}
+
+function activePurchasedInventoryWhere(productId?: string, now = new Date()): Prisma.ProductAccountWhereInput {
+  return {
+    ...(productId ? { productId } : {}),
+    NOT: { status: { in: ["disabled", "expired"] } },
+    items: { some: { order: { is: { status: "completed" } }, isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } },
+  };
+}
+
+function normalizePurchasedStatus(account: { status: ProductAccountAdminStatus; items?: Array<{ order: { userId: string; status: string }; purchaseDate: Date; expiresAt: Date | null; isActive: boolean }> }, now = new Date()): ProductAccountAdminStatus {
+  const completedItem = account.items?.find((item) => item.order.status === "completed");
+  if (!completedItem) return account.status;
+  if (account.status === "disabled") return "disabled";
+  if (account.status === "expired" || !completedItem.isActive || (completedItem.expiresAt && completedItem.expiresAt <= now)) return "expired";
+  return "sold";
 }
 
 export class AdminService {
@@ -228,38 +264,20 @@ export class AdminService {
     if (!productIds.length) return [[], total] as const;
 
     const now = new Date();
-    const [accountGroups, soldGroups, activeGroups] = await Promise.all([
-      prisma.productAccount.groupBy({
-        by: ["productId", "status"],
-        where: { productId: { in: productIds } },
-        _count: { _all: true },
-      }),
-      prisma.orderItem.groupBy({
-        by: ["productId"],
-        where: { productId: { in: productIds }, order: { status: "completed" } },
-        _count: { _all: true },
-      }),
-      prisma.orderItem.groupBy({
-        by: ["productId"],
-        where: { productId: { in: productIds }, order: { status: "completed" }, isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }], productAccount: { is: { status: "sold" } } },
-        _count: { _all: true },
-      }),
+    const [availableGroups, soldGroups, activeGroups] = await Promise.all([
+      Promise.all(productIds.map(async (id) => [id, await prisma.productAccount.count({ where: sellableInventoryWhere(id) })] as const)),
+      Promise.all(productIds.map(async (id) => [id, await prisma.productAccount.count({ where: purchasedInventoryWhere(id) })] as const)),
+      Promise.all(productIds.map(async (id) => [id, await prisma.productAccount.count({ where: activePurchasedInventoryWhere(id, now) })] as const)),
     ]);
 
-    const accountCounts = new Map<string, Record<string, number>>();
-    for (const group of accountGroups) {
-      const counts = accountCounts.get(group.productId) ?? {};
-      counts[group.status] = group._count._all;
-      accountCounts.set(group.productId, counts);
-    }
-    const soldCounts = new Map(soldGroups.map((group) => [group.productId, group._count._all]));
-    const activeCounts = new Map(activeGroups.map((group) => [group.productId, group._count._all]));
+    const availableCounts = new Map<string, number>(availableGroups);
+    const soldCounts = new Map<string, number>(soldGroups);
+    const activeCounts = new Map<string, number>(activeGroups);
     return [
       products.map((product) => {
-        const counts = accountCounts.get(product.id) ?? {};
         return {
           ...product,
-          inventoryCount: counts.available ?? 0,
+          inventoryCount: availableCounts.get(product.id) ?? 0,
           soldCount: soldCounts.get(product.id) ?? 0,
           activeCount: activeCounts.get(product.id) ?? 0,
         };
@@ -272,15 +290,15 @@ export class AdminService {
     const now = new Date();
     const [product, available, reserved, sold, disabled, expired, activeAccounts, soldAccounts, orderCount, activeCount, revenue] = await Promise.all([
       prisma.product.findUnique({ where: { id: productId }, include: { category: true, _count: { select: { accounts: true, orders: true } } } }),
-      prisma.productAccount.count({ where: { productId, status: "available" } }),
+      prisma.productAccount.count({ where: sellableInventoryWhere(productId) }),
       prisma.productAccount.count({ where: { productId, status: "reserved" } }),
-      prisma.productAccount.count({ where: { productId, status: "sold" } }),
+      prisma.productAccount.count({ where: purchasedInventoryWhere(productId) }),
       prisma.productAccount.count({ where: { productId, status: "disabled" } }),
       prisma.productAccount.count({ where: { productId, status: "expired" } }),
-      prisma.productAccount.findMany({ where: { productId, status: { in: ["available", "reserved"] } }, orderBy: { createdAt: "desc" }, take: 5 }),
-      prisma.productAccount.findMany({ where: { productId, status: "sold" }, orderBy: { soldAt: "desc" }, take: 5 }),
+      prisma.productAccount.findMany({ where: { OR: [sellableInventoryWhere(productId), { productId, status: "reserved" }] }, orderBy: { createdAt: "desc" }, take: 5 }),
+      prisma.productAccount.findMany({ where: purchasedInventoryWhere(productId), orderBy: { soldAt: "desc" }, take: 5 }),
       prisma.order.count({ where: { productId, status: "completed" } }),
-      prisma.orderItem.count({ where: { productId, order: { status: "completed" }, isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }], productAccount: { is: { status: "sold" } } } }),
+      prisma.productAccount.count({ where: activePurchasedInventoryWhere(productId, now) }),
       prisma.order.aggregate({ where: { productId, status: "completed" }, _sum: { finalPaidAmount: true } }),
     ]);
     return { product, available, reserved, sold, disabled, expired, activeAccounts, soldAccounts, orderCount, activeCount, revenue: revenue._sum.finalPaidAmount ?? 0 };
@@ -353,24 +371,36 @@ export class AdminService {
   static async listAccounts(page = 1, take = 8, query?: string, status?: ProductAccountAdminStatus, productId?: string) {
     const skip = (page - 1) * take;
     const q = containsQuery(query);
-    const where = { ...(productId ? { productId } : {}), ...(status ? { status } : {}), ...(q ? { OR: [{ username: { contains: q } }, { subscriptionLink: { contains: q } }, { configLink: { contains: q } }, { product: { is: { title: { contains: q } } } }] } : {}) };
+    const queryWhere: Prisma.ProductAccountWhereInput = q ? { OR: [{ username: { contains: q } }, { subscriptionLink: { contains: q } }, { configLink: { contains: q } }, { product: { is: { title: { contains: q } } } }] } : {};
+    const productWhere: Prisma.ProductAccountWhereInput = productId ? { productId } : {};
+    const statusWhere: Prisma.ProductAccountWhereInput =
+      status === "available" ? sellableInventoryWhere(productId) : status === "sold" ? purchasedInventoryWhere(productId) : status ? { ...productWhere, status } : productWhere;
+    const where: Prisma.ProductAccountWhereInput = { AND: [statusWhere, queryWhere] };
+    const include = { product: true, items: { where: { order: { is: { status: "completed" as const } } }, include: { order: { include: { user: true } } }, orderBy: { purchaseDate: "desc" as const }, take: 1 } };
     const [accounts, total] = await Promise.all([
-      prisma.productAccount.findMany({ where, include: { product: true }, orderBy: [{ soldAt: "desc" }, { createdAt: "desc" }], skip, take }),
+      prisma.productAccount.findMany({ where, include, orderBy: [{ soldAt: "desc" }, { createdAt: "desc" }], skip, take }),
       prisma.productAccount.count({ where }),
     ]);
-    const assignedUserIds = [...new Set(accounts.map((account) => account.soldTo ?? account.reservedBy).filter((id): id is string => Boolean(id)))];
+    const assignedUserIds = [...new Set(accounts.map((account) => account.items[0]?.order.userId ?? account.soldTo ?? account.reservedBy).filter((id): id is string => Boolean(id)))];
     const users = assignedUserIds.length
       ? await prisma.user.findMany({ where: { id: { in: assignedUserIds } }, select: { id: true, telegramId: true, username: true, firstName: true } })
       : [];
     const userMap = new Map(users.map((user) => [user.id, user]));
-    return [accounts.map((account) => ({ ...account, assignedUser: userMap.get(account.soldTo ?? account.reservedBy ?? "") ?? null, assignedDate: account.soldAt ?? account.reservedAt ?? null })), total] as const;
+    const now = new Date();
+    return [accounts.map((account) => {
+      const purchase = account.items[0];
+      const assignedUserId = purchase?.order.userId ?? account.soldTo ?? account.reservedBy ?? "";
+      const effectiveStatus = normalizePurchasedStatus(account, now);
+      return { ...account, status: effectiveStatus, assignedUser: userMap.get(assignedUserId) ?? purchase?.order.user ?? null, assignedDate: purchase?.purchaseDate ?? account.soldAt ?? account.reservedAt ?? null };
+    }), total] as const;
   }
 
   static async accountDetail(accountId: string) {
-    const account = await prisma.productAccount.findUnique({ where: { id: accountId }, include: { product: true, history: { orderBy: { createdAt: "desc" }, take: 10 } } });
-    const assignedUserId = account?.soldTo ?? account?.reservedBy;
+    const account = await prisma.productAccount.findUnique({ where: { id: accountId }, include: { product: true, items: { where: { order: { is: { status: "completed" } } }, include: { order: { include: { user: true } }, product: true }, orderBy: { purchaseDate: "desc" }, take: 1 }, history: { orderBy: { createdAt: "desc" }, take: 10 } } });
+    const purchase = account?.items[0];
+    const assignedUserId = purchase?.order.userId ?? account?.soldTo ?? account?.reservedBy;
     const assignedUser = assignedUserId ? await prisma.user.findUnique({ where: { id: assignedUserId }, select: { id: true, telegramId: true, username: true, firstName: true } }) : null;
-    return account ? { ...account, assignedUser, assignedDate: account.soldAt ?? account.reservedAt ?? null } : null;
+    return account ? { ...account, status: normalizePurchasedStatus(account), assignedUser: assignedUser ?? purchase?.order.user ?? null, assignedDate: purchase?.purchaseDate ?? account.soldAt ?? account.reservedAt ?? null } : null;
   }
 
   static async updateAccount(accountId: string, data: AccountInput, actorId: string) {
@@ -515,9 +545,9 @@ export class AdminService {
     const where = productId ? { productId } : {};
     const [total, available, reserved, sold, disabled, expired, products] = await Promise.all([
       prisma.productAccount.count({ where }),
-      prisma.productAccount.count({ where: { ...where, status: "available" } }),
+      prisma.productAccount.count({ where: sellableInventoryWhere(productId) }),
       prisma.productAccount.count({ where: { ...where, status: "reserved" } }),
-      prisma.productAccount.count({ where: { ...where, status: "sold" } }),
+      prisma.productAccount.count({ where: purchasedInventoryWhere(productId) }),
       prisma.productAccount.count({ where: { ...where, status: "disabled" } }),
       prisma.productAccount.count({ where: { ...where, status: "expired" } }),
       prisma.product.findMany({

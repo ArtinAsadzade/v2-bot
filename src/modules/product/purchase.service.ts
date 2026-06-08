@@ -2,6 +2,7 @@ import { prisma } from "../../services/prisma";
 import { CouponService } from "../coupon/coupon.service";
 import { WalletService } from "../wallet/wallet.service";
 import { eventBus } from "../../services/event-bus.service";
+import { AdminService } from "../admin/admin.service";
 
 export class PurchaseService {
   static async buyProduct(userId: string, productId: string, couponCode?: string) {
@@ -108,6 +109,7 @@ export class PurchaseService {
 
       return { order, product, account: deliveredAccount, totalAmount, originalAmount, discountAmount, couponId, couponCode, expiresAt };
     }).then((result) => {
+      AdminService.invalidateDashboardCache();
       eventBus.emit("order.created", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });
       eventBus.emit("order.completed", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });
       if (result.couponId && result.couponCode) eventBus.emit("coupon.applied", { couponId: result.couponId, code: result.couponCode, userId, orderId: result.order.id, discountAmount: result.discountAmount });

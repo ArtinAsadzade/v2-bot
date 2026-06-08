@@ -32,6 +32,11 @@ function dateFa(date?: Date | null) {
   return date ? new Intl.DateTimeFormat("fa-IR", { dateStyle: "short", timeStyle: "short" }).format(date) : "-";
 }
 
+function userLabel(user?: { telegramId?: string | null; username?: string | null; firstName?: string | null } | null) {
+  if (!user) return "-";
+  return [user.firstName, user.username ? `@${user.username}` : undefined, user.telegramId].filter(Boolean).join(" · ");
+}
+
 function paginationKeyboard(prefix: string, page: number, totalPages: number, backTo = "admin:dashboard") {
   const rows: InlineKeyboardButton.CallbackButton[][] = [];
   const nav: InlineKeyboardButton.CallbackButton[] = [];
@@ -192,7 +197,7 @@ export function registerAdminHandlers(bot: AppBot) {
     const page = "match" in ctx && ctx.match ? Number(ctx.match[1]) : 1;
     const { take, pageSize } = getPagination(page);
     const [products, total] = await AdminService.listProducts(page, take);
-    const text = `📦 مدیریت محصولات\n📊 تعداد: ${total.toLocaleString("fa-IR")}\n\n${products.map((product) => `📦 ${product.title} | ${product.category.name} | ${product.price.toLocaleString("fa-IR")} تومان | ${product.duration} روز | موجودی ${product._count.accounts.toLocaleString("fa-IR")} | فروش ${product._count.orders.toLocaleString("fa-IR")} | ${statusFa(product.isActive)}`).join("\n") || "محصولی وجود ندارد."}`;
+    const text = `📦 مدیریت محصولات\n📊 تعداد: ${total.toLocaleString("fa-IR")}\n\n${products.map((product) => `📦 ${product.title} | ${product.category.name} | ${product.price.toLocaleString("fa-IR")} تومان | ${product.duration} روز | موجودی ${product.inventoryCount.toLocaleString("fa-IR")} | فروخته ${product.soldCount.toLocaleString("fa-IR")} | فعال ${product.activeCount.toLocaleString("fa-IR")} | ${statusFa(product.isActive)}`).join("\n") || "محصولی وجود ندارد."}`;
     await ctx.reply(text, entityListKeyboard(products.map((product) => [Markup.button.callback(`👁 ${product.title}`, `admin:product:${product.id}`)]), "admin:products", page, total, pageSize, "admin:dashboard", [[Markup.button.callback("➕ ایجاد محصول", "admin:product:create")]]));
   });
 
@@ -275,7 +280,7 @@ export function registerAdminHandlers(bot: AppBot) {
     const [accounts, total] = await AdminService.listAccounts(page, take, undefined, status);
     const stats = await AdminService.accountStats();
     const prefix = status ? `admin:accounts:status:${status}` : "admin:accounts";
-    const text = `🗄 مدیریت موجودی اکانت‌ها\n📊 ${inventoryStatsLine(stats)}\n${status ? `🔎 فیلتر فعلی: ${statusFa(status)}\n` : ""}\n${accounts.map((account) => `👤 ${account.username} | ${account.product.title} | ${statusFa(account.status)} | کاربر: ${account.soldTo ?? account.reservedBy ?? "-"} | تاریخ: ${dateFa(account.soldAt ?? account.reservedAt)}`).join("\n") || "اکانتی وجود ندارد."}`;
+    const text = `🗄 مدیریت موجودی اکانت‌ها\n📊 ${inventoryStatsLine(stats)}\n${status ? `🔎 فیلتر فعلی: ${statusFa(status)}\n` : ""}\n${accounts.map((account) => `👤 ${account.username} | ${account.product.title} | ${statusFa(account.status)} | کاربر: ${account.assignedUser ? userLabel(account.assignedUser) : "-"} | تاریخ: ${dateFa(account.assignedDate)}`).join("\n") || "اکانتی وجود ندارد."}`;
     await ctx.reply(
       text,
       entityListKeyboard(
@@ -311,7 +316,7 @@ export function registerAdminHandlers(bot: AppBot) {
     const [accounts, total] = await AdminService.listAccounts(page, take, undefined, undefined, productId);
     const stats = await AdminService.accountStats(productId);
     const title = accounts[0]?.product.title ?? (await AdminService.productDetail(productId)).product?.title ?? "محصول";
-    const text = `🗄 اکانت‌های محصول: ${title}\n📊 ${inventoryStatsLine(stats)}\n\n${accounts.map((account) => `👤 ${account.username} | ${statusFa(account.status)} | کاربر: ${account.soldTo ?? account.reservedBy ?? "-"}`).join("\n") || "اکانتی برای این محصول وجود ندارد."}`;
+    const text = `🗄 اکانت‌های محصول: ${title}\n📊 ${inventoryStatsLine(stats)}\n\n${accounts.map((account) => `👤 ${account.username} | ${statusFa(account.status)} | کاربر: ${account.assignedUser ? userLabel(account.assignedUser) : "-"}`).join("\n") || "اکانتی برای این محصول وجود ندارد."}`;
     await ctx.reply(text, entityListKeyboard(accounts.map((account) => [Markup.button.callback(`👁 ${account.username}`, `admin:account:${account.id}`)]), `admin:product:accounts:${productId}`, page, total, pageSize, `admin:product:${productId}`, [[Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${productId}`)]]));
   });
 
@@ -343,7 +348,7 @@ export function registerAdminHandlers(bot: AppBot) {
     if (!account) return void (await ctx.reply("اکانت پیدا نشد.", navigationKeyboard("admin:accounts")));
     const history = account.history.map((item) => `• ${dateFa(item.createdAt)} | ${item.action} | ${item.fromValue ?? "-"} → ${item.toValue ?? "-"}`).join("\n") || "بدون تاریخچه";
     await ctx.reply(
-      `🗄 جزئیات اکانت\n\nUsername: ${account.username}\nSubscription: ${account.subscriptionLink}\nConfig: ${account.configLink}\nProduct: ${account.product.title}\nStatus: ${statusFa(account.status)}\nAssigned User: ${account.soldTo ?? account.reservedBy ?? "-"}\nAssigned Date: ${dateFa(account.soldAt ?? account.reservedAt)}\n\n📜 تاریخچه تخصیص/تغییر:\n${history}`,
+      `🗄 جزئیات اکانت\n\nUsername: ${account.username}\nSubscription: ${account.subscriptionLink}\nConfig: ${account.configLink}\nProduct: ${account.product.title}\nStatus: ${statusFa(account.status)}\nAssigned User: ${account.assignedUser ? userLabel(account.assignedUser) : "-"}\nAssigned Date: ${dateFa(account.assignedDate)}\n\n📜 تاریخچه تخصیص/تغییر:\n${history}`,
       Markup.inlineKeyboard([
         [Markup.button.callback("✏️ ویرایش", `admin:account:edit:${account.id}`), Markup.button.callback("🚚 انتقال", `admin:account:move:${account.id}`)],
         [Markup.button.callback(account.status === "disabled" ? "▶️ فعال" : "⏸ غیرفعال", `admin:account:status:${account.id}:${account.status === "disabled" ? "available" : "disabled"}`), Markup.button.callback("✅ AVAILABLE", `admin:account:status:${account.id}:available`)],
