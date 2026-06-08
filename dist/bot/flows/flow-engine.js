@@ -76,6 +76,12 @@ function requireUser(ctx) {
         return user;
     });
 }
+function paymentFlowReplyKeyboard() {
+    return {
+        keyboard: [["🔙 بازگشت", "🔄 بروزرسانی وضعیت"], ["💳 پرداخت آنی", "👛 پرداخت از کیف پول"], ["🏠 منوی اصلی"]],
+        resize_keyboard: true,
+    };
+}
 function paymentGatewaySavedMessage(field, config) {
     if (field === "apiKey")
         return `✅ API Key ذخیره شد\n\nمقدار جدید از دیتابیس:\n********${config.apiKey.slice(-4).toUpperCase()}`;
@@ -923,7 +929,7 @@ async function handleActiveFlowText(ctx, text) {
         return false;
     if (result.done) {
         ctx.session.flow = undefined;
-        await ctx.reply(result.text);
+        await ctx.reply(result.text, flow.name === "instant_topup" ? { reply_markup: paymentFlowReplyKeyboard() } : undefined);
         await (0, panel_ui_1.renderPanel)(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace");
         return true;
     }

@@ -80,6 +80,13 @@ function requireUser(ctx: AppContext) {
 }
 
 
+function paymentFlowReplyKeyboard() {
+  return {
+    keyboard: [["🔙 بازگشت", "🔄 بروزرسانی وضعیت"], ["💳 پرداخت آنی", "👛 پرداخت از کیف پول"], ["🏠 منوی اصلی"]],
+    resize_keyboard: true,
+  };
+}
+
 function paymentGatewaySavedMessage(field: keyof PaymentGatewayInput, config: Awaited<ReturnType<typeof PaymentGatewayService.getConfig>>) {
   if (field === "apiKey") return `✅ API Key ذخیره شد\n\nمقدار جدید از دیتابیس:\n********${config.apiKey.slice(-4).toUpperCase()}`;
   if (field === "callbackUrl") return `✅ Callback URL ذخیره شد\n\nمقدار جدید از دیتابیس:\n${config.callbackUrl || "—"}`;
@@ -950,7 +957,7 @@ export async function handleActiveFlowText(ctx: AppContext, text: string) {
   if (!result) return false;
   if (result.done) {
     ctx.session.flow = undefined;
-    await ctx.reply(result.text);
+    await ctx.reply(result.text, flow.name === "instant_topup" ? { reply_markup: paymentFlowReplyKeyboard() } : undefined);
     await renderPanel(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace");
     return true;
   }

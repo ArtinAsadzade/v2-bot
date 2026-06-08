@@ -191,6 +191,9 @@ ${invoice.amount.toLocaleString("fa-IR")} تومان
 پس از پرداخت، محصول به صورت خودکار تحویل خواهد شد.`, {
         reply_markup: { inline_keyboard: [[{ text: "⚡ پرداخت", url: invoice.paymentLink ?? "" }], [{ text: "🔙 بازگشت", callback_data: callbackFor("shop.checkout", { productId }) }]] },
       });
+      await ctx.reply("می‌توانید با دکمه‌های زیر سریع‌تر بین بخش‌های پرداخت جابه‌جا شوید.", {
+        reply_markup: { keyboard: [["🔙 بازگشت", "🔄 بروزرسانی وضعیت"], ["💳 پرداخت آنی", "👛 پرداخت از کیف پول"], ["🏠 منوی اصلی"]], resize_keyboard: true },
+      });
     } catch (error) {
       await ctx.editMessageText(`❌ ${error instanceof Error ? error.message : "ایجاد پرداخت ناموفق بود"}`, { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
     }
