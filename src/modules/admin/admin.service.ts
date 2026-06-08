@@ -16,9 +16,12 @@ type DashboardStats = {
   openTickets: number;
   orders: number;
   revenue: number;
+  totalAccounts: number;
   availableAccounts: number;
+  reservedAccounts: number;
   soldAccounts: number;
   disabledAccounts: number;
+  expiredAccounts: number;
   referralRewards: number;
   freeAccountsAvailable: number;
   freeAccountsAssigned: number;
@@ -49,7 +52,7 @@ export class AdminService {
     if (!forceRefresh && dashboardCache && dashboardCache.expiresAt > Date.now()) return dashboardCache.stats;
 
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000);
-    const [users, products, categories, wallets, submittedDeposits, openTickets, orders, revenue, availableAccounts, soldAccounts, disabledAccounts, referralRewards, freeAccountsAvailable, freeAccountsAssigned, freeAccountsExpired, freeAccountsMonthly, freeAccountUniqueRows] = await Promise.all([
+    const [users, products, categories, wallets, submittedDeposits, openTickets, orders, revenue, totalAccounts, availableAccounts, reservedAccounts, soldAccounts, disabledAccounts, expiredAccounts, referralRewards, freeAccountsAvailable, freeAccountsAssigned, freeAccountsExpired, freeAccountsMonthly, freeAccountUniqueRows] = await Promise.all([
       prisma.user.count(),
       prisma.product.count({ where: { deletedAt: null } }),
       prisma.category.count({ where: { deletedAt: null } }),
@@ -58,9 +61,12 @@ export class AdminService {
       prisma.ticket.count({ where: { status: "open" } }),
       prisma.order.count(),
       prisma.order.aggregate({ where: { status: "completed" }, _sum: { finalPaidAmount: true } }),
+      prisma.productAccount.count(),
       prisma.productAccount.count({ where: { status: "available" } }),
+      prisma.productAccount.count({ where: { status: "reserved" } }),
       prisma.productAccount.count({ where: { status: "sold" } }),
       prisma.productAccount.count({ where: { status: "disabled" } }),
+      prisma.productAccount.count({ where: { status: "expired" } }),
       prisma.referralReward.aggregate({ _sum: { amount: true }, _count: true }),
       prisma.freeAccount.count({ where: { status: "available" } }),
       prisma.freeAccount.count({ where: { status: "assigned" } }),
@@ -69,7 +75,7 @@ export class AdminService {
       prisma.freeAccountAssignment.findMany({ distinct: ["userId"], select: { userId: true } }),
     ]);
 
-    const stats = { users, products, categories, wallets, submittedDeposits, openTickets, orders, revenue: revenue._sum.finalPaidAmount ?? 0, availableAccounts, soldAccounts, disabledAccounts, referralRewards: referralRewards._sum.amount ?? 0, freeAccountsAvailable, freeAccountsAssigned, freeAccountsExpired, freeAccountsMonthly, freeAccountsUniqueUsers: freeAccountUniqueRows.length };
+    const stats = { users, products, categories, wallets, submittedDeposits, openTickets, orders, revenue: revenue._sum.finalPaidAmount ?? 0, totalAccounts, availableAccounts, reservedAccounts, soldAccounts, disabledAccounts, expiredAccounts, referralRewards: referralRewards._sum.amount ?? 0, freeAccountsAvailable, freeAccountsAssigned, freeAccountsExpired, freeAccountsMonthly, freeAccountsUniqueUsers: freeAccountUniqueRows.length };
     dashboardCache = { expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS, stats };
     return stats;
   }
@@ -218,17 +224,19 @@ export class AdminService {
   }
 
   static async productDetail(productId: string) {
-    const [product, available, sold, disabled, expired, activeAccounts, soldAccounts, revenue] = await Promise.all([
+    const [product, available, reserved, sold, disabled, expired, activeAccounts, soldAccounts, orderCount, revenue] = await Promise.all([
       prisma.product.findUnique({ where: { id: productId }, include: { category: true, _count: { select: { accounts: true, orders: true } } } }),
       prisma.productAccount.count({ where: { productId, status: "available" } }),
+      prisma.productAccount.count({ where: { productId, status: "reserved" } }),
       prisma.productAccount.count({ where: { productId, status: "sold" } }),
       prisma.productAccount.count({ where: { productId, status: "disabled" } }),
       prisma.productAccount.count({ where: { productId, status: "expired" } }),
       prisma.productAccount.findMany({ where: { productId, status: { in: ["available", "reserved"] } }, orderBy: { createdAt: "desc" }, take: 5 }),
       prisma.productAccount.findMany({ where: { productId, status: "sold" }, orderBy: { soldAt: "desc" }, take: 5 }),
+      prisma.order.count({ where: { productId, status: "completed" } }),
       prisma.order.aggregate({ where: { productId, status: "completed" }, _sum: { finalPaidAmount: true } }),
     ]);
-    return { product, available, sold, disabled, expired, activeAccounts, soldAccounts, revenue: revenue._sum.finalPaidAmount ?? 0 };
+    return { product, available, reserved, sold, disabled, expired, activeAccounts, soldAccounts, orderCount, revenue: revenue._sum.finalPaidAmount ?? 0 };
   }
 
   static async searchProducts(query: string) {
@@ -295,10 +303,10 @@ export class AdminService {
     });
   }
 
-  static async listAccounts(page = 1, take = 8, query?: string, status?: ProductAccountAdminStatus) {
+  static async listAccounts(page = 1, take = 8, query?: string, status?: ProductAccountAdminStatus, productId?: string) {
     const skip = (page - 1) * take;
     const q = containsQuery(query);
-    const where = { ...(status ? { status } : {}), ...(q ? { OR: [{ username: { contains: q } }, { subscriptionLink: { contains: q } }, { configLink: { contains: q } }, { product: { is: { title: { contains: q } } } }] } : {}) };
+    const where = { ...(productId ? { productId } : {}), ...(status ? { status } : {}), ...(q ? { OR: [{ username: { contains: q } }, { subscriptionLink: { contains: q } }, { configLink: { contains: q } }, { product: { is: { title: { contains: q } } } }] } : {}) };
     return Promise.all([prisma.productAccount.findMany({ where, include: { product: true }, orderBy: { createdAt: "desc" }, skip, take }), prisma.productAccount.count({ where })]);
   }
 
@@ -309,12 +317,17 @@ export class AdminService {
   static async updateAccount(accountId: string, data: AccountInput, actorId: string) {
     return prisma.$transaction(async (tx) => {
       const current = await tx.productAccount.findUniqueOrThrow({ where: { id: accountId } });
+      if (data.productId && data.productId !== current.productId) await tx.product.findFirstOrThrow({ where: { id: data.productId, deletedAt: null } });
       const update = { ...data, ...(data.configLink ? { config: data.configLink } : {}) };
       const account = await tx.productAccount.update({ where: { id: accountId }, data: update });
       if (data.productId && data.productId !== current.productId) await tx.productAccountHistory.create({ data: { accountId, actorId, action: "account.move", fromValue: current.productId, toValue: data.productId } });
       else await tx.productAccountHistory.create({ data: { accountId, actorId, action: "account.update", metadata: JSON.stringify(data) } });
       return account;
     });
+  }
+
+  static async moveAccount(accountId: string, productId: string, actorId: string) {
+    return this.updateAccount(accountId, { productId }, actorId);
   }
 
   static async setAccountStatus(accountId: string, status: ProductAccountAdminStatus, actorId: string) {
@@ -432,15 +445,23 @@ export class AdminService {
     return ForcedJoinService.delete(channelId, actorId);
   }
 
-  static async accountStats() {
-    const [available, sold, disabled, expired, products] = await Promise.all([
-      prisma.productAccount.count({ where: { status: "available" } }),
-      prisma.productAccount.count({ where: { status: "sold" } }),
-      prisma.productAccount.count({ where: { status: "disabled" } }),
-      prisma.productAccount.count({ where: { status: "expired" } }),
-      prisma.product.findMany({ where: { isActive: true, deletedAt: null, category: { is: { isActive: true, deletedAt: null } } }, include: { _count: { select: { accounts: true } } }, orderBy: { title: "asc" }, take: 20 }),
+  static async accountStats(productId?: string) {
+    const where = productId ? { productId } : {};
+    const [total, available, reserved, sold, disabled, expired, products] = await Promise.all([
+      prisma.productAccount.count({ where }),
+      prisma.productAccount.count({ where: { ...where, status: "available" } }),
+      prisma.productAccount.count({ where: { ...where, status: "reserved" } }),
+      prisma.productAccount.count({ where: { ...where, status: "sold" } }),
+      prisma.productAccount.count({ where: { ...where, status: "disabled" } }),
+      prisma.productAccount.count({ where: { ...where, status: "expired" } }),
+      prisma.product.findMany({
+        where: { deletedAt: null },
+        include: { _count: { select: { accounts: true } } },
+        orderBy: [{ isActive: "desc" }, { title: "asc" }],
+        take: 50,
+      }),
     ]);
-    return { available, sold, disabled, expired, products };
+    return { total, available, reserved, sold, disabled, expired, products };
   }
 
   static invalidateDashboardCache() {
