@@ -303,6 +303,10 @@ model PaymentInvoice {
   payId          String?              @unique
   paymentLink    String?
   gatewayResponse String?
+  callbackCount  Int                  @default(0)
+  lastCallbackAt DateTime?
+  deliveryStatus String?
+  notificationStatus String?
   callbackToken  String               @unique
   type           PaymentInvoiceType
   status         PaymentInvoiceStatus @default(PENDING)

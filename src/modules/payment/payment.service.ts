@@ -6,6 +6,7 @@ import { WalletService } from "../wallet/wallet.service";
 import { CouponService } from "../coupon/coupon.service";
 import { AdminService } from "../admin/admin.service";
 import { eventBus } from "../../services/event-bus.service";
+import { logger } from "../../services/logger";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, unassignedInventoryWhere } from "../product/visibility";
 
 export type PaymentGatewayInput = {
@@ -127,6 +128,10 @@ export function maskApiKey(apiKey?: string | null) {
   if (!apiKey) return "ثبت نشده";
   const suffix = apiKey.slice(-4).toUpperCase();
   return `********${suffix}`;
+}
+
+function paymentLog(event: string, metadata: Record<string, unknown> = {}) {
+  logger.info(event, { event, ...metadata });
 }
 
 async function audit(tx: DbClient, data: AuditData) {
@@ -410,21 +415,25 @@ export class PaymentService {
         productId: data.productId,
       },
     });
-    await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "INVOICE_CREATED", metadata: { type: data.type, originalAmount, discountAmount, finalAmount: data.amount, couponId: data.couponId, couponCode: data.couponCode, status: "PENDING" } });
+    paymentLog("PAYMENT_INVOICE_CREATED", { invoiceId: invoice.id, userId: data.userId, type: data.type, amount: data.amount, status: "PENDING" });
+    await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_INVOICE_CREATED", metadata: { type: data.type, originalAmount, discountAmount, finalAmount: data.amount, couponId: data.couponId, couponCode: data.couponCode, status: "PENDING" } });
     if (data.couponId) await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "COUPON_APPLIED", metadata: { couponId: data.couponId, couponCode: data.couponCode, originalAmount, discountAmount, finalAmount: data.amount, usageRecorded: false } });
 
     const callbackUrl = invoiceCallbackUrl(gateway.callbackUrl, invoice.id);
-    await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_LINK_CREATED", metadata: { endpoint: "/invoice/create", price: data.amount, callback_url: callbackUrl } });
+    paymentLog("PAYMENT_GATEWAY_REQUEST", { invoiceId: invoice.id, userId: data.userId, endpoint: "/invoice/create", price: data.amount, callbackUrl });
+    await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_REQUEST", metadata: { endpoint: "/invoice/create", price: data.amount, callback_url: callbackUrl } });
     try {
       const gatewayResult = await this.requestGatewayInvoice(gateway, data.amount, callbackUrl);
-      await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "Gateway Response", metadata: gatewayResult.raw as Record<string, unknown> });
+      paymentLog("PAYMENT_GATEWAY_RESPONSE", { invoiceId: invoice.id, userId: data.userId, payId: gatewayResult.parsed.payId });
+      await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_RESPONSE", metadata: gatewayResult.raw as Record<string, unknown> });
       await prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastSuccessfulRequest: new Date(), lastConnectionStatus: "success", lastConnectionError: null } });
       return prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { payId: gatewayResult.parsed.payId, paymentLink: gatewayResult.parsed.paymentLink, gatewayAmount: data.amount, gatewayResponse: safeJson(gatewayResult.raw) } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { status: "FAILED", gatewayResponse: safeJson({ error: message }) } });
+      paymentLog("PAYMENT_PROCESS_FAILED", { invoiceId: invoice.id, userId: data.userId, stage: "gateway_create", error: message });
+      await prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { status: "FAILED", gatewayResponse: safeJson({ error: message }), deliveryStatus: "FAILED" } });
       await prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastFailedRequest: new Date(), lastConnectionStatus: "failed", lastConnectionError: message } });
-      await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "Failed Processing", metadata: { stage: "gateway_create", error: message } });
+      await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_PROCESS_FAILED", metadata: { stage: "gateway_create", error: message } });
       throw new Error("ارتباط با درگاه پرداخت برقرار نشد. لطفاً چند دقیقه دیگر دوباره تلاش کنید");
     }
   }
@@ -434,50 +443,100 @@ export class PaymentService {
     const invoice = await prisma.paymentInvoice.findUnique({ where: { id: invoiceId } });
     if (!invoice) return { statusCode: 404, text: "Payment invoice not found." };
 
-    await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "Callback Received", metadata: { invoice_id: invoiceId, ...metadata } });
-    const callbackAmount = metadataAmount(metadata);
+    const callbackAt = new Date();
+    await prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { callbackCount: { increment: 1 }, lastCallbackAt: callbackAt } });
+    paymentLog("PAYMENT_CALLBACK_RECEIVED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, callbackAt: callbackAt.toISOString(), query: metadata.query });
+    await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_RECEIVED", metadata: { invoice_id: invoiceId, ...metadata } });
+
     const integrity = this.assertInvoiceAmountIntegrity(invoice);
-    if (!integrity.ok || (callbackAmount !== undefined && callbackAmount !== integrity.expectedAmount)) {
-      await prisma.paymentInvoice.updateMany({ where: { id: invoice.id, status: "PENDING" }, data: { status: "FAILED", verifiedAt: new Date() } });
-      await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "Failed Processing", metadata: { stage: "callback_security", reason: !integrity.ok ? integrity.reason : "callback_amount_mismatch", gatewayAmount: invoice.gatewayAmount, callbackAmount, amount: invoice.amount, originalAmount: invoice.originalAmount, discountAmount: invoice.discountAmount, amountExpected: integrity.expectedAmount } });
-      return { statusCode: 409, text: "Invoice amount mismatch." };
+    if (!integrity.ok) {
+      const failed = await prisma.paymentInvoice.updateMany({ where: { id: invoice.id, status: "PENDING" }, data: { status: "FAILED", verifiedAt: new Date(), deliveryStatus: "FAILED" } });
+      paymentLog("PAYMENT_PROCESS_FAILED", { invoiceId: invoice.id, userId: invoice.userId, stage: "callback_security", reason: integrity.reason, statusChanged: failed.count === 1 });
+      await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_PROCESS_FAILED", metadata: { stage: "callback_security", reason: integrity.reason, gatewayAmount: invoice.gatewayAmount, amount: invoice.amount, originalAmount: invoice.originalAmount, discountAmount: invoice.discountAmount, amountExpected: integrity.expectedAmount } });
+      return { statusCode: 409, text: "Invoice amount mismatch.", failed: { invoice: { ...invoice, status: failed.count === 1 ? "FAILED" : invoice.status }, type: invoice.type as PaymentInvoiceType } };
     }
 
-    if (invoice.status !== "PENDING") return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+    paymentLog("PAYMENT_CALLBACK_PROCESSING", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, type: invoice.type });
+    await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_PROCESSING", metadata: { status: invoice.status, type: invoice.type, payId: invoice.payId } });
 
-    try {
-      const result = await prisma.$transaction(async (tx) => {
+    if (invoice.status === "COMPLETED") return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+    if (invoice.status === "FAILED" || invoice.status === "CANCELED" || invoice.status === "EXPIRED") return { statusCode: 409, text: "Payment invoice is not payable." };
+
+    let paidInvoice = invoice;
+    if (invoice.status === "PENDING") {
+      const markedPaid = await prisma.$transaction(async (tx) => {
         const locked = await tx.paymentInvoice.updateMany({
           where: { id: invoice.id, status: "PENDING" },
-          data: { status: "PAID", paidAt: new Date(), verifiedAt: new Date() },
+          data: { status: "PAID", paidAt: new Date(), verifiedAt: new Date(), deliveryStatus: "PENDING" },
         });
-        if (locked.count !== 1) return { alreadyProcessed: true as const };
-
+        if (locked.count !== 1) return null;
         const fresh = await tx.paymentInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
-        if (fresh.status !== "PAID") return { alreadyProcessed: true as const };
-        await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PAYMENT_SUCCESS", metadata: { payId: fresh.payId, amount: fresh.amount } });
-
-        if (fresh.type === "WALLET_TOPUP") {
-          const user = await this.creditWallet(tx, { userId: fresh.userId, amount: fresh.amount, reason: `شارژ کیف پول با پرداخت آنی - فاکتور ${fresh.id}`, actorId: fresh.userId, invoiceId: fresh.id, referenceId: `invoice:${fresh.id}` });
-          const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date() } });
-          await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "INVOICE_COMPLETED", metadata: { amount: fresh.amount, type: fresh.type } });
-          return { invoice: completed, user, type: fresh.type as PaymentInvoiceType };
-        }
-
-        const delivered = await this.purchaseProduct(tx, { userId: fresh.userId, productId: fresh.productId ?? "", couponCode: fresh.couponCode ?? undefined, method: "INSTANT", invoice: fresh });
-        const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), orderId: delivered.order.id } });
-        await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PRODUCT_DELIVERED", metadata: { orderId: delivered.order.id, productId: delivered.product.id, accountId: delivered.account.id } });
-        await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "INVOICE_COMPLETED", metadata: { orderId: delivered.order.id, amount: fresh.amount, type: fresh.type } });
-        return { invoice: completed, ...delivered, type: fresh.type as PaymentInvoiceType };
+        await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PAYMENT_INVOICE_MARKED_PAID", metadata: { payId: fresh.payId, amount: fresh.amount, type: fresh.type } });
+        return fresh;
       });
-      if ("alreadyProcessed" in result) return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+      if (!markedPaid) return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+      paidInvoice = markedPaid;
+      paymentLog("PAYMENT_INVOICE_MARKED_PAID", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, payId: paidInvoice.payId, amount: paidInvoice.amount, type: paidInvoice.type });
+    }
+
+    const staleProcessingBefore = new Date(Date.now() - 5 * 60_000);
+    const fulfillmentLock = await prisma.paymentInvoice.updateMany({
+      where: { id: paidInvoice.id, status: "PAID", OR: [{ deliveryStatus: null }, { deliveryStatus: { in: ["PENDING", "FAILED"] } }, { deliveryStatus: "PROCESSING", updatedAt: { lt: staleProcessingBefore } }] },
+      data: { deliveryStatus: "PROCESSING" },
+    });
+    if (fulfillmentLock.count !== 1) return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+
+    try {
+      const result = await this.fulfillPaidInvoice(paidInvoice.id);
       AdminService.invalidateDashboardCache();
       return { statusCode: 200, text: "Payment completed successfully.", result };
     } catch (error) {
-      await prisma.paymentInvoice.updateMany({ where: { id: invoice.id, status: { in: ["PENDING", "PAID"] } }, data: { status: "FAILED", verifiedAt: new Date() } });
-      await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "Failed Processing", metadata: { stage: "process", error: error instanceof Error ? error.message : String(error) } });
-      return { statusCode: 500, text: "Payment processing failed." };
+      const message = error instanceof Error ? error.message : String(error);
+      paymentLog("PAYMENT_PROCESS_FAILED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, stage: "fulfillment", error: message });
+      await prisma.paymentInvoice.update({ where: { id: paidInvoice.id }, data: { deliveryStatus: "FAILED", verifiedAt: new Date() } });
+      await audit(prisma, { userId: paidInvoice.userId, invoiceId: paidInvoice.id, action: "PAYMENT_PROCESS_FAILED", metadata: { stage: "fulfillment", error: message, statusKept: "PAID" } });
+      return { statusCode: 500, text: "Payment processing failed.", failed: { invoice: paidInvoice, type: paidInvoice.type as PaymentInvoiceType, error: message } };
     }
+  }
+
+  private static async fulfillPaidInvoice(invoiceId: string) {
+    return prisma.$transaction(async (tx) => {
+      const fresh = await tx.paymentInvoice.findUniqueOrThrow({ where: { id: invoiceId } });
+      if (fresh.status === "COMPLETED") return { invoice: fresh, type: fresh.type as PaymentInvoiceType };
+      if (fresh.status !== "PAID") throw new Error("فاکتور در وضعیت پرداخت‌شده نیست");
+      if (fresh.deliveryStatus !== "PROCESSING") throw new Error("فاکتور در حال پردازش تحویل نیست");
+
+      if (fresh.type === "WALLET_TOPUP") {
+        const user = await this.creditWallet(tx, { userId: fresh.userId, amount: fresh.amount, reason: `شارژ کیف پول با پرداخت آنی - فاکتور ${fresh.id}`, actorId: fresh.userId, invoiceId: fresh.id, referenceId: `invoice:${fresh.id}` });
+        const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), deliveryStatus: "COMPLETED" } });
+        paymentLog("PAYMENT_WALLET_CREDITED", { invoiceId: fresh.id, userId: fresh.userId, amount: fresh.amount, balance: user.balance });
+        await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PAYMENT_WALLET_CREDITED", metadata: { amount: fresh.amount, balance: user.balance } });
+        await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PAYMENT_INVOICE_COMPLETED", metadata: { amount: fresh.amount, type: fresh.type } });
+        return { invoice: completed, user, type: fresh.type as PaymentInvoiceType };
+      }
+
+      if (fresh.orderId) {
+        const existingOrder = await tx.order.findUnique({ where: { id: fresh.orderId }, include: { product: true, items: { include: { productAccount: true }, take: 1 } } });
+        if (existingOrder?.items[0]) {
+          const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: fresh.completedAt ?? new Date(), verifiedAt: new Date(), deliveryStatus: "COMPLETED" } });
+          return { invoice: completed, order: existingOrder, product: existingOrder.product, account: existingOrder.items[0].productAccount, orderItem: existingOrder.items[0], type: fresh.type as PaymentInvoiceType };
+        }
+      }
+
+      const delivered = await this.purchaseProduct(tx, { userId: fresh.userId, productId: fresh.productId ?? "", couponCode: fresh.couponCode ?? undefined, method: "INSTANT", invoice: fresh });
+      const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), orderId: delivered.order.id, deliveryStatus: "COMPLETED" } });
+      paymentLog("PAYMENT_PRODUCT_DELIVERED", { invoiceId: fresh.id, userId: fresh.userId, orderId: delivered.order.id, productId: delivered.product.id, accountId: delivered.account.id });
+      await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PAYMENT_PRODUCT_DELIVERED", metadata: { orderId: delivered.order.id, productId: delivered.product.id, accountId: delivered.account.id } });
+      await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PAYMENT_INVOICE_COMPLETED", metadata: { orderId: delivered.order.id, amount: fresh.amount, type: fresh.type } });
+      return { invoice: completed, ...delivered, type: fresh.type as PaymentInvoiceType };
+    });
+  }
+
+  static async markNotification(invoiceId: string, status: "SENT" | "FAILED", metadata: Record<string, unknown> = {}) {
+    const invoice = await prisma.paymentInvoice.update({ where: { id: invoiceId }, data: { notificationStatus: status } });
+    paymentLog(status === "SENT" ? "PAYMENT_NOTIFICATION_SENT" : "PAYMENT_NOTIFICATION_FAILED", { invoiceId, userId: invoice.userId, ...metadata });
+    await audit(prisma, { userId: invoice.userId, invoiceId, action: status === "SENT" ? "PAYMENT_NOTIFICATION_SENT" : "PAYMENT_NOTIFICATION_FAILED", metadata });
+    return invoice;
   }
 
   static async creditWallet(tx: TxClient, data: { userId: string; amount: number; reason: string; actorId: string; invoiceId?: string; referenceId?: string }) {
@@ -624,6 +683,10 @@ export class PaymentInvoiceService {
 
   static async processCallback(invoiceId: string, metadata: Record<string, unknown> = {}) {
     return PaymentService.completePayment(invoiceId, metadata);
+  }
+
+  static async markNotification(invoiceId: string, status: "SENT" | "FAILED", metadata: Record<string, unknown> = {}) {
+    return PaymentService.markNotification(invoiceId, status, metadata);
   }
 
   static async list(page = 1, take = 8, status?: PaymentInvoiceStatus, query?: string) {

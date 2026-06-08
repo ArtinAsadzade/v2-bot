@@ -1141,7 +1141,7 @@ ${stats.recent.map((invoice) => `• #${shortId(invoice.id)} · ${invoice.user.t
     });
     (0, panel_ui_1.registerView)("admin.invoices", async (_ctx, params) => {
         const current = page(params);
-        const status = ["PENDING", "PAID", "CANCELED", "FAILED"].includes(params.status) ? params.status : undefined;
+        const status = ["PENDING", "PAID", "COMPLETED", "CANCELED", "FAILED"].includes(params.status) ? params.status : undefined;
         const [invoices, total] = await payment_service_1.PaymentInvoiceService.list(current, 8, status);
         const statusLabel = (value) => ({ PENDING: "در انتظار", PAID: "پرداخت شده", CANCELED: "لغو شده", FAILED: "ناموفق", COMPLETED: "پرداخت شده" }[value] ?? value);
         const typeLabel = (value) => value === "WALLET_TOPUP" ? "شارژ کیف پول" : "خرید محصول";
@@ -1167,6 +1167,7 @@ ${invoices.map((invoice) => `• شناسه: #${shortId(invoice.id)}
                 ],
                 [
                     { text: "پرداخت شده", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "PAID" }) },
+                    { text: "تکمیل‌شده", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "COMPLETED" }) },
                     { text: "لغو شده", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "CANCELED" }) },
                     { text: "ناموفق", action: (0, panel_ui_1.callbackFor)("admin.invoices", { status: "FAILED" }) },
                 ],
@@ -1201,6 +1202,10 @@ ${invoices.map((invoice) => `• شناسه: #${shortId(invoice.id)}
 زمان ایجاد: ${invoice.createdAt.toLocaleString("fa-IR")}
 زمان پرداخت: ${invoice.paidAt ? invoice.paidAt.toLocaleString("fa-IR") : "—"}
 زمان تکمیل: ${invoice.completedAt ? invoice.completedAt.toLocaleString("fa-IR") : "—"}
+تعداد Callback: ${invoice.callbackCount.toLocaleString("fa-IR")}
+آخرین Callback: ${invoice.lastCallbackAt ? invoice.lastCallbackAt.toLocaleString("fa-IR") : "—"}
+وضعیت تحویل: ${invoice.deliveryStatus ?? (invoice.orderId ? "COMPLETED" : "—")}
+وضعیت اعلان: ${invoice.notificationStatus ?? "—"}
 
 Gateway Response:
 ${invoice.gatewayResponse ?? "—"}
