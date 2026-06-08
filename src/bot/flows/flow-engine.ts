@@ -478,12 +478,18 @@ status: ${coupon.status} (active/inactive)`;
       if (flow.step === "title") {
         flow.data.title = text.trim();
         flow.step = "inviteLink";
-        return { text: "لینک عضویت کانال را وارد کنید (اگر عمومی است لینک t.me):", nextStep: "inviteLink" };
+        return { text: "لینک عضویت کانال را وارد کنید. برای کانال عمومیِ @username می‌توانید «-» بفرستید:", nextStep: "inviteLink" };
       }
-      await AdminService.saveForcedJoinChannel(
-        { chatId: String(flow.data.chatId), title: String(flow.data.title), inviteLink: text.trim(), status: "active" },
-        String(ctx.from?.id ?? "admin"),
-      );
+      try {
+        await AdminService.saveForcedJoinChannel(
+          { chatId: String(flow.data.chatId), title: String(flow.data.title), inviteLink: text.trim() === "-" ? undefined : text.trim(), status: "active" },
+          String(ctx.from?.id ?? "admin"),
+        );
+      } catch (error) {
+        return { text: error instanceof Error ? `⚠️ ${error.message}
+
+لینک عضویت معتبر را وارد کنید:` : "⚠️ ذخیره کانال ناموفق بود. لینک عضویت را دوباره وارد کنید:" };
+      }
       return { done: true, text: "✅ کانال عضویت اجباری ذخیره شد.", returnTo: { id: "admin.forcedJoin" } };
     },
   },

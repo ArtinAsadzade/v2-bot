@@ -1,5 +1,27 @@
 import { prisma } from "../../services/prisma";
 
+function normalizeInviteLink(inviteLink?: string) {
+  const value = inviteLink?.trim();
+  return value || null;
+}
+
+function channelHasPublicJoinLink(chatId: string) {
+  return chatId.startsWith("@") || chatId.startsWith("https://t.me/") || chatId.startsWith("http://t.me/");
+}
+
+function validateForcedJoinChannel(data: { chatId: string; title: string; inviteLink?: string }) {
+  const chatId = data.chatId.trim();
+  const title = data.title.trim();
+  const inviteLink = normalizeInviteLink(data.inviteLink);
+
+  if (!chatId || !title) throw new Error("اطلاعات کانال عضویت اجباری کامل نیست");
+  if (!inviteLink && !channelHasPublicJoinLink(chatId)) {
+    throw new Error("برای کانال خصوصی یا شناسه عددی، لینک عضویت الزامی است");
+  }
+
+  return { chatId, title, inviteLink };
+}
+
 export class ForcedJoinService {
   static async listActive() {
     return prisma.forcedJoinChannel.findMany({ where: { status: "active" }, orderBy: { createdAt: "asc" } });
@@ -10,13 +32,11 @@ export class ForcedJoinService {
   }
 
   static async upsert(data: { chatId: string; title: string; inviteLink?: string; status?: "active" | "inactive" }, actorId: string) {
-    const chatId = data.chatId.trim();
-    const title = data.title.trim();
-    if (!chatId || !title) throw new Error("اطلاعات کانال عضویت اجباری کامل نیست");
+    const { chatId, title, inviteLink } = validateForcedJoinChannel(data);
     const channel = await prisma.forcedJoinChannel.upsert({
       where: { chatId },
-      update: { title, inviteLink: data.inviteLink?.trim() || null, status: data.status ?? "active" },
-      create: { chatId, title, inviteLink: data.inviteLink?.trim() || null, status: data.status ?? "active" },
+      update: { title, inviteLink, status: data.status ?? "active" },
+      create: { chatId, title, inviteLink, status: data.status ?? "active" },
     });
     await prisma.auditLog.create({ data: { actorId, action: "forced_join.upsert", metadata: JSON.stringify({ channelId: channel.id, chatId }) } });
     return channel;

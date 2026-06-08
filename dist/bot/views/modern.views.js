@@ -9,6 +9,7 @@ const admin_service_1 = require("../../modules/admin/admin.service");
 const referral_service_1 = require("../../modules/referral/referral.service");
 const free_account_service_1 = require("../../modules/free-account/free-account.service");
 const support_service_1 = require("../../modules/support/support.service");
+const coupon_service_1 = require("../../modules/coupon/coupon.service");
 const divider = "━━━━━━━━━━━━━━";
 const money = (value) => `${value.toLocaleString("fa-IR")} تومان`;
 const page = (params) => Math.max(Number(params.page ?? 1), 1);
@@ -88,10 +89,39 @@ function registerModernViews() {
         const product = await product_service_1.ProductService.getProduct(params.productId);
         if (!product || !user)
             return { text: "⚠️ اطلاعات خرید کامل نیست. لطفاً دوباره از فروشگاه اقدام کنید.", keyboard: [] };
-        const coupon = ctx.session.selectedCoupons?.[product.id];
-        const shortage = Math.max(product.price - user.balance, 0);
+        const couponCode = ctx.session.selectedCoupons?.[product.id];
+        let couponLine = "ثبت نشده";
+        let discountAmount = 0;
+        let payableAmount = product.price;
+        if (couponCode) {
+            try {
+                const coupon = await coupon_service_1.CouponService.validateForUser(couponCode, user.id, undefined, product.price);
+                const calculation = coupon_service_1.CouponService.calculate(coupon, product.price);
+                discountAmount = calculation.discountAmount;
+                payableAmount = calculation.finalAmount;
+                couponLine = `${coupon.code} (${money(discountAmount)} تخفیف)`;
+            }
+            catch (error) {
+                delete ctx.session.selectedCoupons?.[product.id];
+                couponLine = `نامعتبر: ${error instanceof Error ? error.message : "کد تخفیف معتبر نیست"}`;
+            }
+        }
+        const shortage = Math.max(payableAmount - user.balance, 0);
         return {
-            text: `🧾 پیش‌فاکتور خرید\n\n${divider}\n📦 محصول: ${product.title}\n📅 اعتبار: ${product.duration.toLocaleString("fa-IR")} روز\n💰 مبلغ سفارش: ${money(product.price)}\n🎟 کد تخفیف: ${coupon ?? "ثبت نشده"}\n💳 موجودی کیف پول: ${money(user.balance)}\n${shortage ? `\n⚠️ کسری موجودی: ${money(shortage)}` : "\n✅ موجودی شما برای خرید کافی است."}\n${divider}\n\nبا تأیید، مبلغ به‌صورت امن از کیف پول کسر و اکانت فوراً تخصیص داده می‌شود.`,
+            text: `🧾 پیش‌فاکتور خرید
+
+${divider}
+📦 محصول: ${product.title}
+📅 اعتبار: ${product.duration.toLocaleString("fa-IR")} روز
+💰 مبلغ سفارش: ${money(product.price)}
+🎟 کد تخفیف: ${couponLine}
+💸 تخفیف: ${money(discountAmount)}
+✅ مبلغ قابل پرداخت: ${money(payableAmount)}
+💳 موجودی کیف پول: ${money(user.balance)}
+${shortage ? `\n⚠️ کسری موجودی: ${money(shortage)}` : "\n✅ موجودی شما برای خرید کافی است."}
+${divider}
+
+با تأیید، مبلغ به‌صورت امن از کیف پول کسر و اکانت فوراً تخصیص داده می‌شود.`,
             keyboard: [
                 [{ text: "✅ تأیید و دریافت اکانت", action: `buy:confirm:${product.id}` }],
                 [{ text: "💳 شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") }, { text: "🎟 کد تخفیف", action: `flow:start:coupon_code:${product.id}` }],
@@ -390,8 +420,20 @@ ${inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleS
     });
     (0, panel_ui_1.registerView)("admin.forcedJoin", async () => {
         const channels = await admin_service_1.AdminService.forcedJoinChannels();
+        const activeCount = channels.filter((channel) => channel.status === "active").length;
+        const inactiveCount = channels.length - activeCount;
+        const channelLines = channels.map((channel, index) => `• ${index + 1}. ${channel.title}
+  شناسه: ${channel.chatId}
+  وضعیت: ${channel.status === "active" ? "✅ فعال" : "⛔ غیرفعال"}
+  لینک: ${channel.inviteLink || (channel.chatId.startsWith("@") ? `https://t.me/${channel.chatId.slice(1)}` : "ثبت نشده")}`).join("\n\n");
         return {
-            text: `📢 مدیریت عضویت اجباری\n\n${channels.map((channel) => `• ${channel.title} · ${channel.chatId} · ${channel.status === "active" ? "فعال" : "غیرفعال"}`).join("\n") || "کانالی ثبت نشده است."}`,
+            text: `📢 مدیریت عضویت اجباری
+
+کانال فعال: ${activeCount.toLocaleString("fa-IR")} · غیرفعال: ${inactiveCount.toLocaleString("fa-IR")}
+
+${channelLines || "کانالی ثبت نشده است."}
+
+کاربران بدون ارسال دوباره /start می‌توانند با دکمه «✅ عضو شدم» همان لحظه تایید شوند.`,
             keyboard: [[{ text: "➕ افزودن کانال", action: "flow:start:forced_join_create" }], ...channels.map((channel) => [{ text: channel.status === "active" ? `غیرفعال‌سازی ${channel.title}` : `فعال‌سازی ${channel.title}`, action: `admin:forced_join:status:${channel.id}:${channel.status === "active" ? "inactive" : "active"}` }, { text: "حذف", action: `admin:forced_join:delete:${channel.id}` }])],
         };
     });
@@ -417,7 +459,7 @@ ${inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleS
             return { text: "⚠️ کوپن پیدا نشد.", keyboard: [] };
         return {
             text: `🎟 جزئیات کوپن ${direct.code}\n\nنوع: ${direct.type === "percentage" ? "درصدی" : "مبلغ ثابت"}\nمقدار: ${direct.type === "percentage" ? `${(direct.value || direct.discountPercent || 0).toLocaleString("fa-IR")}%` : money(direct.value)}\nوضعیت: ${direct.status}\nمصرف: ${direct.usedCount.toLocaleString("fa-IR")}/${direct.maxUses.toLocaleString("fa-IR")}\nسقف هر کاربر: ${direct.perUserLimit.toLocaleString("fa-IR")}\nحداقل خرید: ${money(direct.minimumPurchaseAmount)}\nانقضا: ${direct.expiresAt.toLocaleDateString("fa-IR")}`,
-            keyboard: [[{ text: direct.status === "active" ? "⛔ غیرفعال" : "✅ فعال", action: `admin:coupon:status:${direct.id}:${direct.status === "active" ? "inactive" : "active"}` }], [{ text: "🗑 حذف نرم", action: `admin:coupon:soft_delete:${direct.id}` }, { text: "🧨 حذف دائمی", action: `admin:coupon:hard_delete:${direct.id}` }]],
+            keyboard: [[{ text: "✏️ ویرایش", action: `flow:start:coupon_edit:${direct.id}` }, { text: direct.status === "active" ? "⛔ غیرفعال" : "✅ فعال", action: `admin:coupon:status:${direct.id}:${direct.status === "active" ? "inactive" : "active"}` }], [{ text: "🗑 حذف نرم", action: `admin:coupon:soft_delete:${direct.id}` }, { text: "🧨 حذف دائمی", action: `admin:coupon:hard_delete:${direct.id}` }]],
         };
     });
     (0, panel_ui_1.registerView)("admin.deposits", async (_ctx, params) => {

@@ -4,52 +4,91 @@ exports.forcedJoinMiddleware = forcedJoinMiddleware;
 const telegraf_1 = require("telegraf");
 const forced_join_service_1 = require("../../modules/system/forced-join.service");
 const MEMBER_STATUSES = new Set(["creator", "administrator", "member"]);
-async function missingRequiredChannels(ctx) {
-    const channels = await forced_join_service_1.ForcedJoinService.listActive();
-    const missing = [];
+const VERIFY_ACTION = "forced_join:verify";
+function fallbackJoinUrl(chatId) {
+    const normalized = chatId.trim();
+    if (!normalized)
+        return undefined;
+    if (normalized.startsWith("http://") || normalized.startsWith("https://"))
+        return normalized;
+    if (normalized.startsWith("@"))
+        return `https://t.me/${normalized.slice(1)}`;
+    return undefined;
+}
+function joinUrl(channel) {
+    return channel.inviteLink?.trim() || fallbackJoinUrl(channel.chatId);
+}
+async function isMember(ctx, channel) {
     if (!ctx.from)
-        return missing;
-    for (const channel of channels) {
-        try {
-            const member = await ctx.telegram.getChatMember(channel.chatId, ctx.from.id);
-            if (!MEMBER_STATUSES.has(member.status))
-                missing.push(channel);
-        }
-        catch {
-            missing.push(channel);
-        }
+        return false;
+    try {
+        const member = await ctx.telegram.getChatMember(channel.chatId, ctx.from.id);
+        return MEMBER_STATUSES.has(member.status);
     }
-    return missing;
+    catch {
+        return false;
+    }
+}
+async function missingRequiredChannels(ctx, channels) {
+    if (!ctx.from || !channels.length)
+        return [];
+    const checks = await Promise.all(channels.map(async (channel) => ({ channel, member: await isMember(ctx, channel) })));
+    return checks
+        .filter(({ member }) => !member)
+        .map(({ channel }) => ({ ...channel, joinUrl: joinUrl(channel) ?? "https://t.me/" }));
+}
+function forcedJoinText(missingCount, totalCount) {
+    const progress = totalCount > missingCount ? `\n\n✅ عضویت تاییدشده: ${(totalCount - missingCount).toLocaleString("fa-IR")} از ${totalCount.toLocaleString("fa-IR")}` : "";
+    return [
+        "📢 عضویت در کانال‌های الزامی",
+        "",
+        `برای استفاده از ربات، عضویت در ${missingCount.toLocaleString("fa-IR")} کانال زیر لازم است.${progress}`,
+        "",
+        "۱) روی دکمه‌های عضویت بزنید.",
+        "۲) بعد از عضویت، همین‌جا روی «✅ عضو شدم» بزنید.",
+        "",
+        "نیازی به ارسال دوباره /start نیست؛ تایید بلافاصله انجام می‌شود.",
+    ].join("\n");
 }
 function forcedJoinKeyboard(channels) {
-    return telegraf_1.Markup.inlineKeyboard([
-        ...channels.map((channel) => [telegraf_1.Markup.button.url(`📢 عضویت در کانال ${channel.title}`, channel.inviteLink || `https://t.me/${String(channel.chatId).replace(/^@/, "")}`)]),
-        [telegraf_1.Markup.button.callback("✅ عضو شدم", "forced_join:verify")],
+    const joinRows = channels.map((channel, index) => [
+        telegraf_1.Markup.button.url(`📢 عضویت ${index + 1}: ${channel.title}`, channel.joinUrl),
     ]);
+    return telegraf_1.Markup.inlineKeyboard([
+        ...joinRows,
+        [telegraf_1.Markup.button.callback("✅ عضو شدم", VERIFY_ACTION)],
+    ]);
+}
+async function showForcedJoinPrompt(ctx, missing, totalCount, prefix) {
+    const text = [prefix, forcedJoinText(missing.length, totalCount)].filter(Boolean).join("\n\n");
+    const keyboard = forcedJoinKeyboard(missing);
+    if (ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message) {
+        await ctx.editMessageText(text, keyboard).catch(async () => {
+            await ctx.reply(text, keyboard).catch(() => undefined);
+        });
+        return;
+    }
+    await ctx.reply(text, keyboard).catch(() => undefined);
 }
 function forcedJoinMiddleware() {
     return async (ctx, next) => {
         if (!ctx.from)
             return next();
-        const missing = await missingRequiredChannels(ctx);
+        const activeChannels = await forced_join_service_1.ForcedJoinService.listActive();
+        if (!activeChannels.length)
+            return next();
+        const missing = await missingRequiredChannels(ctx, activeChannels);
         if (!missing.length)
             return next();
-        const text = `📢 عضویت در کانال‌های الزامی\n\nبرای استفاده از ربات، ابتدا در کانال‌های زیر عضو شوید.\n\nبعد از عضویت، همین‌جا روی دکمه «✅ عضو شدم» بزنید؛ نیازی به ارسال دوباره /start نیست.`;
-        const keyboard = forcedJoinKeyboard(missing);
-        if (ctx.callbackQuery && "data" in ctx.callbackQuery && ctx.callbackQuery.data === "forced_join:verify") {
-            await ctx.answerCbQuery("⚠️ هنوز در تمام کانال‌های الزامی عضو نشده‌اید.", { show_alert: true }).catch(() => undefined);
-            if (ctx.callbackQuery.message && "text" in ctx.callbackQuery.message) {
-                await ctx.editMessageText(`⚠️ هنوز در تمام کانال‌های الزامی عضو نشده‌اید.\n\n${text}`, keyboard).catch(() => undefined);
-            }
+        const isVerification = ctx.callbackQuery && "data" in ctx.callbackQuery && ctx.callbackQuery.data === VERIFY_ACTION;
+        if (isVerification) {
+            await ctx.answerCbQuery("⚠️ هنوز عضویت شما در همه کانال‌ها تایید نشده است.", { show_alert: true }).catch(() => undefined);
+            await showForcedJoinPrompt(ctx, missing, activeChannels.length, "⚠️ هنوز چند کانال باقی مانده است.");
             return;
         }
-        if ("callback_query" in ctx.update)
-            await ctx.answerCbQuery("ابتدا عضویت را تکمیل کنید").catch(() => undefined);
-        if (ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message) {
-            await ctx.editMessageText(text, keyboard).catch(async () => ctx.reply(text, keyboard).catch(() => undefined));
-            return;
+        if ("callback_query" in ctx.update) {
+            await ctx.answerCbQuery("ابتدا عضویت در کانال‌ها را تکمیل کنید.").catch(() => undefined);
         }
-        await ctx.reply(text, keyboard).catch(() => undefined);
-        return;
+        await showForcedJoinPrompt(ctx, missing, activeChannels.length);
     };
 }
