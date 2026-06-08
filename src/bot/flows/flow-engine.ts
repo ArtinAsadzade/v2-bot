@@ -219,6 +219,50 @@ const definitions: Record<FlowName, FlowDefinition> = {
       return { done: true, text: "✅ اکانت تست رایگان به موجودی مستقل اضافه شد.", returnTo: { id: "admin.freeAccounts" } };
     },
   },
+
+  free_account_edit: {
+    firstStep: "fields",
+    prompt: async (ctx) => {
+      const accountId = String(ctx.session.flow?.data.accountId ?? "");
+      const account = accountId ? await FreeAccountService.getAccount(accountId) : undefined;
+      if (!account) return "⚠️ اکانت تست پیدا نشد.";
+      return `✏️ ویرایش اکانت تست
+
+هر فیلدی را که می‌خواهید تغییر کند در یک خط بفرستید. فیلدهای مجاز:
+
+username: ${account.username}
+subscriptionLink: ${account.subscriptionLink}
+configLink: ${account.configLink}
+durationDays: ${account.durationDays}
+status: ${account.status}
+
+وضعیت‌های مجاز: available، assigned، expired`;
+    },
+    async handleText(ctx, text) {
+      const flow = ctx.session.flow!;
+      const data = Object.fromEntries(
+        text
+          .split(/\n+/)
+          .map((line) => line.split(/[:=：]/, 2).map((part) => part.trim()))
+          .filter((parts): parts is [string, string] => parts.length === 2 && Boolean(parts[0]) && Boolean(parts[1])),
+      );
+      const durationText = data.durationDays ?? data.duration ?? data["مدت"];
+      const durationDays = durationText ? Number(durationText.replace(/[,،\s]/g, "")) : undefined;
+      const status = data.status ?? data["وضعیت"];
+      await FreeAccountService.updateAccount(
+        String(flow.data.accountId),
+        {
+          username: data.username ?? data["نام کاربری"],
+          subscriptionLink: data.subscriptionLink ?? data.sub ?? data["لینک اشتراک"],
+          configLink: data.configLink ?? data.config ?? data["لینک کانفیگ"],
+          durationDays,
+          status: status === "available" || status === "assigned" || status === "expired" ? status : undefined,
+        },
+        String(ctx.from?.id ?? "admin"),
+      );
+      return { done: true, text: "✅ اکانت تست با موفقیت ویرایش شد.", returnTo: { id: "admin.freeAccounts" } };
+    },
+  },
   coupon_create: {
     firstStep: "code",
     prompt: "🎟 کد کوپن را وارد کنید:",
@@ -450,7 +494,14 @@ export function registerFlowEngine(bot: AppBot) {
     }
     if (name === "coupon_code") return startFlow(ctx, "coupon_code", { productId: ctx.match[2] });
     if (name === "account_create") return startFlow(ctx, "account_create", { productId: ctx.match[2] });
-    if (name === "free_account_create") return startFlow(ctx, "free_account_create", { productId: ctx.match[2] });
+    if (name === "free_account_create" || name === "free_account_edit") {
+      if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
+        await ctx.answerCbQuery("دسترسی غیرمجاز");
+        return;
+      }
+      if (name === "free_account_create") return startFlow(ctx, "free_account_create", { productId: ctx.match[2] });
+      return startFlow(ctx, "free_account_edit", { accountId: ctx.match[2] });
+    }
     if (name === "ticket_reply") return startFlow(ctx, "ticket_reply", { ticketId: ctx.match[2] });
     if (name === "wallet_adjust") return startFlow(ctx, "wallet_adjust", { userId: ctx.match[2], mode: ctx.match[3] });
     if (name === "product_price") return startFlow(ctx, "product_price", { productId: ctx.match[2] });
