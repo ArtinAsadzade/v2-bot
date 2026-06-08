@@ -207,6 +207,9 @@ ${account.configLink}
 ⏳ اعتبار:
 ${account.durationDays.toLocaleString("fa-IR")} روز
 
+📅 تاریخ انقضا:
+${account.assignment.expiresAt.toLocaleDateString("fa-IR")}
+
 ━━━━━━━━━━━━━━
 
 📦 این اکانت به بخش «اکانت‌های من» اضافه شد و در هر زمان می‌توانید اطلاعات آن را مشاهده کنید.`, {
@@ -219,6 +222,67 @@ ${account.durationDays.toLocaleString("fa-IR")} روز
                 : [[{ text: "🏠 منوی اصلی", callback_data: (0, panel_ui_1.callbackFor)("home") }]];
             await ctx.reply((0, free_account_service_1.formatFreeAccountError)(error), { reply_markup: { inline_keyboard: keyboard } });
         }
+    });
+    bot.action(/^admin:free_account:view:([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        const account = await free_account_service_1.FreeAccountService.getAccount(ctx.match[1]);
+        if (!account) {
+            await ctx.reply("⚠️ اکانت تست پیدا نشد.");
+            return;
+        }
+        const assignment = account.assignment;
+        const expiresAt = assignment ? assignment.expiresAt ?? (0, free_account_service_1.freeAccountExpiresAt)(assignment.assignedAt ?? assignment.createdAt, account.durationDays) : undefined;
+        await ctx.reply(`🆓 جزئیات اکانت تست
+
+━━━━━━━━━━━━━━
+
+👤 نام کاربری:
+${account.username}
+
+🔗 لینک اشتراک:
+${account.subscriptionLink}
+
+⚙️ لینک کانفیگ:
+${account.configLink}
+
+⏳ مدت اعتبار: ${account.durationDays.toLocaleString("fa-IR")} روز
+📌 وضعیت: ${free_account_service_1.FREE_ACCOUNT_STATUS_LABELS[account.status]}
+👥 کاربر دریافت‌کننده: ${assignment?.user.telegramId ?? "—"}
+📅 تاریخ تخصیص: ${(0, free_account_service_1.formatFreeAccountDate)(assignment?.assignedAt ?? assignment?.createdAt)}
+📅 تاریخ انقضا: ${(0, free_account_service_1.formatFreeAccountDate)(expiresAt)}
+
+━━━━━━━━━━━━━━`, {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "✏️ ویرایش", callback_data: `flow:start:free_account_edit:${account.id}` }],
+                    [{ text: "✅ آماده", callback_data: `admin:free_account:status:${account.id}:available` }, { text: "🚫 منقضی/غیرفعال", callback_data: `admin:free_account:status:${account.id}:expired` }],
+                    [{ text: "🗑 حذف", callback_data: `admin:free_account:delete:${account.id}` }],
+                    [{ text: "🔙 مدیریت اکانت تست", callback_data: (0, panel_ui_1.callbackFor)("admin.freeAccounts") }],
+                ],
+            },
+        });
+    });
+    bot.action(/^admin:free_account:status:([^:]+):(available|assigned|expired)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery("وضعیت به‌روزرسانی شد");
+        try {
+            await free_account_service_1.FreeAccountService.updateAccount(ctx.match[1], { status: ctx.match[2] }, String(ctx.from.id));
+        }
+        catch (error) {
+            await ctx.reply(error instanceof Error ? `⚠️ ${error.message}` : "⚠️ ویرایش وضعیت ناموفق بود.");
+            return;
+        }
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.freeAccounts" }, "replace");
+    });
+    bot.action(/^admin:free_account:delete:([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery("حذف شد");
+        await free_account_service_1.FreeAccountService.deleteAccount(ctx.match[1], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.freeAccounts" }, "replace");
     });
     bot.action("referral:claim", async (ctx) => {
         await ctx.answerCbQuery();

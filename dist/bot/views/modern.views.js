@@ -16,6 +16,7 @@ const pages = (total, take) => Math.max(Math.ceil(total / take), 1).toLocaleStri
 const userLine = (user) => `${user.firstName ?? "کاربر"} ${user.username ? `@${user.username}` : user.telegramId}`;
 const stockLabel = (count) => (count > 5 ? "آماده تحویل" : count > 0 ? `فقط ${count.toLocaleString("fa-IR")} عدد` : "ناموجود");
 const shortId = (id) => id.slice(-6).toUpperCase();
+const freeAccountExpiry = (item) => item.expiresAt ?? (0, free_account_service_1.freeAccountExpiresAt)(item.assignedAt ?? item.createdAt, item.account.durationDays);
 function registerModernViews() {
     (0, panel_ui_1.registerView)("home", async (ctx) => {
         const user = ctx.from ? await user_service_1.UserService.findOrCreateUser(ctx) : undefined;
@@ -115,13 +116,15 @@ function registerModernViews() {
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
         if (!user)
             return { text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.", keyboard: [] };
+        await free_account_service_1.FreeAccountService.expireDueAccounts();
         const dashboard = await user_service_1.UserService.dashboard(user.id);
+        const activeFreeAccounts = await free_account_service_1.FreeAccountService.assignedForUser(user.id, true);
         return {
             text: `📦 اکانت‌های من
 
 ${divider}
 
-${[...dashboard.activeFreeAccounts.map((item) => `🆓 اکانت تست
+${[...activeFreeAccounts.map((item) => `🆓 اکانت تست رایگان
 
 👤 نام کاربری:
 ${item.account.username}
@@ -132,14 +135,11 @@ ${item.account.subscriptionLink}
 ⚙️ لینک کانفیگ:
 ${item.account.configLink}
 
-📅 تاریخ دریافت:
-${(item.assignedAt ?? item.createdAt).toLocaleString("fa-IR")}
-
-⏳ مدت اعتبار:
-${item.account.durationDays.toLocaleString("fa-IR")} روز (تا ${(item.expiresAt ?? new Date((item.assignedAt ?? item.createdAt).getTime() + item.account.durationDays * 86400000)).toLocaleDateString("fa-IR")})
+📅 تاریخ انقضا:
+${freeAccountExpiry(item).toLocaleDateString("fa-IR")}
 
 📌 وضعیت:
-فعال`), ...dashboard.activeAccounts.map((item) => `🛒 خریداری شده
+فعال و قابل استفاده`), ...dashboard.activeAccounts.map((item) => `🛒 خریداری شده
 📦 ${item.product.title}
 
 👤 نام کاربری:
@@ -347,8 +347,11 @@ ${divider}
         const stats = await admin_service_1.AdminService.accountStats();
         return { text: `🔐 مدیریت اکانت‌ها\n\nاکانت آماده فروش: ${stats.available.toLocaleString("fa-IR")}\nاکانت فروخته‌شده: ${stats.sold.toLocaleString("fa-IR")}\n\nبرای افزودن اکانت، محصول را انتخاب کنید.`, keyboard: stats.products.map((product) => [{ text: `➕ ${product.title}`, action: `flow:start:account_create:${product.id}` }]) };
     });
-    (0, panel_ui_1.registerView)("admin.freeAccounts", async () => {
+    (0, panel_ui_1.registerView)("admin.freeAccounts", async (_ctx, params) => {
+        await free_account_service_1.FreeAccountService.expireDueAccounts();
+        const current = page(params);
         const stats = await free_account_service_1.FreeAccountService.stats();
+        const [inventory, total] = await free_account_service_1.FreeAccountService.listInventory(current, 8);
         return {
             text: `🆓 مدیریت اکانت تست
 
@@ -368,9 +371,13 @@ ${divider}
 🧾 آخرین تخصیص‌ها:
 ${stats.recentAssignments.map((item) => `• ${item.user.telegramId} ← ${item.account.username} · ${(item.assignedAt ?? item.createdAt).toLocaleDateString("fa-IR")} · انقضا ${(item.expiresAt ?? new Date((item.assignedAt ?? item.createdAt).getTime() + item.account.durationDays * 86400000)).toLocaleDateString("fa-IR")}`).join("\n") || "هنوز تخصیصی ثبت نشده است."}
 
-📦 موجودی اخیر:
-${stats.inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleString("fa-IR")} روز · ${free_account_service_1.FREE_ACCOUNT_STATUS_LABELS[item.status]}`).join("\n") || "موجودی ثبت نشده است."}`,
-            keyboard: [[{ text: "➕ افزودن اکانت تست", action: "flow:start:free_account_create" }], [{ text: "📦 مشاهده موجودی", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts") }, { text: "🧾 تاریخچه تخصیص", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts") }]],
+📦 موجودی صفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}:
+${inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleString("fa-IR")} روز · ${free_account_service_1.FREE_ACCOUNT_STATUS_LABELS[item.status]}`).join("\n") || "موجودی ثبت نشده است."}`,
+            keyboard: [
+                [{ text: "➕ افزودن اکانت تست", action: "flow:start:free_account_create" }],
+                ...inventory.map((item) => [{ text: `👁 ${item.username} · ${free_account_service_1.FREE_ACCOUNT_STATUS_LABELS[item.status]}`, action: `admin:free_account:view:${item.id}` }]),
+                [{ text: "قبلی", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts", { page: Math.max(current - 1, 1) }) }, { text: "بعدی", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts", { page: current + 1 }) }],
+            ],
         };
     });
     (0, panel_ui_1.registerView)("admin.crypto", async () => {

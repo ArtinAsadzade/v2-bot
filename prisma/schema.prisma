@@ -497,6 +497,7 @@ model FreeAccountAssignment {
   userId    String   @db.ObjectId
   accountId String   @unique @db.ObjectId
   reason    String
+  isActive  Boolean  @default(true)
   assignedAt DateTime @default(now())
   expiresAt DateTime
   createdAt DateTime @default(now())
@@ -504,8 +505,8 @@ model FreeAccountAssignment {
   user    User        @relation(fields: [userId], references: [id])
   account FreeAccount @relation(fields: [accountId], references: [id])
 
-  @@index([userId, assignedAt])
-  @@index([expiresAt])
+  @@index([userId, isActive, assignedAt])
+  @@index([expiresAt, isActive])
   @@index([createdAt])
 }
 

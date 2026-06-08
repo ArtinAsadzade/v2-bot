@@ -9,7 +9,7 @@ const DAY_MS = 86_400_000;
 export const FREE_ACCOUNT_STATUS_LABELS = {
   available: "آماده تخصیص",
   assigned: "فعال",
-  expired: "منقضی‌شده",
+  expired: "منقضی و غیرفعال",
 } as const;
 
 type FreeAccountInput = {
@@ -102,7 +102,7 @@ function isUniqueConstraint(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
-const availableInventoryWhere = { status: "available" as const, assignment: { is: null } };
+const availableInventoryWhere = { status: "available" as const, assignedTo: null, assignment: { is: null } };
 
 export class FreeAccountService {
   static cooldownDays() {
@@ -139,11 +139,15 @@ export class FreeAccountService {
     if (data.status !== undefined) {
       normalized.status = data.status;
       if (data.status === "available") {
+        const existingAssignment = await prisma.freeAccountAssignment.findUnique({ where: { accountId } });
+        if (existingAssignment) throw new FreeAccountError("INVALID_INPUT", "اکانت تخصیص‌یافته را نمی‌توان دوباره وارد موجودی آماده کرد");
         normalized.assignedTo = null;
         normalized.assignedAt = null;
       }
     }
     const account = await prisma.freeAccount.update({ where: { id: accountId }, data: normalized });
+    if (data.status === "expired") await prisma.freeAccountAssignment.updateMany({ where: { accountId }, data: { isActive: false } });
+    if (data.status === "assigned") await prisma.freeAccountAssignment.updateMany({ where: { accountId }, data: { isActive: true } });
     logger.info("Free test account inventory updated", { accountId, actorId, fields: Object.keys(normalized), status: account.status });
     await prisma.auditLog.create({ data: { actorId, action: "free_account.update", metadata: JSON.stringify({ accountId, fields: Object.keys(normalized) }) } });
     return account;
@@ -152,9 +156,10 @@ export class FreeAccountService {
   static async deleteAccount(accountId: string, actorId: string) {
     return prisma.$transaction(async (tx) => {
       const assignment = await tx.freeAccountAssignment.findUnique({ where: { accountId } });
-      if (assignment) throw new Error("اکانت تخصیص‌یافته را نمی‌توان حذف کرد؛ تاریخچه آن باید برای حسابرسی باقی بماند");
+      if (assignment) await tx.freeAccountAssignment.delete({ where: { accountId } });
       const account = await tx.freeAccount.delete({ where: { id: accountId } });
-      await tx.auditLog.create({ data: { actorId, action: "free_account.delete", metadata: JSON.stringify({ accountId }) } });
+      await tx.auditLog.create({ data: { actorId, action: "free_account.delete", metadata: JSON.stringify({ accountId, assignmentId: assignment?.id }) } });
+      logger.info("Free test account inventory deleted", { accountId, actorId, assignmentId: assignment?.id });
       return account;
     });
   }
@@ -170,7 +175,7 @@ export class FreeAccountService {
       prisma.freeAccountAssignment.count({ where: { createdAt: { gte: monthStart } } }),
       prisma.freeAccountAssignment.findMany({ distinct: ["userId"], select: { userId: true } }),
       prisma.freeAccountAssignment.findMany({ include: { user: true, account: true }, orderBy: { createdAt: "desc" }, take: 10 }),
-      prisma.freeAccount.findMany({ orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 20 }),
+      prisma.freeAccount.findMany({ include: { assignment: { include: { user: true } } }, orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 20 }),
     ]);
     return { total, available, assigned, expired, monthlyAssignments, uniqueUsers: uniqueUsers.length, recentAssignments, inventory };
   }
@@ -195,7 +200,8 @@ export class FreeAccountService {
 
   static async activeForUser(userId: string) {
     const now = new Date();
-    const assignments = await prisma.freeAccountAssignment.findMany({ where: { userId, account: { is: { status: "assigned" } } }, include: { account: true }, orderBy: { createdAt: "desc" }, take: 20 });
+    await this.expireDueAccounts(now);
+    const assignments = await prisma.freeAccountAssignment.findMany({ where: { userId, isActive: true, account: { is: { status: "assigned" } } }, include: { account: true }, orderBy: { createdAt: "desc" }, take: 20 });
     return assignments.filter((item) => {
       const assignedAt = item.assignedAt ?? item.createdAt;
       const expiresAt = item.expiresAt ?? freeAccountExpiresAt(assignedAt, item.account.durationDays);
@@ -240,7 +246,7 @@ export class FreeAccountService {
         logger.info("Free test account assignment user check", { userId, userFound: Boolean(user), isBanned: Boolean(user?.isBanned) });
         if (!user || user.isBanned) throw new FreeAccountError("USER_BLOCKED", "حساب شما مسدود است و امکان دریافت اکانت تست وجود ندارد");
 
-        const assignedAccounts = await tx.freeAccountAssignment.findMany({ where: { userId, account: { is: { status: "assigned" } } }, include: { account: true }, orderBy: { createdAt: "desc" }, take: 20 });
+        const assignedAccounts = await tx.freeAccountAssignment.findMany({ where: { userId, isActive: true, account: { is: { status: "assigned" } } }, include: { account: true }, orderBy: { createdAt: "desc" }, take: 20 });
         const active = assignedAccounts.find((item) => {
           const assignedAt = item.assignedAt ?? item.createdAt;
           const expiresAt = item.expiresAt ?? freeAccountExpiresAt(assignedAt, item.account.durationDays);
@@ -272,10 +278,10 @@ export class FreeAccountService {
         if (!candidates.length) throw new FreeAccountError("NO_INVENTORY", "در حال حاضر موجودی اکانت تست تکمیل شده است");
 
         for (const candidate of candidates) {
-          const updated = await tx.freeAccount.updateMany({ where: { id: candidate.id, status: "available" }, data: { status: "assigned", assignedTo: userId, assignedAt: now } });
+          const updated = await tx.freeAccount.updateMany({ where: { id: candidate.id, status: "available", assignedTo: null, assignment: { is: null } }, data: { status: "assigned", assignedTo: userId, assignedAt: now } });
           logger.info("Free test account assignment candidate update", { userId, accountId: candidate.id, updated: updated.count });
           if (updated.count !== 1) continue;
-          const assignment = await tx.freeAccountAssignment.create({ data: { userId, accountId: candidate.id, reason, assignedAt: now, expiresAt: freeAccountExpiresAt(now, candidate.durationDays) } });
+          const assignment = await tx.freeAccountAssignment.create({ data: { userId, accountId: candidate.id, reason, isActive: true, assignedAt: now, expiresAt: freeAccountExpiresAt(now, candidate.durationDays) } });
           await tx.freeAccountUserLock.update({ where: { userId }, data: { lastAssignmentId: assignment.id, lastClaimAt: now } });
           return { ...candidate, status: "assigned" as const, assignedTo: userId, assignedAt: now, assignment };
         }
@@ -296,7 +302,7 @@ export class FreeAccountService {
   }
 
   static async expireDueAccounts(now = new Date()) {
-    const assigned = await prisma.freeAccountAssignment.findMany({ where: { account: { is: { status: "assigned" } } }, include: { account: true }, take: 500 });
+    const assigned = await prisma.freeAccountAssignment.findMany({ where: { isActive: true, account: { is: { status: "assigned" } } }, include: { account: true }, take: 500 });
     const due = assigned.filter((item) => {
       const assignedAt = item.assignedAt ?? item.createdAt;
       const expiresAt = item.expiresAt ?? freeAccountExpiresAt(assignedAt, item.account.durationDays);
@@ -307,14 +313,22 @@ export class FreeAccountService {
       return { count: 0 };
     }
     const ids = due.map((item) => item.accountId);
-    const result = await prisma.freeAccount.updateMany({ where: { id: { in: ids }, status: "assigned" }, data: { status: "expired" } });
-    logger.info("Free test account expiration checked", { checked: assigned.length, expired: result.count });
-    if (result.count > 0) eventBus.emit("free_account.expired", { count: result.count });
-    return result;
+    const [accountResult, assignmentResult] = await prisma.$transaction([
+      prisma.freeAccount.updateMany({ where: { id: { in: ids }, status: "assigned" }, data: { status: "expired" } }),
+      prisma.freeAccountAssignment.updateMany({ where: { accountId: { in: ids }, isActive: true }, data: { isActive: false } }),
+    ]);
+    logger.info("Free test account expiration checked", { checked: assigned.length, expired: accountResult.count, deactivatedAssignments: assignmentResult.count });
+    if (accountResult.count > 0) eventBus.emit("free_account.expired", { count: accountResult.count });
+    return accountResult;
   }
 
-  static async assignedForUser(userId: string) {
-    return prisma.freeAccountAssignment.findMany({ where: { userId }, include: { account: true }, orderBy: { createdAt: "desc" } });
+  static async assignedForUser(userId: string, onlyActive = false) {
+    if (onlyActive) await this.expireDueAccounts();
+    return prisma.freeAccountAssignment.findMany({ where: { userId, ...(onlyActive ? { isActive: true, account: { is: { status: "assigned" } } } : {}) }, include: { account: true }, orderBy: { createdAt: "desc" } });
+  }
+
+  static async getAccount(accountId: string) {
+    return prisma.freeAccount.findUnique({ where: { id: accountId }, include: { assignment: { include: { user: true } } } });
   }
 }
 
