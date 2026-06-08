@@ -184,13 +184,16 @@ const definitions: Record<FlowName, FlowDefinition> = {
       return { done: true, text: "✅ نتایج جستجو آماده شد.", returnTo: { id: "shop.searchResults", params: { q: query } } };
     },
   },
-
   broadcast_create: {
     firstStep: "message",
     prompt: async (ctx) => {
       const target = String(ctx.session.flow?.data.target ?? "");
-      if (!BroadcastService.isTarget(target)) return "⚠️ گروه دریافت‌کنندگان معتبر نیست. لطفاً دوباره از منوی اطلاع‌رسانی اقدام کنید.";
+      if (!BroadcastService.isTarget(target)) {
+        return "⚠️ گروه دریافت‌کنندگان معتبر نیست. لطفاً دوباره از منوی اطلاع‌رسانی اقدام کنید.";
+      }
+
       const count = await BroadcastService.countRecipients(target);
+
       return `📢 ارسال اطلاع‌رسانی
 
 گروه مخاطب: ${BroadcastService.targetLabel(target)}
@@ -198,16 +201,33 @@ const definitions: Record<FlowName, FlowDefinition> = {
 
 متن پیام را ارسال کنید. قبل از ارسال نهایی، پیش‌نمایش و دکمه تایید نمایش داده می‌شود.`;
     },
+
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
       const target = String(flow.data.target ?? "");
-      if (!BroadcastService.isTarget(target)) return { done: true, text: "⚠️ گروه دریافت‌کنندگان معتبر نیست.", returnTo: { id: "admin.notifications" } };
+
+      if (!BroadcastService.isTarget(target)) {
+        return {
+          done: true,
+          text: "⚠️ گروه دریافت‌کنندگان معتبر نیست.",
+          returnTo: { id: "admin.notifications" },
+        };
+      }
+
       if (flow.step === "message") {
         const message = text.trim();
-        if (message.length < 3) return { text: "متن اطلاع‌رسانی خیلی کوتاه است. لطفاً متن کامل‌تری ارسال کنید:" };
+
+        if (message.length < 3) {
+          return {
+            text: "متن اطلاع‌رسانی خیلی کوتاه است. لطفاً متن کامل‌تری ارسال کنید:",
+          };
+        }
+
         flow.data.message = message;
         flow.step = "confirm";
+
         const count = await BroadcastService.countRecipients(target);
+
         return {
           text: `📢 پیش‌نمایش اطلاع‌رسانی
 
@@ -219,14 +239,30 @@ ${message}
 
 برای ارسال نهایی تایید کنید.`,
           nextStep: "confirm",
-          keyboard: [[{ text: "✅ تایید و ارسال", action: "broadcast:confirm" }]],
+          keyboard: [
+            [
+              {
+                text: "✅ تایید و ارسال",
+                action: "broadcast:confirm",
+              },
+            ],
+          ],
         };
       }
+
       if (["ارسال", "تایید", "confirm", "send"].includes(text.trim().toLowerCase())) {
         const result = await completeBroadcast(ctx);
-        return { done: true, text: result, returnTo: { id: "admin.notifications" } };
+
+        return {
+          done: true,
+          text: result,
+          returnTo: { id: "admin.notifications" },
+        };
       }
-      return { text: "برای ارسال نهایی از دکمه «✅ تایید و ارسال» استفاده کنید یا کلمه «ارسال» را بفرستید." };
+
+      return {
+        text: "برای ارسال نهایی از دکمه «✅ تایید و ارسال» استفاده کنید یا کلمه «ارسال» را بفرستید.",
+      };
     },
   },
   category_create: {
@@ -808,21 +844,27 @@ export function registerFlowEngine(bot: AppBot) {
   });
 
   bot.action("broadcast:confirm", async (ctx) => {
-    const flow = ctx.session.flow;
-    if (!flow || flow.name !== "broadcast_create" || flow.step !== "confirm") {
-      await ctx.answerCbQuery("درخواست ارسال فعالی وجود ندارد");
-      return;
-    }
-    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
-      await ctx.answerCbQuery("دسترسی غیرمجاز");
-      return;
-    }
-    await ctx.answerCbQuery("در حال ارسال...");
-    const result = await completeBroadcast(ctx);
-    ctx.session.flow = undefined;
-    await ctx.reply(result);
-    await renderPanel(ctx, { id: "admin.notifications" }, "replace");
-  });
+  const flow = ctx.session.flow;
+
+  if (!flow || flow.name !== "broadcast_create" || flow.step !== "confirm") {
+    await ctx.answerCbQuery("درخواست ارسال فعالی وجود ندارد");
+    return;
+  }
+
+  if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
+    await ctx.answerCbQuery("دسترسی غیرمجاز");
+    return;
+  }
+
+  await ctx.answerCbQuery("در حال ارسال...");
+
+  const result = await completeBroadcast(ctx);
+
+  ctx.session.flow = undefined;
+
+  await ctx.reply(result);
+  await renderPanel(ctx, { id: "admin.notifications" }, "replace");
+});
 
   bot.action(/^flow:start:([^:]+)(?::([^:]+))?(?::([^:]+))?$/, async (ctx) => {
     await ctx.answerCbQuery();
@@ -832,13 +874,37 @@ export function registerFlowEngine(bot: AppBot) {
       return;
     }
     if (name === "coupon_code") return startFlow(ctx, "coupon_code", { productId: ctx.match[2] });
-    const adminOnlyFlows: FlowName[] = ["product_create", "product_edit", "account_create", "account_edit", "coupon_create", "coupon_edit", "category_create", "category_edit", "product_price", "crypto_wallet_create", "crypto_wallet_edit", "minimum_topup", "referral_tier_create", "store_status", "forced_join_create", "wallet_adjust", "broadcast_create", "free_account_create", "free_account_edit"];
+const adminOnlyFlows: FlowName[] = [
+  "product_create",
+  "product_edit",
+  "account_create",
+  "account_edit",
+  "coupon_create",
+  "coupon_edit",
+  "category_create",
+  "category_edit",
+  "product_price",
+  "crypto_wallet_create",
+  "crypto_wallet_edit",
+  "minimum_topup",
+  "referral_tier_create",
+  "store_status",
+  "forced_join_create",
+  "wallet_adjust",
+  "broadcast_create",
+  "free_account_create",
+  "free_account_edit",
+];
     if (adminOnlyFlows.includes(name) && (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))) {
       await ctx.answerCbQuery("دسترسی غیرمجاز");
       return;
     }
     if (name === "coupon_edit") return startFlow(ctx, "coupon_edit", { couponId: ctx.match[2] });
-    if (name === "broadcast_create") return startFlow(ctx, "broadcast_create", { target: ctx.match[2] });
+if (name === "broadcast_create") {
+  return startFlow(ctx, "broadcast_create", {
+    target: ctx.match[2],
+  });
+}
     if (name === "category_edit") return startFlow(ctx, "category_edit", { categoryId: ctx.match[2] });
     if (name === "product_edit") return startFlow(ctx, "product_edit", { productId: ctx.match[2] });
     if (name === "account_create") return startFlow(ctx, "account_create", { productId: ctx.match[2] });
