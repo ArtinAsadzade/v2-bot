@@ -821,21 +821,37 @@ status: ${detail.wallet.status}`;
 
   payment_gateway_update: {
     firstStep: "fields",
-    prompt: `⚡ تنظیمات درگاه پرداخت را ارسال کنید.\n\nهر خط به شکل field: value\n\nenabled: true\napiBaseUrl: http://136.244.104.77:5000/api/v1\napiKey: کلید_درگاه\ncallbackUrl: https://your-domain.com/payments/callback\ngatewayName: پرداخت آنی\ndisplayOrder: 1`,
+    prompt: (ctx) => {
+      const field = String(ctx.session.flow?.data.field ?? "");
+      const prompts: Record<string, string> = {
+        apiBaseUrl: "🌐 API URL جدید را وارد کنید:\n\nمثال: http://136.244.104.77:5000/api/v1",
+        apiKey: "🔑 API KEY جدید را وارد کنید:\n\nکلید کامل فقط در دیتابیس ذخیره می‌شود و در پنل ماسک خواهد شد.",
+        callbackUrl: "🔁 Callback URL جدید را وارد کنید:\n\nمثال: https://domain.com/payments/callback",
+        gatewayName: "🏷 نام نمایشی درگاه را وارد کنید:\n\nمثال: پرداخت آنی",
+      };
+      return prompts[field] ?? `⚡ تنظیمات درگاه پرداخت را ارسال کنید.\n\nهر خط به شکل field: value\n\nenabled: true\napiBaseUrl: http://136.244.104.77:5000/api/v1\napiKey: کلید_درگاه\ncallbackUrl: https://your-domain.com/payments/callback\ngatewayName: پرداخت آنی\ndisplayOrder: 1`;
+    },
     async handleText(ctx, text) {
-      const data = parseKeyValueLines(text);
-      const enabled = parseActive(data.enabled ?? data.active ?? data.status ?? data["وضعیت"]);
-      const displayOrder = data.displayOrder || data.order || data["ترتیب"] ? parseInteger(data.displayOrder ?? data.order ?? data["ترتیب"] ?? "1") : undefined;
+      const field = String(ctx.session.flow?.data.field ?? "");
+      const payload: Parameters<typeof PaymentGatewayService.updateConfig>[0] = {};
+      if (field === "apiBaseUrl") payload.apiBaseUrl = text;
+      else if (field === "apiKey") payload.apiKey = text;
+      else if (field === "callbackUrl") payload.callbackUrl = text;
+      else if (field === "gatewayName") payload.gatewayName = text;
+      else {
+        const data = parseKeyValueLines(text);
+        const enabled = parseActive(data.enabled ?? data.active ?? data.status ?? data["وضعیت"]);
+        const displayOrder = data.displayOrder || data.order || data["ترتیب"] ? parseInteger(data.displayOrder ?? data.order ?? data["ترتیب"] ?? "1") : undefined;
+        payload.enabled = enabled;
+        payload.apiBaseUrl = data.apiBaseUrl ?? data.baseUrl ?? data.url;
+        payload.apiKey = data.apiKey ?? data.key;
+        payload.callbackUrl = data.callbackUrl ?? data.callback;
+        payload.gatewayName = data.gatewayName ?? data.name;
+        payload.displayOrder = displayOrder;
+      }
       try {
-        await PaymentGatewayService.update({
-          enabled,
-          apiBaseUrl: data.apiBaseUrl ?? data.baseUrl ?? data.url,
-          apiKey: data.apiKey ?? data.key,
-          callbackUrl: data.callbackUrl ?? data.callback,
-          gatewayName: data.gatewayName ?? data.name,
-          displayOrder,
-        }, String(ctx.from?.id ?? "admin"));
-        return { done: true, text: "✅ تنظیمات درگاه پرداخت ذخیره شد.", returnTo: { id: "admin.paymentGateway" } };
+        await PaymentGatewayService.updateConfig(payload, String(ctx.from?.id ?? "admin"));
+        return { done: true, text: "✅ تنظیمات ذخیره شد", returnTo: { id: "admin.paymentGateway" } };
       } catch (error) {
         return { text: error instanceof Error ? `❌ ${error.message}` : "❌ ذخیره تنظیمات ناموفق بود" };
       }
@@ -961,7 +977,7 @@ const adminOnlyFlows: FlowName[] = [
       await ctx.answerCbQuery("دسترسی غیرمجاز");
       return;
     }
-    if (name === "payment_gateway_update") return startFlow(ctx, "payment_gateway_update");
+    if (name === "payment_gateway_update") return startFlow(ctx, "payment_gateway_update", { field: ctx.match[2] });
     if (name === "coupon_edit") return startFlow(ctx, "coupon_edit", { couponId: ctx.match[2] });
 if (name === "broadcast_create") {
   return startFlow(ctx, "broadcast_create", {
