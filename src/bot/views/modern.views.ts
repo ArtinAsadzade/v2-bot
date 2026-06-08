@@ -14,6 +14,7 @@ import { SupportService } from "../../modules/support/support.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
 import { BroadcastService, BROADCAST_TARGET_LABELS } from "../../modules/broadcast/broadcast.service";
 import { PaymentGatewayService, PaymentInvoiceService, maskApiKey } from "../../modules/payment/payment.service";
+import type { PaymentInvoiceStatus } from "@prisma/client";
 
 const divider = "━━━━━━━━━━━━━━━━";
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
@@ -1118,13 +1119,13 @@ ${divider}
 وضعیت:
 ${gateway.enabled ? "فعال ✅" : "غیرفعال ⛔"}
 
-نام:
+نام درگاه:
 ${gateway.gatewayName}
 
-API URL:
+API Base URL:
 ${gateway.apiBaseUrl || "—"}
 
-Callback:
+Callback Base URL:
 ${gateway.callbackUrl || "—"}
 
 API Key:
@@ -1157,19 +1158,18 @@ ${stats.failed.toLocaleString("fa-IR")}
 در انتظار:
 ${stats.pending.toLocaleString("fa-IR")}`,
       keyboard: [
-        [{ text: "⚙️ راه‌اندازی سریع", action: "flow:start:payment_gateway_setup" }],
-        [
-          { text: "🔑 API KEY", action: "flow:start:payment_gateway_update:apiKey" },
-          { text: "🌐 API URL", action: "flow:start:payment_gateway_update:apiBaseUrl" },
-        ],
-        [
-          { text: "🔗 CALLBACK", action: "flow:start:payment_gateway_update:callbackUrl" },
-          { text: "🏷 نام نمایشی", action: "flow:start:payment_gateway_update:gatewayName" },
-        ],
-        [{ text: "🔢 ترتیب نمایش", action: "flow:start:payment_gateway_update:displayOrder" }],
-        [{ text: "📡 تست اتصال", action: "admin:payment_gateway:test" }],
-        [{ text: "📊 فاکتورها", action: callbackFor("admin.invoices") }],
         [{ text: gateway.enabled ? "⏸ فعال/غیرفعال: غیرفعال‌سازی" : "▶️ فعال/غیرفعال: فعال‌سازی", action: `admin:payment_gateway:status:${gateway.enabled ? "disabled" : "enabled"}` }],
+        [
+          { text: "🏷 نام درگاه", action: "flow:start:payment_gateway_update:gatewayName" },
+          { text: "🌐 API Base URL", action: "flow:start:payment_gateway_update:apiBaseUrl" },
+        ],
+        [
+          { text: "🔑 API Key", action: "flow:start:payment_gateway_update:apiKey" },
+          { text: "🔗 Callback Base URL", action: "flow:start:payment_gateway_update:callbackUrl" },
+        ],
+        [{ text: "💾 ذخیره تنظیمات: هر فیلد جداگانه", action: "flow:start:payment_gateway_update:gatewayName" }],
+        [{ text: "📡 تست اتصال", action: "admin:payment_gateway:test" }],
+        [{ text: "🧾 مشاهده فاکتورها", action: callbackFor("admin.invoices") }, { text: "📊 آمار پرداخت‌ها", action: callbackFor("admin.paymentStats") }],
         [{ text: "🏠 بازگشت", action: callbackFor("admin.dashboard") }],
       ],
     };
@@ -1193,7 +1193,8 @@ ${stats.recent.map((invoice) => `• #${shortId(invoice.id)} · ${invoice.user.t
 
   registerView("admin.invoices", async (_ctx, params) => {
     const current = page(params);
-    const status = ["PENDING", "PAID", "COMPLETED", "CANCELED", "FAILED"].includes(params.status) ? params.status as any : undefined;
+    const paymentStatuses: PaymentInvoiceStatus[] = ["PENDING", "PAID", "COMPLETED", "CANCELED", "FAILED"];
+    const status = paymentStatuses.includes(params.status as PaymentInvoiceStatus) ? params.status as PaymentInvoiceStatus : undefined;
     const [invoices, total] = await PaymentInvoiceService.list(current, 8, status);
     const statusLabel = (value: string) => ({ PENDING: "در انتظار", PAID: "پرداخت شده", CANCELED: "لغو شده", FAILED: "ناموفق", COMPLETED: "پرداخت شده" } as Record<string, string>)[value] ?? value;
     const typeLabel = (value: string) => value === "WALLET_TOPUP" ? "شارژ کیف پول" : "خرید محصول";

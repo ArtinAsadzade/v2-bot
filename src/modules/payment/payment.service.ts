@@ -45,7 +45,8 @@ class GatewayConnectionError extends Error {
   }
 }
 
-const CALLBACK_TOKEN_PARAM = "invoice_id";
+const CALLBACK_TOKEN_PARAM = "token";
+const CALLBACK_INVOICE_PARAM = "invoice";
 const ALREADY_PROCESSED_FA = "⚠️ این پرداخت قبلاً پردازش شده است.";
 const DEFAULT_GATEWAY_API_BASE_URL = "http://136.244.104.77:5000/api/v1";
 
@@ -97,11 +98,29 @@ function parseGatewayResponse(body: unknown) {
   return { payId, paymentLink };
 }
 
-function invoiceCallbackUrl(baseCallbackUrl: string, invoiceId: string) {
-  const withId = baseCallbackUrl.includes("{invoiceId}") ? baseCallbackUrl.split("{invoiceId}").join(encodeURIComponent(invoiceId)) : baseCallbackUrl;
-  const url = new URL(withId);
-  url.searchParams.set(CALLBACK_TOKEN_PARAM, invoiceId);
+function invoiceCallbackUrl(baseCallbackUrl: string, data: { invoiceId: string; callbackToken: string }) {
+  const withId = baseCallbackUrl.includes("{invoiceId}") ? baseCallbackUrl.split("{invoiceId}").join(encodeURIComponent(data.invoiceId)) : baseCallbackUrl;
+  const withToken = withId.includes("{token}") ? withId.split("{token}").join(encodeURIComponent(data.callbackToken)) : withId;
+  const url = new URL(withToken);
+  url.searchParams.set(CALLBACK_TOKEN_PARAM, data.callbackToken);
+  url.searchParams.set(CALLBACK_INVOICE_PARAM, data.invoiceId);
   return url.toString();
+}
+
+function isValidObjectId(value: string) {
+  return /^[a-f\d]{24}$/i.test(value);
+}
+
+type CallbackReference = { token?: string; invoice?: string; invoice_id?: string; pay_id?: string };
+
+function normalizeCallbackReference(reference: string | CallbackReference) {
+  if (typeof reference === "string") return { invoice_id: reference.trim() };
+  return {
+    token: reference.token?.trim(),
+    invoice: reference.invoice?.trim(),
+    invoice_id: reference.invoice_id?.trim(),
+    pay_id: reference.pay_id?.trim(),
+  };
 }
 
 
@@ -314,7 +333,7 @@ export class PaymentGatewayService {
   static async testConnection(actorId: string) {
     const gateway = await this.getConfig();
     this.validateConfig({ ...gateway, enabled: true });
-    const callbackUrl = invoiceCallbackUrl(gateway.callbackUrl, `test-${Date.now()}`);
+    const callbackUrl = invoiceCallbackUrl(gateway.callbackUrl, { invoiceId: `test-${Date.now()}`, callbackToken: crypto.randomBytes(16).toString("hex") });
     try {
       const { parsed, raw } = await PaymentService.requestGatewayInvoice(gateway, 1_000, callbackUrl);
       const reloaded = await prisma.$transaction(async (tx) => {
@@ -419,7 +438,7 @@ export class PaymentService {
     await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_INVOICE_CREATED", metadata: { type: data.type, originalAmount, discountAmount, finalAmount: data.amount, couponId: data.couponId, couponCode: data.couponCode, status: "PENDING" } });
     if (data.couponId) await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "COUPON_APPLIED", metadata: { couponId: data.couponId, couponCode: data.couponCode, originalAmount, discountAmount, finalAmount: data.amount, usageRecorded: false } });
 
-    const callbackUrl = invoiceCallbackUrl(gateway.callbackUrl, invoice.id);
+    const callbackUrl = invoiceCallbackUrl(gateway.callbackUrl, { invoiceId: invoice.id, callbackToken: invoice.callbackToken });
     paymentLog("PAYMENT_GATEWAY_REQUEST", { invoiceId: invoice.id, userId: data.userId, endpoint: "/invoice/create", price: data.amount, callbackUrl });
     await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_REQUEST", metadata: { endpoint: "/invoice/create", price: data.amount, callback_url: callbackUrl } });
     try {
@@ -430,23 +449,65 @@ export class PaymentService {
       return prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { payId: gatewayResult.parsed.payId, paymentLink: gatewayResult.parsed.paymentLink, gatewayAmount: data.amount, gatewayResponse: safeJson(gatewayResult.raw) } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      paymentLog("PAYMENT_PROCESS_FAILED", { invoiceId: invoice.id, userId: data.userId, stage: "gateway_create", error: message });
-      await prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { status: "FAILED", gatewayResponse: safeJson({ error: message }), deliveryStatus: "FAILED" } });
+      paymentLog("PAYMENT_GATEWAY_REQUEST_FAILED", { invoiceId: invoice.id, userId: data.userId, stage: "gateway_create", error: message });
+      await prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { gatewayResponse: safeJson({ error: message }), deliveryStatus: "GATEWAY_REQUEST_FAILED" } });
       await prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastFailedRequest: new Date(), lastConnectionStatus: "failed", lastConnectionError: message } });
-      await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_PROCESS_FAILED", metadata: { stage: "gateway_create", error: message } });
+      await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_REQUEST_FAILED", metadata: { stage: "gateway_create", error: message } });
       throw new Error("ارتباط با درگاه پرداخت برقرار نشد. لطفاً چند دقیقه دیگر دوباره تلاش کنید");
     }
   }
 
-  static async completePayment(invoiceId: string, metadata: Record<string, unknown> = {}) {
-    if (!invoiceId) return { statusCode: 404, text: "Payment invoice not found." };
-    const invoice = await prisma.paymentInvoice.findUnique({ where: { id: invoiceId } });
-    if (!invoice) return { statusCode: 404, text: "Payment invoice not found." };
+  private static async findInvoiceByCallbackReference(reference: string | CallbackReference) {
+    const normalized = normalizeCallbackReference(reference);
+    if (normalized.token) {
+      const byToken = await prisma.paymentInvoice.findUnique({ where: { callbackToken: normalized.token } });
+      if (byToken) return { invoice: byToken, matchedBy: "callbackToken" };
+    }
+
+    if (normalized.invoice && isValidObjectId(normalized.invoice)) {
+      const byInvoice = await prisma.paymentInvoice.findUnique({ where: { id: normalized.invoice } });
+      if (byInvoice) return { invoice: byInvoice, matchedBy: "invoice" };
+    }
+
+    if (normalized.invoice_id) {
+      const byLegacyToken = await prisma.paymentInvoice.findUnique({ where: { callbackToken: normalized.invoice_id } });
+      if (byLegacyToken) return { invoice: byLegacyToken, matchedBy: "legacyToken" };
+      if (isValidObjectId(normalized.invoice_id)) {
+        const byLegacyInvoice = await prisma.paymentInvoice.findUnique({ where: { id: normalized.invoice_id } });
+        if (byLegacyInvoice) return { invoice: byLegacyInvoice, matchedBy: "legacyInvoice" };
+      }
+      const byPayId = await prisma.paymentInvoice.findUnique({ where: { payId: normalized.invoice_id } });
+      if (byPayId) return { invoice: byPayId, matchedBy: "payId" };
+    }
+
+    if (normalized.pay_id) {
+      const byPayId = await prisma.paymentInvoice.findUnique({ where: { payId: normalized.pay_id } });
+      if (byPayId) return { invoice: byPayId, matchedBy: "payId" };
+    }
+
+    return null;
+  }
+
+  static async completePayment(reference: string | CallbackReference, metadata: Record<string, unknown> = {}) {
+    const normalizedReference = normalizeCallbackReference(reference);
+    if (!normalizedReference.token && !normalizedReference.invoice && !normalizedReference.invoice_id && !normalizedReference.pay_id) {
+      paymentLog("PAYMENT_CALLBACK_REJECTED", { reason: "missing_callback_reference", query: metadata.query });
+      await prisma.auditLog.create({ data: { actorId: "system", action: "PAYMENT_CALLBACK_REJECTED", metadata: JSON.stringify({ reason: "missing_callback_reference", ...metadata }) } });
+      return { statusCode: 400, text: "Invalid payment callback." };
+    }
+
+    const resolved = await this.findInvoiceByCallbackReference(normalizedReference);
+    if (!resolved) {
+      paymentLog("PAYMENT_CALLBACK_REJECTED", { reason: "invoice_not_found", reference: normalizedReference, query: metadata.query });
+      await prisma.auditLog.create({ data: { actorId: "system", action: "PAYMENT_CALLBACK_REJECTED", metadata: JSON.stringify({ reason: "invoice_not_found", reference: normalizedReference, ...metadata }) } });
+      return { statusCode: 404, text: "Payment invoice not found." };
+    }
+    const invoice = resolved.invoice;
 
     const callbackAt = new Date();
     await prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { callbackCount: { increment: 1 }, lastCallbackAt: callbackAt } });
-    paymentLog("PAYMENT_CALLBACK_RECEIVED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, callbackAt: callbackAt.toISOString(), query: metadata.query });
-    await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_RECEIVED", metadata: { invoice_id: invoiceId, ...metadata } });
+    paymentLog("PAYMENT_CALLBACK_RECEIVED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, matchedBy: resolved.matchedBy, callbackAt: callbackAt.toISOString(), query: metadata.query });
+    await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_RECEIVED", metadata: { reference: normalizedReference, matchedBy: resolved.matchedBy, ...metadata } });
 
     const integrity = this.assertInvoiceAmountIntegrity(invoice);
     if (!integrity.ok) {
@@ -459,7 +520,11 @@ export class PaymentService {
     paymentLog("PAYMENT_CALLBACK_PROCESSING", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, type: invoice.type });
     await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_PROCESSING", metadata: { status: invoice.status, type: invoice.type, payId: invoice.payId } });
 
-    if (invoice.status === "COMPLETED") return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+    if (invoice.status === "COMPLETED" || invoice.status === "PAID") {
+      paymentLog("PAYMENT_DUPLICATE_CALLBACK_IGNORED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status });
+      await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_DUPLICATE_CALLBACK_IGNORED", metadata: { status: invoice.status, reference: normalizedReference } });
+      if (invoice.status === "COMPLETED") return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+    }
     if (invoice.status === "FAILED" || invoice.status === "CANCELED" || invoice.status === "EXPIRED") return { statusCode: 409, text: "Payment invoice is not payable." };
 
     let paidInvoice = invoice;
@@ -565,20 +630,21 @@ export class PaymentService {
     const originalAmount = product.price;
     let totalAmount = originalAmount;
 
-    if (data.couponCode) {
-      if (data.method === "INSTANT" && !data.invoice) throw new Error("کد تخفیف برای پرداخت آنی فقط از مسیر فاکتور معتبر است");
+    if (data.invoice) {
+      if (data.invoice.userId !== data.userId || data.invoice.productId !== data.productId) throw new Error("فاکتور با خرید همخوانی ندارد");
+      if (data.invoice.originalAmount !== originalAmount) throw new Error("مبلغ اصلی فاکتور با محصول همخوانی ندارد");
+      if (data.invoice.status !== "PAID") throw new Error("پرداخت تایید نشده است");
+      couponId = data.invoice.couponId ?? null;
+      discountAmount = data.invoice.discountAmount;
+      totalAmount = data.invoice.amount;
+      if (originalAmount - discountAmount !== totalAmount) throw new Error("مبلغ فاکتور با مبلغ خرید همخوانی ندارد");
+    } else if (data.couponCode) {
       const coupon = await CouponService.validateForUser(data.couponCode, data.userId, tx, originalAmount);
       couponId = coupon.id;
       couponMaxUses = coupon.maxUses;
       const calculation = CouponService.calculate(coupon, originalAmount);
       discountAmount = calculation.discountAmount;
       totalAmount = calculation.finalAmount;
-    }
-
-    if (data.invoice) {
-      if (data.invoice.userId !== data.userId || data.invoice.productId !== data.productId) throw new Error("فاکتور با خرید همخوانی ندارد");
-      if (data.invoice.amount !== totalAmount || data.invoice.originalAmount !== originalAmount || data.invoice.discountAmount !== discountAmount || (data.invoice.couponId ?? null) !== couponId) throw new Error("مبلغ فاکتور با مبلغ خرید همخوانی ندارد");
-      if (data.invoice.status !== "PAID") throw new Error("پرداخت تایید نشده است");
     }
 
     const account = await tx.productAccount.findFirst({ where: { AND: [availableInventoryWhere(product.id), unassignedInventoryWhere()] }, orderBy: { createdAt: "asc" } });
@@ -595,7 +661,9 @@ export class PaymentService {
     }
 
     if (couponId) {
-      const couponUpdated = await tx.coupon.updateMany({ where: { id: couponId, status: "active", deletedAt: null, usedCount: { lt: couponMaxUses }, expiresAt: { gt: new Date() } }, data: { usedCount: { increment: 1 } } });
+      const couponUpdated = data.invoice
+        ? await tx.coupon.updateMany({ where: { id: couponId }, data: { usedCount: { increment: 1 } } })
+        : await tx.coupon.updateMany({ where: { id: couponId, status: "active", deletedAt: null, usedCount: { lt: couponMaxUses }, expiresAt: { gt: new Date() } }, data: { usedCount: { increment: 1 } } });
       if (couponUpdated.count !== 1) throw new Error("کد تخفیف دیگر قابل استفاده نیست");
     }
 
@@ -607,7 +675,7 @@ export class PaymentService {
 
     if (couponId) {
       const usageSlot = await tx.couponUsage.count({ where: { couponId, userId: data.userId } });
-      if (usageSlot >= (await tx.coupon.findUniqueOrThrow({ where: { id: couponId }, select: { perUserLimit: true } })).perUserLimit) throw new Error("سقف استفاده شما از این کد تخفیف تکمیل شده است");
+      if (!data.invoice && usageSlot >= (await tx.coupon.findUniqueOrThrow({ where: { id: couponId }, select: { perUserLimit: true } })).perUserLimit) throw new Error("سقف استفاده شما از این کد تخفیف تکمیل شده است");
       await tx.couponUsage.create({ data: { couponId, userId: data.userId, orderId: order.id, usageSlot } });
       await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "COUPON_USAGE_RECORDED", metadata: { couponId, orderId: order.id, usageSlot, originalAmount, discountAmount, finalAmount: totalAmount } });
     }
@@ -681,8 +749,8 @@ export class PaymentInvoiceService {
     });
   }
 
-  static async processCallback(invoiceId: string, metadata: Record<string, unknown> = {}) {
-    return PaymentService.completePayment(invoiceId, metadata);
+  static async processCallback(reference: string | CallbackReference, metadata: Record<string, unknown> = {}) {
+    return PaymentService.completePayment(reference, metadata);
   }
 
   static async markNotification(invoiceId: string, status: "SENT" | "FAILED", metadata: Record<string, unknown> = {}) {
