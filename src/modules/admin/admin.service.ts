@@ -5,6 +5,7 @@ import { CryptoWalletService, FinancialSettingsService, type CryptoWalletInput }
 import { SystemSettingsService } from "../system/system.service";
 import { CouponService } from "../coupon/coupon.service";
 import { ForcedJoinService } from "../system/forced-join.service";
+import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, categoryNotDeletedWhere, productNotDeletedWhere, unassignedInventoryWhere } from "../product/visibility";
 
 const DASHBOARD_CACHE_TTL_MS = 30_000;
 
@@ -60,9 +61,7 @@ function purchasedInventoryWhere(productId?: string): Prisma.ProductAccountWhere
 function sellableInventoryWhere(productId?: string): Prisma.ProductAccountWhereInput {
   return {
     ...(productId ? { productId } : {}),
-    status: "available",
-    soldTo: null,
-    soldAt: null,
+    AND: [availableInventoryWhere(productId), unassignedInventoryWhere()],
     NOT: COMPLETED_PURCHASED_ACCOUNT_WHERE,
   };
 }
@@ -90,15 +89,15 @@ export class AdminService {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000);
     const [users, products, categories, wallets, submittedDeposits, openTickets, orders, revenue, totalAccounts, availableAccounts, reservedAccounts, soldAccounts, disabledAccounts, expiredAccounts, referralRewards, freeAccountsAvailable, freeAccountsAssigned, freeAccountsExpired, freeAccountsMonthly, freeAccountUniqueRows] = await Promise.all([
       prisma.user.count(),
-      prisma.product.count({ where: { deletedAt: null } }),
-      prisma.category.count({ where: { deletedAt: null } }),
+      prisma.product.count({ where: productNotDeletedWhere() }),
+      prisma.category.count({ where: categoryNotDeletedWhere() }),
       prisma.cryptoWallet.count(),
       prisma.deposit.count({ where: { status: "submitted" } }),
       prisma.ticket.count({ where: { status: "open" } }),
       prisma.order.count(),
       prisma.order.aggregate({ where: { status: "completed" }, _sum: { finalPaidAmount: true } }),
       prisma.productAccount.count(),
-      prisma.productAccount.count({ where: { status: "available" } }),
+      prisma.productAccount.count({ where: availableInventoryWhere() }),
       prisma.productAccount.count({ where: { status: "reserved" } }),
       prisma.productAccount.count({ where: { status: "sold" } }),
       prisma.productAccount.count({ where: { status: "disabled" } }),
@@ -164,7 +163,7 @@ export class AdminService {
   static async listCategories(page = 1, take = 8, query?: string) {
     const skip = (page - 1) * take;
     const q = containsQuery(query);
-    const where = { deletedAt: null, ...(q ? { OR: [{ name: { contains: q } }, { description: { contains: q } }] } : {}) };
+    const where: Prisma.CategoryWhereInput = { AND: [categoryNotDeletedWhere(), ...(q ? [{ OR: [{ name: { contains: q } }, { description: { contains: q } }] }] : [])] };
     return Promise.all([
       prisma.category.findMany({ where, include: { _count: { select: { products: true } } }, orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }], skip, take }),
       prisma.category.count({ where }),
@@ -175,10 +174,10 @@ export class AdminService {
     const skip = (productPage - 1) * productTake;
     const [category, productCount, activeProductCount, salesCount, products] = await Promise.all([
       prisma.category.findUnique({ where: { id: categoryId } }),
-      prisma.product.count({ where: { categoryId, deletedAt: null } }),
-      prisma.product.count({ where: { categoryId, deletedAt: null, isActive: true } }),
+      prisma.product.count({ where: { categoryId, AND: [productNotDeletedWhere()] } }),
+      prisma.product.count({ where: { categoryId, AND: [activeProductWhere()] } }),
       prisma.order.count({ where: { product: { is: { categoryId } }, status: "completed" } }),
-      prisma.product.findMany({ where: { categoryId, deletedAt: null }, include: { _count: { select: { accounts: true, orders: true } } }, orderBy: { createdAt: "desc" }, skip, take: productTake }),
+      prisma.product.findMany({ where: { categoryId, AND: [productNotDeletedWhere()] }, include: { _count: { select: { accounts: true, orders: true } } }, orderBy: { createdAt: "desc" }, skip, take: productTake }),
     ]);
     return { category, productCount, activeProductCount, salesCount, products, productPage, productTake };
   }
@@ -209,7 +208,7 @@ export class AdminService {
   static async setCategoryActive(categoryId: string, isActive: boolean, actorId: string) {
     const category = await prisma.$transaction(async (tx) => {
       const updated = await tx.category.update({ where: { id: categoryId }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
-      await tx.product.updateMany({ where: { categoryId, ...(isActive ? {} : { deletedAt: null }) }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
+      await tx.product.updateMany({ where: { categoryId, ...(isActive ? {} : productNotDeletedWhere()) }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
       await tx.auditLog.create({ data: { actorId, action: isActive ? "category.activate" : "category.deactivate", metadata: JSON.stringify({ categoryId, synchronizedProducts: true }) } });
       return updated;
     });
@@ -221,7 +220,7 @@ export class AdminService {
     const deletedAt = new Date();
     const category = await prisma.$transaction(async (tx) => {
       const updated = await tx.category.update({ where: { id: categoryId }, data: { isActive: false, deletedAt } });
-      await tx.product.updateMany({ where: { categoryId, deletedAt: null }, data: { isActive: false, deletedAt } });
+      await tx.product.updateMany({ where: { categoryId, AND: [productNotDeletedWhere()] }, data: { isActive: false, deletedAt } });
       await tx.auditLog.create({ data: { actorId, action: "category.delete.soft", metadata: JSON.stringify({ categoryId, synchronizedProducts: true }) } });
       return updated;
     });
@@ -255,7 +254,14 @@ export class AdminService {
   static async listProducts(page = 1, take = 8, query?: string, status?: "active" | "inactive" | "deleted") {
     const skip = (page - 1) * take;
     const q = containsQuery(query);
-    const where = { ...(status === "deleted" ? { deletedAt: { not: null } } : { deletedAt: null }), ...(status === "active" ? { isActive: true } : {}), ...(status === "inactive" ? { isActive: false } : {}), ...(q ? { OR: [{ title: { contains: q } }, { category: { is: { name: { contains: q } } } }] } : {}) };
+    const where: Prisma.ProductWhereInput = {
+      AND: [
+        status === "deleted" ? { deletedAt: { not: null } } : productNotDeletedWhere(),
+        ...(status === "active" ? [activeProductWhere()] : []),
+        ...(status === "inactive" ? [{ isActive: false }] : []),
+        ...(q ? [{ OR: [{ title: { contains: q } }, { category: { is: { name: { contains: q } } } }] }] : []),
+      ],
+    };
     const [products, total] = await Promise.all([
       prisma.product.findMany({ where, include: { category: true, _count: { select: { accounts: true, orders: true } } }, orderBy: { createdAt: "desc" }, skip, take }),
       prisma.product.count({ where }),
@@ -264,15 +270,16 @@ export class AdminService {
     if (!productIds.length) return [[], total] as const;
 
     const now = new Date();
+    const productIdWhere: Prisma.ProductAccountWhereInput = { productId: { in: productIds } };
     const [availableGroups, soldGroups, activeGroups] = await Promise.all([
-      Promise.all(productIds.map(async (id) => [id, await prisma.productAccount.count({ where: sellableInventoryWhere(id) })] as const)),
-      Promise.all(productIds.map(async (id) => [id, await prisma.productAccount.count({ where: purchasedInventoryWhere(id) })] as const)),
-      Promise.all(productIds.map(async (id) => [id, await prisma.productAccount.count({ where: activePurchasedInventoryWhere(id, now) })] as const)),
+      prisma.productAccount.groupBy({ by: ["productId"], where: { AND: [productIdWhere, sellableInventoryWhere()] }, _count: { _all: true } }),
+      prisma.productAccount.groupBy({ by: ["productId"], where: { AND: [productIdWhere, purchasedInventoryWhere()] }, _count: { _all: true } }),
+      prisma.productAccount.groupBy({ by: ["productId"], where: { AND: [productIdWhere, activePurchasedInventoryWhere(undefined, now)] }, _count: { _all: true } }),
     ]);
 
-    const availableCounts = new Map<string, number>(availableGroups);
-    const soldCounts = new Map<string, number>(soldGroups);
-    const activeCounts = new Map<string, number>(activeGroups);
+    const availableCounts = new Map(availableGroups.map((group) => [group.productId, group._count._all]));
+    const soldCounts = new Map(soldGroups.map((group) => [group.productId, group._count._all]));
+    const activeCounts = new Map(activeGroups.map((group) => [group.productId, group._count._all]));
     return [
       products.map((product) => {
         return {
@@ -305,18 +312,18 @@ export class AdminService {
   }
 
   static async searchProducts(query: string) {
-    return prisma.product.findMany({ where: { deletedAt: null, OR: [{ title: { contains: query } }, { category: { is: { name: { contains: query } } } }] }, include: { category: true }, orderBy: { createdAt: "desc" }, take: 10 });
+    return prisma.product.findMany({ where: { AND: [productNotDeletedWhere()], OR: [{ title: { contains: query } }, { category: { is: { name: { contains: query } } } }] }, include: { category: true }, orderBy: { createdAt: "desc" }, take: 10 });
   }
 
   static async updateProduct(productId: string, data: ProductInput, actorId: string) {
     const updateData: Partial<ProductInput> & { deletedAt?: Date | null } = cleanUndefined(data);
     if (updateData.categoryId) {
-      await prisma.category.findFirstOrThrow({ where: { id: updateData.categoryId as string, deletedAt: null } });
+      await prisma.category.findFirstOrThrow({ where: { id: updateData.categoryId as string, AND: [categoryNotDeletedWhere()] } });
     }
     if (updateData.isActive) {
       const product = await prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
       const categoryId = (updateData.categoryId as string | undefined) ?? product.categoryId;
-      await prisma.category.findFirstOrThrow({ where: { id: categoryId, isActive: true, deletedAt: null } });
+      await prisma.category.findFirstOrThrow({ where: { id: categoryId, AND: [activeCategoryWhere()] } });
       updateData.deletedAt = null;
     }
     const product = await prisma.product.update({ where: { id: productId }, data: updateData });
@@ -327,7 +334,7 @@ export class AdminService {
   static async setProductActive(productId: string, isActive: boolean, actorId: string) {
     if (isActive) {
       const current = await prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
-      await prisma.category.findFirstOrThrow({ where: { id: current.categoryId, isActive: true, deletedAt: null } });
+      await prisma.category.findFirstOrThrow({ where: { id: current.categoryId, AND: [activeCategoryWhere()] } });
     }
     const product = await prisma.product.update({ where: { id: productId }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
     await this.audit(actorId, isActive ? "product.activate" : "product.deactivate", { productId });
@@ -406,7 +413,7 @@ export class AdminService {
   static async updateAccount(accountId: string, data: AccountInput, actorId: string) {
     return prisma.$transaction(async (tx) => {
       const current = await tx.productAccount.findUniqueOrThrow({ where: { id: accountId } });
-      if (data.productId && data.productId !== current.productId) await tx.product.findFirstOrThrow({ where: { id: data.productId, deletedAt: null } });
+      if (data.productId && data.productId !== current.productId) await tx.product.findFirstOrThrow({ where: { id: data.productId, AND: [productNotDeletedWhere()] } });
       const update = { ...data, ...(data.configLink ? { config: data.configLink } : {}) };
       const account = await tx.productAccount.update({ where: { id: accountId }, data: update });
       if (data.productId && data.productId !== current.productId) await tx.productAccountHistory.create({ data: { accountId, actorId, action: "account.move", fromValue: current.productId, toValue: data.productId } });
@@ -551,7 +558,7 @@ export class AdminService {
       prisma.productAccount.count({ where: { ...where, status: "disabled" } }),
       prisma.productAccount.count({ where: { ...where, status: "expired" } }),
       prisma.product.findMany({
-        where: { deletedAt: null },
+        where: productNotDeletedWhere(),
         include: { _count: { select: { accounts: true } } },
         orderBy: [{ isActive: "desc" }, { title: "asc" }],
         take: 50,
