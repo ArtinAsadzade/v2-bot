@@ -7,6 +7,7 @@ exports.panelKeyboard = panelKeyboard;
 exports.renderPanel = renderPanel;
 exports.goBack = goBack;
 const telegraf_1 = require("telegraf");
+const reply_keyboard_1 = require("../keyboards/reply.keyboard");
 const registry = new Map();
 function registerView(id, renderer) {
     registry.set(id, renderer);
@@ -118,6 +119,13 @@ async function renderPanel(ctx, state, mode = "push") {
         ctx.session.navigation.stack.push(state);
     if (mode === "replace")
         ctx.session.navigation.stack = [state];
+    if (result.replyKeyboard) {
+        const signature = (0, reply_keyboard_1.replyKeyboardSignature)(result.replyKeyboard);
+        if (ctx.session.quickKeyboardSignature !== signature) {
+            ctx.session.quickKeyboardSignature = signature;
+            await ctx.reply("⌨️ منوی دسترسی سریع به‌روزرسانی شد.", (0, reply_keyboard_1.replyKeyboard)(result.replyKeyboard));
+        }
+    }
     const keyboard = panelKeyboard(result.keyboard, { back: state.id !== "home", home: state.id !== "home" });
     const extra = { parse_mode: result.parseMode, ...keyboard };
     const fallbackReply = async () => {

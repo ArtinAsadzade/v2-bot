@@ -38,7 +38,8 @@ export type FlowName =
   | "referral_tier_create"
   | "store_status"
   | "forced_join_create"
-  | "payment_gateway_update";
+  | "payment_gateway_update"
+  | "payment_gateway_setup";
 
 export interface ActiveFlow {
   name: FlowName;
@@ -58,6 +59,7 @@ export interface SessionData {
   liveTicketRole?: "user" | "admin";
   flow?: ActiveFlow;
   navigation?: { panelMessageId?: number; stack: ViewState[] };
+  quickKeyboardSignature?: string;
 }
 
 export interface AppContext extends Context {

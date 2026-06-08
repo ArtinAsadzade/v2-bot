@@ -61,11 +61,13 @@ function registerModernViews() {
         return {
             text: `سلام ${ctx.from?.first_name ?? "دوست عزیز"} 🌿\n\n${divider}\n👤 خلاصه حساب شما\n\n💰 موجودی کیف پول: ${money(user?.balance ?? 0)}\n👥 تعداد دعوت‌ها: ${(dashboard?.referralCount ?? 0).toLocaleString("fa-IR")} نفر\n🎁 جوایز فعال: ${(dashboard?.freeRewards ?? 0).toLocaleString("fa-IR")}\n📦 اکانت‌های فعال: ${((dashboard?.activeAccounts.length ?? 0) + (dashboard?.activeFreeAccounts.length ?? 0)).toLocaleString("fa-IR")}\n${divider}\n\n✨ سرویس‌های منتخب آماده تحویل هستند. برای ادامه، یکی از دکمه‌های زیر را انتخاب کنید.`,
             keyboard,
+            replyKeyboard: isAdmin ? "admin" : "home",
         };
     });
     (0, panel_ui_1.registerView)("shop.categories", async () => {
         const categories = await product_service_1.ProductService.getCategories();
         return {
+            replyKeyboard: "shop",
             text: `🛍 فروشگاه نیمه‌شب\n\n${divider}\nدسته‌بندی موردنظر را انتخاب کنید. همه سرویس‌های نمایش‌داده‌شده فعال و آماده تحویل خودکار هستند.`,
             keyboard: [
                 [{ text: "🔎 جستجوی محصول", action: "flow:start:product_search" }],
@@ -184,6 +186,7 @@ ${divider}
             return { text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.", keyboard: [] };
         const dashboard = await user_service_1.UserService.dashboard(user.id);
         return {
+            replyKeyboard: "profile",
             text: `👤 داشبورد حساب کاربری\n\n${divider}\n💰 موجودی کیف پول: ${money(dashboard.user.balance)}\n👥 تعداد دعوت‌ها: ${dashboard.referralCount.toLocaleString("fa-IR")} نفر\n🎁 جوایز فعال: ${dashboard.freeRewards.toLocaleString("fa-IR")}\n📦 اکانت‌های فعال: ${(dashboard.activeAccounts.length + dashboard.activeFreeAccounts.length).toLocaleString("fa-IR")}\n🧾 خریدهای اخیر: ${dashboard.recentOrders.length.toLocaleString("fa-IR")} سفارش\n💎 پاداش قابل برداشت: ${money(dashboard.pendingReferralAmount)}\n${divider}\n\nاز میان اقدام‌های سریع زیر انتخاب کنید:`,
             keyboard: [
                 [
@@ -210,6 +213,7 @@ ${divider}
         const activeFreeAccounts = await free_account_service_1.FreeAccountService.assignedForUser(user.id, true);
         const purchasedAccounts = dashboard.purchasedAccounts;
         return {
+            replyKeyboard: "profile",
             text: `📦 اکانت‌های من
 
 ${divider}
@@ -280,6 +284,7 @@ ${divider}`,
     (0, panel_ui_1.registerView)("wallet", async (ctx) => {
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
         return {
+            replyKeyboard: "wallet",
             text: `💳 کیف پول\n\n${divider}\nموجودی قابل استفاده: ${money(user?.balance ?? 0)}\n\nشارژ کیف پول از طریق پرداخت رمزارزی انجام می‌شود و پس از تأیید رسید، موجودی شما به‌روزرسانی خواهد شد.`,
             keyboard: [
                 [
@@ -321,6 +326,7 @@ ${divider}
         const tickets = await support_service_1.SupportService.listUserTickets(user.id);
         const latestOpen = tickets.find((ticket) => ticket.status === "open");
         return {
+            replyKeyboard: "support",
             text: `🎧 پشتیبانی
 
 ${divider}
@@ -358,6 +364,7 @@ ${tickets
         const eligibility = await free_account_service_1.FreeAccountService.eligibility(user.id);
         if (eligibility.reason === "active") {
             return {
+                replyKeyboard: "freeAccount",
                 text: `⚠️ اکانت تست فعال دارید
 
 ${divider}
@@ -373,6 +380,7 @@ ${divider}`,
         if (eligibility.reason === "cooldown") {
             const lastClaimAt = eligibility.last?.assignedAt ?? eligibility.last?.createdAt;
             return {
+                replyKeyboard: "freeAccount",
                 text: `⏳ محدودیت دریافت اکانت تست
 
 ${divider}
@@ -391,6 +399,7 @@ ${divider}`,
         }
         if (eligibility.reason === "blocked") {
             return {
+                replyKeyboard: "freeAccount",
                 text: `⚠️ دسترسی محدود شده است
 
 ${divider}
@@ -405,6 +414,7 @@ ${divider}`,
         }
         if (!eligibility.available) {
             return {
+                replyKeyboard: "freeAccount",
                 text: `🚫 موجودی اکانت تست تکمیل شده است
 
 ${divider}
@@ -418,6 +428,7 @@ ${divider}`,
             };
         }
         return {
+            replyKeyboard: "freeAccount",
             text: `🆓 دریافت اکانت تست
 
 ${divider}
@@ -443,6 +454,7 @@ ${divider}
     (0, panel_ui_1.registerView)("admin.dashboard", async () => {
         const stats = await admin_service_1.AdminService.dashboard(true);
         return {
+            replyKeyboard: "admin",
             text: `⚙️ مرکز مدیریت
 
 ${divider}
@@ -1043,11 +1055,12 @@ ${recentLines}`,
     });
     (0, panel_ui_1.registerView)("admin.paymentGateway", async () => {
         const [gateway, stats] = await Promise.all([payment_service_1.PaymentGatewayService.getConfig(), payment_service_1.PaymentInvoiceService.stats()]);
-        const connectionLabel = gateway.lastConnectionStatus === "success" ? "اتصال موفق ✅" : gateway.lastConnectionStatus === "failed" ? "اتصال ناموفق ❌" : "تست نشده —";
+        const connectionLabel = gateway.lastConnectionStatus === "success" ? "موفق ✅" : gateway.lastConnectionStatus === "failed" ? "ناموفق ❌" : "تست نشده —";
         const lastTest = gateway.lastSuccessfulRequest && gateway.lastFailedRequest
             ? (gateway.lastSuccessfulRequest > gateway.lastFailedRequest ? gateway.lastSuccessfulRequest : gateway.lastFailedRequest)
             : gateway.lastSuccessfulRequest ?? gateway.lastFailedRequest;
         return {
+            replyKeyboard: "admin",
             text: `⚡ مدیریت پرداخت آنی
 
 ${divider}
@@ -1055,46 +1068,59 @@ ${divider}
 وضعیت:
 ${gateway.enabled ? "فعال ✅" : "غیرفعال ⛔"}
 
-نام نمایشی:
+نام:
 ${gateway.gatewayName}
 
 API URL:
 ${gateway.apiBaseUrl || "—"}
 
-Callback URL:
+Callback:
 ${gateway.callbackUrl || "—"}
 
 API Key:
 ${(0, payment_service_1.maskApiKey)(gateway.apiKey)}
 
-${divider}
-
-📊 وضعیت سیستم
-
-فاکتورهای موفق: ${stats.successful.toLocaleString("fa-IR")}
-فاکتورهای ناموفق: ${stats.failed.toLocaleString("fa-IR")}
-فاکتورهای در انتظار: ${stats.pending.toLocaleString("fa-IR")}
+ترتیب نمایش:
+${gateway.displayOrder.toLocaleString("fa-IR")}
 
 ${divider}
 
-📡 وضعیت اتصال
-
+📡 اتصال:
 ${connectionLabel}
 
 آخرین تست:
 ${lastTest ? lastTest.toLocaleString("fa-IR") : "—"}
 ${gateway.lastConnectionError ? `
 آخرین خطا:
-${gateway.lastConnectionError}` : ""}`,
+${gateway.lastConnectionError}` : ""}
+
+${divider}
+
+📊 فاکتورها
+
+موفق:
+${stats.successful.toLocaleString("fa-IR")}
+
+ناموفق:
+${stats.failed.toLocaleString("fa-IR")}
+
+در انتظار:
+${stats.pending.toLocaleString("fa-IR")}`,
             keyboard: [
-                [{ text: gateway.enabled ? "⏸ غیرفعال‌سازی" : "▶️ فعال‌سازی", action: `admin:payment_gateway:status:${gateway.enabled ? "disabled" : "enabled"}` }],
-                [{ text: "🌐 ویرایش API URL", action: "flow:start:payment_gateway_update:apiBaseUrl" }],
-                [{ text: "🔑 ویرایش API KEY", action: "flow:start:payment_gateway_update:apiKey" }],
-                [{ text: "🔁 ویرایش CALLBACK", action: "flow:start:payment_gateway_update:callbackUrl" }],
-                [{ text: "🏷 ویرایش نام درگاه", action: "flow:start:payment_gateway_update:gatewayName" }],
+                [{ text: "⚙️ راه‌اندازی سریع", action: "flow:start:payment_gateway_setup" }],
+                [
+                    { text: "🔑 API KEY", action: "flow:start:payment_gateway_update:apiKey" },
+                    { text: "🌐 API URL", action: "flow:start:payment_gateway_update:apiBaseUrl" },
+                ],
+                [
+                    { text: "🔗 CALLBACK", action: "flow:start:payment_gateway_update:callbackUrl" },
+                    { text: "🏷 نام نمایشی", action: "flow:start:payment_gateway_update:gatewayName" },
+                ],
+                [{ text: "🔢 ترتیب نمایش", action: "flow:start:payment_gateway_update:displayOrder" }],
                 [{ text: "📡 تست اتصال", action: "admin:payment_gateway:test" }],
-                [{ text: "🧾 مشاهده فاکتورها", action: (0, panel_ui_1.callbackFor)("admin.invoices") }],
-                [{ text: "🔙 بازگشت", action: (0, panel_ui_1.callbackFor)("admin.dashboard") }],
+                [{ text: "📊 فاکتورها", action: (0, panel_ui_1.callbackFor)("admin.invoices") }],
+                [{ text: gateway.enabled ? "⏸ فعال/غیرفعال: غیرفعال‌سازی" : "▶️ فعال/غیرفعال: فعال‌سازی", action: `admin:payment_gateway:status:${gateway.enabled ? "disabled" : "enabled"}` }],
+                [{ text: "🏠 بازگشت", action: (0, panel_ui_1.callbackFor)("admin.dashboard") }],
             ],
         };
     });
