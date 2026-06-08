@@ -1092,31 +1092,59 @@ ${recentLines}`,
 
 
   registerView("admin.paymentGateway", async () => {
-    const gateway = await PaymentGatewayService.get();
+    const [gateway, stats] = await Promise.all([PaymentGatewayService.getConfig(), PaymentInvoiceService.stats()]);
+    const connectionLabel = gateway.lastConnectionStatus === "success" ? "اتصال موفق ✅" : gateway.lastConnectionStatus === "failed" ? "اتصال ناموفق ❌" : "تست نشده —";
+    const lastTest = gateway.lastSuccessfulRequest && gateway.lastFailedRequest
+      ? (gateway.lastSuccessfulRequest > gateway.lastFailedRequest ? gateway.lastSuccessfulRequest : gateway.lastFailedRequest)
+      : gateway.lastSuccessfulRequest ?? gateway.lastFailedRequest;
     return {
       text: `⚡ مدیریت پرداخت آنی
 
 ${divider}
-در این بخش وضعیت و تنظیمات اتصال مستقیم به درگاه پرداخت آنی مدیریت می‌شود.
 
-وضعیت درگاه: ${gateway.enabled ? "فعال ✅" : "غیرفعال ⛔"}
-نام نمایشی: ${gateway.gatewayName}
-ترتیب نمایش: ${gateway.displayOrder.toLocaleString("fa-IR")}
-API Base URL: ${gateway.apiBaseUrl || "—"}
-Callback Base URL: ${gateway.callbackUrl || "—"}
-API Key: ${maskApiKey(gateway.apiKey)}
+وضعیت:
+${gateway.enabled ? "فعال ✅" : "غیرفعال ⛔"}
 
-📡 وضعیت اتصال: ${gateway.lastConnectionStatus === "success" ? "✅ اتصال موفق" : gateway.lastConnectionStatus === "failed" ? "❌ اتصال ناموفق" : "—"}
-آخرین درخواست موفق: ${gateway.lastSuccessfulRequest ? gateway.lastSuccessfulRequest.toLocaleString("fa-IR") : "—"}
-آخرین درخواست ناموفق: ${gateway.lastFailedRequest ? gateway.lastFailedRequest.toLocaleString("fa-IR") : "—"}
-${gateway.lastConnectionError ? `آخرین خطا: ${gateway.lastConnectionError}` : ""}`,
+نام نمایشی:
+${gateway.gatewayName}
+
+API URL:
+${gateway.apiBaseUrl || "—"}
+
+Callback URL:
+${gateway.callbackUrl || "—"}
+
+API Key:
+${maskApiKey(gateway.apiKey)}
+
+${divider}
+
+📊 وضعیت سیستم
+
+فاکتورهای موفق: ${stats.successful.toLocaleString("fa-IR")}
+فاکتورهای ناموفق: ${stats.failed.toLocaleString("fa-IR")}
+فاکتورهای در انتظار: ${stats.pending.toLocaleString("fa-IR")}
+
+${divider}
+
+📡 وضعیت اتصال
+
+${connectionLabel}
+
+آخرین تست:
+${lastTest ? lastTest.toLocaleString("fa-IR") : "—"}
+${gateway.lastConnectionError ? `
+آخرین خطا:
+${gateway.lastConnectionError}` : ""}`,
       keyboard: [
-        [{ text: "1️⃣ وضعیت درگاه", action: callbackFor("admin.paymentGateway") }],
-        [{ text: "2️⃣ تنظیمات درگاه", action: "flow:start:payment_gateway_update" }],
-        [{ text: "3️⃣ فاکتورهای پرداخت", action: callbackFor("admin.invoices") }],
-        [{ text: "4️⃣ آمار پرداخت", action: callbackFor("admin.paymentStats") }],
-        [{ text: "5️⃣ 🧪 تست اتصال", action: "admin:payment_gateway:test" }],
         [{ text: gateway.enabled ? "⏸ غیرفعال‌سازی" : "▶️ فعال‌سازی", action: `admin:payment_gateway:status:${gateway.enabled ? "disabled" : "enabled"}` }],
+        [{ text: "🌐 ویرایش API URL", action: "flow:start:payment_gateway_update:apiBaseUrl" }],
+        [{ text: "🔑 ویرایش API KEY", action: "flow:start:payment_gateway_update:apiKey" }],
+        [{ text: "🔁 ویرایش CALLBACK", action: "flow:start:payment_gateway_update:callbackUrl" }],
+        [{ text: "🏷 ویرایش نام درگاه", action: "flow:start:payment_gateway_update:gatewayName" }],
+        [{ text: "📡 تست اتصال", action: "admin:payment_gateway:test" }],
+        [{ text: "🧾 مشاهده فاکتورها", action: callbackFor("admin.invoices") }],
+        [{ text: "🔙 بازگشت", action: callbackFor("admin.dashboard") }],
       ],
     };
   });

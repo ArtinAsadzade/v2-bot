@@ -13,6 +13,17 @@ const coupon_service_1 = require("../coupon/coupon.service");
 const admin_service_1 = require("../admin/admin.service");
 const event_bus_service_1 = require("../../services/event-bus.service");
 const visibility_1 = require("../product/visibility");
+class GatewayHttpError extends Error {
+    constructor(status, message) {
+        super(message);
+        this.status = status;
+    }
+}
+class GatewayConnectionError extends Error {
+    constructor(message) {
+        super(message);
+    }
+}
 const CALLBACK_TOKEN_PARAM = "invoice_id";
 const ALREADY_PROCESSED_FA = "Already processed.";
 const DEFAULT_GATEWAY_API_BASE_URL = "http://136.244.104.77:5000/api/v1";
@@ -23,15 +34,36 @@ function assertPositiveAmount(amount) {
 function normalizeBaseUrl(url) {
     return url.trim().replace(/\/+$/, "");
 }
-function validateUrl(value, label) {
+function localGatewayUrlsAllowed() {
+    return process.env.PAYMENT_GATEWAY_ALLOW_LOCAL_URLS === "true";
+}
+function isLocalHostname(hostname) {
+    const normalized = hostname.toLowerCase();
+    return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized.endsWith(".localhost");
+}
+function assertValidHttpUrl(value, label, options = {}) {
+    const raw = value.trim();
+    if (!raw)
+        throw new Error(`${label} الزامی است`);
+    let parsed;
     try {
-        const parsed = new URL(value);
-        if (!/^https?:$/.test(parsed.protocol))
-            throw new Error();
+        parsed = new URL(raw);
     }
     catch {
         throw new Error(`${label} معتبر نیست`);
     }
+    if (!/^https?:$/.test(parsed.protocol))
+        throw new Error(`${label} معتبر نیست`);
+    if (!parsed.hostname || parsed.hostname.length < 3)
+        throw new Error(`${label} معتبر نیست`);
+    if (isLocalHostname(parsed.hostname) && !localGatewayUrlsAllowed())
+        throw new Error(`${label} localhost مجاز نیست`);
+    if (!localGatewayUrlsAllowed() && !parsed.hostname.includes(".") && !/^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname))
+        throw new Error(`${label} معتبر نیست`);
+    return options.normalizeBase ? normalizeBaseUrl(parsed.toString()) : parsed.toString();
+}
+function validateUrl(value, label) {
+    assertValidHttpUrl(value, label);
 }
 function parseGatewayResponse(body) {
     if (!body || typeof body !== "object")
@@ -86,83 +118,159 @@ async function audit(tx, data) {
     });
 }
 class PaymentGatewayService {
-    static async get() {
-        return prisma_1.prisma.paymentGatewayConfig.upsert({
-            where: { id: "singleton" },
-            update: {},
-            create: { id: "singleton", enabled: false, apiBaseUrl: DEFAULT_GATEWAY_API_BASE_URL, apiKey: "", callbackUrl: "", gatewayName: "پرداخت آنی", displayOrder: 1 },
+    static async getConfig() {
+        return prisma_1.prisma.$transaction(async (tx) => {
+            await tx.paymentGatewayConfig.upsert({
+                where: { id: this.singletonId },
+                update: {},
+                create: { id: this.singletonId, enabled: false, apiBaseUrl: DEFAULT_GATEWAY_API_BASE_URL, apiKey: "", callbackUrl: "", gatewayName: "پرداخت آنی", displayOrder: 1 },
+            });
+            return tx.paymentGatewayConfig.findUniqueOrThrow({ where: { id: this.singletonId } });
         });
     }
-    static validateConfig(input) {
-        if (input.enabled) {
+    static async get() {
+        return this.getConfig();
+    }
+    static validateConfig(input, options = {}) {
+        if (input.apiBaseUrl !== undefined && (options.partial || input.apiBaseUrl.trim()))
+            assertValidHttpUrl(input.apiBaseUrl, "آدرس API درگاه", { normalizeBase: true });
+        if (input.callbackUrl !== undefined && (options.partial || input.callbackUrl.trim()))
+            assertValidHttpUrl(input.callbackUrl, "آدرس callback درگاه");
+        if (options.partial && input.apiKey !== undefined && !input.apiKey.trim())
+            throw new Error("کلید API درگاه الزامی است");
+        if (input.gatewayName !== undefined && !input.gatewayName.trim())
+            throw new Error("نام درگاه الزامی است");
+        if (input.displayOrder !== undefined && (!Number.isInteger(input.displayOrder) || input.displayOrder < 1))
+            throw new Error("ترتیب نمایش معتبر نیست");
+        if (!options.partial && input.enabled) {
             if (!input.apiBaseUrl?.trim())
                 throw new Error("آدرس API درگاه الزامی است");
             if (!input.apiKey?.trim())
                 throw new Error("کلید API درگاه الزامی است");
             if (!input.callbackUrl?.trim())
                 throw new Error("آدرس callback درگاه الزامی است");
-            validateUrl(input.apiBaseUrl, "آدرس API درگاه");
-            validateUrl(input.callbackUrl, "آدرس callback درگاه");
+            assertValidHttpUrl(input.apiBaseUrl, "آدرس API درگاه", { normalizeBase: true });
+            assertValidHttpUrl(input.callbackUrl, "آدرس callback درگاه");
         }
     }
-    static async update(input, actorId) {
-        const current = await this.get();
-        const next = { ...current, ...input };
-        this.validateConfig(next);
-        const updated = await prisma_1.prisma.paymentGatewayConfig.update({
-            where: { id: "singleton" },
-            data: {
-                enabled: input.enabled ?? current.enabled,
-                apiBaseUrl: input.apiBaseUrl !== undefined ? normalizeBaseUrl(input.apiBaseUrl) : current.apiBaseUrl,
-                apiKey: input.apiKey !== undefined ? input.apiKey.trim() : current.apiKey,
-                callbackUrl: input.callbackUrl !== undefined ? input.callbackUrl.trim() : current.callbackUrl,
-                gatewayName: input.gatewayName !== undefined ? input.gatewayName.trim() || "پرداخت آنی" : current.gatewayName,
-                displayOrder: input.displayOrder ?? current.displayOrder,
-            },
+    static normalizeInput(input) {
+        return {
+            enabled: input.enabled,
+            apiBaseUrl: input.apiBaseUrl !== undefined ? assertValidHttpUrl(input.apiBaseUrl, "آدرس API درگاه", { normalizeBase: true }) : undefined,
+            apiKey: input.apiKey !== undefined ? input.apiKey.trim() : undefined,
+            callbackUrl: input.callbackUrl !== undefined ? assertValidHttpUrl(input.callbackUrl, "آدرس callback درگاه") : undefined,
+            gatewayName: input.gatewayName !== undefined ? input.gatewayName.trim() : undefined,
+            displayOrder: input.displayOrder,
+        };
+    }
+    static async upsertConfig(input, actorId) {
+        return prisma_1.prisma.$transaction(async (tx) => {
+            this.validateConfig(input, { partial: true });
+            const current = await tx.paymentGatewayConfig.upsert({
+                where: { id: this.singletonId },
+                update: {},
+                create: { id: this.singletonId, enabled: false, apiBaseUrl: DEFAULT_GATEWAY_API_BASE_URL, apiKey: "", callbackUrl: "", gatewayName: "پرداخت آنی", displayOrder: 1 },
+            });
+            const normalized = this.normalizeInput(input);
+            const next = {
+                enabled: normalized.enabled ?? current.enabled,
+                apiBaseUrl: normalized.apiBaseUrl ?? current.apiBaseUrl,
+                apiKey: normalized.apiKey ?? current.apiKey,
+                callbackUrl: normalized.callbackUrl ?? current.callbackUrl,
+                gatewayName: normalized.gatewayName ?? current.gatewayName,
+                displayOrder: normalized.displayOrder ?? current.displayOrder,
+            };
+            this.validateConfig(next);
+            await tx.paymentGatewayConfig.update({
+                where: { id: this.singletonId },
+                data: next,
+            });
+            await tx.auditLog.create({
+                data: {
+                    actorId,
+                    action: "payment_gateway.config.save",
+                    metadata: JSON.stringify({
+                        changedFields: Object.keys(input),
+                        enabled: next.enabled,
+                        apiBaseUrl: next.apiBaseUrl,
+                        callbackUrl: next.callbackUrl,
+                        gatewayName: next.gatewayName,
+                        displayOrder: next.displayOrder,
+                        apiKeyMasked: maskApiKey(next.apiKey),
+                    }),
+                },
+            });
+            return tx.paymentGatewayConfig.findUniqueOrThrow({ where: { id: this.singletonId } });
         });
-        await prisma_1.prisma.auditLog.create({ data: { actorId, action: "payment_gateway.update", metadata: JSON.stringify({ enabled: updated.enabled, gatewayName: updated.gatewayName, displayOrder: updated.displayOrder }) } });
-        return updated;
+    }
+    static async saveConfig(input, actorId) {
+        return this.upsertConfig(input, actorId);
+    }
+    static async updateConfig(input, actorId) {
+        return this.upsertConfig(input, actorId);
+    }
+    static async update(input, actorId) {
+        return this.updateConfig(input, actorId);
     }
     static async setEnabled(enabled, actorId) {
-        const current = await this.get();
-        this.validateConfig({ ...current, enabled });
-        const updated = await prisma_1.prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { enabled } });
-        await prisma_1.prisma.auditLog.create({ data: { actorId, action: enabled ? "payment_gateway.enable" : "payment_gateway.disable", metadata: JSON.stringify({ gatewayName: updated.gatewayName }) } });
-        return updated;
+        return this.updateConfig({ enabled }, actorId);
+    }
+    static connectionFailureMessage(error) {
+        if (error instanceof GatewayHttpError && error.status === 401)
+            return "API Key نامعتبر است";
+        if (error instanceof GatewayConnectionError)
+            return "سرور درگاه در دسترس نیست";
+        return error instanceof Error ? error.message : String(error);
     }
     static async testConnection(actorId) {
-        const gateway = await this.get();
+        const gateway = await this.getConfig();
         this.validateConfig({ ...gateway, enabled: true });
         const callbackUrl = invoiceCallbackUrl(gateway.callbackUrl, `test-${Date.now()}`);
         try {
             const { parsed, raw } = await PaymentService.requestGatewayInvoice(gateway, 1000, callbackUrl);
-            await prisma_1.prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastSuccessfulRequest: new Date(), lastConnectionStatus: "success", lastConnectionError: null } });
-            await prisma_1.prisma.auditLog.create({ data: { actorId, action: "payment_gateway.connection_test.success", metadata: JSON.stringify({ payId: parsed.payId }) } });
-            return { ok: true, message: "✅ اتصال موفق", details: raw };
+            const reloaded = await prisma_1.prisma.$transaction(async (tx) => {
+                await tx.paymentGatewayConfig.update({ where: { id: this.singletonId }, data: { lastSuccessfulRequest: new Date(), lastConnectionStatus: "success", lastConnectionError: null } });
+                await tx.auditLog.create({ data: { actorId, action: "payment_gateway.connection_test.success", metadata: JSON.stringify({ payId: parsed.payId, status: "success" }) } });
+                return tx.paymentGatewayConfig.findUniqueOrThrow({ where: { id: this.singletonId } });
+            });
+            return { ok: true, message: "✅ اتصال با موفقیت برقرار شد", details: raw, config: reloaded };
         }
         catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            await prisma_1.prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastFailedRequest: new Date(), lastConnectionStatus: "failed", lastConnectionError: message } });
-            await prisma_1.prisma.auditLog.create({ data: { actorId, action: "payment_gateway.connection_test.failed", metadata: JSON.stringify({ error: message }) } });
-            return { ok: false, message: "❌ اتصال ناموفق", error: message };
+            const message = this.connectionFailureMessage(error);
+            const reloaded = await prisma_1.prisma.$transaction(async (tx) => {
+                await tx.paymentGatewayConfig.update({ where: { id: this.singletonId }, data: { lastFailedRequest: new Date(), lastConnectionStatus: "failed", lastConnectionError: message } });
+                await tx.auditLog.create({ data: { actorId, action: "payment_gateway.connection_test.failed", metadata: JSON.stringify({ error: message }) } });
+                return tx.paymentGatewayConfig.findUniqueOrThrow({ where: { id: this.singletonId } });
+            });
+            return { ok: false, message: `❌ ${message}`, error: message, config: reloaded };
         }
     }
 }
 exports.PaymentGatewayService = PaymentGatewayService;
+PaymentGatewayService.singletonId = "singleton";
 class PaymentService {
     static async requestGatewayInvoice(gateway, price, callbackUrl) {
         const payload = { price, callback_url: callbackUrl };
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 15000);
-        const response = await fetch(`${normalizeBaseUrl(gateway.apiBaseUrl)}/invoice/create`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-API-KEY": gateway.apiKey },
-            body: JSON.stringify(payload),
-            signal: controller.signal,
-        }).finally(() => clearTimeout(timeout));
+        let response;
+        try {
+            response = await fetch(`${normalizeBaseUrl(gateway.apiBaseUrl)}/invoice/create`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "X-API-KEY": gateway.apiKey },
+                body: JSON.stringify(payload),
+                signal: controller.signal,
+            });
+        }
+        catch (error) {
+            throw new GatewayConnectionError(error instanceof Error && error.name === "AbortError" ? "درخواست درگاه timeout شد" : "سرور درگاه در دسترس نیست");
+        }
+        finally {
+            clearTimeout(timeout);
+        }
         const raw = await response.json().catch(() => ({}));
         if (!response.ok)
-            throw new Error(`Gateway error ${response.status}: ${safeJson(raw)}`);
+            throw new GatewayHttpError(response.status, `Gateway error ${response.status}: ${safeJson(raw)}`);
         return { parsed: parseGatewayResponse(raw), raw, payload };
     }
     static async createInvoice(data) {
