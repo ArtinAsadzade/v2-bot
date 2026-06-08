@@ -79,6 +79,9 @@ const definitions = {
         async handleText(ctx, text) {
             const ticketIdFromFlow = ctx.session.flow?.data.ticketId ? String(ctx.session.flow.data.ticketId) : undefined;
             if (ticketIdFromFlow && ctx.from && (await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id))) {
+                const ticket = await support_service_1.SupportService.getTicketWithUser(ticketIdFromFlow);
+                if (ticket?.status === "closed")
+                    await support_service_1.SupportService.reopenTicket(ticketIdFromFlow, String(ctx.from.id), "admin");
                 await support_service_1.SupportService.addAdminReply(ticketIdFromFlow, String(ctx.from.id), text.trim());
                 return { done: true, text: "✅ پاسخ پشتیبانی ارسال شد.", returnTo: { id: "admin.ticket", params: { ticketId: ticketIdFromFlow } } };
             }

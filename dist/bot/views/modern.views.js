@@ -458,6 +458,7 @@ ${divider}
         const ticket = await support_service_1.SupportService.getTicketWithUser(params.ticketId);
         if (!ticket)
             return { text: "⚠️ تیکت پیدا نشد.", keyboard: [] };
+        const statusAction = ticket.status === "open" ? { text: "✅ بستن", action: `admin:ticket:close:${ticket.id}` } : { text: "🔄 باز کردن مجدد", action: `admin:ticket:reopen:${ticket.id}` };
         return {
             text: `🎫 تیکت #${shortId(ticket.id)}
 ${divider}
@@ -468,7 +469,7 @@ ${divider}
 
 ${ticket.messages.map((message) => `${message.senderRole === "admin" ? "👨‍💼 پشتیبانی" : "👤 کاربر"} · ${message.createdAt.toLocaleString("fa-IR")}
 ${message.message}`).join("\n\n") || "بدون پیام"}`,
-            keyboard: [[{ text: "💬 ورود به چت", action: `support:admin:chat:${ticket.id}` }, { text: "↩️ پاسخ سریع", action: `flow:start:ticket_reply:${ticket.id}` }], [{ text: "✅ بستن", action: `admin:ticket:close:${ticket.id}` }]],
+            keyboard: [[{ text: "💬 ورود به چت", action: `support:admin:chat:${ticket.id}` }, { text: "↩️ پاسخ سریع", action: `flow:start:ticket_reply:${ticket.id}` }], [statusAction]],
         };
     });
 }

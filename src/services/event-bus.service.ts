@@ -10,6 +10,7 @@ export type AppEventMap = {
   "ticket.created": { ticketId: string; userId: string; telegramId: string };
   "ticket.message.created": { ticketId: string; userId: string; senderRole: "user" | "admin"; message: string };
   "ticket.closed": { ticketId: string; userId: string; adminTelegramId?: string; actorId?: string; actorRole?: "admin" | "user" };
+  "ticket.reopened": { ticketId: string; userId: string; actorId: string; actorRole: "admin" | "user" };
   "referral.created": { referralId: string; referrerId: string; referredId: string };
   "referral.earned": { referrerId: string; referredId: string; referralCount: number };
   "referral.reward.claimed": { rewardId: string; userId: string; amount: number };
