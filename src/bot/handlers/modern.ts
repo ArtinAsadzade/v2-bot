@@ -326,7 +326,7 @@ ${account.configLink}
       await ctx.reply("⚠️ تیکت پیدا نشد.");
       return;
     }
-    if (ticket.status === "closed") await SupportService.reopenTicket(ticket.id, user.id);
+    if (ticket.status === "closed") await SupportService.reopenTicket(ticket.id, user.id, "user");
     ctx.session.liveTicketId = ticket.id;
     ctx.session.liveTicketRole = "user";
     await ctx.reply(`💬 گفتگو باز شد
@@ -351,8 +351,13 @@ ${account.configLink}
   bot.action(/^support:admin:chat:([^:]+)$/, async (ctx) => {
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
     await ctx.answerCbQuery();
-    const ticket = await SupportService.getTicketWithUser(ctx.match[1]);
+    let ticket = await SupportService.getTicketWithUser(ctx.match[1]);
     if (!ticket) return ctx.reply("⚠️ تیکت پیدا نشد.");
+    if (ticket.status === "closed") {
+      await SupportService.reopenTicket(ticket.id, String(ctx.from.id), "admin");
+      ticket = await SupportService.getTicketWithUser(ticket.id);
+      if (!ticket) return ctx.reply("⚠️ تیکت پیدا نشد.");
+    }
     ctx.session.liveTicketId = ticket.id;
     ctx.session.liveTicketRole = "admin";
     await ctx.reply(`💬 چت ادمین فعال شد
@@ -476,7 +481,14 @@ ${account.configLink}
       ctx.session.liveTicketId = undefined;
       ctx.session.liveTicketRole = undefined;
     }
-    await renderPanel(ctx, { id: "admin.tickets" }, "replace");
+    await renderPanel(ctx, { id: "admin.ticket", params: { ticketId: ctx.match[1] } }, "replace");
+  });
+
+  bot.action(/^admin:ticket:reopen:(.+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery();
+    await SupportService.reopenTicket(ctx.match[1], String(ctx.from.id), "admin");
+    await renderPanel(ctx, { id: "admin.ticket", params: { ticketId: ctx.match[1] } }, "replace");
   });
 
   bot.on("photo", async (ctx, next) => {

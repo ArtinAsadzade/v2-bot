@@ -82,6 +82,8 @@ const definitions: Record<FlowName, FlowDefinition> = {
     async handleText(ctx, text) {
       const ticketIdFromFlow = ctx.session.flow?.data.ticketId ? String(ctx.session.flow.data.ticketId) : undefined;
       if (ticketIdFromFlow && ctx.from && (await isAdminByTelegramId(ctx.from.id))) {
+        const ticket = await SupportService.getTicketWithUser(ticketIdFromFlow);
+        if (ticket?.status === "closed") await SupportService.reopenTicket(ticketIdFromFlow, String(ctx.from.id), "admin");
         await SupportService.addAdminReply(ticketIdFromFlow, String(ctx.from.id), text.trim());
         return { done: true, text: "✅ پاسخ پشتیبانی ارسال شد.", returnTo: { id: "admin.ticket", params: { ticketId: ticketIdFromFlow } } };
       }

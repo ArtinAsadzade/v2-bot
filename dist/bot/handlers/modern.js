@@ -333,7 +333,7 @@ ${account.configLink}
             return;
         }
         if (ticket.status === "closed")
-            await support_service_1.SupportService.reopenTicket(ticket.id, user.id);
+            await support_service_1.SupportService.reopenTicket(ticket.id, user.id, "user");
         ctx.session.liveTicketId = ticket.id;
         ctx.session.liveTicketRole = "user";
         await ctx.reply(`💬 گفتگو باز شد
@@ -360,9 +360,15 @@ ${account.configLink}
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
             return ctx.answerCbQuery("دسترسی غیرمجاز");
         await ctx.answerCbQuery();
-        const ticket = await support_service_1.SupportService.getTicketWithUser(ctx.match[1]);
+        let ticket = await support_service_1.SupportService.getTicketWithUser(ctx.match[1]);
         if (!ticket)
             return ctx.reply("⚠️ تیکت پیدا نشد.");
+        if (ticket.status === "closed") {
+            await support_service_1.SupportService.reopenTicket(ticket.id, String(ctx.from.id), "admin");
+            ticket = await support_service_1.SupportService.getTicketWithUser(ticket.id);
+            if (!ticket)
+                return ctx.reply("⚠️ تیکت پیدا نشد.");
+        }
         ctx.session.liveTicketId = ticket.id;
         ctx.session.liveTicketRole = "admin";
         await ctx.reply(`💬 چت ادمین فعال شد
@@ -488,7 +494,14 @@ ${account.configLink}
             ctx.session.liveTicketId = undefined;
             ctx.session.liveTicketRole = undefined;
         }
-        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.tickets" }, "replace");
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.ticket", params: { ticketId: ctx.match[1] } }, "replace");
+    });
+    bot.action(/^admin:ticket:reopen:(.+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery();
+        await support_service_1.SupportService.reopenTicket(ctx.match[1], String(ctx.from.id), "admin");
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.ticket", params: { ticketId: ctx.match[1] } }, "replace");
     });
     bot.on("photo", async (ctx, next) => {
         const photo = ctx.message.photo[ctx.message.photo.length - 1];
