@@ -13,7 +13,30 @@ export type ConversationState =
   | { name: "admin_account_search" }
   | { name: "admin_wallet_search" };
 
-export type FlowName = "product_create" | "product_edit" | "account_create" | "account_edit" | "coupon_create" | "coupon_edit" | "deposit_submit" | "ticket_reply" | "coupon_code" | "product_search" | "wallet_adjust" | "free_account_create" | "free_account_edit" | "category_create" | "category_edit" | "product_price" | "crypto_wallet_create" | "crypto_wallet_edit" | "minimum_topup" | "referral_tier_create" | "store_status" | "forced_join_create";
+export type FlowName =
+  | "product_create"
+  | "product_edit"
+  | "account_create"
+  | "account_edit"
+  | "coupon_create"
+  | "coupon_edit"
+  | "deposit_submit"
+  | "ticket_reply"
+  | "coupon_code"
+  | "product_search"
+  | "wallet_adjust"
+  | "free_account_create"
+  | "free_account_edit"
+  | "broadcast_create"
+  | "category_create"
+  | "category_edit"
+  | "product_price"
+  | "crypto_wallet_create"
+  | "crypto_wallet_edit"
+  | "minimum_topup"
+  | "referral_tier_create"
+  | "store_status"
+  | "forced_join_create";
 
 export interface ActiveFlow {
   name: FlowName;

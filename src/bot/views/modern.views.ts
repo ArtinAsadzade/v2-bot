@@ -7,6 +7,7 @@ import { ReferralService } from "../../modules/referral/referral.service";
 import { FreeAccountService, FREE_ACCOUNT_STATUS_LABELS, formatFreeAccountDate, freeAccountExpiresAt } from "../../modules/free-account/free-account.service";
 import { SupportService } from "../../modules/support/support.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
+import { BroadcastService, BROADCAST_TARGET_LABELS } from "../../modules/broadcast/broadcast.service";
 
 const divider = "━━━━━━━━━━━━━━━━";
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
@@ -414,36 +415,86 @@ ${divider}
 موجودی قابل فروش: ${detail.available.toLocaleString("fa-IR")}
 فروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}
 وضعیت: ${detail.product.isActive ? "فعال" : "غیرفعال"}`, keyboard: [[{ text: "✏️ ویرایش", action: `flow:start:product_edit:${detail.product.id}` }, { text: "📋 کپی محصول", action: `admin:product:duplicate:${detail.product.id}` }], [{ text: "🔐 افزودن اکانت", action: `flow:start:account_create:${detail.product.id}` }, { text: "💰 تغییر قیمت", action: `flow:start:product_price:${detail.product.id}` }], [{ text: "🗄 اکانت‌های محصول", action: callbackFor("admin.accounts", { productId: detail.product.id }) }], [{ text: detail.product.isActive ? "غیرفعال‌سازی" : "فعال‌سازی", action: `admin:product:active:${detail.product.id}:${detail.product.isActive ? "0" : "1"}` }, { text: "🗑 حذف نرم", action: `admin:product:delete:${detail.product.id}` }], [{ text: "🧨 حذف دائمی", action: `admin:product:hard_delete:confirm:${detail.product.id}` }]] };
-  });
+registerView("admin.categories", async (_ctx, params) => {
+  const current = page(params);
+  const [categories, total] = await AdminService.listCategories(current);
+  return {
+    text: `📂 مدیریت دسته‌بندی‌ها\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n\n${categories.map((category) => `${category.icon ?? "📂"} ${category.name} · ${yesNo(category.isActive)} · محصول: ${category._count.products.toLocaleString("fa-IR")}`).join("\n") || "دسته‌بندی ثبت نشده است."}`,
+    keyboard: [
+      [{ text: "➕ دسته‌بندی جدید", action: "flow:start:category_create" }],
+      ...categories.map((category) => [{ text: `${category.icon ?? "📂"} مدیریت ${category.name}`, action: callbackFor("admin.category", { categoryId: category.id }) }]),
+      [{ text: "◀️ قبلی", action: callbackFor("admin.categories", { page: Math.max(current - 1, 1) }) }, { text: "بعدی ▶️", action: callbackFor("admin.categories", { page: current + 1 }) }],
+    ],
+  };
+});
 
-  registerView("admin.categories", async (_ctx, params) => {
-    const current = page(params);
-    const [categories, total] = await AdminService.listCategories(current);
-    return {
-      text: `📂 مدیریت دسته‌بندی‌ها\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n\n${categories.map((category) => `${category.icon ?? "📂"} ${category.name} · ${yesNo(category.isActive)} · محصول: ${category._count.products.toLocaleString("fa-IR")}`).join("\n") || "دسته‌بندی ثبت نشده است."}`,
-      keyboard: [
-        [{ text: "➕ دسته‌بندی جدید", action: "flow:start:category_create" }],
-        ...categories.map((category) => [{ text: `${category.icon ?? "📂"} مدیریت ${category.name}`, action: callbackFor("admin.category", { categoryId: category.id }) }]),
-        [{ text: "◀️ قبلی", action: callbackFor("admin.categories", { page: Math.max(current - 1, 1) }) }, { text: "بعدی ▶️", action: callbackFor("admin.categories", { page: current + 1 }) }],
+registerView("admin.category", async (_ctx, params) => {
+  const productPage = Math.max(Number(params.productPage ?? 1), 1);
+  const detail = await AdminService.categoryDetail(params.categoryId, productPage, 6);
+
+  if (!detail.category) {
+    return { text: "⚠️ دسته‌بندی پیدا نشد.", keyboard: [] };
+  }
+
+  return {
+    text: `${detail.category.icon ?? "📂"} ${detail.category.name}
+
+توضیحات: ${detail.category.description ?? "—"}
+ترتیب نمایش: ${detail.category.displayOrder.toLocaleString("fa-IR")}
+وضعیت: ${yesNo(detail.category.isActive)}
+
+📦 محصولات: ${detail.productCount.toLocaleString("fa-IR")}
+✅ محصولات فعال: ${detail.activeProductCount.toLocaleString("fa-IR")}
+🧾 فروش موفق: ${detail.salesCount.toLocaleString("fa-IR")}
+
+محصولات این دسته:
+${detail.products.map((product) => `• ${product.title} · ${product.isActive ? "فعال" : "غیرفعال"} · فروش ${product._count.orders.toLocaleString("fa-IR")}`).join("\n") || "محصولی در این دسته نیست."}`,
+    keyboard: [
+      [
+        {
+          text: "✏️ ویرایش",
+          action: `flow:start:category_edit:${detail.category.id}`,
+        },
+        {
+          text: detail.category.isActive ? "غیرفعال‌سازی" : "فعال‌سازی",
+          action: `admin:category:status:${detail.category.id}:${detail.category.isActive ? "0" : "1"}`,
+        },
       ],
-    };
-  });
-
-  registerView("admin.category", async (_ctx, params) => {
-    const productPage = Math.max(Number(params.productPage ?? 1), 1);
-    const detail = await AdminService.categoryDetail(params.categoryId, productPage, 6);
-    if (!detail.category) return { text: "⚠️ دسته‌بندی پیدا نشد.", keyboard: [] };
-    return {
-      text: `${detail.category.icon ?? "📂"} ${detail.category.name}\n\nتوضیحات: ${detail.category.description ?? "—"}\nترتیب نمایش: ${detail.category.displayOrder.toLocaleString("fa-IR")}\nوضعیت: ${yesNo(detail.category.isActive)}\n\n📦 محصولات: ${detail.productCount.toLocaleString("fa-IR")}\n✅ محصولات فعال: ${detail.activeProductCount.toLocaleString("fa-IR")}\n🧾 فروش موفق: ${detail.salesCount.toLocaleString("fa-IR")}\n\nمحصولات این دسته:\n${detail.products.map((product) => `• ${product.title} · ${product.isActive ? "فعال" : "غیرفعال"} · فروش ${product._count.orders.toLocaleString("fa-IR")}`).join("\n") || "محصولی در این دسته نیست."}`,
-      keyboard: [
-        [{ text: "✏️ ویرایش", action: `flow:start:category_edit:${detail.category.id}` }, { text: detail.category.isActive ? "غیرفعال‌سازی" : "فعال‌سازی", action: `admin:category:status:${detail.category.id}:${detail.category.isActive ? "0" : "1"}` }],
-        [{ text: "🗑 حذف نرم", action: `admin:category:delete:${detail.category.id}` }, { text: "🧨 حذف دائمی", action: `admin:category:hard_delete:confirm:${detail.category.id}` }],
-        [{ text: "◀️ محصولات قبلی", action: callbackFor("admin.category", { categoryId: detail.category.id, productPage: Math.max(productPage - 1, 1) }) }, { text: "محصولات بعدی ▶️", action: callbackFor("admin.category", { categoryId: detail.category.id, productPage: productPage + 1 }) }],
-        [{ text: "📂 همه دسته‌بندی‌ها", action: callbackFor("admin.categories") }],
+      [
+        {
+          text: "🗑 حذف نرم",
+          action: `admin:category:delete:${detail.category.id}`,
+        },
+        {
+          text: "🧨 حذف دائمی",
+          action: `admin:category:hard_delete:confirm:${detail.category.id}`,
+        },
       ],
-    };
-  });
-
+      [
+        {
+          text: "◀️ محصولات قبلی",
+          action: callbackFor("admin.category", {
+            categoryId: detail.category.id,
+            productPage: Math.max(productPage - 1, 1),
+          }),
+        },
+        {
+          text: "محصولات بعدی ▶️",
+          action: callbackFor("admin.category", {
+            categoryId: detail.category.id,
+            productPage: productPage + 1,
+          }),
+        },
+      ],
+      [
+        {
+          text: "📂 همه دسته‌بندی‌ها",
+          action: callbackFor("admin.categories"),
+        },
+      ],
+    ],
+  };
+});
   registerView("admin.accounts", async (_ctx, params) => {
     const current = page(params);
     const status = ["available", "reserved", "sold", "disabled", "expired"].includes(params.status) ? params.status as "available" | "reserved" | "sold" | "disabled" | "expired" : undefined;
@@ -626,24 +677,70 @@ ${channelLines || "کانالی ثبت نشده است."}
       keyboard: [[{ text: "💳 واریزی‌ها", action: callbackFor("admin.deposits") }, { text: "🧾 سفارش‌ها", action: callbackFor("admin.orders") }]],
     };
   });
+registerView("admin.notifications", async () => {
+  const [targets, recent] = await Promise.all([
+    BroadcastService.targetStats(),
+    BroadcastService.recent(5),
+  ]);
 
-  registerView("admin.notifications", async () => {
-    const stats = await AdminService.dashboard(true);
-    return {
-      text: `📢 اطلاع‌رسانی
+  const targetLines = targets
+    .map(
+      (item) =>
+        `• ${item.label}: ${item.count.toLocaleString("fa-IR")} نفر`,
+    )
+    .join("\n");
 
-ارسال‌های خودکار فعلی از سرویس اطلاع‌رسانی انجام می‌شود:
+  const recentLines =
+    recent
+      .map(
+        (item) =>
+          `• ${item.createdAt.toLocaleString("fa-IR")} · ${item.targetLabel}
+  ارسال: ${item.sent.toLocaleString("fa-IR")} · تحویل: ${item.delivered.toLocaleString("fa-IR")} · ناموفق: ${item.failed.toLocaleString("fa-IR")}`,
+      )
+      .join("\n") || "هنوز اطلاع‌رسانی ثبت نشده است.";
 
-• اعلان واریزی جدید برای مدیران
-• اعلان تیکت جدید برای مدیران
-• اعلان پاداش رفرال برای کاربر
+  return {
+    text: `📢 اطلاع‌رسانی همگانی
 
-موارد نیازمند پیگیری اکنون:
-💳 واریزی‌های منتظر: ${stats.submittedDeposits.toLocaleString("fa-IR")}
-🎫 تیکت‌های باز: ${stats.openTickets.toLocaleString("fa-IR")}`,
-      keyboard: [[{ text: "💳 واریزی‌ها", action: callbackFor("admin.deposits") }, { text: "🎫 تیکت‌ها", action: callbackFor("admin.tickets") }], [{ text: "🎁 رفرال", action: callbackFor("admin.referrals") }]],
-    };
-  });
+از این بخش می‌توانید پیام مدیریتی را برای گروه‌های مشخص ارسال کنید.
+
+آمار مخاطبان:
+${targetLines}
+
+آخرین ارسال‌ها:
+${recentLines}`,
+    keyboard: [
+      [
+        {
+          text: `📣 ${BROADCAST_TARGET_LABELS.all_users}`,
+          action: "flow:start:broadcast_create:all_users",
+        },
+      ],
+      [
+        {
+          text: `✅ ${BROADCAST_TARGET_LABELS.active_customers}`,
+          action: "flow:start:broadcast_create:active_customers",
+        },
+        {
+          text: `🕒 ${BROADCAST_TARGET_LABELS.inactive_customers}`,
+          action: "flow:start:broadcast_create:inactive_customers",
+        },
+      ],
+      [
+        {
+          text: `🗄 ${BROADCAST_TARGET_LABELS.users_with_active_accounts}`,
+          action: "flow:start:broadcast_create:users_with_active_accounts",
+        },
+      ],
+      [
+        {
+          text: `📭 ${BROADCAST_TARGET_LABELS.users_without_active_accounts}`,
+          action: "flow:start:broadcast_create:users_without_active_accounts",
+        },
+      ],
+    ],
+  };
+});
 
   registerView("admin.settings", async () => {
     const stats = await AdminService.cryptoWalletStats();
