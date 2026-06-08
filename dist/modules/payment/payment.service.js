@@ -153,44 +153,72 @@ class PaymentGatewayService {
             assertValidHttpUrl(input.callbackUrl, "آدرس callback درگاه");
         }
     }
+    static validateField(field, value) {
+        if (field === "apiBaseUrl")
+            return assertValidHttpUrl(String(value ?? ""), "آدرس API درگاه", { normalizeBase: true });
+        if (field === "callbackUrl")
+            return assertValidHttpUrl(String(value ?? ""), "آدرس callback درگاه");
+        if (field === "apiKey") {
+            const apiKey = String(value ?? "").trim();
+            if (!apiKey)
+                throw new Error("کلید API درگاه الزامی است");
+            if (apiKey.length < 8)
+                throw new Error("کلید API درگاه کوتاه است");
+            return apiKey;
+        }
+        if (field === "gatewayName") {
+            const gatewayName = String(value ?? "").trim();
+            if (!gatewayName)
+                throw new Error("نام درگاه الزامی است");
+            return gatewayName;
+        }
+        if (field === "displayOrder") {
+            const displayOrder = Number(value);
+            if (!Number.isInteger(displayOrder) || displayOrder < 1)
+                throw new Error("ترتیب نمایش معتبر نیست");
+            return displayOrder;
+        }
+        if (field === "enabled")
+            return Boolean(value);
+        throw new Error("فیلد تنظیمات درگاه معتبر نیست");
+    }
+    static validateConfigField(field, value) {
+        return this.validateField(field, value);
+    }
     static normalizeInput(input) {
-        return {
-            enabled: input.enabled,
-            apiBaseUrl: input.apiBaseUrl !== undefined ? assertValidHttpUrl(input.apiBaseUrl, "آدرس API درگاه", { normalizeBase: true }) : undefined,
-            apiKey: input.apiKey !== undefined ? input.apiKey.trim() : undefined,
-            callbackUrl: input.callbackUrl !== undefined ? assertValidHttpUrl(input.callbackUrl, "آدرس callback درگاه") : undefined,
-            gatewayName: input.gatewayName !== undefined ? input.gatewayName.trim() : undefined,
-            displayOrder: input.displayOrder,
-        };
+        const normalized = {};
+        for (const field of Object.keys(input)) {
+            const value = input[field];
+            if (value === undefined)
+                continue;
+            normalized[field] = this.validateField(field, value);
+        }
+        return normalized;
+    }
+    static async ensureConfig(tx) {
+        return tx.paymentGatewayConfig.upsert({
+            where: { id: this.singletonId },
+            update: {},
+            create: { id: this.singletonId, enabled: false, apiBaseUrl: DEFAULT_GATEWAY_API_BASE_URL, apiKey: "", callbackUrl: "", gatewayName: "پرداخت آنی", displayOrder: 1 },
+        });
+    }
+    static assertCanEnable(config) {
+        this.validateConfig({ ...config, enabled: true });
     }
     static async upsertConfig(input, actorId) {
         return prisma_1.prisma.$transaction(async (tx) => {
-            this.validateConfig(input, { partial: true });
-            const current = await tx.paymentGatewayConfig.upsert({
-                where: { id: this.singletonId },
-                update: {},
-                create: { id: this.singletonId, enabled: false, apiBaseUrl: DEFAULT_GATEWAY_API_BASE_URL, apiKey: "", callbackUrl: "", gatewayName: "پرداخت آنی", displayOrder: 1 },
-            });
+            const current = await this.ensureConfig(tx);
             const normalized = this.normalizeInput(input);
-            const next = {
-                enabled: normalized.enabled ?? current.enabled,
-                apiBaseUrl: normalized.apiBaseUrl ?? current.apiBaseUrl,
-                apiKey: normalized.apiKey ?? current.apiKey,
-                callbackUrl: normalized.callbackUrl ?? current.callbackUrl,
-                gatewayName: normalized.gatewayName ?? current.gatewayName,
-                displayOrder: normalized.displayOrder ?? current.displayOrder,
-            };
-            this.validateConfig(next);
-            await tx.paymentGatewayConfig.update({
-                where: { id: this.singletonId },
-                data: next,
-            });
+            const next = { ...current, ...normalized };
+            if (normalized.enabled === true)
+                this.assertCanEnable(next);
+            await tx.paymentGatewayConfig.update({ where: { id: this.singletonId }, data: normalized });
             await tx.auditLog.create({
                 data: {
                     actorId,
                     action: "payment_gateway.config.save",
                     metadata: JSON.stringify({
-                        changedFields: Object.keys(input),
+                        changedFields: Object.keys(normalized),
                         enabled: next.enabled,
                         apiBaseUrl: next.apiBaseUrl,
                         callbackUrl: next.callbackUrl,
@@ -203,17 +231,43 @@ class PaymentGatewayService {
             return tx.paymentGatewayConfig.findUniqueOrThrow({ where: { id: this.singletonId } });
         });
     }
+    static async updateConfigField(field, value, actorId) {
+        return prisma_1.prisma.$transaction(async (tx) => {
+            const current = await this.ensureConfig(tx);
+            const normalizedValue = this.validateField(field, value);
+            const data = { [field]: normalizedValue };
+            const next = { ...current, [field]: normalizedValue };
+            if (field === "enabled" && normalizedValue === true)
+                this.assertCanEnable(next);
+            await tx.paymentGatewayConfig.update({ where: { id: this.singletonId }, data });
+            await tx.auditLog.create({
+                data: {
+                    actorId,
+                    action: `payment_gateway.config.field.${String(field)}.save`,
+                    metadata: JSON.stringify({
+                        field,
+                        value: field === "apiKey" ? undefined : normalizedValue,
+                        apiKeyMasked: field === "apiKey" ? maskApiKey(String(normalizedValue)) : maskApiKey(next.apiKey),
+                    }),
+                },
+            });
+            return tx.paymentGatewayConfig.findUniqueOrThrow({ where: { id: this.singletonId } });
+        });
+    }
     static async saveConfig(input, actorId) {
         return this.upsertConfig(input, actorId);
     }
     static async updateConfig(input, actorId) {
+        const fields = Object.keys(input).filter((field) => input[field] !== undefined);
+        if (fields.length === 1)
+            return this.updateConfigField(fields[0], input[fields[0]], actorId);
         return this.upsertConfig(input, actorId);
     }
     static async update(input, actorId) {
         return this.updateConfig(input, actorId);
     }
     static async setEnabled(enabled, actorId) {
-        return this.updateConfig({ enabled }, actorId);
+        return this.updateConfigField("enabled", enabled, actorId);
     }
     static connectionFailureMessage(error) {
         if (error instanceof GatewayHttpError && error.status === 401)

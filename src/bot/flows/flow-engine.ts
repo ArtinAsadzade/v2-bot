@@ -9,7 +9,7 @@ import { AdminService, type ProductAccountAdminStatus } from "../../modules/admi
 import { FreeAccountService } from "../../modules/free-account/free-account.service";
 import { ReferralService } from "../../modules/referral/referral.service";
 import { BroadcastService } from "../../modules/broadcast/broadcast.service";
-import { PaymentGatewayService, PaymentInvoiceService } from "../../modules/payment/payment.service";
+import { PaymentGatewayService, PaymentInvoiceService, type PaymentGatewayInput } from "../../modules/payment/payment.service";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
@@ -77,6 +77,34 @@ function requireUser(ctx: AppContext) {
     if (!user) throw new Error("کاربر پیدا نشد");
     return user;
   });
+}
+
+
+function paymentGatewaySavedMessage(field: keyof PaymentGatewayInput, config: Awaited<ReturnType<typeof PaymentGatewayService.getConfig>>) {
+  if (field === "apiKey") return `✅ API Key ذخیره شد\n\nمقدار جدید از دیتابیس:\n********${config.apiKey.slice(-4).toUpperCase()}`;
+  if (field === "callbackUrl") return `✅ Callback URL ذخیره شد\n\nمقدار جدید از دیتابیس:\n${config.callbackUrl || "—"}`;
+  if (field === "apiBaseUrl") return `✅ API URL ذخیره شد\n\nمقدار جدید از دیتابیس:\n${config.apiBaseUrl || "—"}`;
+  if (field === "gatewayName") return `✅ نام نمایشی ذخیره شد\n\nمقدار جدید از دیتابیس:\n${config.gatewayName || "—"}`;
+  if (field === "displayOrder") return `✅ ترتیب نمایش ذخیره شد\n\nمقدار جدید از دیتابیس:\n${config.displayOrder.toLocaleString("fa-IR")}`;
+  if (field === "enabled") return `✅ وضعیت درگاه ذخیره شد\n\nمقدار جدید از دیتابیس:\n${config.enabled ? "فعال" : "غیرفعال"}`;
+  return "✅ تنظیمات ذخیره شد";
+}
+
+
+async function completePaymentGatewaySetup(ctx: AppContext) {
+  const data = ctx.session.flow?.data ?? {};
+  const saved = await PaymentGatewayService.saveConfig({
+    apiBaseUrl: String(data.apiBaseUrl ?? ""),
+    apiKey: String(data.apiKey ?? ""),
+    callbackUrl: String(data.callbackUrl ?? ""),
+    gatewayName: String(data.gatewayName ?? ""),
+  }, String(ctx.from?.id ?? "admin"));
+  PaymentGatewayService.validateConfig({ ...saved, enabled: true });
+  const result = await PaymentGatewayService.testConnection(String(ctx.from?.id ?? "admin"));
+  if (result.ok) await PaymentGatewayService.updateConfigField("enabled", true, String(ctx.from?.id ?? "admin"));
+  ctx.session.flow = undefined;
+  await ctx.reply(`✅ تنظیمات با موفقیت ذخیره شد\n\n${result.ok ? "📡 تست اتصال موفق بود" : `📡 تست اتصال ناموفق بود\n${result.error}`}\n\n${result.ok ? "درگاه آماده استفاده است." : "لطفاً اطلاعات درگاه را بررسی کنید."}`);
+  await renderPanel(ctx, { id: "admin.paymentGateway" }, "replace");
 }
 
 async function completeBroadcast(ctx: AppContext) {
@@ -825,36 +853,66 @@ status: ${detail.wallet.status}`;
       const field = String(ctx.session.flow?.data.field ?? "");
       const prompts: Record<string, string> = {
         apiBaseUrl: "🌐 API URL جدید را وارد کنید:\n\nمثال: http://136.244.104.77:5000/api/v1",
-        apiKey: "🔑 API KEY جدید را وارد کنید:\n\nکلید کامل فقط در دیتابیس ذخیره می‌شود و در پنل ماسک خواهد شد.",
-        callbackUrl: "🔁 Callback URL جدید را وارد کنید:\n\nمثال: https://domain.com/payments/callback",
+        apiKey: "🔑 API KEY جدید را وارد کنید:\n\nفقط API Key اعتبارسنجی و ذخیره می‌شود؛ Callback بررسی نخواهد شد.",
+        callbackUrl: "🔗 Callback URL جدید را وارد کنید:\n\nمثال: https://domain.com/payments/callback\n\nفقط Callback اعتبارسنجی و ذخیره می‌شود؛ API Key بررسی نخواهد شد.",
         gatewayName: "🏷 نام نمایشی درگاه را وارد کنید:\n\nمثال: پرداخت آنی",
+        displayOrder: "🔢 ترتیب نمایش را به عدد وارد کنید:\n\nمثال: 1",
       };
-      return prompts[field] ?? `⚡ تنظیمات درگاه پرداخت را ارسال کنید.\n\nهر خط به شکل field: value\n\nenabled: true\napiBaseUrl: http://136.244.104.77:5000/api/v1\napiKey: کلید_درگاه\ncallbackUrl: https://your-domain.com/payments/callback\ngatewayName: پرداخت آنی\ndisplayOrder: 1`;
+      return prompts[field] ?? "⚡ فیلد تنظیمات درگاه معتبر نیست.";
     },
     async handleText(ctx, text) {
-      const field = String(ctx.session.flow?.data.field ?? "");
-      const payload: Parameters<typeof PaymentGatewayService.updateConfig>[0] = {};
-      if (field === "apiBaseUrl") payload.apiBaseUrl = text;
-      else if (field === "apiKey") payload.apiKey = text;
-      else if (field === "callbackUrl") payload.callbackUrl = text;
-      else if (field === "gatewayName") payload.gatewayName = text;
-      else {
-        const data = parseKeyValueLines(text);
-        const enabled = parseActive(data.enabled ?? data.active ?? data.status ?? data["وضعیت"]);
-        const displayOrder = data.displayOrder || data.order || data["ترتیب"] ? parseInteger(data.displayOrder ?? data.order ?? data["ترتیب"] ?? "1") : undefined;
-        payload.enabled = enabled;
-        payload.apiBaseUrl = data.apiBaseUrl ?? data.baseUrl ?? data.url;
-        payload.apiKey = data.apiKey ?? data.key;
-        payload.callbackUrl = data.callbackUrl ?? data.callback;
-        payload.gatewayName = data.gatewayName ?? data.name;
-        payload.displayOrder = displayOrder;
-      }
+      const field = String(ctx.session.flow?.data.field ?? "") as keyof PaymentGatewayInput;
+      const allowed: (keyof PaymentGatewayInput)[] = ["apiBaseUrl", "apiKey", "callbackUrl", "gatewayName", "displayOrder"];
+      if (!allowed.includes(field)) return { done: true, text: "❌ فیلد تنظیمات درگاه معتبر نیست", returnTo: { id: "admin.paymentGateway" } };
       try {
-        await PaymentGatewayService.updateConfig(payload, String(ctx.from?.id ?? "admin"));
-        return { done: true, text: "✅ تنظیمات ذخیره شد", returnTo: { id: "admin.paymentGateway" } };
+        const value = field === "displayOrder" ? parseInteger(text) : text;
+        const config = await PaymentGatewayService.updateConfigField(field, value as never, String(ctx.from?.id ?? "admin"));
+        return { done: true, text: paymentGatewaySavedMessage(field, config), returnTo: { id: "admin.paymentGateway" } };
       } catch (error) {
-        return { text: error instanceof Error ? `❌ ${error.message}` : "❌ ذخیره تنظیمات ناموفق بود" };
+        return { text: error instanceof Error ? `❌ ${error.message}\n\nدوباره مقدار معتبر را ارسال کنید:` : "❌ ذخیره تنظیمات ناموفق بود" };
       }
+    },
+  },
+
+  payment_gateway_setup: {
+    firstStep: "apiBaseUrl",
+    prompt: "⚙️ راه‌اندازی سریع درگاه\n\nمرحله 1 از 5:\nAPI URL را وارد کنید:\n\nمثال: http://136.244.104.77:5000/api/v1",
+    async handleText(ctx, text) {
+      const flow = ctx.session.flow!;
+      try {
+        if (flow.step === "apiBaseUrl") {
+          const apiBaseUrl = String(PaymentGatewayService.validateConfigField("apiBaseUrl", text));
+          flow.data.apiBaseUrl = apiBaseUrl;
+          flow.step = "apiKey";
+          return { text: `✅ API URL معتبر است\n\nمرحله 2 از 5:\nAPI KEY را وارد کنید:`, nextStep: "apiKey" };
+        }
+        if (flow.step === "apiKey") {
+          const apiKey = String(PaymentGatewayService.validateConfigField("apiKey", text));
+          flow.data.apiKey = apiKey;
+          flow.step = "callbackUrl";
+          return { text: `✅ API Key معتبر است\n\nمرحله 3 از 5:\nCALLBACK URL را وارد کنید:`, nextStep: "callbackUrl" };
+        }
+        if (flow.step === "callbackUrl") {
+          const callbackUrl = String(PaymentGatewayService.validateConfigField("callbackUrl", text));
+          flow.data.callbackUrl = callbackUrl;
+          flow.step = "gatewayName";
+          return { text: `✅ Callback URL معتبر است\n\nمرحله 4 از 5:\nنام نمایشی درگاه را وارد کنید:`, nextStep: "gatewayName" };
+        }
+        if (flow.step === "gatewayName") {
+          const gatewayName = String(PaymentGatewayService.validateConfigField("gatewayName", text));
+          flow.data.gatewayName = gatewayName;
+          flow.step = "confirm";
+          return {
+            text: `مرحله 5 از 5: تأیید نهایی\n\nAPI URL:\n${flow.data.apiBaseUrl}\n\nAPI Key:\n********${String(flow.data.apiKey).slice(-4).toUpperCase()}\n\nCallback:\n${flow.data.callbackUrl}\n\nنام نمایشی:\n${flow.data.gatewayName}\n\nمرحله 6 ذخیره و مرحله 7 تست اتصال پس از تأیید انجام می‌شود.\nبرای ادامه روی دکمه تأیید بزنید.`,
+            nextStep: "confirm",
+            keyboard: [[{ text: "✅ تأیید و تست اتصال", action: "payment_gateway_setup:confirm" }]],
+          };
+        }
+        if (flow.step === "confirm") return { text: "برای ادامه روی دکمه تأیید بزنید." };
+      } catch (error) {
+        return { text: error instanceof Error ? `❌ ${error.message}\n\nهمان مرحله را با مقدار معتبر دوباره ارسال کنید:` : "❌ ذخیره مرحله ناموفق بود" };
+      }
+      return { text: "⚠️ مرحله نامعتبر است." };
     },
   },
 
@@ -920,6 +978,24 @@ export function registerFlowEngine(bot: AppBot) {
     await renderPanel(ctx, currentReturnTo(ctx), "replace");
   });
 
+  bot.action("payment_gateway_setup:confirm", async (ctx) => {
+    await ctx.answerCbQuery("در حال ذخیره و تست اتصال...");
+    const flow = ctx.session.flow;
+    if (!flow || flow.name !== "payment_gateway_setup" || flow.step !== "confirm") {
+      await ctx.answerCbQuery("راه‌اندازی فعالی وجود ندارد");
+      return;
+    }
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
+      await ctx.answerCbQuery("دسترسی غیرمجاز");
+      return;
+    }
+    try {
+      await completePaymentGatewaySetup(ctx);
+    } catch (error) {
+      await ctx.reply(error instanceof Error ? `❌ ${error.message}` : "❌ ذخیره نهایی یا تست اتصال ناموفق بود");
+    }
+  });
+
   bot.action("broadcast:confirm", async (ctx) => {
   const flow = ctx.session.flow;
 
@@ -970,6 +1046,7 @@ const adminOnlyFlows: FlowName[] = [
   "wallet_adjust",
   "broadcast_create",
   "payment_gateway_update",
+  "payment_gateway_setup",
   "free_account_create",
   "free_account_edit",
 ];
@@ -978,6 +1055,7 @@ const adminOnlyFlows: FlowName[] = [
       return;
     }
     if (name === "payment_gateway_update") return startFlow(ctx, "payment_gateway_update", { field: ctx.match[2] });
+    if (name === "payment_gateway_setup") return startFlow(ctx, "payment_gateway_setup");
     if (name === "coupon_edit") return startFlow(ctx, "coupon_edit", { couponId: ctx.match[2] });
 if (name === "broadcast_create") {
   return startFlow(ctx, "broadcast_create", {
