@@ -26,14 +26,20 @@ function assertCoupon(data: CouponCreateInput | Partial<CouponCreateInput>) {
   if (data.code !== undefined && !normalizeCode(data.code)) throw new Error("کد کوپن معتبر نیست");
   if (data.type !== undefined && data.type !== "percentage" && data.type !== "fixed") throw new Error("نوع کوپن معتبر نیست");
   if (data.value !== undefined && (!Number.isInteger(data.value) || data.value <= 0)) throw new Error("مقدار تخفیف معتبر نیست");
-  if (data.type === "percentage" && data.value !== undefined && data.value > 100) throw new Error("درصد تخفیف نمی‌تواند بیش از ۱۰۰ باشد");
   if (data.maxUses !== undefined && (!Number.isInteger(data.maxUses) || data.maxUses <= 0)) throw new Error("محدودیت استفاده معتبر نیست");
   if (data.perUserLimit !== undefined && (!Number.isInteger(data.perUserLimit) || data.perUserLimit <= 0)) throw new Error("محدودیت هر کاربر معتبر نیست");
   if (data.minimumPurchaseAmount !== undefined && (!Number.isInteger(data.minimumPurchaseAmount) || data.minimumPurchaseAmount < 0)) throw new Error("حداقل مبلغ خرید معتبر نیست");
   if (data.expiresAt !== undefined && data.expiresAt <= new Date()) throw new Error("تاریخ انقضا باید در آینده باشد");
+  if (data.status !== undefined && data.status !== "active" && data.status !== "inactive") throw new Error("وضعیت کوپن معتبر نیست");
 }
 
-function couponValue(coupon: Coupon) {
+function assertCouponRules(type: CouponType, value: number, maxUses: number, perUserLimit: number, usedCount = 0) {
+  if (type === "percentage" && value > 100) throw new Error("درصد تخفیف نمی‌تواند بیش از ۱۰۰ باشد");
+  if (maxUses < usedCount) throw new Error("محدودیت کل نمی‌تواند کمتر از تعداد استفاده‌شده باشد");
+  if (perUserLimit > maxUses) throw new Error("محدودیت هر کاربر نمی‌تواند بیشتر از محدودیت کل باشد");
+}
+
+function couponValue(coupon: Pick<Coupon, "value" | "discountPercent">) {
   return coupon.value || coupon.discountPercent || 0;
 }
 
@@ -51,6 +57,7 @@ export class CouponService {
 
   static async createAdvanced(data: CouponCreateInput, actorId?: string) {
     assertCoupon(data);
+    assertCouponRules(data.type, data.value, data.maxUses, data.perUserLimit ?? 1);
     const type = data.type;
     const normalizedCode = normalizeCode(data.code);
     const coupon = await prisma.coupon.create({
@@ -72,16 +79,20 @@ export class CouponService {
 
   static async update(couponId: string, data: Partial<CouponCreateInput>, actorId: string) {
     assertCoupon(data);
+    const current = await prisma.coupon.findUniqueOrThrow({ where: { id: couponId } });
+    if (current.status === "deleted") throw new Error("کوپن حذف‌شده قابل ویرایش نیست");
+
+    const finalType = data.type ?? current.type;
+    const finalValue = data.value ?? couponValue(current);
+    const finalMaxUses = data.maxUses ?? current.maxUses;
+    const finalPerUserLimit = data.perUserLimit ?? current.perUserLimit;
+    assertCouponRules(finalType, finalValue, finalMaxUses, finalPerUserLimit, current.usedCount);
+
     const patch: Prisma.CouponUpdateInput = {};
     if (data.code !== undefined) patch.code = normalizeCode(data.code);
     if (data.type !== undefined) patch.type = data.type;
     if (data.value !== undefined) patch.value = data.value;
-    if (data.type !== undefined || data.value !== undefined) {
-      const current = await prisma.coupon.findUniqueOrThrow({ where: { id: couponId } });
-      const finalType = data.type ?? current.type;
-      const finalValue = data.value ?? couponValue(current);
-      patch.discountPercent = finalType === "percentage" ? finalValue : null;
-    }
+    if (data.type !== undefined || data.value !== undefined) patch.discountPercent = finalType === "percentage" ? finalValue : null;
     if (data.maxUses !== undefined) patch.maxUses = data.maxUses;
     if (data.perUserLimit !== undefined) patch.perUserLimit = data.perUserLimit;
     if (data.minimumPurchaseAmount !== undefined) patch.minimumPurchaseAmount = data.minimumPurchaseAmount;
@@ -93,7 +104,13 @@ export class CouponService {
   }
 
   static async setStatus(couponId: string, status: "active" | "inactive", actorId: string) {
-    const coupon = await prisma.coupon.update({ where: { id: couponId }, data: { status } });
+    const existing = await prisma.coupon.findUniqueOrThrow({ where: { id: couponId } });
+    if (existing.status === "deleted") throw new Error("کوپن حذف‌شده را نمی‌توان فعال یا غیرفعال کرد");
+    if (status === "active") {
+      if (existing.expiresAt <= new Date()) throw new Error("کوپن منقضی‌شده قابل فعال‌سازی نیست");
+      if (existing.usedCount >= existing.maxUses) throw new Error("ظرفیت این کوپن تکمیل شده است");
+    }
+    const coupon = await prisma.coupon.update({ where: { id: couponId }, data: { status, deletedAt: null } });
     await prisma.auditLog.create({ data: { actorId, action: "coupon.status", metadata: JSON.stringify({ couponId, status }) } });
     return coupon;
   }

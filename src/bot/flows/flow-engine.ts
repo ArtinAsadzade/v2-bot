@@ -11,6 +11,22 @@ import { ReferralService } from "../../modules/referral/referral.service";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
+const parseInteger = (value: string) => Number(value.replace(/[,،\s]/g, ""));
+const parseStatus = (value?: string) => {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "active" || normalized === "فعال") return "active" as const;
+  if (normalized === "inactive" || normalized.includes("غیر")) return "inactive" as const;
+  return undefined;
+};
+const parseCouponType = (value?: string) => {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "fixed" || normalized.includes("ثابت")) return "fixed" as const;
+  if (normalized === "percentage" || normalized.includes("درصد")) return "percentage" as const;
+  return undefined;
+};
+
 
 type FlowStepResult = { done?: boolean; text: string; nextStep?: string; returnTo?: ViewState; keyboard?: UiKeyboard };
 type FlowDefinition = {
@@ -325,6 +341,53 @@ status: ${account.status}
       return { done: true, text: "✅ کوپن جدید ساخته شد.", returnTo: { id: "admin.coupons" } };
     },
   },
+  coupon_edit: {
+    firstStep: "fields",
+    prompt: async (ctx) => {
+      const couponId = String(ctx.session.flow?.data.couponId ?? "");
+      const coupon = couponId ? await AdminService.couponDetail(couponId) : undefined;
+      if (!coupon) return "⚠️ کوپن پیدا نشد.";
+      return `✏️ ویرایش کوپن ${coupon.code}
+
+هر فیلدی را که می‌خواهید تغییر کند در یک خط و به شکل field: value بفرستید.
+
+فیلدهای مجاز:
+code: ${coupon.code}
+type: ${coupon.type} (percentage/fixed)
+value: ${coupon.value}
+maxUses: ${coupon.maxUses}
+perUserLimit: ${coupon.perUserLimit}
+minimumPurchaseAmount: ${coupon.minimumPurchaseAmount}
+expiresInDays: تعداد روز اعتبار جدید
+status: ${coupon.status} (active/inactive)`;
+    },
+    async handleText(ctx, text) {
+      const flow = ctx.session.flow!;
+      const data = Object.fromEntries(
+        text
+          .split(/\n+/)
+          .map((line) => line.split(/[:=：]/, 2).map((part) => part.trim()))
+          .filter((parts): parts is [string, string] => parts.length === 2 && Boolean(parts[0]) && Boolean(parts[1])),
+      );
+      const type = parseCouponType(data.type ?? data["نوع"]);
+      const expiresInDaysText = data.expiresInDays ?? data.days ?? data["روز"] ?? data["اعتبار"];
+      const expiresInDays = expiresInDaysText ? parseInteger(expiresInDaysText) : undefined;
+      const patch = {
+        code: data.code ?? data["کد"],
+        type,
+        value: data.value ? parseInteger(data.value) : data["مقدار"] ? parseInteger(data["مقدار"]) : undefined,
+        maxUses: data.maxUses ? parseInteger(data.maxUses) : data["حداکثر"] ? parseInteger(data["حداکثر"]) : undefined,
+        perUserLimit: data.perUserLimit ? parseInteger(data.perUserLimit) : data["هر کاربر"] ? parseInteger(data["هر کاربر"]) : undefined,
+        minimumPurchaseAmount: data.minimumPurchaseAmount ? parseInteger(data.minimumPurchaseAmount) : data.minimum ? parseInteger(data.minimum) : data["حداقل خرید"] ? parseInteger(data["حداقل خرید"]) : undefined,
+        expiresAt: expiresInDays ? new Date(Date.now() + expiresInDays * 86_400_000) : undefined,
+        status: parseStatus(data.status ?? data["وضعیت"]),
+      };
+      if (!Object.values(patch).some((value) => value !== undefined)) return { text: "هیچ فیلد معتبری دریافت نشد. مثال:\nvalue: 20\nmaxUses: 100" };
+      await CouponService.update(String(flow.data.couponId), patch, String(ctx.from?.id ?? "admin"));
+      return { done: true, text: "✅ کوپن با موفقیت ویرایش شد.", returnTo: { id: "admin.coupon", params: { couponId: String(flow.data.couponId) } } };
+    },
+  },
+
   product_price: {
     firstStep: "price",
     prompt: "💰 قیمت جدید محصول را به تومان وارد کنید:",
@@ -495,6 +558,12 @@ export function registerFlowEngine(bot: AppBot) {
       return;
     }
     if (name === "coupon_code") return startFlow(ctx, "coupon_code", { productId: ctx.match[2] });
+    const adminOnlyFlows: FlowName[] = ["product_create", "account_create", "coupon_create", "coupon_edit", "product_price", "crypto_wallet_create", "minimum_topup", "referral_tier_create", "store_status", "forced_join_create", "wallet_adjust", "free_account_create", "free_account_edit"];
+    if (adminOnlyFlows.includes(name) && (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))) {
+      await ctx.answerCbQuery("دسترسی غیرمجاز");
+      return;
+    }
+    if (name === "coupon_edit") return startFlow(ctx, "coupon_edit", { couponId: ctx.match[2] });
     if (name === "account_create") return startFlow(ctx, "account_create", { productId: ctx.match[2] });
     if (name === "free_account_create" || name === "free_account_edit") {
       if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
