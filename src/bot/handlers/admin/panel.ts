@@ -354,7 +354,7 @@ export function registerAdminHandlers(bot: AppBot) {
     const detail = await AdminService.walletDetail(ctx.match[1]);
     if (!detail.wallet) return void (await ctx.reply("کیف پول پیدا نشد.", navigationKeyboard("admin:wallets")));
     await ctx.reply(
-      `💳 جزئیات کیف پول\n\nنام ارز: ${detail.wallet.coinName}\nنماد: ${detail.wallet.coinSymbol ?? detail.wallet.coinName}\nشبکه: ${detail.wallet.networkName}\nنام نمایشی: ${detail.wallet.displayName ?? "-"}\nآدرس: ${detail.wallet.walletAddress}\nترتیب: ${detail.wallet.displayOrder.toLocaleString("fa-IR")}\nوضعیت: ${statusFa(detail.wallet.status)}\n\n🛡 ایمنی حذف\nواریزی در انتظار: ${detail.pendingDeposits.toLocaleString("fa-IR")}\nپرداخت فعال: ${detail.activePayments.toLocaleString("fa-IR")}\nکل واریزی‌ها: ${detail.deposits.toLocaleString("fa-IR")}`,
+      `💳 جزئیات کیف پول\n\nنام ارز: ${detail.wallet.coinName}\nنماد: ${detail.wallet.coinSymbol ?? detail.wallet.coinName}\nشبکه: ${detail.wallet.networkName}\nنام نمایشی: ${detail.wallet.displayName ?? "-"}\nآدرس: ${detail.wallet.walletAddress}\nترتیب: ${detail.wallet.displayOrder.toLocaleString("fa-IR")}\nوضعیت: ${statusFa(detail.wallet.status)}\n\n🛡 ایمنی حذف\nواریزی ساخته‌شده: ${detail.pendingDeposits.toLocaleString("fa-IR")}\nرسید ارسال‌شده: ${detail.submittedDeposits.toLocaleString("fa-IR")}\nپرداخت فعال: ${detail.activePayments.toLocaleString("fa-IR")}\nکل واریزی‌ها: ${detail.deposits.toLocaleString("fa-IR")}`,
       Markup.inlineKeyboard([
         [Markup.button.callback("✏️ ویرایش", `admin:wallet:edit:${detail.wallet.id}`), Markup.button.callback(detail.wallet.status === "active" ? "⏸ غیرفعال" : "▶️ فعال", `admin:wallet:status:${detail.wallet.id}:${detail.wallet.status === "active" ? "inactive" : "active"}`)],
         [Markup.button.callback("🗑 حذف", `admin:wallet:delete:${detail.wallet.id}`), Markup.button.callback("⬅️ بازگشت", "admin:wallets")],
@@ -380,8 +380,8 @@ export function registerAdminHandlers(bot: AppBot) {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
     const detail = await AdminService.walletDetail(ctx.match[1]);
-    const warning = detail.pendingDeposits || detail.activePayments ? `\n\n🛡 هشدار: ${detail.pendingDeposits.toLocaleString("fa-IR")} واریزی در انتظار و ${detail.activePayments.toLocaleString("fa-IR")} پرداخت فعال وجود دارد.` : "";
-    await ctx.reply(`⚠️ آیا از حذف این مورد مطمئن هستید؟${warning}`, confirmKeyboard(`admin:wallet:delete-confirm:${ctx.match[1]}`, `admin:wallet:${ctx.match[1]}`));
+    const warning = detail.activePayments ? `\n\n🛡 این کیف پول ${detail.activePayments.toLocaleString("fa-IR")} پرداخت فعال دارد و تا تعیین وضعیت آن‌ها قابل حذف نیست.` : "";
+    await ctx.reply(`⚠️ آیا از حذف این کیف پول مطمئن هستید؟${warning}`, confirmKeyboard(`admin:wallet:delete-confirm:${ctx.match[1]}`, `admin:wallet:${ctx.match[1]}`));
   });
 
   bot.action(/^admin:wallet:delete-confirm:(.+)$/, async (ctx) => {
@@ -391,15 +391,8 @@ export function registerAdminHandlers(bot: AppBot) {
       await AdminService.deleteCryptoWallet(ctx.match[1], actor(ctx));
       await ctx.reply("✅ کیف پول حذف شد.", navigationKeyboard("admin:wallets"));
     } catch (error) {
-      await ctx.reply(`❌ ${error instanceof Error ? error.message : "حذف ناموفق بود"}`, Markup.inlineKeyboard([[Markup.button.callback("🔥 حذف اجباری", `admin:wallet:force-delete:${ctx.match[1]}`)], [Markup.button.callback("⬅️ بازگشت", `admin:wallet:${ctx.match[1]}`)]]));
+      await ctx.reply(`❌ ${error instanceof Error ? error.message : "حذف ناموفق بود"}`, navigationKeyboard(`admin:wallet:${ctx.match[1]}`));
     }
-  });
-
-  bot.action(/^admin:wallet:force-delete:(.+)$/, async (ctx) => {
-    if (!(await requireAdmin(ctx))) return;
-    await ctx.answerCbQuery();
-    await AdminService.deleteCryptoWallet(ctx.match[1], actor(ctx), true);
-    await ctx.reply("✅ کیف پول با تایید نهایی حذف شد.", navigationKeyboard("admin:wallets"));
   });
 
   bot.action("admin:deposits", async (ctx) => {

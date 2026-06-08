@@ -138,16 +138,18 @@ export async function handleAdminFlow(ctx: AppContext): Promise<boolean> {
 
   if (flow.flow === "wallet_create" || flow.flow === "wallet_edit") {
     const data = parseKeyValueLines(text);
+    const active = parseActive(data.active ?? data.status ?? data["وضعیت"]);
+    const walletData = {
+      coinName: data.coinName ?? data.coin ?? data["نام ارز"],
+      coinSymbol: data.coinSymbol ?? data.symbol ?? data["نماد"],
+      networkName: data.networkName ?? data.network ?? data["شبکه"],
+      displayName: data.displayName ?? data.display ?? data["نام نمایشی"],
+      walletAddress: data.walletAddress ?? data.address ?? data["آدرس"],
+      displayOrder: optionalPositiveInteger(data.order ?? data.sort ?? data["ترتیب"]),
+      status: active === undefined ? undefined : active ? "active" as const : "inactive" as const,
+    };
     const wallet = await AdminService.saveCryptoWallet(
-      {
-        coinName: data.coinName ?? data.coin ?? data["نام ارز"] ?? "",
-        coinSymbol: data.coinSymbol ?? data.symbol ?? data["نماد"],
-        networkName: data.networkName ?? data.network ?? data["شبکه"] ?? "",
-        displayName: data.displayName ?? data.display ?? data["نام نمایشی"],
-        walletAddress: data.walletAddress ?? data.address ?? data["آدرس"] ?? "",
-        displayOrder: optionalPositiveInteger(data.order ?? data.sort ?? data["ترتیب"]),
-        status: parseActive(data.active ?? data.status ?? data["وضعیت"]) === false ? "inactive" : "active",
-      },
+      flow.flow === "wallet_create" ? { ...walletData, coinName: walletData.coinName ?? "", networkName: walletData.networkName ?? "", walletAddress: walletData.walletAddress ?? "" } : walletData,
       String(ctx.from?.id ?? "system"),
       flow.flow === "wallet_edit" ? String(flow.data.walletId) : undefined,
     );

@@ -1,6 +1,6 @@
 import { prisma } from "../../services/prisma";
 import { WalletService } from "../wallet/wallet.service";
-import { CryptoWalletService, FinancialSettingsService } from "../deposit/deposit.service";
+import { CryptoWalletService, FinancialSettingsService, type CryptoWalletInput } from "../deposit/deposit.service";
 import { SystemSettingsService } from "../system/system.service";
 import { CouponService } from "../coupon/coupon.service";
 import { ForcedJoinService } from "../system/forced-join.service";
@@ -32,7 +32,7 @@ export type ProductAccountAdminStatus = "available" | "reserved" | "sold" | "dis
 type CategoryInput = { name: string; description?: string; icon?: string; displayOrder?: number; isActive?: boolean };
 type ProductInput = { title?: string; categoryId?: string; price?: number; duration?: number; isActive?: boolean };
 type AccountInput = { username?: string; subscriptionLink?: string; configLink?: string; productId?: string; status?: ProductAccountAdminStatus };
-type WalletInput = { coinName: string; coinSymbol?: string; networkName: string; displayName?: string; walletAddress: string; displayOrder?: number; status?: "active" | "inactive" };
+type WalletInput = Partial<CryptoWalletInput> & Pick<CryptoWalletInput, "coinName" | "networkName" | "walletAddress">;
 
 let dashboardCache: { expiresAt: number; stats: DashboardStats } | undefined;
 
@@ -329,39 +329,25 @@ export class AdminService {
   }
 
   static async walletDetail(walletId: string) {
-    const [wallet, pendingDeposits, activePayments, deposits] = await Promise.all([
-      prisma.cryptoWallet.findUnique({ where: { id: walletId } }),
-      prisma.deposit.count({ where: { cryptoWalletId: walletId, status: { in: ["pending", "submitted"] } } }),
-      prisma.deposit.count({ where: { cryptoWalletId: walletId, status: "submitted" } }),
-      prisma.deposit.count({ where: { cryptoWalletId: walletId } }),
-    ]);
-    return { wallet, pendingDeposits, activePayments, deposits };
+    const [wallet, usage] = await Promise.all([CryptoWalletService.get(walletId), CryptoWalletService.getUsage(walletId)]);
+    return { wallet, pendingDeposits: usage.pendingDeposits, submittedDeposits: usage.submittedDeposits, activePayments: usage.activePayments, deposits: usage.deposits };
   }
 
-  static async saveCryptoWallet(data: WalletInput, actorId: string, walletId?: string) {
-    const coinName = data.coinName.trim().toUpperCase();
-    const networkName = data.networkName.trim().toUpperCase();
-    const walletAddress = data.walletAddress.trim();
-    if (!coinName || !networkName || !walletAddress) throw new Error("اطلاعات کیف پول کامل نیست");
-    const payload = { coinName, coinSymbol: (data.coinSymbol ?? coinName).trim().toUpperCase(), networkName, displayName: data.displayName?.trim() || `${coinName} ${networkName}`, walletAddress, displayOrder: data.displayOrder ?? 0, status: data.status ?? "active" as const };
-    const wallet = walletId ? await prisma.cryptoWallet.update({ where: { id: walletId }, data: payload }) : await CryptoWalletService.upsert(payload, actorId);
-    if (walletId) await this.audit(actorId, "crypto_wallet.update", { walletId });
+  static async saveCryptoWallet(data: WalletInput | Partial<WalletInput>, actorId: string, walletId?: string) {
+    const wallet = walletId ? await CryptoWalletService.update(walletId, data, actorId) : await CryptoWalletService.create(data as CryptoWalletInput, actorId);
     this.invalidateDashboardCache();
     return wallet;
   }
 
   static async setCryptoWalletStatus(walletId: string, status: "active" | "inactive", actorId: string) {
-    const wallet = await CryptoWalletService.setStatus(walletId, status, actorId);
+    const wallet = status === "active" ? await CryptoWalletService.enable(walletId, actorId) : await CryptoWalletService.disable(walletId, actorId);
     this.invalidateDashboardCache();
     return wallet;
   }
 
-  static async deleteCryptoWallet(walletId: string, actorId: string, force = false) {
-    const safety = await this.walletDetail(walletId);
-    if (!safety.wallet) throw new Error("کیف پول پیدا نشد");
-    if ((safety.pendingDeposits > 0 || safety.activePayments > 0) && !force) throw new Error("این کیف پول پرداخت در جریان دارد. ابتدا پرداخت‌ها را تعیین وضعیت کنید یا تایید نهایی حذف را بزنید");
-    const wallet = await prisma.cryptoWallet.delete({ where: { id: walletId } });
-    await this.audit(actorId, "crypto_wallet.delete", { walletId, force, pendingDeposits: safety.pendingDeposits, activePayments: safety.activePayments });
+  static async deleteCryptoWallet(walletId: string, actorId: string) {
+    const wallet = await CryptoWalletService.delete(walletId, actorId);
+    this.invalidateDashboardCache();
     return wallet;
   }
 
