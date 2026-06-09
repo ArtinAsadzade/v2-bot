@@ -1,17 +1,18 @@
 import { Markup } from "telegraf";
+import { buildInlineKeyboard } from "./design-system";
 
 export function homeKeyboard(isAdmin = false) {
   const rows = [
-    [Markup.button.callback("🛍 فروشگاه", "shop"), Markup.button.callback("💳 کیف پول", "wallet")],
-    [Markup.button.callback("👤 حساب کاربری", "account"), Markup.button.callback("🎧 پشتیبانی", "support")],
-    [Markup.button.callback("🆓 اکانت تست", "freeAccount"), Markup.button.callback("🎁 دعوت دوستان", "referral")],
+    [{ text: "🛒 خرید سرویس", action: "shop", tone: "primary" as const }, { text: "👛 کیف پول", action: "wallet", tone: "primary" as const }],
+    [{ text: "📦 سفارش‌های من", action: "account" }, { text: "🎫 پشتیبانی", action: "support" }],
+    [{ text: "🆓 اکانت تست", action: "freeAccount" }, { text: "🎁 دعوت دوستان", action: "referral" }],
   ];
 
   if (isAdmin) {
-    rows.push([Markup.button.callback("⚙️ مرکز مدیریت", "admin:dashboard")]);
+    rows.push([{ text: "⚙️ داشبورد ادمین", action: "admin:dashboard", tone: "primary" as const }]);
   }
 
-  return Markup.inlineKeyboard(rows);
+  return buildInlineKeyboard(rows);
 }
 
 export function navigationKeyboard(backTo = "home") {
