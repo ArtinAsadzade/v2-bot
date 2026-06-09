@@ -1,25 +1,32 @@
-import { Markup } from "telegraf";
 import type { InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup } from "telegraf/types";
 import type { PanelViewId } from "../navigation/panel-ui";
 
-export type ButtonTone = "primary" | "danger" | "neutral";
-export type TelegramButtonStyle = "primary" | "danger" | "default";
+export type ButtonTone = "primary" | "success" | "danger" | "neutral";
+export type TelegramButtonStyle = "primary" | "success" | "danger";
 
 type StyledKeyboardButton = KeyboardButton & { style?: TelegramButtonStyle; icon_custom_emoji_id?: string };
 type StyledInlineKeyboardButton = InlineKeyboardButton.CallbackButton & { style?: TelegramButtonStyle; icon_custom_emoji_id?: string };
+type StyledUrlInlineKeyboardButton = InlineKeyboardButton.UrlButton & { style?: TelegramButtonStyle; icon_custom_emoji_id?: string };
 
-type ReplyButton = { text: string; tone?: ButtonTone; customEmojiId?: string };
-type InlineButton = { text: string; action: string; tone?: ButtonTone; customEmojiId?: string };
+type ButtonStyleFields = { tone?: ButtonTone; customEmojiId?: string };
+type ReplyButton = { text: string } & ButtonStyleFields;
+type InlineCallbackButton = { text: string; action: string } & ButtonStyleFields;
+type InlineUrlButton = { text: string; url: string } & ButtonStyleFields;
+type InlineButton = InlineCallbackButton | InlineUrlButton;
 
 export type ReplyKeyboardScope = "home" | "shop" | "profile" | "wallet" | "payment" | "support" | "freeAccount" | "admin" | "settings";
 
 export const labels = {
   home: "🏠 منوی اصلی",
   wallet: "👛 کیف پول",
+  walletBalance: "💰 موجودی",
   topup: "💳 شارژ کیف پول",
-  instantPayment: "💳 پرداخت آنی",
+  transactions: "📜 تراکنش‌ها",
+  instantPayment: "⚡ پرداخت آنی",
   walletPayment: "👛 پرداخت از کیف پول",
-  shop: "🛒 خرید سرویس",
+  shop: "🛒 خرید",
+  shopLegacy: "🛒 خرید سرویس",
+  buyAgain: "🛒 خرید مجدد",
   coupon: "🎁 کد تخفیف",
   orders: "📦 سفارش‌های من",
   support: "🎫 پشتیبانی",
@@ -27,6 +34,9 @@ export const labels = {
   retry: "🔄 تلاش مجدد",
   refresh: "🔄 بروزرسانی وضعیت",
   back: "🔙 بازگشت",
+  cancel: "❌ لغو عملیات",
+  paymentSuccess: "✅ موفق",
+  paymentFailure: "❌ ناموفق",
   adminStats: "📊 آمار",
   adminPayments: "💳 پرداخت‌ها",
   adminProducts: "📦 محصولات",
@@ -36,27 +46,31 @@ export const labels = {
   adminDashboard: "⚙️ داشبورد ادمین",
 } as const;
 
-const toneToStyle: Record<ButtonTone, TelegramButtonStyle> = {
+const toneToStyle: Record<Exclude<ButtonTone, "neutral">, TelegramButtonStyle> = {
   primary: "primary",
+  success: "success",
   danger: "danger",
-  neutral: "default",
 };
 
-function replyButton(button: ReplyButton): StyledKeyboardButton {
+// Bot API 9.4 supports button colors and custom emoji icons. Telegraf 4.16.3's
+// bundled TypeScript types do not expose these fields yet, so builders attach
+// the raw API fields directly. Disable style fields only for older self-hosted
+// Bot API servers by setting TELEGRAM_BUTTON_STYLE_ENABLED=false.
+function buttonDecorations(button: ButtonStyleFields) {
+  const styleEnabled = process.env.TELEGRAM_BUTTON_STYLE_ENABLED !== "false";
   return {
-    text: button.text,
-    ...(button.tone ? { style: toneToStyle[button.tone] } : {}),
+    ...(styleEnabled && button.tone && button.tone !== "neutral" ? { style: toneToStyle[button.tone] } : {}),
     ...(button.customEmojiId ? { icon_custom_emoji_id: button.customEmojiId } : {}),
   };
 }
 
-function callbackButton(button: InlineButton): StyledInlineKeyboardButton {
-  return {
-    text: button.text,
-    callback_data: button.action,
-    ...(button.tone ? { style: toneToStyle[button.tone] } : {}),
-    ...(button.customEmojiId ? { icon_custom_emoji_id: button.customEmojiId } : {}),
-  };
+function replyButton(button: ReplyButton): StyledKeyboardButton {
+  return { text: button.text, ...buttonDecorations(button) };
+}
+
+function inlineButton(button: InlineButton): StyledInlineKeyboardButton | StyledUrlInlineKeyboardButton {
+  if ("url" in button) return { text: button.text, url: button.url, ...buttonDecorations(button) };
+  return { text: button.text, callback_data: button.action, ...buttonDecorations(button) };
 }
 
 export function buildReplyKeyboard(rows: ReplyButton[][]): { reply_markup: ReplyKeyboardMarkup } {
@@ -70,7 +84,7 @@ export function buildReplyKeyboard(rows: ReplyButton[][]): { reply_markup: Reply
 }
 
 export function buildInlineKeyboard(rows: InlineButton[][]): { reply_markup: InlineKeyboardMarkup } {
-  return { reply_markup: { inline_keyboard: rows.map((row) => row.map(callbackButton)) } };
+  return { reply_markup: { inline_keyboard: rows.map((row) => row.map(inlineButton)) } };
 }
 
 export function MainMenuKeyboard(isAdmin = false) {
@@ -84,15 +98,25 @@ export function MainMenuKeyboard(isAdmin = false) {
 }
 
 export function WalletKeyboard() {
-  return buildReplyKeyboard([[{ text: labels.topup, tone: "primary" }, { text: "💳 تراکنش‌ها" }], [{ text: labels.home }]]);
+  return buildReplyKeyboard([
+    [{ text: labels.topup, tone: "primary" }, { text: labels.walletBalance, tone: "success" }],
+    [{ text: labels.transactions }, { text: labels.home }],
+  ]);
 }
 
 export function PaymentKeyboard() {
-  return buildReplyKeyboard([[{ text: labels.retry, tone: "primary" }, { text: labels.support }], [{ text: labels.wallet }, { text: labels.home }]]);
+  return buildReplyKeyboard([
+    [{ text: labels.retry, tone: "primary" }, { text: labels.support, tone: "danger" }],
+    [{ text: labels.home }],
+  ]);
 }
 
 export function PurchaseKeyboard() {
-  return buildReplyKeyboard([[{ text: labels.orders, tone: "primary" }, { text: labels.shop }], [{ text: labels.home }]]);
+  return buildReplyKeyboard([
+    [{ text: labels.shop, tone: "primary" }, { text: labels.coupon }],
+    [{ text: labels.wallet }, { text: labels.instantPayment, tone: "success" }],
+    [{ text: labels.home }],
+  ]);
 }
 
 export function SupportKeyboard() {
@@ -113,23 +137,31 @@ export function SettingsKeyboard() {
 }
 
 export function InvoiceActionKeyboard(paymentLink: string, backAction: string) {
-  return Markup.inlineKeyboard([
-    [Markup.button.url("✅ پرداخت", paymentLink)],
-    [Markup.button.callback(labels.back, backAction)],
+  return buildInlineKeyboard([
+    [{ text: labels.instantPayment, url: paymentLink, tone: "success" }],
+    [{ text: labels.back, action: backAction }, { text: labels.home, action: "home" }],
   ]);
 }
 
-export function paymentSuccessKeyboard(type: "wallet" | "product") {
-  return type === "wallet" ? WalletKeyboard() : PurchaseKeyboard();
+export function paymentSuccessKeyboard(_type: "wallet" | "product") {
+  return buildReplyKeyboard([
+    [{ text: labels.home }, { text: labels.buyAgain, tone: "primary" }],
+    [{ text: labels.orders, tone: "success" }],
+  ]);
 }
 
 export function paymentFailureKeyboard() {
-  return PaymentKeyboard();
+  return buildReplyKeyboard([
+    [{ text: labels.retry, tone: "primary" }, { text: labels.support, tone: "danger" }],
+    [{ text: labels.home }],
+  ]);
 }
 
 export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record<string, string> } | "refresh" | "claimFree" | "newTicket"> = {
   [labels.shop]: { id: "shop.categories" },
+  [labels.shopLegacy]: { id: "shop.categories" },
   "🛒 فروشگاه": { id: "shop.categories" },
+  [labels.buyAgain]: { id: "shop.categories" },
   [labels.orders]: { id: "account.details" },
   "📦 اکانت‌های من": { id: "account.details" },
   "🆓 اکانت تست": { id: "freeAccount" },
@@ -137,11 +169,14 @@ export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record
   "🔄 بروزرسانی": "refresh",
   "👤 پروفایل": { id: "account" },
   [labels.wallet]: { id: "wallet" },
+  [labels.walletBalance]: { id: "wallet" },
   "💰 کیف پول": { id: "wallet" },
   [labels.home]: { id: "home" },
   [labels.topup]: { id: "deposit" },
   "➕ شارژ حساب": { id: "deposit" },
+  [labels.transactions]: { id: "wallet.history" },
   "💳 تراکنش‌ها": { id: "wallet.history" },
+  [labels.instantPayment]: { id: "shop.categories" },
   "➕ تیکت جدید": "newTicket",
   "📂 تیکت‌های من": { id: "support" },
   "🎁 دریافت اکانت تست": "claimFree",

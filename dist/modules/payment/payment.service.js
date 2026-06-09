@@ -98,6 +98,23 @@ function invoiceCallbackUrl(baseCallbackUrl, data) {
 function isValidObjectId(value) {
     return /^[a-f\d]{24}$/i.test(value);
 }
+async function rawPaymentInvoiceProjection(invoiceId) {
+    try {
+        const result = await prisma_1.prisma.$runCommandRaw({
+            find: "PaymentInvoice",
+            filter: { _id: { $oid: invoiceId } },
+            projection: { _id: 1, status: 1, payId: 1 },
+            limit: 1,
+        });
+        const cursor = result && typeof result === "object" && "cursor" in result ? result.cursor : undefined;
+        const document = cursor?.firstBatch?.[0];
+        return document && typeof document === "object" ? document : null;
+    }
+    catch (error) {
+        paymentLog("PAYMENT_INVOICE_RAW_PROJECTION_FAILED", { invoiceId, error: error instanceof Error ? error.message : String(error) });
+        return null;
+    }
+}
 function normalizeCallbackReference(reference) {
     if (typeof reference === "string")
         return { invoice_id: reference.trim() };
@@ -449,22 +466,38 @@ class PaymentService {
         const discountAmount = data.discountAmount ?? 0;
         if (originalAmount - discountAmount !== data.amount)
             throw new Error("مبلغ نهایی فاکتور با تخفیف همخوانی ندارد");
-        const invoice = await prisma_1.prisma.paymentInvoice.create({
-            data: {
-                userId: data.userId,
-                amount: data.amount,
-                originalAmount,
-                discountAmount,
-                couponId: data.couponId ?? undefined,
-                couponCode: data.couponCode ?? undefined,
-                gatewayAmount: data.amount,
-                callbackToken: crypto_1.default.randomBytes(32).toString("hex"),
-                type: data.type,
-                status: "PENDING",
-                productId: data.productId,
-            },
+        const createPayload = {
+            user: { connect: { id: data.userId } },
+            amount: data.amount,
+            originalAmount,
+            discountAmount,
+            coupon: data.couponId ? { connect: { id: data.couponId } } : undefined,
+            couponCode: data.couponCode ?? undefined,
+            gatewayAmount: data.amount,
+            callbackToken: crypto_1.default.randomBytes(32).toString("hex"),
+            type: data.type,
+            status: "PENDING",
+            product: data.productId ? { connect: { id: data.productId } } : undefined,
+        };
+        paymentLog("PAYMENT_INVOICE_CREATE_PAYLOAD", {
+            userId: data.userId,
+            type: data.type,
+            amount: data.amount,
+            status: "PENDING",
+            payId: Object.prototype.hasOwnProperty.call(createPayload, "payId") ? createPayload.payId : "<omitted>",
+            hasPayId: Object.prototype.hasOwnProperty.call(createPayload, "payId"),
         });
-        paymentLog("PAYMENT_INVOICE_CREATED", { invoiceId: invoice.id, userId: data.userId, type: data.type, amount: data.amount, status: "PENDING" });
+        const invoice = await prisma_1.prisma.paymentInvoice.create({ data: createPayload });
+        const rawCreatedInvoice = await rawPaymentInvoiceProjection(invoice.id);
+        paymentLog("PAYMENT_INVOICE_CREATED", {
+            invoiceId: invoice.id,
+            userId: data.userId,
+            type: data.type,
+            amount: data.amount,
+            status: "PENDING",
+            rawDocument: rawCreatedInvoice ?? { _id: invoice.id, status: invoice.status, payId: "<raw projection unavailable>" },
+            hasRawPayId: rawCreatedInvoice ? Object.prototype.hasOwnProperty.call(rawCreatedInvoice, "payId") : undefined,
+        });
         await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_INVOICE_CREATED", metadata: { type: data.type, originalAmount, discountAmount, finalAmount: data.amount, couponId: data.couponId, couponCode: data.couponCode, status: "PENDING" } });
         if (data.couponId)
             await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "COUPON_APPLIED", metadata: { couponId: data.couponId, couponCode: data.couponCode, originalAmount, discountAmount, finalAmount: data.amount, usageRecorded: false } });

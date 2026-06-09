@@ -9,7 +9,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
-    "payment:audit": "ts-node scripts/payment-integrity-audit.ts"
+    "payment:audit": "ts-node scripts/payment-integrity-audit.ts",
+    "payment:fix-payid-index": "ts-node scripts/fix-payment-invoice-pay-id-index.ts"
   },
   "keywords": [],
   "author": "",

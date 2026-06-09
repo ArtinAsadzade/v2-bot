@@ -13,7 +13,7 @@ import {
 
 const keyboardFactories: Record<ReplyKeyboardScope, () => ReturnType<typeof buildReplyKeyboard>> = {
   home: () => MainMenuKeyboard(),
-  shop: () => buildReplyKeyboard([[{ text: "🛒 خرید سرویس" }, { text: "📦 سفارش‌های من" }], [{ text: "🎁 کد تخفیف" }, { text: "🔄 بروزرسانی وضعیت" }], [{ text: "🏠 منوی اصلی" }]]),
+  shop: PurchaseKeyboard,
   profile: () => buildReplyKeyboard([[{ text: "📦 سفارش‌های من" }, { text: "👛 کیف پول" }], [{ text: "🏠 منوی اصلی" }]]),
   wallet: WalletKeyboard,
   payment: PaymentKeyboard,

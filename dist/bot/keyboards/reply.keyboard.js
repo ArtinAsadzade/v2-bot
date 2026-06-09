@@ -14,7 +14,7 @@ Object.defineProperty(exports, "SupportKeyboard", { enumerable: true, get: funct
 Object.defineProperty(exports, "WalletKeyboard", { enumerable: true, get: function () { return design_system_1.WalletKeyboard; } });
 const keyboardFactories = {
     home: () => (0, design_system_1.MainMenuKeyboard)(),
-    shop: () => (0, design_system_1.buildReplyKeyboard)([[{ text: "🛒 خرید سرویس" }, { text: "📦 سفارش‌های من" }], [{ text: "🎁 کد تخفیف" }, { text: "🔄 بروزرسانی وضعیت" }], [{ text: "🏠 منوی اصلی" }]]),
+    shop: design_system_1.PurchaseKeyboard,
     profile: () => (0, design_system_1.buildReplyKeyboard)([[{ text: "📦 سفارش‌های من" }, { text: "👛 کیف پول" }], [{ text: "🏠 منوی اصلی" }]]),
     wallet: design_system_1.WalletKeyboard,
     payment: design_system_1.PaymentKeyboard,
