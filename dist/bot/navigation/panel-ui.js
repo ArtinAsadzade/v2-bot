@@ -139,16 +139,6 @@ async function renderPanel(ctx, state, mode = "push") {
         });
         return;
     }
-    const chatId = ctx.chat?.id;
-    const panelMessageId = ctx.session.navigation.panelMessageId;
-    if (chatId && panelMessageId) {
-        const edited = await ctx.telegram
-            .editMessageText(chatId, panelMessageId, undefined, result.text, extra)
-            .then(() => true)
-            .catch(() => false);
-        if (edited)
-            return;
-    }
     await fallbackReply();
 }
 async function goBack(ctx) {

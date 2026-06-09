@@ -3,6 +3,8 @@ import { PaymentInvoiceService } from "../modules/payment/payment.service";
 import { prisma } from "./prisma";
 import { logger } from "./logger";
 import type { AppBot } from "../types/bot";
+import { paymentFailureKeyboard, paymentSuccessKeyboard } from "../bot/keyboards/design-system";
+import { composeCustomEmojiMessage, customEmoji } from "../bot/keyboards/custom-emoji";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
 
@@ -34,13 +36,6 @@ function callbackQueryMetadata(url: URL) {
   return Object.fromEntries(url.searchParams.entries());
 }
 
-function paymentReplyKeyboard() {
-  return {
-    keyboard: [["🏠 منوی اصلی"], ["📦 اکانت‌های من", "💳 شارژ کیف پول"]],
-    resize_keyboard: true,
-  };
-}
-
 async function notifyUser(bot: AppBot, result: unknown) {
   if (!result || typeof result !== "object" || !("invoice" in result)) return;
   const payload = result as PaymentNotificationPayload;
@@ -50,19 +45,22 @@ async function notifyUser(bot: AppBot, result: unknown) {
 
   try {
     if ("error" in payload) {
-      await bot.telegram.sendMessage(Number(user.telegramId), "❌ پرداخت انجام نشد\n\nدر صورت کسر وجه و عدم دریافت سرویس با پشتیبانی تماس بگیرید.", { reply_markup: paymentReplyKeyboard() });
+      const failure = composeCustomEmojiMessage([customEmoji("❌", "TELEGRAM_EMOJI_ERROR_ID"), " پرداخت ناموفق بود\n\n💬 در صورت کسر وجه با پشتیبانی تماس بگیرید"]);
+      await bot.telegram.sendMessage(Number(user.telegramId), failure.text, { ...paymentFailureKeyboard(), entities: failure.entities });
       await PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "failed", error: payload.error });
       return;
     }
 
     if (payload.type === "WALLET_TOPUP" && "user" in payload && payload.user) {
-      await bot.telegram.sendMessage(Number(user.telegramId), `✅ پرداخت با موفقیت انجام شد\n\n💰 مبلغ:\n${money(invoice.amount)}\n\n💳 موجودی جدید:\n${money(payload.user.balance)}`, { reply_markup: paymentReplyKeyboard() });
+      const success = composeCustomEmojiMessage([customEmoji("✅", "TELEGRAM_EMOJI_SUCCESS_ID"), ` پرداخت با موفقیت انجام شد\n\n💰 مبلغ:\n${money(invoice.amount)}\n\n💳 موجودی جدید:\n${money(payload.user.balance)}`]);
+      await bot.telegram.sendMessage(Number(user.telegramId), success.text, { ...paymentSuccessKeyboard("wallet"), entities: success.entities });
       await PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "wallet_topup", amount: invoice.amount, balance: payload.user.balance });
       return;
     }
 
     if ("product" in payload && "account" in payload && payload.product && payload.account) {
-      await bot.telegram.sendMessage(Number(user.telegramId), `✅ خرید با موفقیت انجام شد\n\n📦 محصول:\n${payload.product.title}\n\n👤 نام کاربری:\n${payload.account.username ?? "—"}\n\n🔗 لینک اشتراک:\n${payload.account.subscriptionLink ?? "—"}\n\n⚙️ کانفیگ:\n${payload.account.configLink ?? payload.account.config ?? "—"}`, { reply_markup: paymentReplyKeyboard() });
+      const success = composeCustomEmojiMessage([customEmoji("✅", "TELEGRAM_EMOJI_SUCCESS_ID"), ` خرید با موفقیت انجام شد\n\n📦 محصول:\n${payload.product.title}\n\n👤 نام کاربری:\n${payload.account.username ?? "—"}\n\n🔗 لینک اشتراک:\n${payload.account.subscriptionLink ?? "—"}\n\n⚙️ کانفیگ:\n${payload.account.configLink ?? payload.account.config ?? "—"}`]);
+      await bot.telegram.sendMessage(Number(user.telegramId), success.text, { ...paymentSuccessKeyboard("product"), entities: success.entities });
       await PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "product_purchase", productId: payload.product.id, accountId: payload.account.id });
     }
   } catch (error) {

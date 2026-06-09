@@ -16,6 +16,7 @@ const free_account_service_1 = require("../../modules/free-account/free-account.
 const payment_service_1 = require("../../modules/payment/payment.service");
 const admin_middleware_1 = require("../middlewares/admin.middleware");
 const reply_keyboard_1 = require("../keyboards/reply.keyboard");
+const design_system_1 = require("../keyboards/design-system");
 function registerModernHandlers(bot) {
     (0, modern_views_1.registerModernViews)();
     (0, flow_engine_1.registerFlowEngine)(bot);
@@ -189,12 +190,8 @@ ${invoice.amount.toLocaleString("fa-IR")} تومان
 ⚡ روش پرداخت:
 پرداخت آنی
 
-پس از پرداخت، محصول به صورت خودکار تحویل خواهد شد.`, {
-                reply_markup: { inline_keyboard: [[{ text: "⚡ پرداخت", url: invoice.paymentLink ?? "" }], [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }]] },
-            });
-            await ctx.reply("می‌توانید با دکمه‌های زیر سریع‌تر بین بخش‌های پرداخت جابه‌جا شوید.", {
-                reply_markup: { keyboard: [["🔙 بازگشت", "🔄 بروزرسانی وضعیت"], ["💳 پرداخت آنی", "👛 پرداخت از کیف پول"], ["🏠 منوی اصلی"]], resize_keyboard: true },
-            });
+پس از پرداخت، محصول به صورت خودکار تحویل خواهد شد.`, (0, design_system_1.InvoiceActionKeyboard)(invoice.paymentLink ?? "", (0, panel_ui_1.callbackFor)("shop.checkout", { productId })));
+            await ctx.reply("می‌توانید با دکمه‌های زیر سریع‌تر بین بخش‌های پرداخت جابه‌جا شوید.", (0, design_system_1.PaymentKeyboard)());
         }
         catch (error) {
             await ctx.editMessageText(`❌ ${error instanceof Error ? error.message : "ایجاد پرداخت ناموفق بود"}`, { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }]] } });

@@ -1,15 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.adminKeyboard = adminKeyboard;
-const telegraf_1 = require("telegraf");
+const design_system_1 = require("./design-system");
 function adminKeyboard() {
-    return telegraf_1.Markup.inlineKeyboard([
-        [telegraf_1.Markup.button.callback("👥 کاربران", "admin:users"), telegraf_1.Markup.button.callback("📂 دسته‌بندی‌ها", "admin:categories")],
-        [telegraf_1.Markup.button.callback("📦 مدیریت محصولات", "admin:products"), telegraf_1.Markup.button.callback("🗄 موجودی اکانت‌ها", "admin:accounts")],
-        [telegraf_1.Markup.button.callback("💳 مدیریت کیف پول‌ها", "admin:wallets"), telegraf_1.Markup.button.callback("🎟 کوپن‌ها", "admin:coupons")],
-        [telegraf_1.Markup.button.callback("💳 واریزی‌ها", "admin:deposits"), telegraf_1.Markup.button.callback("⚡ درگاه پرداخت", "nav:admin.paymentGateway")],
-        [telegraf_1.Markup.button.callback("🧾 فاکتورهای پرداخت", "nav:admin.invoices"), telegraf_1.Markup.button.callback("🎧 تیکت‌ها", "admin:tickets")],
-        [telegraf_1.Markup.button.callback("➕ محصول جدید", "admin:product:create"), telegraf_1.Markup.button.callback("🧾 سفارش‌ها", "admin:orders")],
-        [telegraf_1.Markup.button.callback("🏠 خانه", "home")],
+    return (0, design_system_1.buildInlineKeyboard)([
+        [{ text: "📊 آمار", action: "nav:admin.analytics", tone: "primary" }, { text: "💳 پرداخت‌ها", action: "nav:admin.paymentGateway" }],
+        [{ text: "📦 محصولات", action: "admin:products" }, { text: "📁 دسته‌بندی‌ها", action: "admin:categories" }],
+        [{ text: "👥 کاربران", action: "admin:users" }, { text: "🎟 تخفیف‌ها", action: "admin:coupons" }],
+        [{ text: "🗄 موجودی اکانت‌ها", action: "admin:accounts" }, { text: "💳 واریزی‌ها", action: "admin:deposits" }],
+        [{ text: "🧾 فاکتورهای پرداخت", action: "nav:admin.invoices" }, { text: "🎫 پشتیبانی", action: "admin:tickets" }],
+        [{ text: "➕ محصول جدید", action: "admin:product:create", tone: "primary" }, { text: "📦 سفارش‌ها", action: "admin:orders" }],
+        [{ text: "🏠 منوی اصلی", action: "home" }],
     ]);
 }

@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentInvoiceService = exports.PaymentService = exports.PaymentGatewayService = void 0;
 exports.maskApiKey = maskApiKey;
 const crypto_1 = __importDefault(require("crypto"));
+const library_1 = require("@prisma/client/runtime/library");
 const prisma_1 = require("../../services/prisma");
 const wallet_service_1 = require("../wallet/wallet.service");
 const coupon_service_1 = require("../coupon/coupon.service");
@@ -22,6 +23,13 @@ class GatewayHttpError extends Error {
 class GatewayConnectionError extends Error {
     constructor(message) {
         super(message);
+    }
+}
+class DuplicateGatewayPayIdError extends Error {
+    constructor(payId, existingInvoiceId) {
+        super("شناسه پرداخت تکراری از درگاه دریافت شد");
+        this.payId = payId;
+        this.existingInvoiceId = existingInvoiceId;
     }
 }
 const CALLBACK_TOKEN_PARAM = "token";
@@ -384,6 +392,50 @@ class PaymentService {
             return { ok: false, reason: "gateway_amount_mismatch", expectedAmount };
         return { ok: true, expectedAmount };
     }
+    static isUniqueConstraintError(error, field) {
+        return error instanceof library_1.PrismaClientKnownRequestError && error.code === "P2002" && Array.isArray(error.meta?.target) && error.meta.target.includes(field);
+    }
+    static async attachGatewayInvoiceResponse(invoice, gatewayResult, gatewayAmount) {
+        const duplicate = await prisma_1.prisma.paymentInvoice.findFirst({
+            where: { payId: gatewayResult.parsed.payId, NOT: { id: invoice.id } },
+            select: { id: true, userId: true, status: true },
+        });
+        if (duplicate) {
+            paymentLog("PAYMENT_GATEWAY_DUPLICATE_PAY_ID", { invoiceId: invoice.id, userId: invoice.userId, payId: gatewayResult.parsed.payId, duplicateInvoiceId: duplicate.id });
+            await audit(prisma_1.prisma, {
+                userId: invoice.userId,
+                invoiceId: invoice.id,
+                action: "PAYMENT_GATEWAY_DUPLICATE_PAY_ID",
+                metadata: { payId: gatewayResult.parsed.payId, duplicateInvoiceId: duplicate.id, duplicateUserId: duplicate.userId, duplicateStatus: duplicate.status },
+            });
+            throw new DuplicateGatewayPayIdError(gatewayResult.parsed.payId, duplicate.id);
+        }
+        try {
+            return await prisma_1.prisma.paymentInvoice.update({
+                where: { id: invoice.id },
+                data: {
+                    payId: gatewayResult.parsed.payId,
+                    paymentLink: gatewayResult.parsed.paymentLink,
+                    gatewayAmount,
+                    gatewayResponse: safeJson(gatewayResult.raw),
+                },
+            });
+        }
+        catch (error) {
+            if (this.isUniqueConstraintError(error, "payId")) {
+                const racedDuplicate = await prisma_1.prisma.paymentInvoice.findFirst({ where: { payId: gatewayResult.parsed.payId, NOT: { id: invoice.id } }, select: { id: true, userId: true, status: true } });
+                paymentLog("PAYMENT_GATEWAY_DUPLICATE_PAY_ID", { invoiceId: invoice.id, userId: invoice.userId, payId: gatewayResult.parsed.payId, duplicateInvoiceId: racedDuplicate?.id, race: true });
+                await audit(prisma_1.prisma, {
+                    userId: invoice.userId,
+                    invoiceId: invoice.id,
+                    action: "PAYMENT_GATEWAY_DUPLICATE_PAY_ID",
+                    metadata: { payId: gatewayResult.parsed.payId, duplicateInvoiceId: racedDuplicate?.id, duplicateUserId: racedDuplicate?.userId, duplicateStatus: racedDuplicate?.status, race: true },
+                });
+                throw new DuplicateGatewayPayIdError(gatewayResult.parsed.payId, racedDuplicate?.id ?? "unknown");
+            }
+            throw error;
+        }
+    }
     static async createInvoice(data) {
         assertPositiveAmount(data.amount);
         const gateway = await PaymentGatewayService.get();
@@ -423,8 +475,9 @@ class PaymentService {
             const gatewayResult = await this.requestGatewayInvoice(gateway, data.amount, callbackUrl);
             paymentLog("PAYMENT_GATEWAY_RESPONSE", { invoiceId: invoice.id, userId: data.userId, payId: gatewayResult.parsed.payId });
             await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_RESPONSE", metadata: gatewayResult.raw });
+            const updatedInvoice = await this.attachGatewayInvoiceResponse(invoice, gatewayResult, data.amount);
             await prisma_1.prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastSuccessfulRequest: new Date(), lastConnectionStatus: "success", lastConnectionError: null } });
-            return prisma_1.prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { payId: gatewayResult.parsed.payId, paymentLink: gatewayResult.parsed.paymentLink, gatewayAmount: data.amount, gatewayResponse: safeJson(gatewayResult.raw) } });
+            return updatedInvoice;
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -432,6 +485,10 @@ class PaymentService {
             await prisma_1.prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { gatewayResponse: safeJson({ error: message }), deliveryStatus: "GATEWAY_REQUEST_FAILED" } });
             await prisma_1.prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastFailedRequest: new Date(), lastConnectionStatus: "failed", lastConnectionError: message } });
             await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_REQUEST_FAILED", metadata: { stage: "gateway_create", error: message } });
+            if (error instanceof DuplicateGatewayPayIdError) {
+                await prisma_1.prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { gatewayResponse: safeJson({ error: error.message, payId: error.payId, duplicateInvoiceId: error.existingInvoiceId }), deliveryStatus: "DUPLICATE_GATEWAY_PAY_ID" } });
+                throw new Error("پاسخ درگاه پرداخت معتبر نبود. موضوع ثبت شد و پشتیبانی در حال بررسی است.");
+            }
             throw new Error("ارتباط با درگاه پرداخت برقرار نشد. لطفاً چند دقیقه دیگر دوباره تلاش کنید");
         }
     }
@@ -491,6 +548,19 @@ class PaymentService {
             paymentLog("PAYMENT_PROCESS_FAILED", { invoiceId: invoice.id, userId: invoice.userId, stage: "callback_security", reason: integrity.reason, statusChanged: failed.count === 1 });
             await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_PROCESS_FAILED", metadata: { stage: "callback_security", reason: integrity.reason, gatewayAmount: invoice.gatewayAmount, amount: invoice.amount, originalAmount: invoice.originalAmount, discountAmount: invoice.discountAmount, amountExpected: integrity.expectedAmount } });
             return { statusCode: 409, text: "Invoice amount mismatch.", failed: { invoice: { ...invoice, status: failed.count === 1 ? "FAILED" : invoice.status }, type: invoice.type } };
+        }
+        if (normalizedReference.pay_id && invoice.payId && normalizedReference.pay_id !== invoice.payId) {
+            paymentLog("PAYMENT_CALLBACK_REJECTED", { invoiceId: invoice.id, userId: invoice.userId, reason: "pay_id_mismatch", expectedPayId: invoice.payId, receivedPayId: normalizedReference.pay_id });
+            await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_REJECTED", metadata: { reason: "pay_id_mismatch", expectedPayId: invoice.payId, receivedPayId: normalizedReference.pay_id, reference: normalizedReference } });
+            return { statusCode: 409, text: "Payment callback pay_id mismatch." };
+        }
+        if (normalizedReference.pay_id && !invoice.payId) {
+            const duplicate = await prisma_1.prisma.paymentInvoice.findFirst({ where: { payId: normalizedReference.pay_id, NOT: { id: invoice.id } }, select: { id: true, userId: true, status: true } });
+            if (duplicate) {
+                paymentLog("PAYMENT_CALLBACK_REJECTED", { invoiceId: invoice.id, userId: invoice.userId, reason: "duplicate_callback_pay_id", payId: normalizedReference.pay_id, duplicateInvoiceId: duplicate.id });
+                await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_DUPLICATE_PAY_ID", metadata: { source: "callback", payId: normalizedReference.pay_id, duplicateInvoiceId: duplicate.id, duplicateUserId: duplicate.userId, duplicateStatus: duplicate.status } });
+                return { statusCode: 409, text: "Duplicate gateway pay_id." };
+            }
         }
         paymentLog("PAYMENT_CALLBACK_PROCESSING", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, type: invoice.type });
         await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_PROCESSING", metadata: { status: invoice.status, type: invoice.type, payId: invoice.payId } });
