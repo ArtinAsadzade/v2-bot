@@ -89,7 +89,10 @@ export function buildInlineKeyboard(rows: InlineButton[][]): { reply_markup: Inl
 
 export function MainMenuKeyboard(isAdmin = false) {
   const rows: ReplyButton[][] = [
-    [{ text: labels.shop, tone: "primary" }, { text: labels.wallet, tone: "primary" }],
+    [
+      { text: labels.shop, tone: "primary" },
+      { text: labels.wallet, tone: "primary" },
+    ],
     [{ text: labels.orders }, { text: labels.coupon }],
     [{ text: labels.support }, { text: labels.settings }],
   ];
@@ -99,14 +102,20 @@ export function MainMenuKeyboard(isAdmin = false) {
 
 export function WalletKeyboard() {
   return buildReplyKeyboard([
-    [{ text: labels.topup, tone: "primary" }, { text: labels.walletBalance, tone: "success" }],
+    [
+      { text: labels.topup, tone: "primary" },
+      { text: labels.walletBalance, tone: "success" },
+    ],
     [{ text: labels.transactions }, { text: labels.home }],
   ]);
 }
 
 export function PaymentKeyboard() {
   return buildReplyKeyboard([
-    [{ text: labels.retry, tone: "primary" }, { text: labels.support, tone: "danger" }],
+    [
+      { text: labels.retry, tone: "primary" },
+      { text: labels.support, tone: "danger" },
+    ],
     [{ text: labels.home }],
   ]);
 }
@@ -139,20 +148,23 @@ export function SettingsKeyboard() {
 export function InvoiceActionKeyboard(paymentLink: string, backAction: string) {
   return buildInlineKeyboard([
     [{ text: labels.instantPayment, url: paymentLink, tone: "success" }],
-    [{ text: labels.back, action: backAction }, { text: labels.home, action: "home" }],
+    [
+      { text: labels.back, action: backAction },
+      { text: labels.home, action: "home" },
+    ],
   ]);
 }
 
 export function paymentSuccessKeyboard(_type: "wallet" | "product") {
-  return buildReplyKeyboard([
-    [{ text: labels.home }, { text: labels.buyAgain, tone: "primary" }],
-    [{ text: labels.orders, tone: "success" }],
-  ]);
+  return buildReplyKeyboard([[{ text: labels.home }, { text: labels.buyAgain, tone: "primary" }], [{ text: labels.orders, tone: "success" }]]);
 }
 
 export function paymentFailureKeyboard() {
   return buildReplyKeyboard([
-    [{ text: labels.retry, tone: "primary" }, { text: labels.support, tone: "danger" }],
+    [
+      { text: labels.retry, tone: "primary" },
+      { text: labels.support, tone: "danger" },
+    ],
     [{ text: labels.home }],
   ]);
 }
