@@ -1,8 +1,8 @@
 import type { InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup } from "telegraf/types";
 import type { PanelViewId } from "../navigation/panel-ui";
 
-export type ButtonTone = "primary" | "success" | "danger" | "neutral";
-export type TelegramButtonStyle = "primary" | "success" | "danger";
+export type ButtonTone = "primary" | "success" | "danger" | "warning" | "neutral";
+export type TelegramButtonStyle = "primary" | "success" | "danger" | "warning";
 
 type StyledKeyboardButton = KeyboardButton & { style?: TelegramButtonStyle; icon_custom_emoji_id?: string };
 type StyledInlineKeyboardButton = InlineKeyboardButton.CallbackButton & { style?: TelegramButtonStyle; icon_custom_emoji_id?: string };
@@ -17,19 +17,19 @@ type InlineButton = InlineCallbackButton | InlineUrlButton;
 export type ReplyKeyboardScope = "home" | "shop" | "profile" | "wallet" | "payment" | "support" | "freeAccount" | "admin" | "settings";
 
 export const labels = {
-  home: "🏠 منوی اصلی",
-  wallet: "👛 کیف پول",
-  walletBalance: "💰 موجودی",
-  topup: "💳 شارژ کیف پول",
-  transactions: "📜 تراکنش‌ها",
+  home: "🏠 خانه",
+  wallet: "💰 کیف پول",
+  walletBalance: "💳 موجودی فعلی",
+  topup: "➕ شارژ کیف پول",
+  transactions: "📜 تاریخچه تراکنش‌ها",
   instantPayment: "⚡ پرداخت آنی",
-  walletPayment: "👛 پرداخت از کیف پول",
-  shop: "🛒 خرید",
-  shopLegacy: "🛒 خرید سرویس",
+  walletPayment: "💳 پرداخت با کیف پول",
+  shop: "🛒 فروشگاه",
+  shopLegacy: "🛒 فروشگاه",
   buyAgain: "🛒 خرید مجدد",
-  coupon: "🎁 کد تخفیف",
-  orders: "📦 سفارش‌های من",
-  support: "🎫 پشتیبانی",
+  coupon: "🎟 تخفیف‌ها",
+  orders: "📦 اکانت‌های من",
+  support: "📞 پشتیبانی",
   settings: "⚙️ تنظیمات",
   retry: "🔄 تلاش مجدد",
   refresh: "🔄 بروزرسانی وضعیت",
@@ -43,13 +43,14 @@ export const labels = {
   adminCategories: "📁 دسته‌بندی‌ها",
   adminUsers: "👥 کاربران",
   adminCoupons: "🎟 تخفیف‌ها",
-  adminDashboard: "⚙️ داشبورد ادمین",
+  adminDashboard: "⚙️ مرکز مدیریت",
 } as const;
 
 const toneToStyle: Record<Exclude<ButtonTone, "neutral">, TelegramButtonStyle> = {
   primary: "primary",
   success: "success",
   danger: "danger",
+  warning: "warning",
 };
 
 // Bot API 9.4 supports button colors and custom emoji icons. Telegraf 4.16.3's
@@ -93,8 +94,8 @@ export function MainMenuKeyboard(isAdmin = false) {
       { text: labels.shop, tone: "primary" },
       { text: labels.wallet, tone: "primary" },
     ],
-    [{ text: labels.orders }, { text: labels.coupon }],
-    [{ text: labels.support }, { text: labels.settings }],
+    [{ text: labels.orders }, { text: "🎁 اکانت تست" }],
+    [{ text: labels.coupon }, { text: labels.support }],
   ];
   if (isAdmin) rows.push([{ text: labels.adminDashboard, tone: "primary" }]);
   return buildReplyKeyboard(rows);
@@ -106,7 +107,8 @@ export function WalletKeyboard() {
       { text: labels.topup, tone: "primary" },
       { text: labels.walletBalance, tone: "success" },
     ],
-    [{ text: labels.transactions }, { text: labels.home }],
+    [{ text: labels.transactions }, { text: "💸 برداشت‌ها" }],
+    [{ text: "🎁 پاداش‌ها" }, { text: labels.home }],
   ]);
 }
 
@@ -134,9 +136,10 @@ export function SupportKeyboard() {
 
 export function AdminKeyboard() {
   return buildReplyKeyboard([
-    [{ text: labels.adminStats, tone: "primary" }, { text: labels.adminPayments }],
-    [{ text: labels.adminProducts }, { text: labels.adminCategories }],
-    [{ text: labels.adminUsers }, { text: labels.adminCoupons }],
+    [{ text: labels.adminStats, tone: "primary" }, { text: labels.adminProducts }],
+    [{ text: labels.adminUsers }, { text: labels.adminPayments }],
+    [{ text: "🎁 اکانت تست" }, { text: labels.adminCoupons }],
+    [{ text: "📢 اطلاع‌رسانی" }, { text: labels.support }],
     [{ text: labels.settings }, { text: labels.home }],
   ]);
 }
@@ -171,18 +174,17 @@ export function paymentFailureKeyboard() {
 
 export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record<string, string> } | "refresh" | "claimFree" | "newTicket"> = {
   [labels.shop]: { id: "shop.categories" },
-  [labels.shopLegacy]: { id: "shop.categories" },
-  "🛒 فروشگاه": { id: "shop.categories" },
   [labels.buyAgain]: { id: "shop.categories" },
   [labels.orders]: { id: "account.details" },
-  "📦 اکانت‌های من": { id: "account.details" },
+  "🎁 اکانت تست": { id: "freeAccount" },
   "🆓 اکانت تست": { id: "freeAccount" },
   [labels.refresh]: "refresh",
   "🔄 بروزرسانی": "refresh",
   "👤 پروفایل": { id: "account" },
   [labels.wallet]: { id: "wallet" },
   [labels.walletBalance]: { id: "wallet" },
-  "💰 کیف پول": { id: "wallet" },
+  "💸 برداشت‌ها": { id: "referral" },
+  "🎁 پاداش‌ها": { id: "referral" },
   [labels.home]: { id: "home" },
   [labels.topup]: { id: "deposit" },
   "➕ شارژ حساب": { id: "deposit" },
@@ -202,6 +204,7 @@ export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record
   [labels.adminDashboard]: { id: "admin.dashboard" },
   [labels.support]: { id: "support" },
   "🎧 پشتیبانی": { id: "support" },
+  "📢 اطلاع‌رسانی": { id: "admin.notifications" },
 };
 
 export function privateTopicArchitecture() {

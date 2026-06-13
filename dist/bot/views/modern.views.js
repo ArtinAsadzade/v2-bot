@@ -23,6 +23,12 @@ const freeAccountExpiry = (item) => item.expiresAt ?? (0, free_account_service_1
 const yesNo = (value) => (value ? "فعال ✅" : "غیرفعال ⛔");
 const accountStatusLabel = (status) => ({ available: "آماده", reserved: "رزرو", sold: "فروخته", disabled: "غیرفعال", expired: "منقضی" })[status] ?? status;
 const walletStatusLabel = (status) => (status === "active" ? "فعال ✅" : "غیرفعال ⛔");
+const paymentStatusLabel = (value) => ({ PENDING: "در انتظار بررسی", PAID: "پرداخت‌شده، آماده تحویل", CANCELED: "لغو شده", FAILED: "ناموفق", COMPLETED: "تکمیل شده" }[value] ?? value);
+const progressBar = (current, target) => {
+    const safeTarget = Math.max(target, 1);
+    const filled = Math.min(Math.floor((Math.max(current, 0) / safeTarget) * 10), 10);
+    return `${"●".repeat(filled)}${"○".repeat(10 - filled)} ${Math.min(Math.round((current / safeTarget) * 100), 100).toLocaleString("fa-IR")}٪`;
+};
 const purchasedAccountStatusLabel = (item) => {
     if (item.productAccount?.status === "disabled")
         return "غیرفعال";
@@ -51,10 +57,10 @@ function registerModernViews() {
                 { text: "👤 حساب کاربری", action: (0, panel_ui_1.callbackFor)("account") },
             ],
             [
-                { text: "🆓 دریافت اکانت تست", action: (0, panel_ui_1.callbackFor)("freeAccount") },
+                { text: "🎁 دریافت اکانت تست", action: (0, panel_ui_1.callbackFor)("freeAccount") },
                 { text: "🎁 دعوت دوستان", action: (0, panel_ui_1.callbackFor)("referral") },
             ],
-            [{ text: "🎧 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }],
+            [{ text: "📞 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }],
         ];
         if (isAdmin)
             keyboard.push([{ text: "⚙️ مرکز مدیریت", action: (0, panel_ui_1.callbackFor)("admin.dashboard") }]);
@@ -190,7 +196,7 @@ ${divider}
             text: `👤 داشبورد حساب کاربری\n\n${divider}\n💰 موجودی کیف پول: ${money(dashboard.user.balance)}\n👥 تعداد دعوت‌ها: ${dashboard.referralCount.toLocaleString("fa-IR")} نفر\n🎁 جوایز فعال: ${dashboard.freeRewards.toLocaleString("fa-IR")}\n📦 اکانت‌های فعال: ${(dashboard.activeAccounts.length + dashboard.activeFreeAccounts.length).toLocaleString("fa-IR")}\n🧾 خریدهای اخیر: ${dashboard.recentOrders.length.toLocaleString("fa-IR")} سفارش\n💎 پاداش قابل برداشت: ${money(dashboard.pendingReferralAmount)}\n${divider}\n\nاز میان اقدام‌های سریع زیر انتخاب کنید:`,
             keyboard: [
                 [
-                    { text: "🛒 خرید سرویس", action: (0, panel_ui_1.callbackFor)("shop.categories") },
+                    { text: "🛒 خرید", action: (0, panel_ui_1.callbackFor)("shop.categories") },
                     { text: "💳 شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") },
                 ],
                 [
@@ -219,7 +225,7 @@ ${divider}
 ${divider}
 
 ${[
-                ...activeFreeAccounts.map((item) => `🆓 اکانت تست رایگان
+                ...activeFreeAccounts.map((item) => `🎁 اکانت تست رایگان
 
 👤 نام کاربری:
 ${item.account.username}
@@ -264,10 +270,10 @@ ${divider}
 ${divider}`,
             keyboard: [
                 [
-                    { text: "🛒 خرید سرویس", action: (0, panel_ui_1.callbackFor)("shop.categories") },
-                    { text: "🆓 اکانت تست", action: (0, panel_ui_1.callbackFor)("freeAccount") },
+                    { text: "🛒 خرید", action: (0, panel_ui_1.callbackFor)("shop.categories") },
+                    { text: "🎁 اکانت تست", action: (0, panel_ui_1.callbackFor)("freeAccount") },
                 ],
-                [{ text: "🎧 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }],
+                [{ text: "📞 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }],
             ],
         };
     });
@@ -285,11 +291,26 @@ ${divider}`,
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
         return {
             replyKeyboard: "wallet",
-            text: `💳 کیف پول\n\n${divider}\nموجودی قابل استفاده: ${money(user?.balance ?? 0)}\n\nشارژ کیف پول از طریق پرداخت رمزارزی انجام می‌شود و پس از تأیید رسید، موجودی شما به‌روزرسانی خواهد شد.`,
+            text: `💳 کیف پول شما
+
+${divider}
+💳 موجودی فعلی
+${money(user?.balance ?? 0)}
+
+➕ شارژ کیف پول: افزایش موجودی برای خرید سریع‌تر
+📜 تاریخچه تراکنش‌ها: مشاهده واریزها و برداشت‌ها
+💸 برداشت‌ها: دریافت پاداش‌های قابل برداشت
+🎁 پاداش‌ها: جوایز دعوت و پیشنهادهای فعال
+
+برای ادامه، یکی از گزینه‌های زیر را انتخاب کنید.`,
             keyboard: [
                 [
                     { text: "➕ شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") },
-                    { text: "📜 گردش کیف پول", action: (0, panel_ui_1.callbackFor)("wallet.history") },
+                    { text: "📜 تاریخچه تراکنش‌ها", action: (0, panel_ui_1.callbackFor)("wallet.history") },
+                ],
+                [
+                    { text: "💸 برداشت پاداش", action: "referral:claim" },
+                    { text: "🎁 پاداش‌ها", action: (0, panel_ui_1.callbackFor)("referral") },
                 ],
             ],
         };
@@ -306,16 +327,23 @@ ${divider}`,
     });
     (0, panel_ui_1.registerView)("deposit", async () => {
         const gateway = await payment_service_1.PaymentGatewayService.get();
-        const keyboard = [[{ text: "1️⃣ رمز ارز", action: "flow:start:deposit_submit" }]];
+        const keyboard = [[{ text: "💎 پرداخت با رمزارز", action: "flow:start:deposit_submit" }]];
         if (gateway.enabled)
-            keyboard[0].push({ text: "2️⃣ پرداخت آنی", action: "flow:start:instant_topup" });
+            keyboard[0].push({ text: "⚡ پرداخت آنی", action: "flow:start:instant_topup" });
         return {
-            text: `💰 روش شارژ
+            text: `➕ شارژ کیف پول
 
 ${divider}
-1. رمز ارز${gateway.enabled ? "\n2. پرداخت آنی" : ""}
+💰 مبلغ
+در مرحله بعد مبلغ شارژ را وارد می‌کنید.
 
-مبلغ شارژ را وارد کنید و سپس یکی از روش‌های فعال را انتخاب کنید. پرداخت آنی فقط پس از callback رسمی درگاه به‌صورت خودکار به کیف پول اضافه می‌شود.`,
+⚡ روش پرداخت
+${gateway.enabled ? "پرداخت آنی و پرداخت با رمزارز فعال هستند." : "در حال حاضر پرداخت با رمزارز فعال است."}
+
+🔒 وضعیت پرداخت
+موجودی فقط پس از تأیید نهایی پرداخت به کیف پول اضافه می‌شود.
+
+روش دلخواه را انتخاب کنید.`,
             keyboard,
         };
     });
@@ -327,7 +355,7 @@ ${divider}
         const latestOpen = tickets.find((ticket) => ticket.status === "open");
         return {
             replyKeyboard: "support",
-            text: `🎧 پشتیبانی
+            text: `📞 پشتیبانی
 
 ${divider}
 
@@ -352,9 +380,28 @@ ${tickets
         const stats = await referral_service_1.ReferralService.getStats(user.id);
         const botUsername = process.env.BOT_USERNAME ?? "BOT";
         const link = `https://t.me/${botUsername}?start=${user.referralCode}`;
+        const nextTarget = Math.max(Math.ceil((stats.totalReferrals + 1) / 5) * 5, 5);
         return {
-            text: `🎁 دعوت دوستان\n\n${divider}\nکد دعوت شما:\n${user.referralCode ?? "در حال ساخت"}\n\nلینک دعوت آماده کپی:\n${link}\n\n👥 دعوت‌های موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر\n💎 پاداش قابل برداشت: ${money(stats.pendingAmount)}\n${divider}\n\nاین لینک را برای دوستانتان ارسال کنید؛ پس از ثبت‌نام موفق، وضعیت دعوت‌ها و پاداش‌ها در همین بخش نمایش داده می‌شود.`,
-            keyboard: [[{ text: "💎 درخواست برداشت پاداش", action: "referral:claim" }]],
+            text: `🎁 دعوت دوستان
+
+${divider}
+👥 تعداد دعوت‌ها
+${stats.totalReferrals.toLocaleString("fa-IR")} نفر
+
+🎁 پاداش‌های قابل دریافت
+${money(stats.pendingAmount)}
+
+📈 پیشرفت تا پاداش بعدی
+${progressBar(stats.totalReferrals % nextTarget, nextTarget)}
+
+🔗 لینک دعوت
+${link}
+
+کافی است لینک را برای دوستانتان بفرستید. پس از عضویت موفق، پاداش‌ها در همین بخش نمایش داده می‌شوند.`,
+            keyboard: [
+                [{ text: "💎 دریافت پاداش", action: "referral:claim" }],
+                [{ text: "📋 کپی لینک دعوت", action: (0, panel_ui_1.callbackFor)("referral") }],
+            ],
         };
     });
     (0, panel_ui_1.registerView)("freeAccount", async (ctx) => {
@@ -369,7 +416,7 @@ ${tickets
 
 ${divider}
 
-شما در حال حاضر یک اکانت تست فعال در اختیار دارید.
+اکانت تست شما مستقل از دعوت دوستان است و فقط هر ۳۰ روز یک‌بار قابل دریافت است.
 
 برای مشاهده اطلاعات اکانت از بخش «اکانت‌های من» استفاده کنید.
 
@@ -381,11 +428,11 @@ ${divider}`,
             const lastClaimAt = eligibility.last?.assignedAt ?? eligibility.last?.createdAt;
             return {
                 replyKeyboard: "freeAccount",
-                text: `⏳ محدودیت دریافت اکانت تست
+                text: `⏳ زمان دریافت بعدی هنوز نرسیده است
 
 ${divider}
 
-شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید.
+اکانت تست برای هر کاربر هر ۳۰ روز یک‌بار فعال می‌شود و ارتباطی با تعداد دعوت دوستان ندارد.
 
 📅 دریافت قبلی:
 ${(0, free_account_service_1.formatFreeAccountDate)(lastClaimAt)}
@@ -409,17 +456,17 @@ ${divider}
 برای بررسی بیشتر می‌توانید با پشتیبانی در ارتباط باشید.
 
 ${divider}`,
-                keyboard: [[{ text: "🎧 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }], [{ text: "🏠 منوی اصلی", action: (0, panel_ui_1.callbackFor)("home") }]],
+                keyboard: [[{ text: "📞 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }], [{ text: "🏠 منوی اصلی", action: (0, panel_ui_1.callbackFor)("home") }]],
             };
         }
         if (!eligibility.available) {
             return {
                 replyKeyboard: "freeAccount",
-                text: `🚫 موجودی اکانت تست تکمیل شده است
+                text: `🚫 ظرفیت امروز تکمیل شده است
 
 ${divider}
 
-در حال حاضر تمامی اکانت‌های تست تخصیص داده شده‌اند.
+اکانت‌های تست محدود و آماده تحویل هستند. موجودی فعلی تمام شده است.
 
 لطفاً بعداً مجدداً مراجعه کنید.
 
@@ -429,18 +476,18 @@ ${divider}`,
         }
         return {
             replyKeyboard: "freeAccount",
-            text: `🆓 دریافت اکانت تست
+            text: `🎁 اکانت تست رایگان
 
 ${divider}
 
-برای آشنایی با کیفیت سرویس می‌توانید یک اکانت تست رایگان دریافت کنید.
+برای تجربه کیفیت نیمه‌شب، می‌توانید یک اکانت تست محدود و رایگان دریافت کنید.
 
-✨ ویژگی‌ها:
+📌 نکات مهم:
 
-• دسترسی کامل به سرویس
-• تحویل فوری
-• نمایش در بخش «اکانت‌های من»
-• فعال تا پایان مدت اعتبار
+• این هدیه مستقل از دعوت دوستان است.
+• هر کاربر هر ۳۰ روز یک‌بار امکان دریافت دارد.
+• موجودی اکانت تست محدود است و به‌ترتیب درخواست تحویل می‌شود.
+• اطلاعات اکانت پس از دریافت در بخش «اکانت‌های من» ذخیره می‌شود.
 
 ${divider}
 
@@ -486,10 +533,10 @@ ${divider}
                 ],
                 [
                     { text: "🎟 کوپن‌ها", action: (0, panel_ui_1.callbackFor)("admin.coupons") },
-                    { text: "🎁 رفرال", action: (0, panel_ui_1.callbackFor)("admin.referrals") },
+                    { text: "🎁 دعوت دوستان", action: (0, panel_ui_1.callbackFor)("admin.referrals") },
                 ],
                 [
-                    { text: "🆓 اکانت تست", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts") },
+                    { text: "🎁 اکانت تست", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts") },
                     { text: "📢 اطلاع‌رسانی", action: (0, panel_ui_1.callbackFor)("admin.notifications") },
                 ],
                 [
@@ -907,7 +954,7 @@ ${channelLines || "کانالی ثبت نشده است."}
     (0, panel_ui_1.registerView)("admin.referrals", async () => {
         const tiers = await referral_service_1.ReferralService.listTiers();
         return {
-            text: `🎁 مدیریت رفرال\n\n${tiers.map((tier) => `• ${tier.threshold.toLocaleString("fa-IR")} دعوت ← ${money(tier.amount)} · ${tier.isActive ? "فعال" : "غیرفعال"}`).join("\n") || "سطحی ثبت نشده است."}`,
+            text: `🎁 مدیریت دعوت دوستان\n\n${tiers.map((tier) => `• ${tier.threshold.toLocaleString("fa-IR")} دعوت ← ${money(tier.amount)} · ${tier.isActive ? "فعال" : "غیرفعال"}`).join("\n") || "سطحی ثبت نشده است."}`,
             keyboard: [
                 [{ text: "➕ سطح جدید/ویرایش", action: "flow:start:referral_tier_create" }],
                 ...tiers.map((tier) => [
@@ -923,7 +970,7 @@ ${channelLines || "کانالی ثبت نشده است."}
     (0, panel_ui_1.registerView)("admin.analytics", async () => {
         const stats = await admin_service_1.AdminService.dashboard(true);
         return {
-            text: `📊 آمار عملیاتی\n\n💰 درآمد موفق: ${money(stats.revenue)}\n📦 اکانت آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}\n✅ اکانت فروخته‌شده: ${stats.soldAccounts.toLocaleString("fa-IR")}\n🎁 مجموع پاداش دعوت: ${money(stats.referralRewards)}\n🆓 اکانت تست تخصیص‌یافته: ${stats.freeAccountsAssigned.toLocaleString("fa-IR")}\n💳 واریزی در انتظار: ${stats.submittedDeposits.toLocaleString("fa-IR")}`,
+            text: `📊 آمار عملیاتی\n\n💰 درآمد موفق: ${money(stats.revenue)}\n📦 اکانت آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}\n✅ اکانت فروخته‌شده: ${stats.soldAccounts.toLocaleString("fa-IR")}\n🎁 مجموع پاداش دعوت: ${money(stats.referralRewards)}\n🎁 اکانت تست تخصیص‌یافته: ${stats.freeAccountsAssigned.toLocaleString("fa-IR")}\n💳 واریزی در انتظار: ${stats.submittedDeposits.toLocaleString("fa-IR")}`,
             keyboard: [],
         };
     });
@@ -1071,13 +1118,13 @@ ${gateway.enabled ? "فعال ✅" : "غیرفعال ⛔"}
 نام درگاه:
 ${gateway.gatewayName}
 
-API Base URL:
+آدرس اتصال درگاه:
 ${gateway.apiBaseUrl || "—"}
 
-Callback Base URL:
+آدرس بازگشت پرداخت:
 ${gateway.callbackUrl || "—"}
 
-API Key:
+کلید اتصال:
 ${(0, payment_service_1.maskApiKey)(gateway.apiKey)}
 
 ترتیب نمایش:
@@ -1128,11 +1175,11 @@ ${money(stats.monthlyRevenue)}`,
                 [{ text: gateway.enabled ? "⏸ فعال/غیرفعال: غیرفعال‌سازی" : "▶️ فعال/غیرفعال: فعال‌سازی", action: `admin:payment_gateway:status:${gateway.enabled ? "disabled" : "enabled"}` }],
                 [
                     { text: "🏷 نام درگاه", action: "flow:start:payment_gateway_update:gatewayName" },
-                    { text: "🌐 API Base URL", action: "flow:start:payment_gateway_update:apiBaseUrl" },
+                    { text: "🌐 آدرس اتصال درگاه", action: "flow:start:payment_gateway_update:apiBaseUrl" },
                 ],
                 [
-                    { text: "🔑 API Key", action: "flow:start:payment_gateway_update:apiKey" },
-                    { text: "🔗 Callback Base URL", action: "flow:start:payment_gateway_update:callbackUrl" },
+                    { text: "🔑 کلید اتصال", action: "flow:start:payment_gateway_update:apiKey" },
+                    { text: "🔗 آدرس بازگشت پرداخت", action: "flow:start:payment_gateway_update:callbackUrl" },
                 ],
                 [{ text: "💾 ذخیره تنظیمات: هر فیلد جداگانه", action: "flow:start:payment_gateway_update:gatewayName" }],
                 [{ text: "🧭 راه‌اندازی مرحله‌ای", action: "flow:start:payment_gateway_setup" }],
@@ -1161,7 +1208,7 @@ ${divider}
 📡 وضعیت درگاه: ${stats.gatewayStatus}
 
 آخرین فاکتورها:
-${stats.recent.map((invoice) => `• #${shortId(invoice.id)} · ${invoice.user.telegramId} · ${invoice.status} · ${money(invoice.amount)}`).join("\n") || "فاکتوری ثبت نشده است."}`,
+${stats.recent.map((invoice) => `• #${shortId(invoice.id)} · ${invoice.user.telegramId} · ${paymentStatusLabel(invoice.status)} · ${money(invoice.amount)}`).join("\n") || "فاکتور پرداختی ثبت نشده است."}`,
             keyboard: [[{ text: "⚡ مدیریت پرداخت آنی", action: (0, panel_ui_1.callbackFor)("admin.paymentGateway") }]],
         };
     });
@@ -1170,17 +1217,17 @@ ${stats.recent.map((invoice) => `• #${shortId(invoice.id)} · ${invoice.user.t
         const paymentStatuses = ["PENDING", "PAID", "COMPLETED", "CANCELED", "FAILED"];
         const status = paymentStatuses.includes(params.status) ? params.status : undefined;
         const [invoices, total] = await payment_service_1.PaymentInvoiceService.list(current, 8, status);
-        const statusLabel = (value) => ({ PENDING: "در انتظار", PAID: "پرداخت شده", CANCELED: "لغو شده", FAILED: "ناموفق", COMPLETED: "پرداخت شده" }[value] ?? value);
+        const statusLabel = paymentStatusLabel;
         const typeLabel = (value) => value === "WALLET_TOPUP" ? "شارژ کیف پول" : "خرید محصول";
         return {
-            text: `🧾 فاکتورهای پرداخت آنی
+            text: `🧾 فاکتورهای پرداخت
 
 صفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}
 ${status ? `
 فیلتر: ${statusLabel(status)}` : "\nفیلتر: همه"}
 
 ${invoices.map((invoice) => `• شناسه: #${shortId(invoice.id)}
-  Pay ID: ${invoice.payId ?? "—"}
+  شناسه پرداخت: ${invoice.payId ?? "—"}
   کاربر: ${invoice.user.telegramId}
   مبلغ: ${money(invoice.amount)}
   نوع: ${typeLabel(invoice.type)}
@@ -1209,15 +1256,15 @@ ${invoices.map((invoice) => `• شناسه: #${shortId(invoice.id)}
     (0, panel_ui_1.registerView)("admin.invoice", async (_ctx, params) => {
         const invoice = await payment_service_1.PaymentInvoiceService.detail(params.invoiceId);
         if (!invoice)
-            return { text: "⚠️ فاکتور پیدا نشد.", keyboard: [] };
+            return { text: "⚠️ فاکتور پرداخت پیدا نشد.", keyboard: [] };
         return {
-            text: `🧾 جزئیات فاکتور پرداخت آنی
+            text: `🧾 جزئیات فاکتور پرداخت
 
 شناسه فاکتور: ${invoice.id}
-شناسه پرداخت (Pay ID): ${invoice.payId ?? "—"}
+شناسه پرداخت: ${invoice.payId ?? "—"}
 کاربر: ${invoice.user.telegramId}
 نوع: ${invoice.type === "WALLET_TOPUP" ? "شارژ کیف پول" : "خرید محصول"}
-وضعیت: ${invoice.status}
+وضعیت: ${paymentStatusLabel(invoice.status)}
 مبلغ اصلی: ${money(invoice.originalAmount)}
 مقدار تخفیف: ${money(invoice.discountAmount)}
 کد تخفیف: ${invoice.couponCode ?? invoice.coupon?.code ?? "—"}
@@ -1229,8 +1276,8 @@ ${invoices.map((invoice) => `• شناسه: #${shortId(invoice.id)}
 زمان ایجاد: ${invoice.createdAt.toLocaleString("fa-IR")}
 زمان پرداخت: ${invoice.paidAt ? invoice.paidAt.toLocaleString("fa-IR") : "—"}
 زمان تکمیل: ${invoice.completedAt ? invoice.completedAt.toLocaleString("fa-IR") : "—"}
-تعداد Callback: ${invoice.callbackCount.toLocaleString("fa-IR")}
-آخرین Callback: ${invoice.lastCallbackAt ? invoice.lastCallbackAt.toLocaleString("fa-IR") : "—"}
+تعداد بازگشت پرداخت: ${invoice.callbackCount.toLocaleString("fa-IR")}
+آخرین بازگشت پرداخت: ${invoice.lastCallbackAt ? invoice.lastCallbackAt.toLocaleString("fa-IR") : "—"}
 وضعیت تحویل: ${invoice.deliveryStatus ?? (invoice.orderId ? "COMPLETED" : "—")}
 وضعیت اعلان: ${invoice.notificationStatus ?? "—"}
 
