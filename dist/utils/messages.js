@@ -52,14 +52,14 @@ function paymentSummaryMessage(data) {
         description: "جزئیات سفارش شما آماده است.",
         body: [
             data.productTitle ? `${exports.UI_EMOJI.PRODUCT} محصول: ${data.productTitle}` : undefined,
-            `مبلغ سفارش: ${money(data.amount)}`,
-            data.couponLine !== undefined ? `کد تخفیف: ${clean(data.couponLine)}` : undefined,
-            data.discountAmount !== undefined ? `تخفیف: ${money(data.discountAmount)}` : undefined,
-            data.payableAmount !== undefined ? `مبلغ قابل پرداخت: ${money(data.payableAmount)}` : undefined,
+            `💰 مبلغ: ${money(data.amount)}`,
+            data.couponLine !== undefined ? `🏷 کد تخفیف: ${clean(data.couponLine)}` : undefined,
+            data.discountAmount !== undefined ? `🎟 تخفیف: ${money(data.discountAmount)}` : undefined,
+            data.payableAmount !== undefined ? `✅ مبلغ نهایی: ${money(data.payableAmount)}` : undefined,
             data.balance !== undefined ? `موجودی کیف پول: ${money(data.balance)}` : undefined,
             data.shortage ? `${exports.UI_EMOJI.WARNING} کسری موجودی: ${money(data.shortage)}` : data.balance !== undefined ? `${exports.UI_EMOJI.SUCCESS} موجودی شما برای خرید کافی است.` : undefined,
             "",
-            `روش‌های پرداخت: کیف پول${data.gatewayEnabled ? "، پرداخت آنی" : ""}`,
+            `⚡ روش پرداخت: کیف پول${data.gatewayEnabled ? "، پرداخت آنی" : ""}`,
         ].filter((line) => line !== undefined).join("\n"),
         actionHint: "لطفاً روش پرداخت را انتخاب کنید.",
     });
@@ -69,7 +69,7 @@ function purchaseSuccessMessage(data) {
         tone: "SUCCESS",
         title: "خرید با موفقیت انجام شد",
         description: "اطلاعات سرویس شما آماده استفاده است.",
-        body: [`${exports.UI_EMOJI.PRODUCT} محصول: ${data.productTitle}`, `نام کاربری: ${clean(data.username)}`, `لینک اشتراک: ${clean(data.subscriptionLink)}`, `اطلاعات اتصال: ${clean(data.config)}`].join("\n\n"),
+        body: [`📦 محصول: ${data.productTitle}`, `👤 نام کاربری: ${clean(data.username)}`, `🔗 لینک اشتراک: ${clean(data.subscriptionLink)}`, `⚙️ کانفیگ: ${clean(data.config)}`, `📅 انقضا: ${data.expiresAt ? data.expiresAt.toLocaleDateString("fa-IR") : "—"}`].join("\n\n"),
         actionHint: "این اطلاعات همیشه از بخش اکانت‌های من در دسترس است.",
     });
 }

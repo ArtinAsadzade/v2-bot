@@ -45,7 +45,7 @@ exports.labels = {
     adminStats: "📊 آمار",
     adminPayments: "💳 پرداخت‌ها",
     adminProducts: "📦 محصولات",
-    adminCategories: "📁 دسته‌بندی‌ها",
+    adminCategories: "📂 دسته‌بندی‌ها",
     adminUsers: "👥 کاربران",
     adminCoupons: "🎟 تخفیف‌ها",
     adminDashboard: "🛠 پنل مدیریت",
@@ -56,15 +56,18 @@ const toneToStyle = {
     danger: "danger",
     warning: "warning",
 };
-// Bot API 9.4 supports button colors and custom emoji icons. Telegraf 4.16.3's
-// bundled TypeScript types do not expose these fields yet, so builders attach
-// the raw API fields directly. Disable style fields only for older self-hosted
-// Bot API servers by setting TELEGRAM_BUTTON_STYLE_ENABLED=false.
+// Compatibility check (2026-06-13): official Bot API 9.4 exposes
+// KeyboardButton/InlineKeyboardButton `style` and `icon_custom_emoji_id`, while
+// Telegraf 4.16.3 can send unknown raw fields but its bundled types lag behind.
+// The premium fields are therefore opt-in raw payload decorations with a safe
+// fallback: set TELEGRAM_BUTTON_STYLE_ENABLED=false or TELEGRAM_CUSTOM_EMOJI_ENABLED=false
+// for older self-hosted Bot API servers or bots that cannot use premium emoji.
 function buttonDecorations(button) {
     const styleEnabled = process.env.TELEGRAM_BUTTON_STYLE_ENABLED !== "false";
+    const customEmojiEnabled = process.env.TELEGRAM_CUSTOM_EMOJI_ENABLED === "true";
     return {
         ...(styleEnabled && button.tone && button.tone !== "neutral" ? { style: toneToStyle[button.tone] } : {}),
-        ...(button.customEmojiId ? { icon_custom_emoji_id: button.customEmojiId } : {}),
+        ...(customEmojiEnabled && button.customEmojiId ? { icon_custom_emoji_id: button.customEmojiId } : {}),
     };
 }
 function replyButton(button) {

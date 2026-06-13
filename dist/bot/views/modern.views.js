@@ -489,6 +489,16 @@ ${divider}
 📦 موجودی آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}
 ${divider}
 
+📊 Statistics / آمار
+📦 Products / محصولات
+📂 Categories / دسته‌بندی‌ها
+🗄 Inventory / موجودی
+👥 Users / کاربران
+💳 Payments / پرداخت‌ها
+🎟 Coupons / کوپن‌ها
+📢 Broadcasts / اطلاع‌رسانی
+⚙️ Settings / تنظیمات
+
 ماژول مدیریتی را انتخاب کنید:`,
             keyboard: [
                 [
