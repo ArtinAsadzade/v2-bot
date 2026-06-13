@@ -92,9 +92,9 @@ function buildInlineKeyboard(rows) {
 }
 function MainMenuKeyboard() {
     return buildReplyKeyboard([
-        [{ text: exports.labels.home }, { text: exports.labels.shop }],
-        [{ text: exports.labels.wallet }, { text: exports.labels.orders }],
-        [{ text: "🎁 اکانت تست" }, { text: exports.labels.support }],
+        [{ text: exports.labels.shop }, { text: exports.labels.wallet }],
+        [{ text: exports.labels.orders }, { text: exports.labels.support }],
+        [{ text: "🎁 اکانت تست" }],
     ]);
 }
 function UserKeyboard() {

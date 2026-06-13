@@ -93,9 +93,9 @@ export function buildInlineKeyboard(rows: InlineButton[][]): { reply_markup: Inl
 
 export function MainMenuKeyboard() {
   return buildReplyKeyboard([
-    [{ text: labels.home }, { text: labels.shop }],
-    [{ text: labels.wallet }, { text: labels.orders }],
-    [{ text: "🎁 اکانت تست" }, { text: labels.support }],
+    [{ text: labels.shop }, { text: labels.wallet }],
+    [{ text: labels.orders }, { text: labels.support }],
+    [{ text: "🎁 اکانت تست" }],
   ]);
 }
 
