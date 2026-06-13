@@ -1,8 +1,14 @@
 import {
   AdminKeyboard,
+  AdminPaymentsKeyboard,
+  AdminProductsKeyboard,
+  AdminSettingsKeyboard,
+  AdminUsersKeyboard,
   MainMenuKeyboard,
   PaymentKeyboard,
   PurchaseKeyboard,
+  ShopKeyboard,
+  UserKeyboard,
   SettingsKeyboard,
   SupportKeyboard,
   WalletKeyboard,
@@ -13,12 +19,12 @@ import {
 
 const keyboardFactories: Record<ReplyKeyboardScope, () => ReturnType<typeof buildReplyKeyboard>> = {
   home: () => MainMenuKeyboard(),
-  shop: PurchaseKeyboard,
-  profile: () => buildReplyKeyboard([[{ text: "📦 سفارش‌های من" }, { text: "👛 کیف پول" }], [{ text: "🏠 منوی اصلی" }]]),
+  shop: ShopKeyboard,
+  profile: UserKeyboard,
   wallet: WalletKeyboard,
   payment: PaymentKeyboard,
   support: SupportKeyboard,
-  freeAccount: () => buildReplyKeyboard([[{ text: "🎁 دریافت اکانت تست" }, { text: "📦 سفارش‌های من" }], [{ text: "🏠 منوی اصلی" }]]),
+  freeAccount: UserKeyboard,
   admin: AdminKeyboard,
   settings: SettingsKeyboard,
 };
@@ -37,4 +43,4 @@ export function quickReplyTarget(text: string) {
   return quickReplyRoutes[text];
 }
 
-export { MainMenuKeyboard, WalletKeyboard, PaymentKeyboard, PurchaseKeyboard, SupportKeyboard, AdminKeyboard, SettingsKeyboard };
+export { MainMenuKeyboard, UserKeyboard, WalletKeyboard, ShopKeyboard, PaymentKeyboard, PurchaseKeyboard, SupportKeyboard, AdminKeyboard, AdminProductsKeyboard, AdminPaymentsKeyboard, AdminUsersKeyboard, AdminSettingsKeyboard, SettingsKeyboard };

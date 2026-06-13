@@ -18,7 +18,7 @@ export type ReplyKeyboardScope = "home" | "shop" | "profile" | "wallet" | "payme
 
 export const labels = {
   home: "🏠 خانه",
-  wallet: "💰 کیف پول",
+  wallet: "💳 کیف پول",
   walletBalance: "💳 موجودی فعلی",
   topup: "➕ شارژ کیف پول",
   transactions: "📜 تاریخچه تراکنش‌ها",
@@ -29,7 +29,7 @@ export const labels = {
   buyAgain: "🛒 خرید مجدد",
   coupon: "🎟 تخفیف‌ها",
   orders: "📦 اکانت‌های من",
-  support: "📞 پشتیبانی",
+  support: "🎫 پشتیبانی",
   settings: "⚙️ تنظیمات",
   retry: "🔄 تلاش مجدد",
   refresh: "🔄 بروزرسانی وضعیت",
@@ -43,7 +43,7 @@ export const labels = {
   adminCategories: "📁 دسته‌بندی‌ها",
   adminUsers: "👥 کاربران",
   adminCoupons: "🎟 تخفیف‌ها",
-  adminDashboard: "⚙️ مرکز مدیریت",
+  adminDashboard: "🛠 پنل مدیریت",
 } as const;
 
 const toneToStyle: Record<Exclude<ButtonTone, "neutral">, TelegramButtonStyle> = {
@@ -88,64 +88,83 @@ export function buildInlineKeyboard(rows: InlineButton[][]): { reply_markup: Inl
   return { reply_markup: { inline_keyboard: rows.map((row) => row.map(inlineButton)) } };
 }
 
-export function MainMenuKeyboard(isAdmin = false) {
-  const rows: ReplyButton[][] = [
-    [
-      { text: labels.shop, tone: "primary" },
-      { text: labels.wallet, tone: "primary" },
-    ],
-    [{ text: labels.orders }, { text: "🎁 اکانت تست" }],
-    [{ text: labels.coupon }, { text: labels.support }],
-  ];
-  if (isAdmin) rows.push([{ text: labels.adminDashboard, tone: "primary" }]);
-  return buildReplyKeyboard(rows);
+export function MainMenuKeyboard() {
+  return buildReplyKeyboard([
+    [{ text: labels.home }, { text: labels.shop }],
+    [{ text: labels.wallet }, { text: labels.orders }],
+    [{ text: "🎁 اکانت تست" }, { text: labels.support }],
+  ]);
+}
+
+export function UserKeyboard() {
+  return MainMenuKeyboard();
 }
 
 export function WalletKeyboard() {
   return buildReplyKeyboard([
-    [
-      { text: labels.topup, tone: "primary" },
-      { text: labels.walletBalance, tone: "success" },
-    ],
-    [{ text: labels.transactions }, { text: "💸 برداشت‌ها" }],
-    [{ text: "🎁 پاداش‌ها" }, { text: labels.home }],
+    [{ text: labels.home }, { text: labels.wallet }],
+    [{ text: labels.shop }, { text: labels.orders }],
+    [{ text: "🎁 اکانت تست" }, { text: labels.support }],
   ]);
 }
 
-export function PaymentKeyboard() {
+export function ShopKeyboard() {
   return buildReplyKeyboard([
-    [
-      { text: labels.retry, tone: "primary" },
-      { text: labels.support, tone: "danger" },
-    ],
-    [{ text: labels.home }],
+    [{ text: labels.home }, { text: labels.shop }],
+    [{ text: labels.wallet }, { text: labels.orders }],
+    [{ text: "🎁 اکانت تست" }, { text: labels.support }],
   ]);
 }
 
 export function PurchaseKeyboard() {
-  return buildReplyKeyboard([
-    [{ text: labels.shop, tone: "primary" }, { text: labels.coupon }],
-    [{ text: labels.wallet }, { text: labels.instantPayment, tone: "success" }],
-    [{ text: labels.home }],
-  ]);
+  return ShopKeyboard();
 }
 
 export function SupportKeyboard() {
-  return buildReplyKeyboard([[{ text: "➕ تیکت جدید", tone: "primary" }, { text: "📂 تیکت‌های من" }], [{ text: labels.home }]]);
+  return buildReplyKeyboard([
+    [{ text: labels.home }, { text: labels.support }],
+    [{ text: labels.shop }, { text: labels.wallet }],
+    [{ text: labels.orders }, { text: "🎁 اکانت تست" }],
+  ]);
 }
 
 export function AdminKeyboard() {
   return buildReplyKeyboard([
-    [{ text: labels.adminStats, tone: "primary" }, { text: labels.adminProducts }],
+    [{ text: labels.adminStats }, { text: labels.adminProducts }],
     [{ text: labels.adminUsers }, { text: labels.adminPayments }],
-    [{ text: "🎁 اکانت تست" }, { text: labels.adminCoupons }],
-    [{ text: "📢 اطلاع‌رسانی" }, { text: labels.support }],
-    [{ text: labels.settings }, { text: labels.home }],
+    [{ text: labels.settings }],
   ]);
 }
 
+export function AdminProductsKeyboard() {
+  return AdminKeyboard();
+}
+
+export function AdminPaymentsKeyboard() {
+  return AdminKeyboard();
+}
+
+export function AdminUsersKeyboard() {
+  return AdminKeyboard();
+}
+
+export function AdminSettingsKeyboard() {
+  return AdminKeyboard();
+}
+
+export function WalletActionKeyboard() {
+  return buildInlineKeyboard([
+    [{ text: labels.topup, action: "nav:deposit", tone: "primary" }],
+    [{ text: labels.transactions, action: "nav:wallet.history" }],
+  ]);
+}
+
+export function PaymentKeyboard() {
+  return MainMenuKeyboard();
+}
+
 export function SettingsKeyboard() {
-  return buildReplyKeyboard([[{ text: labels.wallet }, { text: labels.support }], [{ text: labels.home }]]);
+  return AdminKeyboard();
 }
 
 export function InvoiceActionKeyboard(paymentLink: string, backAction: string) {
