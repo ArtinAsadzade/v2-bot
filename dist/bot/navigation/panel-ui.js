@@ -12,12 +12,31 @@ const registry = new Map();
 function registerView(id, renderer) {
     registry.set(id, renderer);
 }
+const PARAM_ALIASES = {
+    page: "p",
+    productPage: "pp",
+    productId: "pid",
+    categoryId: "cid",
+    accountId: "aid",
+    userId: "uid",
+    walletId: "wid",
+    couponId: "co",
+    invoiceId: "iid",
+    ticketId: "tid",
+    depositId: "did",
+    status: "s",
+};
+const PARAM_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_ALIASES).map(([key, value]) => [value, key]));
 function callbackFor(view, params = {}) {
     const query = Object.entries(params)
-        .filter(([, value]) => value !== undefined)
-        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+        .filter(([, value]) => value !== undefined && value !== "")
+        .map(([key, value]) => `${encodeURIComponent(PARAM_ALIASES[key] ?? key)}=${encodeURIComponent(String(value))}`)
         .join("&");
-    return query ? `nav:${view}?${query}` : `nav:${view}`;
+    const callback = query ? `nav:${view}?${query}` : `nav:${view}`;
+    if (Buffer.byteLength(callback, "utf8") > 64) {
+        throw new Error(`Telegram callback payload is too long (${Buffer.byteLength(callback, "utf8")} bytes): ${callback}`);
+    }
+    return callback;
 }
 function parseParams(raw) {
     if (!raw)
@@ -25,7 +44,7 @@ function parseParams(raw) {
     const params = {};
     for (const part of raw.split("&").filter(Boolean)) {
         const [key, value = ""] = part.split("=");
-        params[decodeURIComponent(key)] = decodeURIComponent(value);
+        params[PARAM_ALIAS_REVERSE[decodeURIComponent(key)] ?? decodeURIComponent(key)] = decodeURIComponent(value);
     }
     return params;
 }
@@ -95,7 +114,7 @@ function panelKeyboard(rows, options = { back: true, home: true }) {
     const normalized = rows.map((row) => row.map((button) => telegraf_1.Markup.button.callback(button.text, button.action)));
     const nav = [];
     if (options.back)
-        nav.push(telegraf_1.Markup.button.callback("⬅️ بازگشت", "nav:back"));
+        nav.push(telegraf_1.Markup.button.callback("🔙 بازگشت", "nav:back"));
     if (options.home)
         nav.push(telegraf_1.Markup.button.callback("🏠 منوی اصلی", callbackFor("home")));
     if (nav.length)
@@ -121,12 +140,12 @@ async function renderPanel(ctx, state, mode = "push") {
         ctx.session.navigation.stack = [state];
     if (result.replyKeyboard) {
         const signature = (0, reply_keyboard_1.replyKeyboardSignature)(result.replyKeyboard);
-        if (ctx.session.quickKeyboardSignature !== signature) {
-            ctx.session.quickKeyboardSignature = signature;
-            await ctx.reply("⌨️ منوی دسترسی سریع به‌روزرسانی شد.", (0, reply_keyboard_1.replyKeyboard)(result.replyKeyboard));
+        if (!ctx.callbackQuery && ctx.session.quickKeyboardSignature !== signature) {
+            await ctx.reply("⌨️ منوی دسترسی سریع", (0, reply_keyboard_1.replyKeyboard)(result.replyKeyboard));
         }
+        ctx.session.quickKeyboardSignature = signature;
     }
-    const keyboard = panelKeyboard(result.keyboard, { back: state.id !== "home", home: state.id !== "home" });
+    const keyboard = panelKeyboard(result.keyboard, { back: state.id !== "home", home: true });
     const extra = { parse_mode: result.parseMode, ...keyboard };
     const fallbackReply = async () => {
         const sent = await ctx.reply(result.text, extra);

@@ -65,12 +65,32 @@ export function registerView(id: PanelViewId, renderer: ViewRenderer): void {
   registry.set(id, renderer);
 }
 
+const PARAM_ALIASES: Record<string, string> = {
+  page: "p",
+  productPage: "pp",
+  productId: "pid",
+  categoryId: "cid",
+  accountId: "aid",
+  userId: "uid",
+  walletId: "wid",
+  couponId: "co",
+  invoiceId: "iid",
+  ticketId: "tid",
+  depositId: "did",
+  status: "s",
+};
+const PARAM_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_ALIASES).map(([key, value]) => [value, key]));
+
 export function callbackFor(view: PanelViewId, params: Record<string, string | number | boolean | undefined> = {}): string {
   const query = Object.entries(params)
-    .filter(([, value]) => value !== undefined)
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+    .filter(([, value]) => value !== undefined && value !== "")
+    .map(([key, value]) => `${encodeURIComponent(PARAM_ALIASES[key] ?? key)}=${encodeURIComponent(String(value))}`)
     .join("&");
-  return query ? `nav:${view}?${query}` : `nav:${view}`;
+  const callback = query ? `nav:${view}?${query}` : `nav:${view}`;
+  if (Buffer.byteLength(callback, "utf8") > 64) {
+    throw new Error(`Telegram callback payload is too long (${Buffer.byteLength(callback, "utf8")} bytes): ${callback}`);
+  }
+  return callback;
 }
 
 function parseParams(raw?: string): Record<string, string> {
@@ -78,7 +98,7 @@ function parseParams(raw?: string): Record<string, string> {
   const params: Record<string, string> = {};
   for (const part of raw.split("&").filter(Boolean)) {
     const [key, value = ""] = part.split("=");
-    params[decodeURIComponent(key)] = decodeURIComponent(value);
+    params[PARAM_ALIAS_REVERSE[decodeURIComponent(key)] ?? decodeURIComponent(key)] = decodeURIComponent(value);
   }
   return params;
 }
@@ -149,7 +169,7 @@ export function parseNavAction(action: string): ViewState | undefined {
 export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?: boolean; cancel?: boolean } = { back: true, home: true }) {
   const normalized: InlineKeyboardButton.CallbackButton[][] = rows.map((row) => row.map((button) => Markup.button.callback(button.text, button.action)));
   const nav: InlineKeyboardButton.CallbackButton[] = [];
-  if (options.back) nav.push(Markup.button.callback("⬅️ بازگشت", "nav:back"));
+  if (options.back) nav.push(Markup.button.callback("🔙 بازگشت", "nav:back"));
   if (options.home) nav.push(Markup.button.callback("🏠 منوی اصلی", callbackFor("home")));
   if (nav.length) normalized.push(nav);
   if (options.cancel) normalized.push([Markup.button.callback("❌ لغو عملیات", "flow:cancel")]);
@@ -171,13 +191,13 @@ export async function renderPanel(ctx: AppContext, state: ViewState, mode: "push
 
   if (result.replyKeyboard) {
     const signature = replyKeyboardSignature(result.replyKeyboard);
-    if (ctx.session.quickKeyboardSignature !== signature) {
-      ctx.session.quickKeyboardSignature = signature;
-      await ctx.reply("⌨️ منوی دسترسی سریع به‌روزرسانی شد.", replyKeyboard(result.replyKeyboard));
+    if (!ctx.callbackQuery && ctx.session.quickKeyboardSignature !== signature) {
+      await ctx.reply("⌨️ منوی دسترسی سریع", replyKeyboard(result.replyKeyboard));
     }
+    ctx.session.quickKeyboardSignature = signature;
   }
 
-  const keyboard = panelKeyboard(result.keyboard, { back: state.id !== "home", home: state.id !== "home" });
+  const keyboard = panelKeyboard(result.keyboard, { back: state.id !== "home", home: true });
   const extra = { parse_mode: result.parseMode, ...keyboard };
   const fallbackReply = async () => {
     const sent = await ctx.reply(result.text, extra);
