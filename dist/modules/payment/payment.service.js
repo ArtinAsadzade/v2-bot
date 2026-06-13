@@ -33,7 +33,7 @@ class DuplicateGatewayPayIdError extends Error {
     }
 }
 const CALLBACK_TOKEN_PARAM = "token";
-const CALLBACK_INVOICE_PARAM = "invoice";
+const CALLBACK_INVOICE_PARAM = "invoice_id";
 const ALREADY_PROCESSED_FA = "⚠️ این پرداخت قبلاً پردازش شده است.";
 const DEFAULT_GATEWAY_API_BASE_URL = "http://136.244.104.77:5000/api/v1";
 function assertPositiveAmount(amount) {
@@ -91,8 +91,8 @@ function invoiceCallbackUrl(baseCallbackUrl, data) {
     const withId = baseCallbackUrl.includes("{invoiceId}") ? baseCallbackUrl.split("{invoiceId}").join(encodeURIComponent(data.invoiceId)) : baseCallbackUrl;
     const withToken = withId.includes("{token}") ? withId.split("{token}").join(encodeURIComponent(data.callbackToken)) : withId;
     const url = new URL(withToken);
-    url.searchParams.set(CALLBACK_TOKEN_PARAM, data.callbackToken);
     url.searchParams.set(CALLBACK_INVOICE_PARAM, data.invoiceId);
+    url.searchParams.set(CALLBACK_TOKEN_PARAM, data.callbackToken);
     return url.toString();
 }
 function isValidObjectId(value) {
@@ -405,7 +405,7 @@ class PaymentService {
         const expectedAmount = invoice.originalAmount > 0 ? invoice.originalAmount - invoice.discountAmount : invoice.amount;
         if (expectedAmount !== invoice.amount)
             return { ok: false, reason: "stored_final_amount_mismatch", expectedAmount };
-        if (invoice.gatewayAmount !== null && invoice.gatewayAmount !== invoice.amount)
+        if (invoice.gatewayAmount !== null && invoice.gatewayAmount !== undefined && invoice.gatewayAmount !== invoice.amount)
             return { ok: false, reason: "gateway_amount_mismatch", expectedAmount };
         return { ok: true, expectedAmount };
     }
@@ -428,8 +428,10 @@ class PaymentService {
             throw new DuplicateGatewayPayIdError(gatewayResult.parsed.payId, duplicate.id);
         }
         try {
-            return await prisma_1.prisma.paymentInvoice.update({
-                where: { id: invoice.id },
+            paymentLog("PAYMENT_INVOICE_UPDATE_PAYID", { invoiceId: invoice.id, userId: invoice.userId, payId: gatewayResult.parsed.payId, gatewayAmount });
+            await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_INVOICE_UPDATE_PAYID", metadata: { payId: gatewayResult.parsed.payId, gatewayAmount } });
+            const attached = await prisma_1.prisma.paymentInvoice.updateMany({
+                where: { id: invoice.id, status: "PENDING", payId: null },
                 data: {
                     payId: gatewayResult.parsed.payId,
                     paymentLink: gatewayResult.parsed.paymentLink,
@@ -437,6 +439,9 @@ class PaymentService {
                     gatewayResponse: safeJson(gatewayResult.raw),
                 },
             });
+            if (attached.count !== 1)
+                throw new Error("فاکتور دیگر قابل اتصال به پاسخ درگاه نیست");
+            return prisma_1.prisma.paymentInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
         }
         catch (error) {
             if (this.isUniqueConstraintError(error, "payId")) {
@@ -473,7 +478,6 @@ class PaymentService {
             discountAmount,
             coupon: data.couponId ? { connect: { id: data.couponId } } : undefined,
             couponCode: data.couponCode ?? undefined,
-            gatewayAmount: data.amount,
             callbackToken: crypto_1.default.randomBytes(32).toString("hex"),
             type: data.type,
             status: "PENDING",
@@ -506,8 +510,8 @@ class PaymentService {
         await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_REQUEST", metadata: { endpoint: "/invoice/create", price: data.amount, callback_url: callbackUrl } });
         try {
             const gatewayResult = await this.requestGatewayInvoice(gateway, data.amount, callbackUrl);
-            paymentLog("PAYMENT_GATEWAY_RESPONSE", { invoiceId: invoice.id, userId: data.userId, payId: gatewayResult.parsed.payId });
-            await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_RESPONSE", metadata: gatewayResult.raw });
+            paymentLog("PAYMENT_INVOICE_GATEWAY_RESPONSE", { invoiceId: invoice.id, userId: data.userId, payId: gatewayResult.parsed.payId, paymentLink: gatewayResult.parsed.paymentLink });
+            await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_INVOICE_GATEWAY_RESPONSE", metadata: gatewayResult.raw });
             const updatedInvoice = await this.attachGatewayInvoiceResponse(invoice, gatewayResult, data.amount);
             await prisma_1.prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastSuccessfulRequest: new Date(), lastConnectionStatus: "success", lastConnectionError: null } });
             return updatedInvoice;
@@ -539,6 +543,8 @@ class PaymentService {
         }
         if (normalized.invoice_id) {
             const byLegacyToken = await prisma_1.prisma.paymentInvoice.findUnique({ where: { callbackToken: normalized.invoice_id } });
+            // Gateway documentation calls this parameter invoice_id, but older bot links used token/invoice/pay_id.
+            // Never pass invoice_id to the ObjectId lookup until it is syntactically validated.
             if (byLegacyToken)
                 return { invoice: byLegacyToken, matchedBy: "legacyToken" };
             if (isValidObjectId(normalized.invoice_id)) {
@@ -546,12 +552,12 @@ class PaymentService {
                 if (byLegacyInvoice)
                     return { invoice: byLegacyInvoice, matchedBy: "legacyInvoice" };
             }
-            const byPayId = await prisma_1.prisma.paymentInvoice.findUnique({ where: { payId: normalized.invoice_id } });
+            const byPayId = await prisma_1.prisma.paymentInvoice.findFirst({ where: { payId: normalized.invoice_id } });
             if (byPayId)
                 return { invoice: byPayId, matchedBy: "payId" };
         }
         if (normalized.pay_id) {
-            const byPayId = await prisma_1.prisma.paymentInvoice.findUnique({ where: { payId: normalized.pay_id } });
+            const byPayId = await prisma_1.prisma.paymentInvoice.findFirst({ where: { payId: normalized.pay_id } });
             if (byPayId)
                 return { invoice: byPayId, matchedBy: "payId" };
         }
@@ -638,7 +644,8 @@ class PaymentService {
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             paymentLog("PAYMENT_PROCESS_FAILED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, stage: "fulfillment", error: message });
-            await prisma_1.prisma.paymentInvoice.update({ where: { id: paidInvoice.id }, data: { deliveryStatus: "FAILED", verifiedAt: new Date() } });
+            await prisma_1.prisma.paymentInvoice.update({ where: { id: paidInvoice.id }, data: { deliveryStatus: "FAILED_DELIVERY", verifiedAt: new Date() } });
+            event_bus_service_1.eventBus.emit("payment.delivery.failed", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type, error: message });
             await audit(prisma_1.prisma, { userId: paidInvoice.userId, invoiceId: paidInvoice.id, action: "PAYMENT_PROCESS_FAILED", metadata: { stage: "fulfillment", error: message, statusKept: "PAID" } });
             return { statusCode: 500, text: "Payment processing failed.", failed: { invoice: paidInvoice, type: paidInvoice.type, error: message } };
         }
@@ -735,9 +742,11 @@ class PaymentService {
             await this.debitWallet(tx, { userId: data.userId, amount: totalAmount, reason: `خرید محصول ${product.title}`, actorId: data.userId, referenceId: `purchase:${data.userId}:${product.id}:${reservedAt.getTime()}` });
         }
         if (couponId) {
-            const couponUpdated = data.invoice
-                ? await tx.coupon.updateMany({ where: { id: couponId }, data: { usedCount: { increment: 1 } } })
-                : await tx.coupon.updateMany({ where: { id: couponId, status: "active", deletedAt: null, usedCount: { lt: couponMaxUses }, expiresAt: { gt: new Date() } }, data: { usedCount: { increment: 1 } } });
+            const couponLimit = await tx.coupon.findUniqueOrThrow({ where: { id: couponId }, select: { maxUses: true, perUserLimit: true, status: true, deletedAt: true, expiresAt: true } });
+            const usageCount = await tx.couponUsage.count({ where: { couponId, userId: data.userId } });
+            if (usageCount >= couponLimit.perUserLimit)
+                throw new Error("سقف استفاده شما از این کد تخفیف تکمیل شده است");
+            const couponUpdated = await tx.coupon.updateMany({ where: { id: couponId, status: "active", deletedAt: null, usedCount: { lt: couponLimit.maxUses }, expiresAt: { gt: new Date() } }, data: { usedCount: { increment: 1 } } });
             if (couponUpdated.count !== 1)
                 throw new Error("کد تخفیف دیگر قابل استفاده نیست");
         }
@@ -748,8 +757,6 @@ class PaymentService {
         const orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, productAccountId: account.id, deliveredUsername: account.username, deliveredPassword: account.password, deliveredSubscriptionLink: account.subscriptionLink, deliveredConfigLink: account.configLink, deliveredConfig: account.configLink || account.config, purchaseDate, expiresAt, isActive: true } });
         if (couponId) {
             const usageSlot = await tx.couponUsage.count({ where: { couponId, userId: data.userId } });
-            if (!data.invoice && usageSlot >= (await tx.coupon.findUniqueOrThrow({ where: { id: couponId }, select: { perUserLimit: true } })).perUserLimit)
-                throw new Error("سقف استفاده شما از این کد تخفیف تکمیل شده است");
             await tx.couponUsage.create({ data: { couponId, userId: data.userId, orderId: order.id, usageSlot } });
             await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "COUPON_USAGE_RECORDED", metadata: { couponId, orderId: order.id, usageSlot, originalAmount, discountAmount, finalAmount: totalAmount } });
         }
@@ -846,13 +853,27 @@ class PaymentInvoiceService {
         return prisma_1.prisma.paymentInvoice.findUnique({ where: { id: invoiceId }, include: { user: true, product: true, coupon: true, order: true, audits: { orderBy: { createdAt: "desc" }, take: 20 } } });
     }
     static async stats() {
-        const [successful, failed, pending, recent] = await Promise.all([
-            prisma_1.prisma.paymentInvoice.count({ where: { status: { in: ["PAID", "COMPLETED"] } } }),
+        const now = new Date();
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+        const startOfWeek = new Date(startOfToday);
+        startOfWeek.setDate(startOfWeek.getDate() - 6);
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const revenueWhere = (from) => ({ status: "COMPLETED", completedAt: { gte: from } });
+        const [total, successful, paid, failed, pending, cancelled, todayRevenue, weeklyRevenue, monthlyRevenue, recent, gateway] = await Promise.all([
+            prisma_1.prisma.paymentInvoice.count(),
+            prisma_1.prisma.paymentInvoice.count({ where: { status: "COMPLETED" } }),
+            prisma_1.prisma.paymentInvoice.count({ where: { status: "PAID" } }),
             prisma_1.prisma.paymentInvoice.count({ where: { status: "FAILED" } }),
             prisma_1.prisma.paymentInvoice.count({ where: { status: "PENDING" } }),
-            prisma_1.prisma.paymentInvoice.findMany({ include: { user: true, product: true, coupon: true }, orderBy: { createdAt: "desc" }, take: 5 }),
+            prisma_1.prisma.paymentInvoice.count({ where: { status: "CANCELED" } }),
+            prisma_1.prisma.paymentInvoice.aggregate({ where: revenueWhere(startOfToday), _sum: { amount: true } }),
+            prisma_1.prisma.paymentInvoice.aggregate({ where: revenueWhere(startOfWeek), _sum: { amount: true } }),
+            prisma_1.prisma.paymentInvoice.aggregate({ where: revenueWhere(startOfMonth), _sum: { amount: true } }),
+            prisma_1.prisma.paymentInvoice.findMany({ include: { user: true, product: true, coupon: true }, orderBy: { createdAt: "desc" }, take: 8 }),
+            PaymentGatewayService.getConfig(),
         ]);
-        return { successful, failed, pending, recent };
+        return { total, successful, paid, failed, pending, cancelled, todayRevenue: todayRevenue._sum.amount ?? 0, weeklyRevenue: weeklyRevenue._sum.amount ?? 0, monthlyRevenue: monthlyRevenue._sum.amount ?? 0, recent, gatewayStatus: gateway.lastConnectionStatus ?? "unknown" };
     }
 }
 exports.PaymentInvoiceService = PaymentInvoiceService;

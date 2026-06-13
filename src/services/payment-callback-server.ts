@@ -93,6 +93,6 @@ export function startPaymentCallbackServer(bot: AppBot) {
     }
   });
 
-  server.listen(port, () => logger.info("Payment callback server is running", { port, route: "GET /payments/callback?token=...&invoice=..." }));
+  server.listen(port, () => logger.info("Payment callback server is running", { port, route: "GET /payments/callback?invoice_id=...&token=..." }));
   return server;
 }

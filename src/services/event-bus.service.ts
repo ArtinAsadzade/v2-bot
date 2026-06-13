@@ -20,6 +20,7 @@ export type AppEventMap = {
   "free_account.expired": { count: number };
   "order.created": { orderId: string; userId: string; productId: string; totalAmount: number };
   "order.completed": { orderId: string; userId: string; productId: string; totalAmount: number };
+  "payment.delivery.failed": { invoiceId: string; userId: string; type: string; error: string };
 };
 
 type EventName = keyof AppEventMap;

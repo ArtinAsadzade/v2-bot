@@ -93,6 +93,12 @@ function registerNotificationEvents() {
     event_bus_service_1.eventBus.on("referral.reward.claimed", async (event) => {
         await exports.notificationService.notifyUser(event.userId, `🎁 پاداش زیرمجموعه به مبلغ ${event.amount.toLocaleString("fa-IR")} تومان به کیف پول شما اضافه شد.`);
     });
+    event_bus_service_1.eventBus.on("payment.delivery.failed", async (event) => {
+        await exports.notificationService.notifyAdmins({
+            text: `🚨 خطای تحویل پرداخت آنی\n\nفاکتور: ${event.invoiceId}\nکاربر: ${event.userId}\nنوع: ${event.type}\nخطا: ${event.error}\n\nپرداخت PAID باقی مانده و نیاز به بررسی دستی دارد.`,
+            actions: [[{ text: "👁 مشاهده فاکتور", callbackData: `nav:admin.invoice?invoiceId=${event.invoiceId}` }]],
+        });
+    });
     event_bus_service_1.eventBus.on("free_config.claimed", async (event) => {
         await exports.notificationService.notifyUser(event.userId, {
             text: `🎁 کانفیگ رایگان شما:\n\n${event.config}`,
