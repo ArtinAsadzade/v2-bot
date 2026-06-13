@@ -5,6 +5,7 @@ exports.registerNotificationEvents = registerNotificationEvents;
 const prisma_1 = require("./prisma");
 const logger_1 = require("./logger");
 const event_bus_service_1 = require("./event-bus.service");
+const messages_1 = require("../utils/messages");
 class NotificationService {
     setBot(bot) {
         this.bot = bot;
@@ -74,7 +75,7 @@ function registerNotificationEvents() {
     notificationEventsRegistered = true;
     event_bus_service_1.eventBus.on("deposit.created", async (event) => {
         await exports.notificationService.notifyAdmins({
-            text: `💳 درخواست شارژ جدید\n\nشناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`,
+            text: (0, messages_1.screenMessage)({ tone: "PAYMENT", title: "درخواست شارژ جدید", description: "یک درخواست شارژ برای بررسی ثبت شده است.", body: `شناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`, actionHint: "برای بررسی، دکمه مشاهده را انتخاب کنید." }),
             actions: [[{ text: "👁 مشاهده", callbackData: `admin:deposits` }]],
         });
     });
@@ -91,11 +92,11 @@ function registerNotificationEvents() {
         });
     });
     event_bus_service_1.eventBus.on("referral.reward.claimed", async (event) => {
-        await exports.notificationService.notifyUser(event.userId, `🎁 پاداش زیرمجموعه به مبلغ ${event.amount.toLocaleString("fa-IR")} تومان به کیف پول شما اضافه شد.`);
+        await exports.notificationService.notifyUser(event.userId, (0, messages_1.successMessage)("پاداش دعوت اضافه شد", `مبلغ ${event.amount.toLocaleString("fa-IR")} تومان به کیف پول شما اضافه شد.`, "برای مشاهده جزئیات به بخش کیف پول بروید."));
     });
     event_bus_service_1.eventBus.on("payment.delivery.failed", async (event) => {
         await exports.notificationService.notifyAdmins({
-            text: `🚨 خطای تحویل پرداخت آنی\n\nفاکتور: ${event.invoiceId}\nکاربر: ${event.userId}\nنوع: ${event.type}\nخطا: ${event.error}\n\nپرداخت PAID باقی مانده و نیاز به بررسی دستی دارد.`,
+            text: (0, messages_1.screenMessage)({ tone: "WARNING", title: "تحویل پرداخت نیازمند بررسی است", description: "پرداخت ثبت شده اما تحویل خودکار کامل نشده است.", body: `فاکتور: ${event.invoiceId}\nکاربر: ${event.userId}`, actionHint: "لطفاً فاکتور را از پنل مدیریت بررسی کنید." }),
             actions: [[{ text: "👁 مشاهده فاکتور", callbackData: `nav:admin.invoice?invoiceId=${event.invoiceId}` }]],
         });
     });

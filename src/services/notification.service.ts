@@ -3,6 +3,7 @@ import type { AppBot } from "../types/bot";
 import { prisma } from "./prisma";
 import { logger } from "./logger";
 import { eventBus } from "./event-bus.service";
+import { screenMessage, successMessage } from "../utils/messages";
 
 export type NotificationAction = {
   text: string;
@@ -103,7 +104,7 @@ export function registerNotificationEvents() {
 
   eventBus.on("deposit.created", async (event) => {
     await notificationService.notifyAdmins({
-      text: `💳 درخواست شارژ جدید\n\nشناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`,
+      text: screenMessage({ tone: "PAYMENT", title: "درخواست شارژ جدید", description: "یک درخواست شارژ برای بررسی ثبت شده است.", body: `شناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`, actionHint: "برای بررسی، دکمه مشاهده را انتخاب کنید." }),
       actions: [[{ text: "👁 مشاهده", callbackData: `admin:deposits` }]],
     });
   });
@@ -122,12 +123,12 @@ export function registerNotificationEvents() {
   });
 
   eventBus.on("referral.reward.claimed", async (event) => {
-    await notificationService.notifyUser(event.userId, `🎁 پاداش زیرمجموعه به مبلغ ${event.amount.toLocaleString("fa-IR")} تومان به کیف پول شما اضافه شد.`);
+    await notificationService.notifyUser(event.userId, successMessage("پاداش دعوت اضافه شد", `مبلغ ${event.amount.toLocaleString("fa-IR")} تومان به کیف پول شما اضافه شد.`, "برای مشاهده جزئیات به بخش کیف پول بروید."));
   });
 
   eventBus.on("payment.delivery.failed", async (event) => {
     await notificationService.notifyAdmins({
-      text: `🚨 خطای تحویل پرداخت آنی\n\nفاکتور: ${event.invoiceId}\nکاربر: ${event.userId}\nنوع: ${event.type}\nخطا: ${event.error}\n\nپرداخت PAID باقی مانده و نیاز به بررسی دستی دارد.`,
+      text: screenMessage({ tone: "WARNING", title: "تحویل پرداخت نیازمند بررسی است", description: "پرداخت ثبت شده اما تحویل خودکار کامل نشده است.", body: `فاکتور: ${event.invoiceId}\nکاربر: ${event.userId}`, actionHint: "لطفاً فاکتور را از پنل مدیریت بررسی کنید." }),
       actions: [[{ text: "👁 مشاهده فاکتور", callbackData: `nav:admin.invoice?invoiceId=${event.invoiceId}` }]],
     });
   });

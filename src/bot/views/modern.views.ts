@@ -15,6 +15,7 @@ import { CouponService } from "../../modules/coupon/coupon.service";
 import { BroadcastService, BROADCAST_TARGET_LABELS } from "../../modules/broadcast/broadcast.service";
 import { PaymentGatewayService, PaymentInvoiceService, maskApiKey } from "../../modules/payment/payment.service";
 import type { PaymentInvoiceStatus } from "@prisma/client";
+import { accountSummaryMessage, errorMessage, paymentSummaryMessage, walletSummaryMessage } from "../../utils/messages";
 
 const divider = "━━━━━━━━━━━━━━━━";
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
@@ -129,7 +130,7 @@ export function registerModernViews() {
 
   registerView("shop.product", async (ctx, params) => {
     const product = await ProductService.getProduct(params.productId);
-    if (!product) return { text: "⚠️ این محصول در حال حاضر در دسترس نیست.", keyboard: [] };
+    if (!product) return { text: errorMessage("محصول در دسترس نیست", "این محصول در حال حاضر قابل خرید نیست.", "لطفاً محصول دیگری را انتخاب کنید."), keyboard: [] };
     const stock = await ProductService.availableStock(product.id);
     ctx.session.recentlyViewedProductIds = [product.id, ...(ctx.session.recentlyViewedProductIds ?? []).filter((id) => id !== product.id)].slice(
       0,
@@ -165,7 +166,7 @@ export function registerModernViews() {
         couponLine = `${coupon.code} (${money(discountAmount)} تخفیف)`;
       } catch (error) {
         delete ctx.session.selectedCoupons?.[product.id];
-        couponLine = `نامعتبر: ${error instanceof Error ? error.message : "کد تخفیف معتبر نیست"}`;
+        couponLine = "نیازمند بررسی دوباره";
       }
     }
     const shortage = Math.max(payableAmount - user.balance, 0);
@@ -173,23 +174,7 @@ export function registerModernViews() {
     const paymentMethods: UiKeyboard = [[{ text: "1️⃣ کیف پول", action: `buy:confirm:${product.id}` }]];
     if (gateway.enabled) paymentMethods[0].push({ text: "2️⃣ پرداخت آنی", action: `buy:instant:${product.id}` });
     return {
-      text: `🧾 پیش‌فاکتور خرید
-
-${divider}
-📦 محصول: ${product.title}
-📅 اعتبار: ${product.duration.toLocaleString("fa-IR")} روز
-💰 مبلغ سفارش: ${money(product.price)}
-🎟 کد تخفیف: ${couponLine}
-💸 تخفیف: ${money(discountAmount)}
-✅ مبلغ قابل پرداخت: ${money(payableAmount)}
-💳 موجودی کیف پول: ${money(user.balance)}
-${shortage ? `\n⚠️ کسری موجودی: ${money(shortage)}` : "\n✅ موجودی شما برای خرید کافی است."}
-${divider}
-
-💳 روش پرداخت
-1. کیف پول${gateway.enabled ? "\n2. پرداخت آنی" : ""}
-
-لطفاً روش پرداخت را انتخاب کنید.`,
+      text: paymentSummaryMessage({ productTitle: product.title, amount: product.price, discountAmount, payableAmount, balance: user.balance, shortage, couponLine, gatewayEnabled: gateway.enabled }),
       keyboard: [
         ...paymentMethods,
         [
@@ -206,7 +191,7 @@ ${divider}
     const dashboard = await UserService.dashboard(user.id);
     return {
       replyKeyboard: "profile",
-      text: `👤 داشبورد حساب کاربری\n\n${divider}\n💰 موجودی کیف پول: ${money(dashboard.user.balance)}\n👥 تعداد دعوت‌ها: ${dashboard.referralCount.toLocaleString("fa-IR")} نفر\n🎁 جوایز فعال: ${dashboard.freeRewards.toLocaleString("fa-IR")}\n📦 اکانت‌های فعال: ${(dashboard.activeAccounts.length + dashboard.activeFreeAccounts.length).toLocaleString("fa-IR")}\n🧾 خریدهای اخیر: ${dashboard.recentOrders.length.toLocaleString("fa-IR")} سفارش\n💎 پاداش قابل برداشت: ${money(dashboard.pendingReferralAmount)}\n${divider}\n\nاز میان اقدام‌های سریع زیر انتخاب کنید:`,
+      text: accountSummaryMessage({ balance: dashboard.user.balance, referralCount: dashboard.referralCount, freeRewards: dashboard.freeRewards, activeAccounts: dashboard.activeAccounts.length + dashboard.activeFreeAccounts.length, recentOrders: dashboard.recentOrders.length, pendingReferralAmount: dashboard.pendingReferralAmount }),
       keyboard: [
         [
           { text: "🛒 خرید", action: callbackFor("shop.categories") },
@@ -311,18 +296,7 @@ ${divider}`,
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     return {
       replyKeyboard: "wallet",
-      text: `💳 کیف پول شما
-
-${divider}
-💳 موجودی فعلی
-${money(user?.balance ?? 0)}
-
-➕ شارژ کیف پول: افزایش موجودی برای خرید سریع‌تر
-📜 تاریخچه تراکنش‌ها: مشاهده واریزها و برداشت‌ها
-💸 برداشت‌ها: دریافت پاداش‌های قابل برداشت
-🎁 پاداش‌ها: جوایز دعوت و پیشنهادهای فعال
-
-برای ادامه، یکی از گزینه‌های زیر را انتخاب کنید.`,
+      text: walletSummaryMessage(user?.balance ?? 0, "شارژ کیف پول: افزایش موجودی برای خرید سریع‌تر\nتاریخچه تراکنش‌ها: مشاهده واریزها و برداشت‌ها\nبرداشت‌ها: دریافت پاداش‌های قابل برداشت\nپاداش‌ها: جوایز دعوت و پیشنهادهای فعال"),
       keyboard: [
         [
           { text: "➕ شارژ کیف پول", action: callbackFor("deposit") },
@@ -1193,7 +1167,7 @@ ${connectionLabel}
 ${lastTest ? lastTest.toLocaleString("fa-IR") : "—"}
 ${gateway.lastConnectionError ? `
 آخرین خطا:
-${gateway.lastConnectionError}` : ""}
+نیازمند بررسی تنظیمات درگاه است.` : ""}
 
 ${divider}
 
@@ -1334,14 +1308,11 @@ ${invoices.map((invoice) => `• شناسه: #${shortId(invoice.id)}
 زمان تکمیل: ${invoice.completedAt ? invoice.completedAt.toLocaleString("fa-IR") : "—"}
 تعداد بازگشت پرداخت: ${invoice.callbackCount.toLocaleString("fa-IR")}
 آخرین بازگشت پرداخت: ${invoice.lastCallbackAt ? invoice.lastCallbackAt.toLocaleString("fa-IR") : "—"}
-وضعیت تحویل: ${invoice.deliveryStatus ?? (invoice.orderId ? "COMPLETED" : "—")}
-وضعیت اعلان: ${invoice.notificationStatus ?? "—"}
+وضعیت تحویل: ${invoice.orderId ? "تکمیل شده" : "در انتظار"}
+وضعیت اطلاع‌رسانی: ${invoice.notificationStatus ? "ثبت شده" : "—"}
 
-Gateway Response:
-${invoice.gatewayResponse ?? "—"}
-
-📜 Audit:
-${invoice.audits.map((audit) => `• ${audit.createdAt.toLocaleString("fa-IR")} · ${audit.action}`).join("\n") || "رخدادی ثبت نشده است."}`,
+سوابق پرداخت:
+${invoice.audits.map((audit) => `• ${audit.createdAt.toLocaleString("fa-IR")} · رویداد ثبت شد`).join("\n") || "رخدادی ثبت نشده است."}`,
       keyboard: [[{ text: "🧾 همه فاکتورها", action: callbackFor("admin.invoices") }]],
     };
   });
