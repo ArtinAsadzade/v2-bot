@@ -855,7 +855,7 @@ status: ${detail.wallet.status}`;
     },
     payment_gateway_setup: {
         firstStep: "apiBaseUrl",
-        prompt: "⚙️ راه‌اندازی سریع درگاه\n\nمرحله 1 از 5:\nAPI URL را وارد کنید:\n\nمثال: http://136.244.104.77:5000/api/v1",
+        prompt: "⚙️ راه‌اندازی مرحله‌ای درگاه\n\nمرحله 1 از 4:\nAPI URL را وارد کنید:\n\nمثال: http://136.244.104.77:5000/api/v1",
         async handleText(ctx, text) {
             const flow = ctx.session.flow;
             try {
@@ -863,26 +863,21 @@ status: ${detail.wallet.status}`;
                     const apiBaseUrl = String(payment_service_1.PaymentGatewayService.validateConfigField("apiBaseUrl", text));
                     flow.data.apiBaseUrl = apiBaseUrl;
                     flow.step = "apiKey";
-                    return { text: `✅ API URL معتبر است\n\nمرحله 2 از 5:\nAPI KEY را وارد کنید:`, nextStep: "apiKey" };
+                    return { text: `✅ API URL معتبر است\n\nمرحله 2 از 4:\nAPI KEY را وارد کنید:`, nextStep: "apiKey" };
                 }
                 if (flow.step === "apiKey") {
                     const apiKey = String(payment_service_1.PaymentGatewayService.validateConfigField("apiKey", text));
                     flow.data.apiKey = apiKey;
                     flow.step = "callbackUrl";
-                    return { text: `✅ API Key معتبر است\n\nمرحله 3 از 5:\nCALLBACK URL را وارد کنید:`, nextStep: "callbackUrl" };
+                    return { text: `✅ API Key معتبر است\n\nمرحله 3 از 4:\nCALLBACK URL را وارد کنید:`, nextStep: "callbackUrl" };
                 }
                 if (flow.step === "callbackUrl") {
                     const callbackUrl = String(payment_service_1.PaymentGatewayService.validateConfigField("callbackUrl", text));
                     flow.data.callbackUrl = callbackUrl;
-                    flow.step = "gatewayName";
-                    return { text: `✅ Callback URL معتبر است\n\nمرحله 4 از 5:\nنام نمایشی درگاه را وارد کنید:`, nextStep: "gatewayName" };
-                }
-                if (flow.step === "gatewayName") {
-                    const gatewayName = String(payment_service_1.PaymentGatewayService.validateConfigField("gatewayName", text));
-                    flow.data.gatewayName = gatewayName;
+                    flow.data.gatewayName = "پرداخت آنی";
                     flow.step = "confirm";
                     return {
-                        text: `مرحله 5 از 5: تأیید نهایی\n\nAPI URL:\n${flow.data.apiBaseUrl}\n\nAPI Key:\n********${String(flow.data.apiKey).slice(-4).toUpperCase()}\n\nCallback:\n${flow.data.callbackUrl}\n\nنام نمایشی:\n${flow.data.gatewayName}\n\nمرحله 6 ذخیره و مرحله 7 تست اتصال پس از تأیید انجام می‌شود.\nبرای ادامه روی دکمه تأیید بزنید.`,
+                        text: `مرحله 4 از 4: تأیید نهایی\n\nAPI URL:\n${flow.data.apiBaseUrl}\n\nAPI Key:\n********${String(flow.data.apiKey).slice(-4).toUpperCase()}\n\nCallback:\n${flow.data.callbackUrl}\n\nپس از تأیید، تنظیمات یک‌جا ذخیره و تست اتصال اجرا می‌شود.\nبرای ادامه روی دکمه تأیید بزنید.`,
                         nextStep: "confirm",
                         keyboard: [[{ text: "✅ تأیید و تست اتصال", action: "payment_gateway_setup:confirm" }]],
                     };

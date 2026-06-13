@@ -50,6 +50,7 @@ enum OrderStatus {
   completed
   cancelled
   failed
+  failed_delivery
 }
 
 enum ReferralRewardStatus {
@@ -300,7 +301,7 @@ model PaymentInvoice {
   couponId       String?              @db.ObjectId
   couponCode     String?
   gatewayAmount  Int?
-  payId          String?              @unique
+  payId          String?
   paymentLink    String?
   gatewayResponse String?
   callbackCount  Int                  @default(0)
@@ -332,6 +333,7 @@ model PaymentInvoice {
   @@index([couponId])
   @@index([orderId])
   @@index([depositId])
+  @@index([payId])
 }
 
 model PaymentAuditLog {

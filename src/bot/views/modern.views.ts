@@ -1149,14 +1149,32 @@ ${divider}
 
 📊 فاکتورها
 
-موفق:
+کل فاکتورها:
+${stats.total.toLocaleString("fa-IR")}
+
+تکمیل‌شده:
 ${stats.successful.toLocaleString("fa-IR")}
+
+پرداخت‌شده در انتظار تحویل:
+${stats.paid.toLocaleString("fa-IR")}
 
 ناموفق:
 ${stats.failed.toLocaleString("fa-IR")}
 
 در انتظار:
-${stats.pending.toLocaleString("fa-IR")}`,
+${stats.pending.toLocaleString("fa-IR")}
+
+لغوشده:
+${stats.cancelled.toLocaleString("fa-IR")}
+
+درآمد امروز:
+${money(stats.todayRevenue)}
+
+درآمد ۷ روز اخیر:
+${money(stats.weeklyRevenue)}
+
+درآمد ماه جاری:
+${money(stats.monthlyRevenue)}`,
       keyboard: [
         [{ text: gateway.enabled ? "⏸ فعال/غیرفعال: غیرفعال‌سازی" : "▶️ فعال/غیرفعال: فعال‌سازی", action: `admin:payment_gateway:status:${gateway.enabled ? "disabled" : "enabled"}` }],
         [
@@ -1168,6 +1186,7 @@ ${stats.pending.toLocaleString("fa-IR")}`,
           { text: "🔗 Callback Base URL", action: "flow:start:payment_gateway_update:callbackUrl" },
         ],
         [{ text: "💾 ذخیره تنظیمات: هر فیلد جداگانه", action: "flow:start:payment_gateway_update:gatewayName" }],
+        [{ text: "🧭 راه‌اندازی مرحله‌ای", action: "flow:start:payment_gateway_setup" }],
         [{ text: "📡 تست اتصال", action: "admin:payment_gateway:test" }],
         [{ text: "🧾 مشاهده فاکتورها", action: callbackFor("admin.invoices") }, { text: "📊 آمار پرداخت‌ها", action: callbackFor("admin.paymentStats") }],
         [{ text: "🏠 بازگشت", action: callbackFor("admin.dashboard") }],
@@ -1181,9 +1200,17 @@ ${stats.pending.toLocaleString("fa-IR")}`,
       text: `📊 آمار پرداخت آنی
 
 ${divider}
-✅ پرداخت شده: ${stats.successful.toLocaleString("fa-IR")}
+🧾 کل: ${stats.total.toLocaleString("fa-IR")}
+✅ تکمیل‌شده: ${stats.successful.toLocaleString("fa-IR")}
+💳 پرداخت‌شده/در انتظار تحویل: ${stats.paid.toLocaleString("fa-IR")}
 ❌ ناموفق: ${stats.failed.toLocaleString("fa-IR")}
 ⏳ در انتظار: ${stats.pending.toLocaleString("fa-IR")}
+🚫 لغوشده: ${stats.cancelled.toLocaleString("fa-IR")}
+
+💰 درآمد امروز: ${money(stats.todayRevenue)}
+📆 درآمد ۷ روز اخیر: ${money(stats.weeklyRevenue)}
+🗓 درآمد ماه جاری: ${money(stats.monthlyRevenue)}
+📡 وضعیت درگاه: ${stats.gatewayStatus}
 
 آخرین فاکتورها:
 ${stats.recent.map((invoice) => `• #${shortId(invoice.id)} · ${invoice.user.telegramId} · ${invoice.status} · ${money(invoice.amount)}`).join("\n") || "فاکتوری ثبت نشده است."}`,

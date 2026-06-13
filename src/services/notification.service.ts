@@ -125,6 +125,13 @@ export function registerNotificationEvents() {
     await notificationService.notifyUser(event.userId, `🎁 پاداش زیرمجموعه به مبلغ ${event.amount.toLocaleString("fa-IR")} تومان به کیف پول شما اضافه شد.`);
   });
 
+  eventBus.on("payment.delivery.failed", async (event) => {
+    await notificationService.notifyAdmins({
+      text: `🚨 خطای تحویل پرداخت آنی\n\nفاکتور: ${event.invoiceId}\nکاربر: ${event.userId}\nنوع: ${event.type}\nخطا: ${event.error}\n\nپرداخت PAID باقی مانده و نیاز به بررسی دستی دارد.`,
+      actions: [[{ text: "👁 مشاهده فاکتور", callbackData: `nav:admin.invoice?invoiceId=${event.invoiceId}` }]],
+    });
+  });
+
   eventBus.on("free_config.claimed", async (event) => {
     await notificationService.notifyUser(event.userId, {
       text: `🎁 کانفیگ رایگان شما:\n\n${event.config}`,
