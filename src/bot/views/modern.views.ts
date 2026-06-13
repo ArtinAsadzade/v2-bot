@@ -118,7 +118,7 @@ export function registerModernViews() {
       keyboard: [
         ...products.map((product) => [
           {
-            text: `${product.title} · ${money(product.price)} · ${product.category.name}`,
+            text: `${product.title} · ${money(product.price)} · ${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}`,
             action: callbackFor("shop.product", { productId: product.id }),
           },
         ]),
@@ -137,7 +137,7 @@ export function registerModernViews() {
     );
     const isFavorite = Boolean(ctx.session.favoriteProducts?.[product.id]);
     return {
-      text: `📦 ${product.title}\n\n${divider}\n🏷 دسته‌بندی: ${product.category.name}\n📅 اعتبار سرویس: ${product.duration.toLocaleString("fa-IR")} روز\n💰 قیمت نهایی: ${money(product.price)}\n🚀 تحویل: فوری و خودکار\n📊 موجودی: ${stockLabel(stock)}\n${divider}\n\nپس از پرداخت، اطلاعات اکانت همین‌جا نمایش داده می‌شود و همیشه از بخش «اکانت‌های من» قابل مشاهده است.`,
+      text: `📦 ${product.title}\n\n${divider}\n🏷 دسته‌بندی: ${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}\n📅 اعتبار سرویس: ${product.duration.toLocaleString("fa-IR")} روز\n💰 قیمت نهایی: ${money(product.price)}\n🚀 تحویل: فوری و خودکار\n📊 موجودی: ${stockLabel(stock)}\n${divider}\n\nپس از پرداخت، اطلاعات اکانت همین‌جا نمایش داده می‌شود و همیشه از بخش «اکانت‌های من» قابل مشاهده است.`,
       keyboard: [
         [{ text: "✅ ادامه خرید", action: callbackFor("shop.checkout", { productId: product.id }) }],
         [
@@ -631,7 +631,7 @@ ${divider}
 صفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}
 
 ${products.map((product) => `• ${product.title}
-  دسته‌بندی: ${product.category.name}
+  دسته‌بندی: ${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}
   قیمت: ${money(product.price)}
   موجودی: ${product.inventoryCount.toLocaleString("fa-IR")} · فروخته‌شده: ${product.soldCount.toLocaleString("fa-IR")} · فعال: ${product.activeCount.toLocaleString("fa-IR")}`).join("\n\n") || "محصولی ثبت نشده است."}`,
       keyboard,
@@ -644,7 +644,7 @@ ${products.map((product) => `• ${product.title}
     return {
       text: `📦 ${detail.product.title}
 
-دسته‌بندی: ${detail.product.category.name}
+دسته‌بندی: ${detail.product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}
 قیمت: ${money(detail.product.price)}
 مدت: ${detail.product.duration.toLocaleString("fa-IR")} روز
 موجودی قابل فروش: ${detail.available.toLocaleString("fa-IR")}
@@ -677,7 +677,7 @@ ${products.map((product) => `• ${product.title}
     const current = page(params);
     const [categories, total] = await AdminService.listCategories(current);
     return {
-      text: `📂 مدیریت دسته‌بندی‌ها\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n\n${categories.map((category) => `${category.icon ?? "📂"} ${category.name} · ${yesNo(category.isActive)} · محصول: ${category._count.products.toLocaleString("fa-IR")}`).join("\n") || "دسته‌بندی ثبت نشده است."}`,
+      text: `📂 مدیریت دسته‌بندی‌ها\n\nصفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}\n\n${categories.map((category) => `${category.icon ?? "📂"} ${category.name} · ${yesNo(category.isActive)} · محصول: ${category._count.products.toLocaleString("fa-IR")} · فعال: ${category.activeProductCount.toLocaleString("fa-IR")}`).join("\n") || "دسته‌بندی ثبت نشده است."}`,
       keyboard: [
         [{ text: "➕ دسته‌بندی جدید", action: "flow:start:category_create" }],
         ...categories.map((category) => [
@@ -844,7 +844,7 @@ ${history}`,
       keyboard: [
         ...products
           .filter((product) => product.id !== account.productId)
-          .map((product) => [{ text: `${product.title} · ${product.category.name}`, action: `admin:account:move_to:${account.id}:${product.id}` }]),
+          .map((product) => [{ text: `${product.title} · ${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}`, action: `admin:account:move_to:${account.id}:${product.id}` }]),
         [{ text: "↩️ بازگشت به اکانت", action: callbackFor("admin.account", { accountId: account.id }) }],
       ],
     };

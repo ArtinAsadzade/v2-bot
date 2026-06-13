@@ -90,5 +90,8 @@ class ProductService {
     static async listCategoriesForAdmin(take = 100) {
         return prisma_1.prisma.category.findMany({ where: (0, visibility_1.categoryNotDeletedWhere)(), orderBy: [{ displayOrder: "asc" }, { name: "asc" }], take });
     }
+    static async listSelectableCategoriesForAdmin(take = 50) {
+        return prisma_1.prisma.category.findMany({ where: (0, visibility_1.activeCategoryWhere)(), orderBy: [{ displayOrder: "asc" }, { name: "asc" }], take });
+    }
 }
 exports.ProductService = ProductService;

@@ -164,10 +164,16 @@ export class AdminService {
     const skip = (page - 1) * take;
     const q = containsQuery(query);
     const where: Prisma.CategoryWhereInput = { AND: [categoryNotDeletedWhere(), ...(q ? [{ OR: [{ name: { contains: q } }, { description: { contains: q } }] }] : [])] };
-    return Promise.all([
+    const [categories, total] = await Promise.all([
       prisma.category.findMany({ where, include: { _count: { select: { products: true } } }, orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }], skip, take }),
       prisma.category.count({ where }),
     ]);
+    const categoryIds = categories.map((category) => category.id);
+    const activeGroups = categoryIds.length
+      ? await prisma.product.groupBy({ by: ["categoryId"], where: { categoryId: { in: categoryIds }, AND: [activeProductWhere()] }, _count: { _all: true } })
+      : [];
+    const activeCounts = new Map(activeGroups.map((group) => [group.categoryId, group._count._all]));
+    return [categories.map((category) => ({ ...category, activeProductCount: activeCounts.get(category.id) ?? 0 })), total] as const;
   }
 
   static async categoryDetail(categoryId: string, productPage = 1, productTake = 8) {
