@@ -7,6 +7,7 @@ const user_service_1 = require("../modules/user/user.service");
 const notification_service_1 = require("../services/notification.service");
 const access_control_middleware_1 = require("./middlewares/access-control.middleware");
 const forced_join_middleware_1 = require("./middlewares/forced-join.middleware");
+const rate_limit_middleware_1 = require("./middlewares/rate-limit.middleware");
 if (!process.env.BOT_TOKEN) {
     throw new Error("BOT_TOKEN is missing");
 }
@@ -17,10 +18,13 @@ exports.bot.use((0, telegraf_1.session)({
     defaultSession: () => ({ selectedCoupons: {}, navigation: { stack: [] } }),
 }));
 exports.bot.use(async (ctx, next) => {
-    if (ctx.from)
-        await user_service_1.UserService.findOrCreateUser(ctx);
+    if (ctx.from) {
+        const user = await user_service_1.UserService.findOrCreateUser(ctx);
+        ctx.state.userId = user.id;
+    }
     await next();
 });
+exports.bot.use((0, rate_limit_middleware_1.rateLimitMiddleware)());
 exports.bot.use((0, access_control_middleware_1.accessControlMiddleware)());
 exports.bot.use((0, forced_join_middleware_1.forcedJoinMiddleware)());
 exports.bot.catch((error, ctx) => {
