@@ -7,8 +7,8 @@ export function adminKeyboard() {
       { text: "💳 پرداخت‌ها", action: "nav:admin.paymentGateway" },
     ],
     [
-      { text: "📦 محصولات", action: "admin:products" },
-      { text: "📁 دسته‌بندی‌ها", action: "admin:categories" },
+      { text: "📦 محصولات", action: "nav:admin.products" },
+      { text: "📂 مدیریت دسته‌بندی‌ها", action: "nav:admin.categories" },
     ],
     [
       { text: "👥 کاربران", action: "admin:users" },
@@ -23,7 +23,7 @@ export function adminKeyboard() {
       { text: "🎫 پشتیبانی", action: "admin:tickets" },
     ],
     [
-      { text: "➕ محصول جدید", action: "admin:product:create", tone: "primary" },
+      { text: "➕ محصول جدید", action: "flow:start:product_create", tone: "primary" },
       { text: "📦 سفارش‌ها", action: "admin:orders" },
     ],
     [{ text: "🏠 منوی اصلی", action: "home" }],

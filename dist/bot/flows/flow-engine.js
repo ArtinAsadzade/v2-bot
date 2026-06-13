@@ -67,6 +67,12 @@ function currentReturnTo(ctx) {
 async function flowPrompt(ctx, text, keyboard = []) {
     await ctx.reply(text, { ...(0, panel_ui_1.panelKeyboard)(keyboard, { back: false, home: true, cancel: true }) });
 }
+async function productCategoryKeyboard() {
+    const categories = await product_service_1.ProductService.listSelectableCategoriesForAdmin(40);
+    return categories.map((category) => [
+        { text: `${category.icon ?? "📂"} ${category.name}`, action: `flow:product_category:${category.id}` },
+    ]);
+}
 function requireUser(ctx) {
     if (!ctx.from)
         throw new Error("کاربر پیدا نشد");
@@ -388,13 +394,12 @@ active: ${detail.category.isActive}`;
     },
     product_create: {
         firstStep: "category",
-        prompt: "📦 نام دسته‌بندی محصول را وارد کنید:",
+        prompt: "📂 ابتدا دسته‌بندی محصول را انتخاب کنید. فقط دسته‌بندی‌های فعال نمایش داده می‌شوند.",
+        initialKeyboard: productCategoryKeyboard,
         async handleText(ctx, text) {
             const flow = ctx.session.flow;
             if (flow.step === "category") {
-                flow.data.categoryName = text.trim();
-                flow.step = "title";
-                return { text: "نام محصول را وارد کنید:", nextStep: "title" };
+                return { text: "لطفاً دسته‌بندی را از دکمه‌های زیر انتخاب کنید.", keyboard: await productCategoryKeyboard() };
             }
             if (flow.step === "title") {
                 flow.data.title = text.trim();
@@ -412,8 +417,11 @@ active: ${detail.category.isActive}`;
             const duration = Number(text.replace(/[,،\s]/g, ""));
             if (!Number.isInteger(duration) || duration <= 0)
                 return { text: "مدت معتبر نیست. دوباره وارد کنید:" };
+            const categoryId = String(flow.data.categoryId ?? "");
+            if (!categoryId)
+                return { text: "⚠️ دسته‌بندی نامعتبر یا حذف‌شده است. دوباره دسته‌بندی را انتخاب کنید.", keyboard: await productCategoryKeyboard() };
             await product_service_1.ProductService.create({
-                categoryName: String(flow.data.categoryName),
+                categoryId,
                 title: String(flow.data.title),
                 price: Number(flow.data.price),
                 duration,
@@ -423,6 +431,7 @@ active: ${detail.category.isActive}`;
     },
     product_edit: {
         firstStep: "fields",
+        initialKeyboard: productCategoryKeyboard,
         prompt: async (ctx) => {
             const productId = String(ctx.session.flow?.data.productId ?? "");
             const detail = productId ? await admin_service_1.AdminService.productDetail(productId) : undefined;
@@ -436,15 +445,18 @@ title: ${detail.product.title}
 categoryId: ${detail.product.categoryId}
 price: ${detail.product.price}
 duration: ${detail.product.duration}
-active: ${detail.product.isActive}`;
+active: ${detail.product.isActive}
+
+برای تغییر دسته‌بندی می‌توانید یکی از دکمه‌های دسته‌بندی فعال را انتخاب کنید.`;
         },
         async handleText(ctx, text) {
             const flow = ctx.session.flow;
             const data = parseKeyValueLines(text);
             const productId = String(flow.data.productId);
+            const selectedCategoryId = flow.data.categoryId ? String(flow.data.categoryId) : undefined;
             const product = await admin_service_1.AdminService.updateProduct(productId, {
                 title: data.title ?? data.name ?? data["عنوان"],
-                categoryId: data.categoryId ?? data.category ?? data["دسته"],
+                categoryId: data.categoryId ?? data.category ?? data["دسته"] ?? selectedCategoryId,
                 price: data.price || data["قیمت"] ? parseInteger(data.price ?? data["قیمت"] ?? "0") : undefined,
                 duration: data.duration || data["مدت"] ? parseInteger(data.duration ?? data["مدت"] ?? "0") : undefined,
                 isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
@@ -913,7 +925,7 @@ async function startFlow(ctx, name, data = {}) {
     if (!definition)
         throw new Error("جریان پیدا نشد");
     ctx.session.flow = { name, step: definition.firstStep, data, returnTo: currentReturnTo(ctx) };
-    await flowPrompt(ctx, typeof definition.prompt === "function" ? await definition.prompt(ctx) : definition.prompt);
+    await flowPrompt(ctx, typeof definition.prompt === "function" ? await definition.prompt(ctx) : definition.prompt, definition.initialKeyboard ? await definition.initialKeyboard(ctx) : []);
 }
 async function handleActiveFlowText(ctx, text) {
     const flow = ctx.session.flow;
@@ -948,6 +960,33 @@ async function handleActiveFlowPhoto(ctx, fileId) {
     return true;
 }
 function registerFlowEngine(bot) {
+    bot.action(/^flow:product_category:([^:]+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        const flow = ctx.session.flow;
+        if (!flow || (flow.name !== "product_create" && flow.name !== "product_edit")) {
+            await ctx.answerCbQuery("عملیات فعالی وجود ندارد");
+            return;
+        }
+        try {
+            const categories = await product_service_1.ProductService.listSelectableCategoriesForAdmin(100);
+            const category = categories.find((item) => item.id === ctx.match[1]);
+            if (!category) {
+                await flowPrompt(ctx, "⚠️ دسته‌بندی نامعتبر یا حذف‌شده است. لطفاً دوباره انتخاب کنید.", await productCategoryKeyboard());
+                return;
+            }
+            if (flow.name === "product_create") {
+                flow.data.categoryId = category.id;
+                flow.step = "title";
+                await flowPrompt(ctx, `✅ دسته‌بندی انتخاب شد: ${category.name}\n\nنام محصول را وارد کنید:`);
+                return;
+            }
+            flow.data.categoryId = category.id;
+            await flowPrompt(ctx, `✅ دسته‌بندی انتخاب شد: ${category.name}\n\nحالا سایر فیلدهای محصول را ارسال کنید یا فقط برای تغییر دسته‌بندی بنویسید: ذخیره`);
+        }
+        catch {
+            await flowPrompt(ctx, "⚠️ دسته‌بندی نامعتبر یا حذف‌شده است. لطفاً دوباره انتخاب کنید.", await productCategoryKeyboard());
+        }
+    });
     bot.action("flow:cancel", async (ctx) => {
         ctx.session.flow = undefined;
         await ctx.answerCbQuery("لغو شد");

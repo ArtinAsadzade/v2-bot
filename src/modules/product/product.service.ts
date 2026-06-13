@@ -98,4 +98,8 @@ export class ProductService {
     return prisma.category.findMany({ where: categoryNotDeletedWhere(), orderBy: [{ displayOrder: "asc" }, { name: "asc" }], take });
   }
 
+  static async listSelectableCategoriesForAdmin(take = 50) {
+    return prisma.category.findMany({ where: activeCategoryWhere(), orderBy: [{ displayOrder: "asc" }, { name: "asc" }], take });
+  }
+
 }
