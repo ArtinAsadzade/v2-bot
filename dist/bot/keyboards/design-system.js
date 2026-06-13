@@ -15,19 +15,19 @@ exports.paymentSuccessKeyboard = paymentSuccessKeyboard;
 exports.paymentFailureKeyboard = paymentFailureKeyboard;
 exports.privateTopicArchitecture = privateTopicArchitecture;
 exports.labels = {
-    home: "🏠 منوی اصلی",
-    wallet: "👛 کیف پول",
-    walletBalance: "💰 موجودی",
-    topup: "💳 شارژ کیف پول",
-    transactions: "📜 تراکنش‌ها",
+    home: "🏠 خانه",
+    wallet: "💰 کیف پول",
+    walletBalance: "💳 موجودی فعلی",
+    topup: "➕ شارژ کیف پول",
+    transactions: "📜 تاریخچه تراکنش‌ها",
     instantPayment: "⚡ پرداخت آنی",
-    walletPayment: "👛 پرداخت از کیف پول",
-    shop: "🛒 خرید",
-    shopLegacy: "🛒 خرید سرویس",
+    walletPayment: "💳 پرداخت با کیف پول",
+    shop: "🛒 فروشگاه",
+    shopLegacy: "🛒 فروشگاه",
     buyAgain: "🛒 خرید مجدد",
-    coupon: "🎁 کد تخفیف",
-    orders: "📦 سفارش‌های من",
-    support: "🎫 پشتیبانی",
+    coupon: "🎟 تخفیف‌ها",
+    orders: "📦 اکانت‌های من",
+    support: "📞 پشتیبانی",
     settings: "⚙️ تنظیمات",
     retry: "🔄 تلاش مجدد",
     refresh: "🔄 بروزرسانی وضعیت",
@@ -41,12 +41,13 @@ exports.labels = {
     adminCategories: "📁 دسته‌بندی‌ها",
     adminUsers: "👥 کاربران",
     adminCoupons: "🎟 تخفیف‌ها",
-    adminDashboard: "⚙️ داشبورد ادمین",
+    adminDashboard: "⚙️ مرکز مدیریت",
 };
 const toneToStyle = {
     primary: "primary",
     success: "success",
     danger: "danger",
+    warning: "warning",
 };
 // Bot API 9.4 supports button colors and custom emoji icons. Telegraf 4.16.3's
 // bundled TypeScript types do not expose these fields yet, so builders attach
@@ -85,8 +86,8 @@ function MainMenuKeyboard(isAdmin = false) {
             { text: exports.labels.shop, tone: "primary" },
             { text: exports.labels.wallet, tone: "primary" },
         ],
-        [{ text: exports.labels.orders }, { text: exports.labels.coupon }],
-        [{ text: exports.labels.support }, { text: exports.labels.settings }],
+        [{ text: exports.labels.orders }, { text: "🎁 اکانت تست" }],
+        [{ text: exports.labels.coupon }, { text: exports.labels.support }],
     ];
     if (isAdmin)
         rows.push([{ text: exports.labels.adminDashboard, tone: "primary" }]);
@@ -98,7 +99,8 @@ function WalletKeyboard() {
             { text: exports.labels.topup, tone: "primary" },
             { text: exports.labels.walletBalance, tone: "success" },
         ],
-        [{ text: exports.labels.transactions }, { text: exports.labels.home }],
+        [{ text: exports.labels.transactions }, { text: "💸 برداشت‌ها" }],
+        [{ text: "🎁 پاداش‌ها" }, { text: exports.labels.home }],
     ]);
 }
 function PaymentKeyboard() {
@@ -122,9 +124,10 @@ function SupportKeyboard() {
 }
 function AdminKeyboard() {
     return buildReplyKeyboard([
-        [{ text: exports.labels.adminStats, tone: "primary" }, { text: exports.labels.adminPayments }],
-        [{ text: exports.labels.adminProducts }, { text: exports.labels.adminCategories }],
-        [{ text: exports.labels.adminUsers }, { text: exports.labels.adminCoupons }],
+        [{ text: exports.labels.adminStats, tone: "primary" }, { text: exports.labels.adminProducts }],
+        [{ text: exports.labels.adminUsers }, { text: exports.labels.adminPayments }],
+        [{ text: "🎁 اکانت تست" }, { text: exports.labels.adminCoupons }],
+        [{ text: "📢 اطلاع‌رسانی" }, { text: exports.labels.support }],
         [{ text: exports.labels.settings }, { text: exports.labels.home }],
     ]);
 }
@@ -154,18 +157,17 @@ function paymentFailureKeyboard() {
 }
 exports.quickReplyRoutes = {
     [exports.labels.shop]: { id: "shop.categories" },
-    [exports.labels.shopLegacy]: { id: "shop.categories" },
-    "🛒 فروشگاه": { id: "shop.categories" },
     [exports.labels.buyAgain]: { id: "shop.categories" },
     [exports.labels.orders]: { id: "account.details" },
-    "📦 اکانت‌های من": { id: "account.details" },
+    "🎁 اکانت تست": { id: "freeAccount" },
     "🆓 اکانت تست": { id: "freeAccount" },
     [exports.labels.refresh]: "refresh",
     "🔄 بروزرسانی": "refresh",
     "👤 پروفایل": { id: "account" },
     [exports.labels.wallet]: { id: "wallet" },
     [exports.labels.walletBalance]: { id: "wallet" },
-    "💰 کیف پول": { id: "wallet" },
+    "💸 برداشت‌ها": { id: "referral" },
+    "🎁 پاداش‌ها": { id: "referral" },
     [exports.labels.home]: { id: "home" },
     [exports.labels.topup]: { id: "deposit" },
     "➕ شارژ حساب": { id: "deposit" },
@@ -185,6 +187,7 @@ exports.quickReplyRoutes = {
     [exports.labels.adminDashboard]: { id: "admin.dashboard" },
     [exports.labels.support]: { id: "support" },
     "🎧 پشتیبانی": { id: "support" },
+    "📢 اطلاع‌رسانی": { id: "admin.notifications" },
 };
 function privateTopicArchitecture() {
     return {
