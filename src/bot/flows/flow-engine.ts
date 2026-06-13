@@ -157,8 +157,10 @@ const definitions: Record<FlowName, FlowDefinition> = {
           done: true,
           text: `🧾 خلاصه پرداخت
 
-مبلغ: ${money(amount)}
-روش پرداخت: پرداخت آنی
+💰 مبلغ: ${money(amount)}
+🎟 تخفیف: ${money(0)}
+✅ مبلغ نهایی: ${money(amount)}
+⚡ روش پرداخت: پرداخت آنی
 وضعیت: در انتظار پرداخت
 شناسه پرداخت: ${invoice.payId ?? "—"}
 زمان ایجاد: ${invoice.createdAt.toLocaleString("fa-IR")}
