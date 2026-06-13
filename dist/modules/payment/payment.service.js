@@ -155,23 +155,34 @@ function paymentLog(event, metadata = {}) {
     logger_1.logger.info(event, { event, ...metadata });
 }
 async function audit(tx, data) {
-    if (data.invoiceId) {
-        await tx.paymentAuditLog.create({
+    try {
+        if (data.invoiceId) {
+            await tx.paymentAuditLog.create({
+                data: {
+                    userId: data.userId ?? undefined,
+                    invoiceId: data.invoiceId,
+                    action: data.action,
+                    metadata: data.metadata ? JSON.stringify({ ...data.metadata, actorId: data.actorId }) : data.actorId ? JSON.stringify({ actorId: data.actorId }) : undefined,
+                },
+            });
+        }
+        await tx.auditLog.create({
             data: {
-                userId: data.userId ?? undefined,
-                invoiceId: data.invoiceId,
+                actorId: data.actorId ?? data.userId ?? "system",
                 action: data.action,
-                metadata: data.metadata ? JSON.stringify({ ...data.metadata, actorId: data.actorId }) : data.actorId ? JSON.stringify({ actorId: data.actorId }) : undefined,
+                metadata: JSON.stringify({ invoiceId: data.invoiceId, userId: data.userId, ...(data.metadata ?? {}) }),
             },
         });
     }
-    await tx.auditLog.create({
-        data: {
-            actorId: data.actorId ?? data.userId ?? "system",
+    catch (error) {
+        logger_1.logger.error("PAYMENT_AUDIT_LOG_FAILED", {
+            event: "PAYMENT_AUDIT_LOG_FAILED",
             action: data.action,
-            metadata: JSON.stringify({ invoiceId: data.invoiceId, userId: data.userId, ...(data.metadata ?? {}) }),
-        },
-    });
+            invoiceId: data.invoiceId,
+            userId: data.userId,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
 }
 class PaymentGatewayService {
     static async getConfig() {
@@ -431,7 +442,7 @@ class PaymentService {
             paymentLog("PAYMENT_INVOICE_UPDATE_PAYID", { invoiceId: invoice.id, userId: invoice.userId, payId: gatewayResult.parsed.payId, gatewayAmount });
             await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_INVOICE_UPDATE_PAYID", metadata: { payId: gatewayResult.parsed.payId, gatewayAmount } });
             const attached = await prisma_1.prisma.paymentInvoice.updateMany({
-                where: { id: invoice.id, status: "PENDING", payId: null },
+                where: { id: invoice.id, status: "PENDING", OR: [{ payId: null }, { payId: { isSet: false } }] },
                 data: {
                     payId: gatewayResult.parsed.payId,
                     paymentLink: gatewayResult.parsed.paymentLink,
@@ -439,9 +450,15 @@ class PaymentService {
                     gatewayResponse: safeJson(gatewayResult.raw),
                 },
             });
-            if (attached.count !== 1)
-                throw new Error("فاکتور دیگر قابل اتصال به پاسخ درگاه نیست");
-            return prisma_1.prisma.paymentInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
+            if (attached.count === 1)
+                return prisma_1.prisma.paymentInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
+            const current = await prisma_1.prisma.paymentInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
+            if (current.status === "PENDING" && current.payId === gatewayResult.parsed.payId && current.paymentLink === gatewayResult.parsed.paymentLink) {
+                paymentLog("PAYMENT_LINK_READY", { invoiceId: current.id, userId: current.userId, payId: current.payId, idempotent: true });
+                await audit(prisma_1.prisma, { userId: current.userId, invoiceId: current.id, action: "PAYMENT_LINK_READY", metadata: { payId: current.payId, idempotent: true } });
+                return current;
+            }
+            throw new Error("فاکتور دیگر قابل اتصال به پاسخ درگاه نیست");
         }
         catch (error) {
             if (this.isUniqueConstraintError(error, "payId")) {
@@ -514,6 +531,8 @@ class PaymentService {
             await audit(prisma_1.prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_INVOICE_GATEWAY_RESPONSE", metadata: gatewayResult.raw });
             const updatedInvoice = await this.attachGatewayInvoiceResponse(invoice, gatewayResult, data.amount);
             await prisma_1.prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastSuccessfulRequest: new Date(), lastConnectionStatus: "success", lastConnectionError: null } });
+            paymentLog("PAYMENT_LINK_READY", { invoiceId: updatedInvoice.id, userId: updatedInvoice.userId, payId: updatedInvoice.payId, paymentLink: updatedInvoice.paymentLink });
+            await audit(prisma_1.prisma, { userId: updatedInvoice.userId, invoiceId: updatedInvoice.id, action: "PAYMENT_LINK_READY", metadata: { payId: updatedInvoice.payId, paymentLink: updatedInvoice.paymentLink } });
             return updatedInvoice;
         }
         catch (error) {
@@ -603,6 +622,8 @@ class PaymentService {
         }
         paymentLog("PAYMENT_CALLBACK_PROCESSING", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, type: invoice.type });
         await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_PROCESSING", metadata: { status: invoice.status, type: invoice.type, payId: invoice.payId } });
+        paymentLog("PAYMENT_CALLBACK_VALIDATED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, type: invoice.type });
+        await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_VALIDATED", metadata: { status: invoice.status, type: invoice.type } });
         if (invoice.status === "COMPLETED" || invoice.status === "PAID") {
             paymentLog("PAYMENT_DUPLICATE_CALLBACK_IGNORED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status });
             await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_DUPLICATE_CALLBACK_IGNORED", metadata: { status: invoice.status, reference: normalizedReference } });
@@ -628,6 +649,7 @@ class PaymentService {
                 return { statusCode: 200, text: ALREADY_PROCESSED_FA };
             paidInvoice = markedPaid;
             paymentLog("PAYMENT_INVOICE_MARKED_PAID", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, payId: paidInvoice.payId, amount: paidInvoice.amount, type: paidInvoice.type });
+            paymentLog("PAYMENT_MARKED_PAID", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, payId: paidInvoice.payId, amount: paidInvoice.amount, type: paidInvoice.type });
         }
         const staleProcessingBefore = new Date(Date.now() - 5 * 60000);
         const fulfillmentLock = await prisma_1.prisma.paymentInvoice.updateMany({
@@ -637,13 +659,17 @@ class PaymentService {
         if (fulfillmentLock.count !== 1)
             return { statusCode: 200, text: ALREADY_PROCESSED_FA };
         try {
+            paymentLog("PAYMENT_FULFILLMENT_STARTED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
+            await audit(prisma_1.prisma, { userId: paidInvoice.userId, invoiceId: paidInvoice.id, action: "PAYMENT_FULFILLMENT_STARTED", metadata: { type: paidInvoice.type } });
             const result = await this.fulfillPaidInvoice(paidInvoice.id);
+            paymentLog("PAYMENT_COMPLETED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
             admin_service_1.AdminService.invalidateDashboardCache();
             return { statusCode: 200, text: "Payment completed successfully.", result };
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             paymentLog("PAYMENT_PROCESS_FAILED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, stage: "fulfillment", error: message });
+            paymentLog("PAYMENT_FAILED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, stage: "fulfillment", error: message });
             await prisma_1.prisma.paymentInvoice.update({ where: { id: paidInvoice.id }, data: { deliveryStatus: "FAILED_DELIVERY", verifiedAt: new Date() } });
             event_bus_service_1.eventBus.emit("payment.delivery.failed", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type, error: message });
             await audit(prisma_1.prisma, { userId: paidInvoice.userId, invoiceId: paidInvoice.id, action: "PAYMENT_PROCESS_FAILED", metadata: { stage: "fulfillment", error: message, statusKept: "PAID" } });

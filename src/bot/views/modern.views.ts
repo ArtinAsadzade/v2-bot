@@ -1141,9 +1141,8 @@ ${recentLines}`,
   registerView("admin.paymentGateway", async () => {
     const [gateway, stats] = await Promise.all([PaymentGatewayService.getConfig(), PaymentInvoiceService.stats()]);
     const connectionLabel = gateway.lastConnectionStatus === "success" ? "موفق ✅" : gateway.lastConnectionStatus === "failed" ? "ناموفق ❌" : "تست نشده —";
-    const lastTest = gateway.lastSuccessfulRequest && gateway.lastFailedRequest
-      ? (gateway.lastSuccessfulRequest > gateway.lastFailedRequest ? gateway.lastSuccessfulRequest : gateway.lastFailedRequest)
-      : gateway.lastSuccessfulRequest ?? gateway.lastFailedRequest;
+    const lastInvoiceCreated = stats.recent[0]?.createdAt;
+    const lastActualTestStatus = gateway.lastConnectionStatus === "success" ? "آخرین تست موفق" : gateway.lastConnectionStatus === "failed" ? "آخرین تست ناموفق" : "تست اتصال انجام نشده";
     return {
       replyKeyboard: "admin",
       text: `⚡ مدیریت پرداخت آنی
@@ -1173,11 +1172,20 @@ ${divider}
 📡 اتصال:
 ${connectionLabel}
 
-آخرین تست:
-${lastTest ? lastTest.toLocaleString("fa-IR") : "—"}
+وضعیت تست:
+${lastActualTestStatus}
+
+آخرین تست موفق:
+${gateway.lastSuccessfulRequest ? gateway.lastSuccessfulRequest.toLocaleString("fa-IR") : "—"}
+
+آخرین تست ناموفق:
+${gateway.lastFailedRequest ? gateway.lastFailedRequest.toLocaleString("fa-IR") : "—"}
 ${gateway.lastConnectionError ? `
 آخرین خطا:
 نیازمند بررسی تنظیمات درگاه است.` : ""}
+
+آخرین فاکتور ساخته‌شده:
+${lastInvoiceCreated ? lastInvoiceCreated.toLocaleString("fa-IR") : "—"}
 
 ${divider}
 
