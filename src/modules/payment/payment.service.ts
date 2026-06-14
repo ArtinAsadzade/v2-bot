@@ -10,6 +10,7 @@ import { eventBus } from "../../services/event-bus.service";
 import { logger } from "../../services/logger";
 import { MonitoringService } from "../../services/monitoring.service";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, unassignedInventoryWhere } from "../product/visibility";
+import { XrayClientService, sanitizePanelError } from "../xray/xray.service";
 
 export type PaymentGatewayInput = {
   enabled?: boolean;
@@ -57,6 +58,7 @@ const CALLBACK_TOKEN_PARAM = "token";
 const CALLBACK_INVOICE_PARAM = "invoice_id";
 const ALREADY_PROCESSED_FA = "⚠️ این پرداخت قبلاً پردازش شده است.";
 const DEFAULT_GATEWAY_API_BASE_URL = "http://136.244.104.77:5000/api/v1";
+function slugify(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "svc"; }
 
 function assertPositiveAmount(amount: number) {
   if (!Number.isInteger(amount) || amount <= 0) throw new Error("مبلغ پرداخت معتبر نیست");
@@ -797,14 +799,22 @@ export class PaymentService {
       totalAmount = calculation.finalAmount;
     }
 
-    const account = await tx.productAccount.findFirst({ where: { AND: [availableInventoryWhere(product.id), unassignedInventoryWhere()] }, orderBy: { createdAt: "asc" } });
-    if (!account) throw new Error("موجودی این محصول تمام شده است");
-
+    const isXray = product.mode === "xray_auto" && Boolean(product.trafficBytes && product.durationDays && product.stockLimit && product.inboundIds.length);
+    let account: Awaited<ReturnType<typeof tx.productAccount.findFirst>> | null = null;
     const reservedAt = new Date();
-    const reserved = await tx.productAccount.updateMany({ where: { id: account.id, AND: [availableInventoryWhere(product.id), unassignedInventoryWhere()] }, data: { status: "reserved", reservedBy: data.userId, reservedAt } });
-    if (reserved.count !== 1) throw new Error("این اکانت هم‌اکنون رزرو شد؛ دوباره تلاش کنید");
-    await tx.productAccountHistory.create({ data: { accountId: account.id, actorId: data.userId, action: "Inventory Reserved", fromValue: "available", toValue: "reserved", metadata: JSON.stringify({ invoiceId: data.invoice?.id, productId: product.id, reservedAt, method: data.method }) } });
-    await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Reserved", metadata: { accountId: account.id, productId: product.id, method: data.method } });
+    if (isXray) {
+      if (!product.trafficBytes || !product.durationDays || !product.stockLimit || !product.inboundIds.length) throw new Error("تنظیمات محصول Xray کامل نیست");
+      const reserved = await tx.product.updateMany({ where: { id: product.id, mode: "xray_auto", soldCount: { lt: product.stockLimit } }, data: { soldCount: { increment: 1 } } });
+      if (reserved.count !== 1) throw new Error("موجودی این محصول تمام شده است");
+      await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "XRAY_STOCK_RESERVED", metadata: { productId: product.id, method: data.method } });
+    } else {
+      account = await tx.productAccount.findFirst({ where: { AND: [availableInventoryWhere(product.id), unassignedInventoryWhere()] }, orderBy: { createdAt: "asc" } });
+      if (!account) throw new Error("موجودی این محصول تمام شده است");
+      const reserved = await tx.productAccount.updateMany({ where: { id: account.id, AND: [availableInventoryWhere(product.id), unassignedInventoryWhere()] }, data: { status: "reserved", reservedBy: data.userId, reservedAt } });
+      if (reserved.count !== 1) throw new Error("این اکانت هم‌اکنون رزرو شد؛ دوباره تلاش کنید");
+      await tx.productAccountHistory.create({ data: { accountId: account.id, actorId: data.userId, action: "Inventory Reserved", fromValue: "available", toValue: "reserved", metadata: JSON.stringify({ invoiceId: data.invoice?.id, productId: product.id, reservedAt, method: data.method }) } });
+      await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Reserved", metadata: { accountId: account.id, productId: product.id, method: data.method } });
+    }
 
     if (data.method === "WALLET" && totalAmount > 0) {
       await this.debitWallet(tx, { userId: data.userId, amount: totalAmount, reason: `خرید محصول ${product.title}`, actorId: data.userId, referenceId: `purchase:${data.userId}:${product.id}:${reservedAt.getTime()}` });
@@ -820,9 +830,28 @@ export class PaymentService {
 
     const order = await tx.order.create({ data: { userId: data.userId, productId: product.id, couponId, originalAmount, totalAmount, finalPaidAmount: totalAmount, discountAmount, status: "completed" } });
     const purchaseDate = new Date();
-    const durationDays = account.durationDays ?? product.duration;
+    const durationDays = isXray ? (product.durationDays ?? product.duration) : (account!.durationDays ?? product.duration);
     const expiresAt = new Date(purchaseDate.getTime() + durationDays * 86_400_000);
-    const orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, productAccountId: account.id, deliveredUsername: account.username, deliveredPassword: account.password, deliveredSubscriptionLink: account.subscriptionLink, deliveredConfigLink: account.configLink, deliveredConfig: account.configLink || account.config, purchaseDate, expiresAt, isActive: true } });
+    let xrayClient: Awaited<ReturnType<typeof tx.xrayClient.create>> | null = null;
+    let orderItem;
+    if (isXray) {
+      const user = await tx.user.findUniqueOrThrow({ where: { id: data.userId }, select: { telegramId: true } });
+      const email = `tg${user.telegramId}-${slugify(product.title)}-${order.id.slice(-8)}`.toLowerCase().slice(0, 64);
+      try {
+        const created = await XrayClientService.createClient({ email, trafficBytes: product.trafficBytes!, expiresAt, telegramId: user.telegramId, inboundIds: product.inboundIds });
+        xrayClient = await tx.xrayClient.create({ data: { userId: data.userId, telegramId: user.telegramId, productId: product.id, orderId: order.id, clientEmail: email, clientSubId: created.subId, panelClientId: created.uuid ?? created.id, inboundIds: product.inboundIds, expiresAt, trafficBytes: product.trafficBytes!, status: "active" } });
+        orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, xrayClientId: xrayClient.id, deliveredUsername: email, deliveredSubscriptionLink: null, deliveredConfigLink: null, deliveredConfig: "XRAY_LIVE_LINKS", purchaseDate, expiresAt, isActive: true } });
+      } catch (error) {
+        const message = sanitizePanelError(error);
+        logger.error("XRAY_CLIENT_CREATE_FAILED", { orderId: order.id, productId: product.id, error: message });
+        await tx.order.update({ where: { id: order.id }, data: { status: "failed_delivery" } });
+        await tx.xrayClient.create({ data: { userId: data.userId, telegramId: user.telegramId, productId: product.id, orderId: order.id, clientEmail: email, inboundIds: product.inboundIds, expiresAt, trafficBytes: product.trafficBytes!, status: "failed", lastError: message } });
+        MonitoringService.record({ type: "PAYMENT_DELIVERY_FAILED", section: "Xray Delivery", description: message, userId: data.userId, severity: "critical", suggestedAction: "تحویل سرویس Xray را بررسی و دستی اصلاح کنید.", metadata: { orderId: order.id, productId: product.id } });
+        throw new Error("پرداخت موفق بود اما تحویل سرویس نیازمند بررسی است.");
+      }
+    } else {
+      orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, productAccountId: account!.id, deliveredUsername: account!.username, deliveredPassword: account!.password, deliveredSubscriptionLink: account!.subscriptionLink, deliveredConfigLink: account!.configLink, deliveredConfig: account!.configLink || account!.config, purchaseDate, expiresAt, isActive: true } });
+    }
 
     if (couponId) {
       const usageSlot = await tx.couponUsage.count({ where: { couponId, userId: data.userId } });
@@ -830,15 +859,16 @@ export class PaymentService {
       await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "COUPON_USAGE_RECORDED", metadata: { couponId, orderId: order.id, usageSlot, originalAmount, discountAmount, finalAmount: totalAmount } });
     }
 
-    const soldAt = new Date();
-    const sold = await tx.productAccount.updateMany({ where: { id: account.id, productId: product.id, status: "reserved", reservedBy: data.userId, AND: [unassignedInventoryWhere()] }, data: { status: "sold", soldTo: data.userId, soldAt, reservedBy: null, reservedAt: null } });
-    if (sold.count !== 1) throw new Error("تحویل اکانت ناموفق بود");
-    await tx.productAccountHistory.create({ data: { accountId: account.id, actorId: data.userId, action: "Inventory Sold", fromValue: "reserved", toValue: "sold", metadata: JSON.stringify({ invoiceId: data.invoice?.id, orderId: order.id, orderItemId: orderItem.id, productId: product.id, soldAt, expiresAt, method: data.method }) } });
-    await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "PRODUCT_DELIVERED", metadata: { productId: product.id, orderId: order.id, accountId: account.id, method: data.method, originalAmount, discountAmount, finalAmount: totalAmount } });
-    await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Sold", metadata: { accountId: account.id, orderId: order.id } });
-
-    const deliveredAccount = await tx.productAccount.findUniqueOrThrow({ where: { id: account.id } });
-    return { order, product, account: deliveredAccount, orderItem, totalAmount, originalAmount, discountAmount, couponId, couponCode: data.couponCode, expiresAt };
+    if (!isXray) {
+      const soldAt = new Date();
+      const sold = await tx.productAccount.updateMany({ where: { id: account!.id, productId: product.id, status: "reserved", reservedBy: data.userId, AND: [unassignedInventoryWhere()] }, data: { status: "sold", soldTo: data.userId, soldAt, reservedBy: null, reservedAt: null } });
+      if (sold.count !== 1) throw new Error("تحویل اکانت ناموفق بود");
+      await tx.productAccountHistory.create({ data: { accountId: account!.id, actorId: data.userId, action: "Inventory Sold", fromValue: "reserved", toValue: "sold", metadata: JSON.stringify({ invoiceId: data.invoice?.id, orderId: order.id, orderItemId: orderItem.id, productId: product.id, soldAt, expiresAt, method: data.method }) } });
+      await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Sold", metadata: { accountId: account!.id, orderId: order.id } });
+    }
+    await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: isXray ? "XRAY_PRODUCT_DELIVERED" : "PRODUCT_DELIVERED", metadata: { productId: product.id, orderId: order.id, accountId: account?.id, xrayClientId: xrayClient?.id, method: data.method, originalAmount, discountAmount, finalAmount: totalAmount } });
+    const deliveredAccount = account ? await tx.productAccount.findUniqueOrThrow({ where: { id: account.id } }) : { id: xrayClient!.id, username: xrayClient!.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" };
+    return { order, product, account: deliveredAccount, orderItem, xrayClient, totalAmount, originalAmount, discountAmount, couponId, couponCode: data.couponCode, expiresAt };
   }
 
   static async purchaseProductWithWallet(userId: string, productId: string, couponCode?: string) {
@@ -871,8 +901,12 @@ export class PaymentService {
     const product = await tx.product.findFirst({ where: { id: productId, AND: [activeProductWhere(), { category: { is: activeCategoryWhere() } }] } });
     if (!product) throw new Error("محصول پیدا نشد");
     if (expectedAmount !== undefined && product.price !== expectedAmount) throw new Error("مبلغ فاکتور با قیمت محصول همخوانی ندارد");
-    const stock = await tx.productAccount.count({ where: { AND: [availableInventoryWhere(productId), unassignedInventoryWhere()] } });
-    if (stock < 1) throw new Error("موجودی این محصول تمام شده است");
+    if (product.mode === "xray_auto" && product.trafficBytes && product.durationDays && product.stockLimit && product.inboundIds.length) {
+      if (product.soldCount >= product.stockLimit) throw new Error("موجودی این محصول تمام شده است");
+    } else {
+      const stock = await tx.productAccount.count({ where: { AND: [availableInventoryWhere(productId), unassignedInventoryWhere()] } });
+      if (stock < 1) throw new Error("موجودی این محصول تمام شده است");
+    }
     return product;
   }
 

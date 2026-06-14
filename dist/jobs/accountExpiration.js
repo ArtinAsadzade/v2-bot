@@ -70,7 +70,7 @@ async function expirePurchasedInventory(now) {
             select: { id: true, productAccountId: true, productId: true, orderId: true, expiresAt: true },
             take: 500,
         });
-        const accountIds = [...new Set(dueItems.map((item) => item.productAccountId))];
+        const accountIds = [...new Set(dueItems.map((item) => item.productAccountId).filter((id) => Boolean(id)))];
         if (!accountIds.length)
             return { count: 0 };
         const updated = await tx.productAccount.updateMany({
@@ -79,7 +79,7 @@ async function expirePurchasedInventory(now) {
         });
         if (updated.count > 0) {
             await tx.productAccountHistory.createMany({
-                data: dueItems.map((item) => ({
+                data: dueItems.filter((item) => Boolean(item.productAccountId)).map((item) => ({
                     accountId: item.productAccountId,
                     actorId: "system",
                     action: "account.expire",
