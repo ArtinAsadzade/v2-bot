@@ -214,7 +214,7 @@ async function renderPanel(ctx, state, mode = "push", renderMode = RenderMode.AU
         ctx.session.quickKeyboardSignature = signature;
     }
     const isHome = state.id === "home";
-    const keyboard = panelKeyboard(result.keyboard, { back: !isHome, home: !isHome });
+    const keyboard = panelKeyboard(result.keyboard, { back: result.navigation?.back ?? !isHome, home: result.navigation?.home ?? !isHome });
     const extra = { parse_mode: result.parseMode, ...keyboard };
     const fallbackReply = async () => {
         const sent = await ctx.reply(result.text, extra);

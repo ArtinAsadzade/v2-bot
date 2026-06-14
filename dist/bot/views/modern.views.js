@@ -247,7 +247,7 @@ ${divider}
         const gateway = await payment_service_1.PaymentGatewayService.get();
         const keyboard = [];
         if (couponLine)
-            keyboard.push([{ text: "🗑 حذف کد تخفیف", action: (0, panel_ui_1.actionFor)("coupon:remove", product.id) }, { text: "🎟 تغییر کد تخفیف", action: (0, panel_ui_1.actionFor)("flow:start", "coupon_code", product.id) }]);
+            keyboard.push([{ text: "🗑 حذف کد تخفیف", action: (0, panel_ui_1.actionFor)("coupon:remove", product.id) }, { text: "🎟 تغییر کد تخفیف", action: (0, panel_ui_1.actionFor)("coupon:change", product.id) }]);
         else
             keyboard.push([{ text: "🎟 افزودن کد تخفیف", action: (0, panel_ui_1.actionFor)("flow:start", "coupon_code", product.id) }]);
         const paymentRow = [{ text: "💳 پرداخت با کیف پول", action: (0, panel_ui_1.actionFor)("buy:confirm", product.id) }];
@@ -255,8 +255,9 @@ ${divider}
             paymentRow.push({ text: "⚡ پرداخت آنی", action: (0, panel_ui_1.actionFor)("buy:instant", product.id) });
         keyboard.push(paymentRow, [{ text: "🔙 بازگشت", action: (0, panel_ui_1.callbackFor)("shop.product", { productId: product.id }) }]);
         return {
-            text: `🧾 خلاصه سفارش\n\n📦 محصول:\n${product.title}\n\n${couponLine ? `🎟 کد تخفیف:\n${couponLine}\n\n` : ""}💰 مبلغ اصلی:\n${money(product.price)}\n\n🎁 تخفیف:\n${money(discountAmount)}\n\n✅ مبلغ نهایی:\n${money(payableAmount)}\n\n💳 موجودی کیف پول:\n${money(user.balance)}${shortage > 0 ? `\n\n⚠️ کسری کیف پول: ${money(shortage)}` : ""}`,
+            text: `🧾 خلاصه سفارش\n\n📦 محصول:\n${product.title}\n\n${couponLine ? `🎟 کد تخفیف:\n${couponLine}\n\n` : ""}💰 مبلغ:\n${money(product.price)}${discountAmount > 0 ? `\n\n🎁 تخفیف:\n${money(discountAmount)}` : ""}\n\n✅ مبلغ نهایی:\n${money(payableAmount)}\n\n💳 موجودی کیف پول:\n${money(user.balance)}${shortage > 0 ? `\n\n⚠️ کسری کیف پول: ${money(shortage)}` : ""}`,
             keyboard,
+            navigation: { back: false, home: false },
         };
     });
     (0, panel_ui_1.registerView)("account", async (ctx) => {
