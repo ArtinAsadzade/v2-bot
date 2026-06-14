@@ -88,6 +88,7 @@ exports.PANEL_VIEW_IDS = new Set([
     "account.details",
     "account.xray",
     "account.renew",
+    "account.renew.products",
     "account.renew.summary",
     "account.history",
     "wallet.history",

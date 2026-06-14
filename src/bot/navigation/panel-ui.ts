@@ -18,6 +18,7 @@ export type PanelViewId =
   | "account.details"
   | "account.xray"
   | "account.renew"
+  | "account.renew.products"
   | "account.renew.summary"
   | "account.history"
   | "wallet.history"
@@ -155,6 +156,7 @@ export const PANEL_VIEW_IDS = new Set<string>([
   "account.details",
   "account.xray",
   "account.renew",
+  "account.renew.products",
   "account.renew.summary",
   "account.history",
   "wallet.history",
