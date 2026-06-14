@@ -41,7 +41,8 @@ export type FlowName =
   | "product_guide_create"
   | "product_guide_edit"
   | "payment_gateway_update"
-  | "payment_gateway_setup";
+  | "payment_gateway_setup"
+  | "xray_panel_setup";
 
 export interface ActiveFlow {
   name: FlowName;

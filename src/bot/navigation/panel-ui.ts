@@ -53,6 +53,8 @@ export type PanelViewId =
   | "admin.transactions"
   | "admin.notifications"
   | "admin.settings"
+  | "admin.xraySettings"
+  | "admin.xrayClients"
   | "admin.paymentGateway"
   | "admin.paymentStats"
   | "admin.invoices"

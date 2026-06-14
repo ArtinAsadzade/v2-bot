@@ -157,6 +157,9 @@ function maskApiKey(apiKey) {
 function paymentLog(event, metadata = {}) {
     logger_1.logger.info(event, { event, ...metadata });
 }
+function xrayClientEmail(input) {
+    return `tg${input.telegramId}-p${input.productId.slice(-8)}-o${input.orderId.slice(-8)}`.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 64);
+}
 async function audit(tx, data) {
     try {
         if (data.invoiceId) {
@@ -672,7 +675,9 @@ class PaymentService {
         try {
             paymentLog("PAYMENT_FULFILLMENT_STARTED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
             await audit(prisma_1.prisma, { userId: paidInvoice.userId, invoiceId: paidInvoice.id, action: "PAYMENT_FULFILLMENT_STARTED", metadata: { type: paidInvoice.type } });
-            const result = await this.fulfillPaidInvoice(paidInvoice.id);
+            let result = await this.fulfillPaidInvoice(paidInvoice.id);
+            if (result.needsXrayProvisioning && result.order?.id)
+                result = await this.provisionXrayClient(result.order.id, paidInvoice.id);
             paymentLog("PAYMENT_COMPLETED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
             admin_service_1.AdminService.invalidateDashboardCache();
             return { statusCode: 200, text: "Payment completed successfully.", result };
@@ -706,18 +711,28 @@ class PaymentService {
                 return { invoice: completed, user, type: fresh.type };
             }
             if (fresh.orderId) {
-                const existingOrder = await tx.order.findUnique({ where: { id: fresh.orderId }, include: { product: true, items: { include: { productAccount: true }, take: 1 } } });
+                const existingOrder = await tx.order.findUnique({ where: { id: fresh.orderId }, include: { product: true, items: { include: { productAccount: true, xrayClient: true }, take: 1 } } });
                 if (existingOrder?.items[0]) {
+                    const existingClient = existingOrder.items[0].xrayClient;
+                    if (existingClient && existingClient.status !== "active") {
+                        if (existingClient.status === "failed")
+                            throw new Error("تحویل Xray قبلاً ناموفق شده و نیازمند بررسی مدیر است");
+                        return { invoice: fresh, order: existingOrder, product: existingOrder.product, account: { id: existingClient.id, username: existingClient.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem: existingOrder.items[0], xrayClient: existingClient, needsXrayProvisioning: existingClient.status === "provisioning" || existingClient.status === "creating", type: fresh.type };
+                    }
                     const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: fresh.completedAt ?? new Date(), verifiedAt: new Date(), deliveryStatus: "COMPLETED" } });
                     return { invoice: completed, order: existingOrder, product: existingOrder.product, account: existingOrder.items[0].productAccount, orderItem: existingOrder.items[0], type: fresh.type };
                 }
             }
             const delivered = await this.purchaseProduct(tx, { userId: fresh.userId, productId: fresh.productId ?? "", couponCode: fresh.couponCode ?? undefined, method: "INSTANT", invoice: fresh });
+            if (delivered.xrayClient) {
+                const processing = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { verifiedAt: new Date(), orderId: delivered.order.id, deliveryStatus: "PROCESSING" } });
+                return { invoice: processing, ...delivered, needsXrayProvisioning: true, type: fresh.type };
+            }
             const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), orderId: delivered.order.id, deliveryStatus: "COMPLETED" } });
             paymentLog("PAYMENT_PRODUCT_DELIVERED", { invoiceId: fresh.id, userId: fresh.userId, orderId: delivered.order.id, productId: delivered.product.id, accountId: delivered.account.id });
             await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PAYMENT_PRODUCT_DELIVERED", metadata: { orderId: delivered.order.id, productId: delivered.product.id, accountId: delivered.account.id } });
             await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PAYMENT_INVOICE_COMPLETED", metadata: { orderId: delivered.order.id, amount: fresh.amount, type: fresh.type } });
-            return { invoice: completed, ...delivered, type: fresh.type };
+            return { invoice: completed, ...delivered, needsXrayProvisioning: Boolean(delivered.xrayClient), type: fresh.type };
         });
     }
     static async markNotification(invoiceId, status, metadata = {}) {
@@ -774,8 +789,10 @@ class PaymentService {
             if (!product.trafficBytes || !product.durationDays || !product.stockLimit || !product.inboundIds.length)
                 throw new Error("تنظیمات محصول Xray کامل نیست");
             const reserved = await tx.product.updateMany({ where: { id: product.id, mode: "xray_auto", soldCount: { lt: product.stockLimit } }, data: { soldCount: { increment: 1 } } });
-            if (reserved.count !== 1)
+            if (reserved.count !== 1) {
+                monitoring_service_1.MonitoringService.record({ type: "XRAY_STOCK_RESERVATION_FAILED", section: "Xray Stock", description: "Xray stock reservation failed", userId: data.userId, severity: "warning", suggestedAction: "موجودی محصول Xray و soldCount را بررسی کنید.", metadata: { productId: product.id } });
                 throw new Error("موجودی این محصول تمام شده است");
+            }
             await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "XRAY_STOCK_RESERVED", metadata: { productId: product.id, method: data.method } });
         }
         else {
@@ -808,20 +825,13 @@ class PaymentService {
         let orderItem;
         if (isXray) {
             const user = await tx.user.findUniqueOrThrow({ where: { id: data.userId }, select: { telegramId: true } });
-            const email = `tg${user.telegramId}-${slugify(product.title)}-${order.id.slice(-8)}`.toLowerCase().slice(0, 64);
-            try {
-                const created = await xray_service_1.XrayClientService.createClient({ email, trafficBytes: product.trafficBytes, expiresAt, telegramId: user.telegramId, inboundIds: product.inboundIds });
-                xrayClient = await tx.xrayClient.create({ data: { userId: data.userId, telegramId: user.telegramId, productId: product.id, orderId: order.id, clientEmail: email, clientSubId: created.subId, panelClientId: created.uuid ?? created.id, inboundIds: product.inboundIds, expiresAt, trafficBytes: product.trafficBytes, status: "active" } });
-                orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, xrayClientId: xrayClient.id, deliveredUsername: email, deliveredSubscriptionLink: null, deliveredConfigLink: null, deliveredConfig: "XRAY_LIVE_LINKS", purchaseDate, expiresAt, isActive: true } });
-            }
-            catch (error) {
-                const message = (0, xray_service_1.sanitizePanelError)(error);
-                logger_1.logger.error("XRAY_CLIENT_CREATE_FAILED", { orderId: order.id, productId: product.id, error: message });
-                await tx.order.update({ where: { id: order.id }, data: { status: "failed_delivery" } });
-                await tx.xrayClient.create({ data: { userId: data.userId, telegramId: user.telegramId, productId: product.id, orderId: order.id, clientEmail: email, inboundIds: product.inboundIds, expiresAt, trafficBytes: product.trafficBytes, status: "failed", lastError: message } });
-                monitoring_service_1.MonitoringService.record({ type: "PAYMENT_DELIVERY_FAILED", section: "Xray Delivery", description: message, userId: data.userId, severity: "critical", suggestedAction: "تحویل سرویس Xray را بررسی و دستی اصلاح کنید.", metadata: { orderId: order.id, productId: product.id } });
-                throw new Error("پرداخت موفق بود اما تحویل سرویس نیازمند بررسی است.");
-            }
+            const email = xrayClientEmail({ telegramId: user.telegramId, productId: product.id, orderId: order.id });
+            xrayClient = await tx.xrayClient.upsert({
+                where: { clientEmail: email },
+                update: {},
+                create: { userId: data.userId, telegramId: user.telegramId, productId: product.id, orderId: order.id, clientEmail: email, inboundIds: product.inboundIds, expiresAt, trafficBytes: product.trafficBytes, status: "provisioning" },
+            });
+            orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, xrayClientId: xrayClient.id, deliveredUsername: email, deliveredSubscriptionLink: null, deliveredConfigLink: null, deliveredConfig: "XRAY_LIVE_LINKS", purchaseDate, expiresAt, isActive: false } });
         }
         else {
             orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, productAccountId: account.id, deliveredUsername: account.username, deliveredPassword: account.password, deliveredSubscriptionLink: account.subscriptionLink, deliveredConfigLink: account.configLink, deliveredConfig: account.configLink || account.config, purchaseDate, expiresAt, isActive: true } });
@@ -843,10 +853,45 @@ class PaymentService {
         const deliveredAccount = account ? await tx.productAccount.findUniqueOrThrow({ where: { id: account.id } }) : { id: xrayClient.id, username: xrayClient.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" };
         return { order, product, account: deliveredAccount, orderItem, xrayClient, totalAmount, originalAmount, discountAmount, couponId, couponCode: data.couponCode, expiresAt };
     }
+    static async provisionXrayClient(orderId, invoiceId) {
+        const client = await prisma_1.prisma.xrayClient.findFirstOrThrow({ where: { orderId }, include: { order: true } });
+        if (client.status === "active") {
+            const orderItem = await prisma_1.prisma.orderItem.findFirst({ where: { xrayClientId: client.id } });
+            const product = await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: client.productId } });
+            return { order: client.order, product, account: { id: client.id, username: client.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem, xrayClient: client, totalAmount: client.order?.totalAmount ?? 0, originalAmount: client.order?.originalAmount ?? 0, discountAmount: client.order?.discountAmount ?? 0, couponId: client.order?.couponId ?? null, couponCode: undefined, expiresAt: client.expiresAt };
+        }
+        if (client.status !== "provisioning" && client.status !== "creating")
+            throw new Error("تحویل Xray قبلاً ناموفق شده و نیازمند بررسی مدیر است");
+        try {
+            const created = await xray_service_1.XrayClientService.createClient({ email: client.clientEmail, trafficBytes: client.trafficBytes, expiresAt: client.expiresAt, telegramId: client.telegramId, inboundIds: client.inboundIds });
+            const updated = await prisma_1.prisma.xrayClient.update({ where: { id: client.id }, data: { status: "active", clientSubId: created.subId, panelClientId: created.uuid ?? created.id, lastError: null } });
+            const orderItem = await prisma_1.prisma.orderItem.updateMany({ where: { xrayClientId: client.id }, data: { isActive: true } });
+            await prisma_1.prisma.order.update({ where: { id: orderId }, data: { status: "completed" } });
+            if (invoiceId)
+                await prisma_1.prisma.paymentInvoice.update({ where: { id: invoiceId }, data: { deliveryStatus: "COMPLETED", status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), orderId } });
+            await audit(prisma_1.prisma, { userId: client.userId, invoiceId, action: "XRAY_PRODUCT_DELIVERED", metadata: { orderId, xrayClientId: client.id } });
+            const product = await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: client.productId } });
+            const order = await prisma_1.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+            const item = await prisma_1.prisma.orderItem.findFirst({ where: { xrayClientId: client.id } });
+            return { order, product, account: { id: updated.id, username: updated.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem: item, xrayClient: updated, totalAmount: order.totalAmount, originalAmount: order.originalAmount, discountAmount: order.discountAmount, couponId: order.couponId, couponCode: undefined, expiresAt: updated.expiresAt };
+        }
+        catch (error) {
+            const message = (0, xray_service_1.sanitizePanelError)(error);
+            logger_1.logger.error("XRAY_CLIENT_CREATE_FAILED", { orderId, error: message });
+            await prisma_1.prisma.xrayClient.update({ where: { id: client.id }, data: { status: "failed", lastError: message } });
+            await prisma_1.prisma.order.update({ where: { id: orderId }, data: { status: "failed_delivery" } });
+            if (invoiceId)
+                await prisma_1.prisma.paymentInvoice.update({ where: { id: invoiceId }, data: { deliveryStatus: "FAILED_DELIVERY", verifiedAt: new Date(), orderId } });
+            monitoring_service_1.MonitoringService.record({ type: "XRAY_CLIENT_CREATE_FAILED", section: "Xray Delivery", description: message, userId: client.userId, severity: "critical", suggestedAction: "تحویل سرویس Xray را بررسی و دستی retry کنید. موجودی تا رفع خطا مصرف‌شده باقی می‌ماند.", metadata: { orderId, xrayClientId: client.id } });
+            throw new Error("پرداخت/سفارش ثبت شد اما تحویل Xray نیازمند بررسی مدیر است.");
+        }
+    }
     static async purchaseProductWithWallet(userId, productId, couponCode) {
         let result;
         try {
             result = await prisma_1.prisma.$transaction((tx) => this.purchaseProduct(tx, { userId, productId, couponCode, method: "WALLET" }));
+            if (result.xrayClient)
+                result = await this.provisionXrayClient(result.order.id);
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);

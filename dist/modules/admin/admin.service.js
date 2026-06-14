@@ -8,6 +8,7 @@ const system_service_1 = require("../system/system.service");
 const coupon_service_1 = require("../coupon/coupon.service");
 const forced_join_service_1 = require("../system/forced-join.service");
 const visibility_1 = require("../product/visibility");
+const xray_service_1 = require("../xray/xray.service");
 const DASHBOARD_CACHE_TTL_MS = 30000;
 let dashboardCache;
 function containsQuery(query) {
@@ -240,6 +241,10 @@ class AdminService {
         const activeCounts = new Map(activeGroups.map((group) => [group.productId, group._count._all]));
         return [
             products.map((product) => {
+                if (product.mode === "xray_auto") {
+                    const available = Math.max((product.stockLimit ?? 0) - product.soldCount, 0);
+                    return { ...product, inventoryCount: available, soldCount: product.soldCount, activeCount: 0 };
+                }
                 return {
                     ...product,
                     inventoryCount: availableCounts.get(product.id) ?? 0,
@@ -265,7 +270,28 @@ class AdminService {
             prisma_1.prisma.productAccount.count({ where: activePurchasedInventoryWhere(productId, now) }),
             prisma_1.prisma.order.aggregate({ where: { productId, status: "completed" }, _sum: { finalPaidAmount: true } }),
         ]);
+        if (product?.mode === "xray_auto") {
+            const [xrayActive, xrayFailed, xrayExpired] = await Promise.all([
+                prisma_1.prisma.xrayClient.count({ where: { productId, status: "active" } }),
+                prisma_1.prisma.xrayClient.count({ where: { productId, status: "failed" } }),
+                prisma_1.prisma.xrayClient.count({ where: { productId, OR: [{ status: "expired" }, { expiresAt: { lte: now } }] } }),
+            ]);
+            return { product, available: Math.max((product.stockLimit ?? 0) - product.soldCount, 0), reserved: 0, sold: product.soldCount, disabled: 0, expired: xrayExpired, activeAccounts, soldAccounts, orderCount, activeCount: xrayActive, revenue: revenue._sum.finalPaidAmount ?? 0, xrayFailed };
+        }
         return { product, available, reserved, sold, disabled, expired, activeAccounts, soldAccounts, orderCount, activeCount, revenue: revenue._sum.finalPaidAmount ?? 0 };
+    }
+    static async xrayClientList(page = 1, take = 8, status) {
+        const skip = (page - 1) * take;
+        const where = status ? { status } : {};
+        return Promise.all([
+            prisma_1.prisma.xrayClient.findMany({ where, include: { product: true, user: true }, orderBy: { createdAt: "desc" }, skip, take }),
+            prisma_1.prisma.xrayClient.count({ where }),
+        ]);
+    }
+    static async refreshXrayClient(clientId) {
+        const client = await prisma_1.prisma.xrayClient.findUniqueOrThrow({ where: { id: clientId } });
+        const panel = await xray_service_1.XrayClientService.getClient(client.clientEmail);
+        return { client, panel: panel.obj };
     }
     static async searchProducts(query) {
         return prisma_1.prisma.product.findMany({ where: { AND: [(0, visibility_1.productNotDeletedWhere)()], OR: [{ title: { contains: query } }, { category: { is: { name: { contains: query } } } }] }, include: { category: true }, orderBy: { createdAt: "desc" }, take: 10 });

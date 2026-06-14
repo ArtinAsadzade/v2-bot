@@ -5,41 +5,46 @@ const prisma_1 = require("../../services/prisma");
 const visibility_1 = require("./visibility");
 const xray_service_1 = require("../xray/xray.service");
 class ProductService {
+    static isXrayInStock(product) {
+        return product.mode === "xray_auto" && product.stockLimit !== null && product.stockLimit > product.soldCount;
+    }
     static async getCategories() {
-        return prisma_1.prisma.category.findMany({
-            where: { AND: [(0, visibility_1.activeCategoryWhere)(), { products: { some: { AND: [(0, visibility_1.activeProductWhere)(), { OR: [{ mode: "xray_auto", stockLimit: { not: null }, soldCount: { lt: 999999999 } }, { accounts: { some: (0, visibility_1.availableInventoryWhere)() } }] }] } } }] },
+        const categories = await prisma_1.prisma.category.findMany({
+            where: (0, visibility_1.activeCategoryWhere)(),
             orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
-            include: { products: { where: { AND: [(0, visibility_1.activeProductWhere)(), { OR: [{ mode: "xray_auto", stockLimit: { not: null }, soldCount: { lt: 999999999 } }, { accounts: { some: (0, visibility_1.availableInventoryWhere)() } }] }] }, orderBy: { title: "asc" } } },
+            include: { products: { where: (0, visibility_1.activeProductWhere)(), include: { _count: { select: { accounts: { where: (0, visibility_1.availableInventoryWhere)() } } } }, orderBy: { title: "asc" } } },
         });
+        return categories.map((category) => ({ ...category, products: category.products.filter((product) => this.isXrayInStock(product) || product._count.accounts > 0) })).filter((category) => category.products.length > 0);
     }
     static async getProductsByCategory(categoryId) {
-        return prisma_1.prisma.product.findMany({
-            where: { categoryId, AND: [(0, visibility_1.activeProductWhere)(), { category: { is: (0, visibility_1.activeCategoryWhere)() } }, { OR: [{ mode: "xray_auto", stockLimit: { not: null }, soldCount: { lt: 999999999 } }, { accounts: { some: (0, visibility_1.availableInventoryWhere)() } }] }] },
+        const products = await prisma_1.prisma.product.findMany({
+            where: { categoryId, AND: [(0, visibility_1.activeProductWhere)(), { category: { is: (0, visibility_1.activeCategoryWhere)() } }] },
             include: { _count: { select: { accounts: { where: (0, visibility_1.availableInventoryWhere)() } } } },
             orderBy: { title: "asc" },
         });
+        return products.filter((product) => this.isXrayInStock(product) || product._count.accounts > 0).map((product) => ({ ...product, availableStock: this.isXrayInStock(product) ? Math.max((product.stockLimit ?? 0) - product.soldCount, 0) : product._count.accounts }));
     }
     static async listFeaturedProducts(take = 6) {
-        return prisma_1.prisma.product.findMany({
-            where: { AND: [(0, visibility_1.activeProductWhere)(), { category: { is: (0, visibility_1.activeCategoryWhere)() } }, { OR: [{ mode: "xray_auto", stockLimit: { not: null }, soldCount: { lt: 999999999 } }, { accounts: { some: (0, visibility_1.availableInventoryWhere)() } }] }] },
+        const products = await prisma_1.prisma.product.findMany({
+            where: { AND: [(0, visibility_1.activeProductWhere)(), { category: { is: (0, visibility_1.activeCategoryWhere)() } }] },
             include: { category: true, _count: { select: { accounts: { where: (0, visibility_1.availableInventoryWhere)() } } } },
             orderBy: [{ orders: { _count: "desc" } }, { price: "asc" }],
-            take,
         });
+        return products.filter((product) => this.isXrayInStock(product) || product._count.accounts > 0).slice(0, take);
     }
     static async searchActiveProducts(query, take = 10) {
         const normalized = query.trim();
         if (normalized.length < 2)
             return [];
-        return prisma_1.prisma.product.findMany({
+        const products = await prisma_1.prisma.product.findMany({
             where: {
-                AND: [(0, visibility_1.activeProductWhere)(), { category: { is: (0, visibility_1.activeCategoryWhere)() } }, { OR: [{ mode: "xray_auto", stockLimit: { not: null }, soldCount: { lt: 999999999 } }, { accounts: { some: (0, visibility_1.availableInventoryWhere)() } }] }],
+                AND: [(0, visibility_1.activeProductWhere)(), { category: { is: (0, visibility_1.activeCategoryWhere)() } }],
                 OR: [{ title: { contains: normalized } }, { category: { is: { name: { contains: normalized } } } }],
             },
             include: { category: true, _count: { select: { accounts: { where: (0, visibility_1.availableInventoryWhere)() } } } },
             orderBy: [{ price: "asc" }, { title: "asc" }],
-            take,
         });
+        return products.filter((product) => this.isXrayInStock(product) || product._count.accounts > 0).slice(0, take);
     }
     static async getProduct(productId) {
         return prisma_1.prisma.product.findUnique({ where: { id: productId }, include: { category: true } });
@@ -49,7 +54,7 @@ class ProductService {
             ? await prisma_1.prisma.category.findFirstOrThrow({ where: { id: data.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } })
             : await prisma_1.prisma.category.upsert({ where: { name: (data.categoryName ?? "عمومی").trim() }, update: { isActive: true, deletedAt: null }, create: { name: (data.categoryName ?? "عمومی").trim(), isActive: true } });
         const inboundIds = data.inboundIds ?? [];
-        return prisma_1.prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: data.duration, durationDays: data.duration, mode: inboundIds.length ? "xray_auto" : "manual_inventory", trafficBytes: data.trafficGB ? (0, xray_service_1.gbToBytes)(data.trafficGB) : undefined, stockLimit: data.stockLimit, inboundIds, inboundSnapshot: data.inboundSnapshot } });
+        return prisma_1.prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: data.duration, durationDays: inboundIds.length ? data.duration : undefined, mode: inboundIds.length ? "xray_auto" : "manual_inventory", trafficBytes: inboundIds.length && data.trafficGB ? (0, xray_service_1.gbToBytes)(data.trafficGB) : undefined, stockLimit: inboundIds.length ? data.stockLimit : undefined, soldCount: 0, inboundIds, inboundSnapshot: data.inboundSnapshot } });
     }
     static async addAccount(productId, data) {
         if (!data.username.trim() || !data.subscriptionLink.trim() || !data.configLink.trim())
