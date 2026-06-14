@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.parseKeyValueLines = parseKeyValueLines;
 exports.startFlow = startFlow;
 exports.handleActiveFlowText = handleActiveFlowText;
 exports.handleActiveFlowPhoto = handleActiveFlowPhoto;
@@ -42,10 +43,23 @@ const parseCouponType = (value) => {
     return undefined;
 };
 function parseKeyValueLines(text) {
-    return Object.fromEntries(text
-        .split(/\n+/)
-        .map((line) => line.split(/[:=：]/, 2).map((part) => part.trim()))
-        .filter((parts) => parts.length === 2 && Boolean(parts[0]) && Boolean(parts[1])));
+    const entries = [];
+    const aliases = { url: "apiBaseUrl", baseUrl: "apiBaseUrl", token: "apiToken", اشتراک: "subscriptionBaseUrl", فعال: "enabled", وضعیت: "enabled" };
+    const allowed = new Set(["apiBaseUrl", "apiToken", "subscriptionBaseUrl", "enabled", "url", "baseUrl", "token", "اشتراک", "فعال", "وضعیت"]);
+    for (const rawLine of text.split(/\n+/)) {
+        const line = rawLine.trim();
+        if (!line)
+            continue;
+        const index = line.indexOf(":");
+        if (index <= 0)
+            throw new Error(`خط نامعتبر است: ${line}\nفرمت صحیح: key: value`);
+        const key = line.slice(0, index).trim();
+        const value = line.slice(index + 1).trim();
+        if (!allowed.has(key))
+            throw new Error(`کلید «${key}» پشتیبانی نمی‌شود.`);
+        entries.push([aliases[key] ?? key, value]);
+    }
+    return Object.fromEntries(entries);
 }
 function parseActive(value) {
     if (!value)
@@ -1020,27 +1034,53 @@ status: ${detail.wallet.status}`;
     },
     xray_panel_setup: {
         firstStep: "fields",
-        prompt: `⚙️ تنظیمات پنل Xray را به شکل key:value ارسال کنید.
+        prompt: (ctx) => {
+            const field = String(ctx.session.flow?.data.field ?? "");
+            if (field === "apiBaseUrl")
+                return `🌐 آدرس پنل Xray را وارد کنید:
+
+مثال: https://domain.com:port/securityPath`;
+            if (field === "apiToken")
+                return "🔑 توکن API پنل Xray را وارد کنید:";
+            if (field === "subscriptionBaseUrl")
+                return `🔗 لینک پایه اشتراک را وارد کنید (اختیاری):
+
+مثال: https://domain.com:2096/sub/`;
+            return `⚙️ تنظیمات پنل Xray را به شکل key:value ارسال کنید.
 
 apiBaseUrl: https://panel.example.com
 apiToken: TOKEN
 subscriptionBaseUrl: https://sub.example.com
 enabled: true
 
-توکن کامل در پنل نمایش داده نمی‌شود.`,
+توکن کامل در پنل نمایش داده نمی‌شود.`;
+        },
         async handleText(ctx, text) {
-            const data = parseKeyValueLines(text);
-            const apiBaseUrl = data.apiBaseUrl ?? data.url ?? data.baseUrl;
-            const apiToken = data.apiToken ?? data.token;
-            if (!apiBaseUrl || !apiToken)
-                return { text: "apiBaseUrl و apiToken الزامی هستند." };
-            await xray_service_1.XrayPanelService.upsertConfig({
-                apiBaseUrl,
-                apiToken,
-                subscriptionBaseUrl: data.subscriptionBaseUrl || undefined,
-                enabled: parseActive(data.enabled) ?? true,
-            });
-            return { done: true, text: "✅ تنظیمات پنل Xray ذخیره شد. برای اطمینان تست اتصال را اجرا کنید.", returnTo: { id: "admin.xraySettings" } };
+            try {
+                const flow = ctx.session.flow;
+                const field = String(flow.data.field ?? "");
+                const data = field ? { [field]: text.trim() } : parseKeyValueLines(text);
+                const patch = {};
+                if (data.apiBaseUrl !== undefined)
+                    patch.apiBaseUrl = data.apiBaseUrl;
+                if (data.apiToken !== undefined)
+                    patch.apiToken = data.apiToken;
+                if (data.subscriptionBaseUrl !== undefined)
+                    patch.subscriptionBaseUrl = data.subscriptionBaseUrl;
+                if (data.enabled !== undefined) {
+                    const enabled = parseActive(data.enabled);
+                    if (enabled === undefined)
+                        return { text: "مقدار وضعیت معتبر نیست. از true/false یا فعال/غیرفعال استفاده کنید." };
+                    patch.enabled = enabled;
+                }
+                if (!Object.keys(patch).length)
+                    return { text: "هیچ مقدار معتبری برای ذخیره ارسال نشده است." };
+                await xray_service_1.XrayPanelService.upsertConfigPatch(patch);
+                return { done: true, text: "✅ تنظیمات پنل Xray ذخیره شد. برای اطمینان تست اتصال را اجرا کنید.", returnTo: { id: "admin.xraySettings" } };
+            }
+            catch (error) {
+                return { text: error instanceof Error ? `❌ ${error.message}` : "❌ ذخیره تنظیمات پنل ناموفق بود." };
+            }
         },
     },
     wallet_adjust: {
@@ -1232,7 +1272,7 @@ function registerFlowEngine(bot) {
         if (name === "payment_gateway_setup")
             return startFlow(ctx, "payment_gateway_setup");
         if (name === "xray_panel_setup")
-            return startFlow(ctx, "xray_panel_setup");
+            return startFlow(ctx, "xray_panel_setup", { field: ctx.match[2] });
         if (name === "coupon_edit")
             return startFlow(ctx, "coupon_edit", { couponId: ctx.match[2] });
         if (name === "broadcast_create") {

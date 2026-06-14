@@ -102,19 +102,21 @@ ${divider}
       text: `⚙️ تنظیمات پنل Xray
 
 ${divider}
-وضعیت: ${anyConfig?.enabled ? "فعال ✅" : "غیرفعال ⛔"}
-API Base URL: ${anyConfig?.apiBaseUrl ?? "ثبت نشده"}
-Subscription Base URL: ${anyConfig?.subscriptionBaseUrl ?? "ثبت نشده"}
-API Token: ${maskToken(anyConfig?.apiToken)}
+وضعیت: ${anyConfig?.enabled ? "فعال" : "غیرفعال"}
+آدرس پنل: ${anyConfig?.apiBaseUrl ?? "ثبت نشده"}
+توکن: ${maskToken(anyConfig?.apiToken)}
+لینک اشتراک: ${anyConfig?.subscriptionBaseUrl ?? "ثبت نشده"}
 تعداد اینباندها: ${(anyConfig?.lastInboundCount ?? 0).toLocaleString("fa-IR")}
-آخرین تست موفق: ${anyConfig?.lastSuccessAt ? anyConfig.lastSuccessAt.toLocaleString("fa-IR") : "—"}
+آخرین تست: ${anyConfig?.lastSuccessAt ? anyConfig.lastSuccessAt.toLocaleString("fa-IR") : "—"}
 آخرین خطا: ${anyConfig?.lastError ?? "—"}
 
 توکن کامل هرگز نمایش داده نمی‌شود.`,
       keyboard: [
-        [{ text: "✏️ ثبت/ویرایش تنظیمات", action: "flow:start:xray_panel_setup" }],
-        [{ text: "🧪 تست اتصال", action: "admin:xray:test" }, { text: anyConfig?.enabled ? "⛔ غیرفعال‌سازی" : "✅ فعال‌سازی", action: `admin:xray:enabled:${anyConfig?.enabled ? "0" : "1"}` }],
+        [{ text: "🌐 تغییر آدرس پنل", action: "flow:start:xray_panel_setup:apiBaseUrl" }, { text: "🔑 تغییر توکن", action: "flow:start:xray_panel_setup:apiToken" }],
+        [{ text: "🔗 تغییر لینک اشتراک", action: "flow:start:xray_panel_setup:subscriptionBaseUrl" }, { text: "✏️ تنظیمات چندخطی", action: "flow:start:xray_panel_setup" }],
+        [{ text: "📡 تست اتصال", action: "admin:xray:test" }, { text: anyConfig?.enabled ? "🚫 غیرفعال‌سازی" : "✅ فعال‌سازی", action: `admin:xray:enabled:${anyConfig?.enabled ? "0" : "1"}` }],
         [{ text: "🧩 کلاینت‌های Xray", action: callbackFor("admin.xrayClients") }],
+        [{ text: "🔙 بازگشت", action: callbackFor("admin.dashboard") }],
       ],
     };
   });
