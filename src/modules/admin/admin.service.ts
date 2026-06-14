@@ -6,7 +6,7 @@ import { SystemSettingsService } from "../system/system.service";
 import { CouponService } from "../coupon/coupon.service";
 import { ForcedJoinService } from "../system/forced-join.service";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, categoryNotDeletedWhere, productNotDeletedWhere, unassignedInventoryWhere } from "../product/visibility";
-import { XrayClientService } from "../xray/xray.service";
+import { gbToBytes, XrayClientService } from "../xray/xray.service";
 
 const DASHBOARD_CACHE_TTL_MS = 30_000;
 
@@ -37,7 +37,7 @@ export type ProductAccountAdminStatus = "available" | "reserved" | "sold" | "dis
 export type XrayClientAdminStatus = "provisioning" | "active" | "failed" | "expired";
 
 type CategoryInput = { name: string; description?: string; icon?: string; displayOrder?: number; isActive?: boolean };
-type ProductInput = { title?: string; categoryId?: string; price?: number; duration?: number; isActive?: boolean };
+type ProductInput = { title?: string; categoryId?: string; price?: number; duration?: number; isActive?: boolean; trafficGB?: number; durationDays?: number; stockLimit?: number; inboundIds?: number[]; inboundSnapshot?: string };
 type AccountInput = { username?: string; subscriptionLink?: string; configLink?: string; productId?: string; status?: ProductAccountAdminStatus };
 type WalletInput = Partial<CryptoWalletInput> & Pick<CryptoWalletInput, "coinName" | "networkName" | "walletAddress">;
 
@@ -331,9 +331,9 @@ export class AdminService {
     return { product, available, reserved, sold, disabled, expired, activeAccounts, soldAccounts, orderCount, activeCount, revenue: revenue._sum.finalPaidAmount ?? 0 };
   }
 
-  static async xrayClientList(page = 1, take = 8, status?: XrayClientAdminStatus) {
+  static async xrayClientList(page = 1, take = 8, status?: XrayClientAdminStatus, productId?: string) {
     const skip = (page - 1) * take;
-    const where: Prisma.XrayClientWhereInput = status ? { status } : {};
+    const where: Prisma.XrayClientWhereInput = { ...(status ? { status } : {}), ...(productId ? { productId } : {}) };
     return Promise.all([
       prisma.xrayClient.findMany({ where, include: { product: true, user: true }, orderBy: { createdAt: "desc" }, skip, take }),
       prisma.xrayClient.count({ where }),
@@ -351,13 +351,22 @@ export class AdminService {
   }
 
   static async updateProduct(productId: string, data: ProductInput, actorId: string) {
-    const updateData: Partial<ProductInput> & { deletedAt?: Date | null } = cleanUndefined(data);
+    const { trafficGB, durationDays, duration, ...rest } = data;
+    const updateData: Prisma.ProductUncheckedUpdateInput & { deletedAt?: Date | null } = cleanUndefined({
+      ...rest,
+      ...(duration !== undefined ? { duration } : {}),
+      ...(trafficGB !== undefined ? { trafficBytes: gbToBytes(trafficGB) } : {}),
+      ...(durationDays !== undefined ? { durationDays, duration: durationDays } : {}),
+    });
+    const currentProduct = await prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { mode: true, soldCount: true, categoryId: true } });
+    if (currentProduct.mode === "xray_auto" && updateData.stockLimit !== undefined && Number(updateData.stockLimit) < currentProduct.soldCount) {
+      throw new Error("❌ موجودی کل نمی‌تواند کمتر از تعداد فروش رفته باشد.");
+    }
     if (updateData.categoryId) {
       await prisma.category.findFirstOrThrow({ where: { id: updateData.categoryId as string, AND: [categoryNotDeletedWhere()] } });
     }
     if (updateData.isActive) {
-      const product = await prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
-      const categoryId = (updateData.categoryId as string | undefined) ?? product.categoryId;
+      const categoryId = (updateData.categoryId as string | undefined) ?? currentProduct.categoryId;
       await prisma.category.findFirstOrThrow({ where: { id: categoryId, AND: [activeCategoryWhere()] } });
       updateData.deletedAt = null;
     }

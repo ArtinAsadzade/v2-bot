@@ -16,6 +16,7 @@ export type ConversationState =
 export type FlowName =
   | "product_create"
   | "product_edit"
+  | "product_xray_inbounds"
   | "account_create"
   | "account_edit"
   | "coupon_create"

@@ -124,23 +124,26 @@ ${divider}
   registerView("admin.xrayClients", async (_ctx, params) => {
     const current = page(params);
     const status = ["provisioning", "active", "failed", "expired"].includes(params.status) ? params.status as "provisioning" | "active" | "failed" | "expired" : undefined;
-    const [clients, total] = await AdminService.xrayClientList(current, 8, status);
+    const productId = params.productId || undefined;
+    const [clients, total] = await AdminService.xrayClientList(current, 8, status, productId);
     return {
       text: `🧩 کلاینت‌های Xray
 
 ${divider}
+${productId ? `محصول: ${clients[0]?.product.title ?? productId}\n` : ""}
 فیلتر: ${status ?? "همه"}
 صفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}
 
 ${clients.map((client) => `• ${client.telegramId} · ${client.product.title}
 ایمیل: ${client.clientEmail}
 وضعیت: ${client.status}
+ساخته‌شده: ${client.createdAt.toLocaleString("fa-IR")}
 انقضا: ${client.expiresAt.toLocaleDateString("fa-IR")}
 اینباندها: ${client.inboundIds.join(", ")}
 ${client.lastError ? `خطا: ${client.lastError}` : ""}`).join("\n\n") || "کلاینتی ثبت نشده است."}`,
       keyboard: [
-        [{ text: "همه", action: callbackFor("admin.xrayClients") }, { text: "فعال", action: callbackFor("admin.xrayClients", { status: "active" }) }],
-        [{ text: "در حال ساخت", action: callbackFor("admin.xrayClients", { status: "provisioning" }) }, { text: "ناموفق", action: callbackFor("admin.xrayClients", { status: "failed" }) }],
+        [{ text: "همه", action: callbackFor("admin.xrayClients", productId ? { productId } : {}) }, { text: "فعال", action: callbackFor("admin.xrayClients", { ...(productId ? { productId } : {}), status: "active" }) }],
+        [{ text: "در حال ساخت", action: callbackFor("admin.xrayClients", { ...(productId ? { productId } : {}), status: "provisioning" }) }, { text: "ناموفق", action: callbackFor("admin.xrayClients", { ...(productId ? { productId } : {}), status: "failed" }) }],
         ...clients.map((client) => [{ text: `🔄 Refresh ${client.clientEmail.slice(0, 20)}`, action: `admin:xray:refresh:${client.id}` }]),
       ],
     };
@@ -195,7 +198,9 @@ ${divider}
       text: `📦 انتخاب سرویس\n\n${divider}\nیک سرویس را انتخاب کنید تا جزئیات، موجودی و پیش‌فاکتور را ببینید.`,
       keyboard: products.map((product) => [
         {
-            text: `${product.title} · ${money(product.price)} · ${stockLabel(product.availableStock ?? product._count.accounts)}`,
+          text: product.mode === "xray_auto"
+            ? `📦 ${product.title} · 📊 ${formatXrayBytes(product.trafficBytes)} · 📅 ${(product.durationDays ?? product.duration).toLocaleString("fa-IR")} روز · ${money(product.price)} · موجودی: ${(product.availableStock ?? 0).toLocaleString("fa-IR")}`
+            : `${product.title} · ${money(product.price)} · ${stockLabel(product.availableStock ?? product._count.accounts)}`,
           action: callbackFor("shop.product", { productId: product.id }),
         },
       ]),
@@ -228,9 +233,9 @@ ${divider}
       6,
     );
     return {
-      text: `📦 ${product.title}\n\n${divider}\n🏷 دسته‌بندی: ${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}\n📅 اعتبار سرویس: ${product.duration.toLocaleString("fa-IR")} روز\n💰 قیمت نهایی: ${money(product.price)}\n🚀 تحویل: فوری و خودکار\n📊 موجودی: ${stockLabel(stock)}\n${divider}\n\nپس از پرداخت، اطلاعات اکانت همین‌جا نمایش داده می‌شود و همیشه از بخش «اکانت‌های من» قابل مشاهده است.`,
+      text: `📦 ${product.title}\n\n${divider}\n🏷 دسته‌بندی: ${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}\n⚙️ نوع محصول: ${product.mode === "xray_auto" ? "ساخت خودکار از پنل Xray" : "موجودی دستی"}\n${product.mode === "xray_auto" ? `📊 حجم: ${formatXrayBytes(product.trafficBytes)}\n📅 اعتبار سرویس: ${(product.durationDays ?? product.duration).toLocaleString("fa-IR")} روز` : `📅 اعتبار سرویس: ${product.duration.toLocaleString("fa-IR")} روز`}\n💰 قیمت نهایی: ${money(product.price)}\n🚀 تحویل: فوری و خودکار\n📊 موجودی: ${stockLabel(stock)}\n${divider}\n\nپس از پرداخت، اطلاعات اکانت همین‌جا نمایش داده می‌شود و همیشه از بخش «اکانت‌های من» قابل مشاهده است.`,
       keyboard: [
-        [{ text: "✅ ادامه خرید", action: callbackFor("shop.checkout", { productId: product.id }) }],
+        ...(stock > 0 ? [[{ text: "✅ ادامه خرید", action: callbackFor("shop.checkout", { productId: product.id }) }]] : []),
         [
           { text: "🎟 کد تخفیف", action: actionFor("flow:start", "coupon_code", product.id) },
         ],
@@ -844,6 +849,43 @@ ${products.map((product) => `• ${product.title}
   registerView("admin.product", async (_ctx, params) => {
     const detail = await AdminService.productDetail(params.productId);
     if (!detail.product) return { text: "⚠️ محصول پیدا نشد.", keyboard: [] };
+    const isXray = detail.product.mode === "xray_auto";
+    const inboundSnapshot = detail.product.inboundSnapshot ? JSON.parse(detail.product.inboundSnapshot) as Array<{ id: number; remark?: string; protocol?: string; port?: number }> : [];
+    if (isXray) {
+      return {
+        text: `📦 ${detail.product.title}
+
+⚙️ نوع محصول:
+ساخت خودکار از پنل Xray
+
+دسته‌بندی: ${detail.product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}
+قیمت: ${money(detail.product.price)}
+📊 حجم:
+${formatXrayBytes(detail.product.trafficBytes)}
+📅 مدت:
+${(detail.product.durationDays ?? detail.product.duration).toLocaleString("fa-IR")} روز
+📦 موجودی:
+${detail.available.toLocaleString("fa-IR")} از ${(detail.product.stockLimit ?? 0).toLocaleString("fa-IR")}
+فروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}
+کلاینت فعال: ${detail.activeCount.toLocaleString("fa-IR")} · ناموفق: ${(detail as any).xrayFailed?.toLocaleString("fa-IR") ?? "۰"} · منقضی: ${detail.expired.toLocaleString("fa-IR")}
+وضعیت: ${detail.product.isActive ? "فعال" : "غیرفعال"}
+
+🔗 اینباندها:
+${inboundSnapshot.length ? inboundSnapshot.map((i) => `• ${i.remark ?? `inbound-${i.id}`} / ${i.protocol ?? "—"} / ${i.port ?? "—"}`).join("\n") : detail.product.inboundIds.map((id) => `• inbound-${id}`).join("\n")}
+
+تغییر حجم/مدت فقط روی خریدهای بعدی اعمال می‌شود و سرویس‌های قبلی را تغییر نمی‌دهد.
+⚠️ تغییر اینباندها فقط روی خریدهای جدید اعمال می‌شود.
+کلاینت‌های قبلی تغییر نمی‌کنند.`,
+        keyboard: [
+          [{ text: "✏️ ویرایش محصول", action: `flow:start:product_edit:${detail.product.id}` }, { text: "📊 تغییر حجم", action: `flow:start:product_edit:${detail.product.id}` }],
+          [{ text: "📅 تغییر مدت", action: `flow:start:product_edit:${detail.product.id}` }, { text: "📦 تغییر موجودی", action: `flow:start:product_edit:${detail.product.id}` }],
+          [{ text: "🔗 تغییر اینباندها", action: `flow:start:product_xray_inbounds:${detail.product.id}` }],
+          [{ text: "🧩 کلاینت‌های ساخته‌شده", action: callbackFor("admin.xrayClients", { productId: detail.product.id }) }],
+          [{ text: detail.product.isActive ? "🚫 غیرفعال" : "✅ فعال", action: `admin:product:active:${detail.product.id}:${detail.product.isActive ? "0" : "1"}` }, { text: "🗑 حذف نرم", action: `admin:product:delete:${detail.product.id}` }],
+          [{ text: "🧨 حذف دائمی", action: `admin:product:hard_delete:confirm:${detail.product.id}` }],
+        ],
+      };
+    }
     return {
       text: `📦 ${detail.product.title}
 
