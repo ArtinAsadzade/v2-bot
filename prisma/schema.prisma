@@ -114,6 +114,7 @@ enum StoreStatus {
 enum PaymentInvoiceType {
   WALLET_TOPUP
   PRODUCT_PURCHASE
+  XRAY_RENEWAL
 }
 
 enum PaymentInvoiceStatus {
@@ -152,6 +153,7 @@ model User {
   paymentInvoices        PaymentInvoice[]
   paymentAuditLogs       PaymentAuditLog[]
   xrayClients            XrayClient[]
+  xrayRenewals           XrayRenewal[]
 
   @@index([role])
   @@index([referredById])
@@ -329,6 +331,8 @@ model PaymentInvoice {
   productId          String?              @db.ObjectId
   depositId          String?              @db.ObjectId
   orderId            String?              @db.ObjectId
+  renewalId          String?              @db.ObjectId
+  renewalXrayClientId String?             @db.ObjectId
   createdAt          DateTime             @default(now())
   paidAt             DateTime?
   verifiedAt         DateTime?
@@ -339,6 +343,7 @@ model PaymentInvoice {
   product Product?          @relation(fields: [productId], references: [id])
   coupon  Coupon?           @relation(fields: [couponId], references: [id])
   order   Order?            @relation(fields: [orderId], references: [id])
+  renewal XrayRenewal?      @relation(fields: [renewalId], references: [id])
   audits  PaymentAuditLog[]
 
   @@index([userId, status, createdAt])
@@ -475,6 +480,7 @@ model Product {
   orderItems      OrderItem[]
   paymentInvoices PaymentInvoice[]
   xrayClients     XrayClient[]
+  xrayRenewals    XrayRenewal[]
 
   @@index([categoryId])
   @@index([isActive, deletedAt])
@@ -612,10 +618,40 @@ model XrayClient {
   product     Product          @relation(fields: [productId], references: [id])
   order       Order?           @relation(fields: [orderId], references: [id])
   orderItems  OrderItem[]
+  renewals    XrayRenewal[]
 
   @@index([userId, status])
   @@index([productId, createdAt])
   @@index([orderId])
+}
+
+model XrayRenewal {
+  id                 String           @id @default(auto()) @map("_id") @db.ObjectId
+  userId             String           @db.ObjectId
+  xrayClientId       String           @db.ObjectId
+  renewalProductId   String           @db.ObjectId
+  invoiceId          String?          @db.ObjectId
+  oldTotalBytes      BigInt
+  newTotalBytes      BigInt
+  oldExpiry          DateTime
+  newExpiry          DateTime
+  oldUsedBytes       BigInt           @default(0)
+  oldRemainingBytes  BigInt           @default(0)
+  addTrafficBytes    BigInt
+  addDays            Int
+  status             XrayClientStatus @default(provisioning)
+  lastError          String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  user           User             @relation(fields: [userId], references: [id])
+  xrayClient     XrayClient       @relation(fields: [xrayClientId], references: [id])
+  renewalProduct Product          @relation(fields: [renewalProductId], references: [id])
+  invoices       PaymentInvoice[]
+
+  @@index([userId, createdAt])
+  @@index([xrayClientId, createdAt])
+  @@index([invoiceId])
 }
 
 model AuditLog {

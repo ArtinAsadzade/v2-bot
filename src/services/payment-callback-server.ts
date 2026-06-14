@@ -21,6 +21,8 @@ type PaymentNotificationPayload = {
   user?: { balance: number };
   product?: { id: string; title: string };
   account?: { id: string; username: string | null; subscriptionLink: string | null; configLink: string | null; config: string | null };
+  xrayClient?: { id: string; clientEmail: string; expiresAt?: Date };
+  renewal?: { id: string; newExpiry?: Date };
   error?: string;
 };
 
@@ -56,6 +58,12 @@ async function notifyUser(bot: AppBot, result: unknown) {
       const success = composeCustomEmojiMessage([customEmoji("✅", "TELEGRAM_EMOJI_SUCCESS_ID"), " ", walletSummaryMessage(payload.user.balance, `مبلغ شارژ شده: ${money(invoice.amount)}`)]);
       await bot.telegram.sendMessage(Number(user.telegramId), success.text, { ...paymentSuccessKeyboard("wallet"), entities: success.entities });
       await PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "wallet_topup", amount: invoice.amount, balance: payload.user.balance });
+      return;
+    }
+
+    if (payload.type === "XRAY_RENEWAL" && payload.xrayClient) {
+      await bot.telegram.sendMessage(Number(user.telegramId), `✅ تمدید سرویس Xray با موفقیت انجام شد.\n\nشناسه: ${payload.xrayClient.clientEmail}`, { reply_markup: { inline_keyboard: [[{ text: "🧩 مشاهده سرویس", callback_data: `nav:account.xray?xid=${payload.xrayClient.id}` }]] } });
+      await PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "xray_renewal", xrayClientId: payload.xrayClient.id });
       return;
     }
 

@@ -10,7 +10,7 @@ import { eventBus } from "../../services/event-bus.service";
 import { logger } from "../../services/logger";
 import { MonitoringService } from "../../services/monitoring.service";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, unassignedInventoryWhere } from "../product/visibility";
-import { XrayClientService, sanitizePanelError } from "../xray/xray.service";
+import { XrayClientService, sanitizePanelError, xrayTrafficSnapshot } from "../xray/xray.service";
 
 export type PaymentGatewayInput = {
   enabled?: boolean;
@@ -509,7 +509,7 @@ export class PaymentService {
     }
   }
 
-  static async createInvoice(data: { userId: string; amount: number; type: PaymentInvoiceType; productId?: string; originalAmount?: number; discountAmount?: number; couponId?: string | null; couponCode?: string | null }) {
+  static async createInvoice(data: { userId: string; amount: number; type: PaymentInvoiceType; productId?: string; originalAmount?: number; discountAmount?: number; couponId?: string | null; couponCode?: string | null; renewalId?: string; renewalXrayClientId?: string }) {
     assertPositiveAmount(data.amount);
     const gateway = await PaymentGatewayService.get();
     if (!gateway.enabled) throw new Error("پرداخت آنی در حال حاضر غیرفعال است");
@@ -533,6 +533,8 @@ export class PaymentService {
       type: data.type,
       status: "PENDING",
       product: data.productId ? { connect: { id: data.productId } } : undefined,
+      renewal: data.renewalId ? { connect: { id: data.renewalId } } : undefined,
+      renewalXrayClientId: data.renewalXrayClientId,
     };
     paymentLog("PAYMENT_INVOICE_CREATE_PAYLOAD", {
       userId: data.userId,
@@ -732,6 +734,11 @@ export class PaymentService {
       if (fresh.status !== "PAID") throw new Error("فاکتور در وضعیت پرداخت‌شده نیست");
       if (fresh.deliveryStatus !== "PROCESSING") throw new Error("فاکتور در حال پردازش تحویل نیست");
 
+      if (fresh.type === "XRAY_RENEWAL") {
+        const result = await this.fulfillXrayRenewal(fresh.id);
+        return { ...result, type: fresh.type as PaymentInvoiceType };
+      }
+
       if (fresh.type === "WALLET_TOPUP") {
         const user = await this.creditWallet(tx, { userId: fresh.userId, amount: fresh.amount, reason: `شارژ کیف پول با پرداخت آنی - فاکتور ${fresh.id}`, actorId: fresh.userId, invoiceId: fresh.id, referenceId: `invoice:${fresh.id}` });
         const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), deliveryStatus: "COMPLETED" } });
@@ -765,6 +772,72 @@ export class PaymentService {
       await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PAYMENT_INVOICE_COMPLETED", metadata: { orderId: delivered.order.id, amount: fresh.amount, type: fresh.type } });
       return { invoice: completed, ...delivered, needsXrayProvisioning: Boolean(delivered.xrayClient), type: fresh.type as PaymentInvoiceType };
     });
+  }
+
+
+  static async buildXrayRenewalQuote(userId: string, xrayClientId: string, productId: string) {
+    const [client, product] = await Promise.all([
+      prisma.xrayClient.findFirstOrThrow({ where: { id: xrayClientId, userId }, include: { product: true } }),
+      prisma.product.findFirstOrThrow({ where: { id: productId, mode: "xray_auto", isActive: true, deletedAt: null } }),
+    ]);
+    if (!product.trafficBytes || !product.durationDays) throw new Error("پلن تمدید Xray کامل نیست");
+    let traffic: any = null;
+    let liveOk = true;
+    try { traffic = await XrayClientService.traffic(client.clientEmail); } catch { liveOk = false; }
+    const snapshot = xrayTrafficSnapshot(traffic, client.trafficBytes, client.usedBytes);
+    const now = new Date();
+    const baseExpiry = client.expiresAt > now ? client.expiresAt : now;
+    const newExpiry = new Date(baseExpiry.getTime() + product.durationDays * 86_400_000);
+    const newTotalBytes = snapshot.totalBytes + product.trafficBytes;
+    return { client, currentProduct: client.product, product, ...snapshot, newTotalBytes, oldExpiry: client.expiresAt, newExpiry, addTrafficBytes: product.trafficBytes, addDays: product.durationDays, liveOk };
+  }
+
+  static async renewXrayWithWallet(userId: string, xrayClientId: string, productId: string) {
+    const quote = await this.buildXrayRenewalQuote(userId, xrayClientId, productId);
+    const renewal = await prisma.$transaction(async (tx) => {
+      await this.assertUserCanPay(userId, tx);
+      const walletUser = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { balance: true } });
+      if (walletUser.balance < quote.product.price) throw new Error("موجودی کیف پول کافی نیست");
+      const created = await tx.xrayRenewal.create({ data: { userId, xrayClientId, renewalProductId: productId, oldTotalBytes: quote.totalBytes, newTotalBytes: quote.newTotalBytes, oldExpiry: quote.oldExpiry, newExpiry: quote.newExpiry, oldUsedBytes: quote.usedBytes, oldRemainingBytes: quote.remainingBytes, addTrafficBytes: quote.addTrafficBytes, addDays: quote.addDays, status: "provisioning" } });
+      await this.debitWallet(tx, { userId, amount: quote.product.price, reason: `تمدید سرویس Xray ${quote.client.clientEmail}`, actorId: userId, referenceId: `xray-renewal:${created.id}` });
+      return created;
+    });
+    return this.applyXrayRenewal(renewal.id);
+  }
+
+  static async createXrayRenewalInvoice(userId: string, xrayClientId: string, productId: string) {
+    const quote = await this.buildXrayRenewalQuote(userId, xrayClientId, productId);
+    const renewal = await prisma.xrayRenewal.create({ data: { userId, xrayClientId, renewalProductId: productId, oldTotalBytes: quote.totalBytes, newTotalBytes: quote.newTotalBytes, oldExpiry: quote.oldExpiry, newExpiry: quote.newExpiry, oldUsedBytes: quote.usedBytes, oldRemainingBytes: quote.remainingBytes, addTrafficBytes: quote.addTrafficBytes, addDays: quote.addDays, status: "provisioning" } });
+    const invoice = await this.createInvoice({ userId, amount: quote.product.price, originalAmount: quote.product.price, discountAmount: 0, type: "XRAY_RENEWAL", productId, renewalId: renewal.id, renewalXrayClientId: xrayClientId });
+    await prisma.xrayRenewal.update({ where: { id: renewal.id }, data: { invoiceId: invoice.id } });
+    return invoice;
+  }
+
+  private static async fulfillXrayRenewal(invoiceId: string) {
+    const invoice = await prisma.paymentInvoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    const renewal = invoice.renewalId ? await prisma.xrayRenewal.findUniqueOrThrow({ where: { id: invoice.renewalId }, include: { xrayClient: true, renewalProduct: true } }) : await prisma.xrayRenewal.findFirstOrThrow({ where: { invoiceId }, include: { xrayClient: true, renewalProduct: true } });
+    const updated = await this.applyXrayRenewal(renewal.id, invoiceId);
+    const completed = await prisma.paymentInvoice.update({ where: { id: invoiceId }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), deliveryStatus: "COMPLETED" } });
+    return { invoice: completed, renewal: updated, xrayClient: updated.xrayClient };
+  }
+
+  private static async applyXrayRenewal(renewalId: string, invoiceId?: string) {
+    const renewal = await prisma.xrayRenewal.findUniqueOrThrow({ where: { id: renewalId }, include: { xrayClient: true, renewalProduct: true } });
+    if (renewal.status === "active") return renewal;
+    try {
+      await XrayClientService.updateClient(renewal.xrayClient.clientEmail, { totalBytes: renewal.newTotalBytes, expiresAt: renewal.newExpiry, telegramId: renewal.xrayClient.telegramId });
+      const [, updatedRenewal] = await prisma.$transaction([
+        prisma.xrayClient.update({ where: { id: renewal.xrayClientId }, data: { trafficBytes: renewal.newTotalBytes, expiresAt: renewal.newExpiry, status: "active", lastError: null } }),
+        prisma.xrayRenewal.update({ where: { id: renewal.id }, data: { status: "active", lastError: null, invoiceId: invoiceId ?? renewal.invoiceId } }),
+      ]);
+      return prisma.xrayRenewal.findUniqueOrThrow({ where: { id: updatedRenewal.id }, include: { xrayClient: true, renewalProduct: true } });
+    } catch (error) {
+      const message = sanitizePanelError(error);
+      await prisma.xrayRenewal.update({ where: { id: renewal.id }, data: { status: "renewal_failed", lastError: message, invoiceId: invoiceId ?? renewal.invoiceId } });
+      await prisma.xrayClient.update({ where: { id: renewal.xrayClientId }, data: { status: "renewal_failed", lastError: message } });
+      MonitoringService.record({ type: "PAYMENT_DELIVERY_FAILED", section: "Xray Renewal", description: message, userId: renewal.userId, severity: "critical", suggestedAction: "تمدید پرداخت‌شده را از پنل بررسی و دستی اعمال کنید.", metadata: { renewalId: renewal.id, invoiceId } });
+      throw new Error("پرداخت موفق بود اما تمدید سرویس نیازمند بررسی است.");
+    }
   }
 
   static async markNotification(invoiceId: string, status: "SENT" | "FAILED", metadata: Record<string, unknown> = {}) {
@@ -982,6 +1055,14 @@ export class PaymentService {
 }
 
 export class PaymentInvoiceService {
+  static async buildXrayRenewalQuote(userId: string, xrayClientId: string, productId: string) {
+    return PaymentService.buildXrayRenewalQuote(userId, xrayClientId, productId);
+  }
+
+  static async renewXrayWithWallet(userId: string, xrayClientId: string, productId: string) {
+    return PaymentService.renewXrayWithWallet(userId, xrayClientId, productId);
+  }
+
   static async createWalletTopupInvoice(userId: string, amount: number) {
     return PaymentService.createInvoice({ userId, amount, originalAmount: amount, discountAmount: 0, type: "WALLET_TOPUP" });
   }
@@ -1000,9 +1081,14 @@ export class PaymentInvoiceService {
     });
   }
 
+  static async createXrayRenewalInvoice(userId: string, xrayClientId: string, productId: string) {
+    return PaymentService.createXrayRenewalInvoice(userId, xrayClientId, productId);
+  }
+
   static async processCallback(reference: string | CallbackReference, metadata: Record<string, unknown> = {}) {
     return PaymentService.completePayment(reference, metadata);
   }
+
 
   static async markNotification(invoiceId: string, status: "SENT" | "FAILED", metadata: Record<string, unknown> = {}) {
     return PaymentService.markNotification(invoiceId, status, metadata);

@@ -214,6 +214,91 @@ function registerModernHandlers(bot) {
         await ctx.answerCbQuery();
         await (0, panel_ui_1.renderPanel)(ctx, { id: "shop.product", params: { productId: ctx.match[1] } }, "replace", panel_ui_1.RenderMode.EDIT_CURRENT);
     });
+    async function ownedXrayClient(ctx, id) {
+        if (!ctx.from)
+            return null;
+        const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
+        if (!user)
+            return null;
+        return prisma_1.prisma.xrayClient.findFirst({ where: { id, userId: user.id }, include: { product: true } });
+    }
+    bot.action(/^xray:sub:(.+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        const client = await ownedXrayClient(ctx, ctx.match[1]);
+        if (!client)
+            return void await ctx.reply("⚠️ سرویس پیدا نشد.");
+        try {
+            const url = await xray_service_1.XrayClientService.subscriptionUrl(client);
+            await xray_service_1.XrayClientService.subLinks(client.clientSubId).catch(() => null);
+            await ctx.reply(`🔗 لینک اشتراک شما\n\n${url}\n\nاین لینک را داخل برنامه‌هایی مثل v2rayNG, Streisand, Hiddify یا Nekobox وارد کنید.`, { reply_markup: { inline_keyboard: [[{ text: "📲 نمایش QR", callback_data: `xray:qr:${client.id}` }, { text: "⚙️ دریافت کانفیگ‌ها", callback_data: `xray:configs:${client.id}` }], [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: client.id }) }]] } });
+        }
+        catch (error) {
+            await ctx.reply(`⚠️ لینک اشتراک در دسترس نیست\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
+        }
+    });
+    bot.action(/^xray:qr:(.+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        const client = await ownedXrayClient(ctx, ctx.match[1]);
+        if (!client)
+            return void await ctx.reply("⚠️ سرویس پیدا نشد.");
+        try {
+            const url = await xray_service_1.XrayClientService.subscriptionUrl(client);
+            const qr = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(url)}`;
+            await ctx.replyWithPhoto(qr, { caption: "📲 QR لینک اشتراک\n\nبا اسکن این کد، لینک اشتراک شما در برنامه قابل افزودن است." });
+        }
+        catch (error) {
+            await ctx.reply(`⚠️ ساخت QR ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
+        }
+    });
+    bot.action(/^xray:configs:(.+)$/, async (ctx) => {
+        await ctx.answerCbQuery("در حال دریافت کانفیگ‌ها...");
+        const client = await ownedXrayClient(ctx, ctx.match[1]);
+        if (!client)
+            return void await ctx.reply("⚠️ سرویس پیدا نشد.");
+        try {
+            const raw = await xray_service_1.XrayClientService.links(client.clientEmail);
+            const configs = Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(/\r?\n/).filter(Boolean) : Object.values(raw ?? {}).flat().map(String);
+            if (!configs.length)
+                return void await ctx.reply("⚠️ کانفیگی از پنل دریافت نشد.");
+            for (let i = 0; i < configs.length; i++)
+                await ctx.reply(`⚙️ کانفیگ ${i + 1}\n\n${configs[i]}`);
+            await ctx.reply(`✅ تمام کانفیگ‌های شما ارسال شد.\n\nتعداد کانفیگ‌ها:\n${configs.length.toLocaleString("fa-IR")}`, { reply_markup: { inline_keyboard: [[{ text: "🔗 لینک اشتراک", callback_data: `xray:sub:${client.id}` }, { text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: client.id }) }]] } });
+        }
+        catch (error) {
+            await ctx.reply(`⚠️ دریافت کانفیگ‌ها ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
+        }
+    });
+    bot.action(/^xray:renew:wallet:([^:]+):([^:]+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from)
+            return;
+        const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
+        if (!user)
+            return;
+        try {
+            await ctx.editMessageText("⏳ در حال تمدید سرویس از کیف پول...", { reply_markup: { inline_keyboard: [] } });
+            const renewal = await payment_service_1.PaymentInvoiceService.renewXrayWithWallet(user.id, ctx.match[1], ctx.match[2]);
+            await ctx.reply(`✅ سرویس با موفقیت تمدید شد.\n\nاعتبار جدید: ${renewal.newExpiry.toLocaleDateString("fa-IR")}`, { reply_markup: { inline_keyboard: [[{ text: "🧩 مشاهده سرویس", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: ctx.match[1] }) }]] } });
+        }
+        catch (error) {
+            await ctx.reply(`⚠️ تمدید ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
+        }
+    });
+    bot.action(/^xray:renew:instant:([^:]+):([^:]+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from)
+            return;
+        const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
+        if (!user)
+            return;
+        try {
+            const invoice = await payment_service_1.PaymentInvoiceService.createXrayRenewalInvoice(user.id, ctx.match[1], ctx.match[2]);
+            await ctx.reply(`🧾 فاکتور تمدید آماده شد\n\n💰 مبلغ: ${invoice.amount.toLocaleString("fa-IR")} تومان\n\nبرای پرداخت روی دکمه زیر بزنید.`, { reply_markup: { inline_keyboard: [[{ text: "⚡ پرداخت", url: invoice.paymentLink ?? "" }], [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: ctx.match[1] }) }]] } });
+        }
+        catch (error) {
+            await ctx.reply(`⚠️ ایجاد فاکتور تمدید ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
+        }
+    });
     bot.action(/^coupon:(.+)$/, async (ctx) => {
         await ctx.answerCbQuery();
         await (0, panel_ui_1.renderPanel)(ctx, { id: "shop.product", params: { productId: ctx.match[1] } }, "replace", panel_ui_1.RenderMode.EDIT_CURRENT);

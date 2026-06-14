@@ -47,6 +47,11 @@ async function notifyUser(bot, result) {
             await payment_service_1.PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "wallet_topup", amount: invoice.amount, balance: payload.user.balance });
             return;
         }
+        if (payload.type === "XRAY_RENEWAL" && payload.xrayClient) {
+            await bot.telegram.sendMessage(Number(user.telegramId), `✅ تمدید سرویس Xray با موفقیت انجام شد.\n\nشناسه: ${payload.xrayClient.clientEmail}`, { reply_markup: { inline_keyboard: [[{ text: "🧩 مشاهده سرویس", callback_data: `nav:account.xray?xid=${payload.xrayClient.id}` }]] } });
+            await payment_service_1.PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "xray_renewal", xrayClientId: payload.xrayClient.id });
+            return;
+        }
         if ("product" in payload && "account" in payload && payload.product && payload.account) {
             const success = (0, custom_emoji_1.composeCustomEmojiMessage)([(0, custom_emoji_1.customEmoji)("✅", "TELEGRAM_EMOJI_SUCCESS_ID"), " ", (0, messages_1.purchaseSuccessMessage)({ productTitle: payload.product.title, username: payload.account.username, subscriptionLink: payload.account.subscriptionLink, config: payload.account.configLink ?? payload.account.config })]);
             await bot.telegram.sendMessage(Number(user.telegramId), success.text, { ...(0, design_system_1.paymentSuccessKeyboard)("product"), entities: success.entities });

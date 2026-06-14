@@ -16,6 +16,9 @@ export type PanelViewId =
   | "wallet"
   | "account"
   | "account.details"
+  | "account.xray"
+  | "account.renew"
+  | "account.renew.summary"
   | "account.history"
   | "wallet.history"
   | "deposit"
@@ -91,6 +94,7 @@ const PARAM_ALIASES: Record<string, string> = {
   productId: "pid",
   categoryId: "cid",
   accountId: "aid",
+  xrayClientId: "xid",
   userId: "uid",
   walletId: "wid",
   couponId: "co",
@@ -149,6 +153,9 @@ export const PANEL_VIEW_IDS = new Set<string>([
   "wallet",
   "account",
   "account.details",
+  "account.xray",
+  "account.renew",
+  "account.renew.summary",
   "account.history",
   "wallet.history",
   "deposit",
