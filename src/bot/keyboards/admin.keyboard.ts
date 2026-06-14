@@ -5,6 +5,7 @@ export function adminKeyboard() {
     [
       { text: "📊 آمار", action: "nav:admin.analytics", tone: "primary" },
       { text: "💳 پرداخت‌ها", action: "nav:admin.paymentGateway" },
+      { text: "🛡 مانیتورینگ سیستم", action: "admin:monitoring" },
     ],
     [
       { text: "📦 محصولات", action: "nav:admin.products" },

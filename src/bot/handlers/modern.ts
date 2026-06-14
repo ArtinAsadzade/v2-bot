@@ -16,6 +16,7 @@ import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 import { quickReplyTarget } from "../keyboards/reply.keyboard";
 import { InvoiceActionKeyboard, PaymentKeyboard } from "../keyboards/design-system";
 import { purchaseSuccessMessage } from "../../utils/messages";
+import { MonitoringService } from "../../services/monitoring.service";
 
 
 export function registerModernHandlers(bot: AppBot) {
@@ -125,7 +126,10 @@ export function registerModernHandlers(bot: AppBot) {
     await ctx.answerCbQuery();
     if (ctx.match[1] === "back") return goBack(ctx);
     const state = parseNavAction(`nav:${ctx.match[1]}`);
-    if (!state) return;
+    if (!state) {
+      MonitoringService.record({ type: "BUTTON_DATA_INVALID", section: "Telegram Callback", description: `Invalid nav callback: nav:${ctx.match[1]}`, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined, userId: ctx.state.userId, severity: "warning", suggestedAction: "callback_data دکمه‌های منتشرشده را بررسی کنید." });
+      return;
+    }
     if (state.id.startsWith("admin") && (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))) {
       await ctx.answerCbQuery("دسترسی غیرمجاز");
       return;
@@ -723,6 +727,8 @@ ${account.configLink}
         await ctx.reply("📩 پیام شما ارسال شد. برای ادامه گفتگو، پیام بعدی را ارسال کنید.", { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: `support:close:${ctx.session.liveTicketId}` }], [{ text: "🏠 خانه", callback_data: callbackFor("home") }]] } });
         return;
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        MonitoringService.record({ type: "TICKET_HANDLER_FAILED", section: "Ticket Handler", description: message, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined, userId: ctx.state.userId, severity: "critical", suggestedAction: "وضعیت تیکت، دسترسی پیام‌رسانی ربات و دیتابیس را بررسی کنید.", metadata: { ticketId: ctx.session.liveTicketId, role: ctx.session.liveTicketRole } });
         await ctx.reply(`⚠️ ${error instanceof Error ? error.message : "ارسال پیام ناموفق بود."}`);
         return;
       }

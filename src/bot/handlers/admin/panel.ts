@@ -10,6 +10,7 @@ import { navigationKeyboard } from "../../keyboards/main.keyboard";
 import { isAdminByTelegramId } from "../../middlewares/admin.middleware";
 import { getPagination, getTotalPages } from "../../../utils/pagination";
 import { setFlow } from "./admin.flow";
+import { MonitoringService } from "../../../services/monitoring.service";
 
 async function requireAdmin(ctx: AppContext): Promise<boolean> {
   if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
@@ -92,6 +93,25 @@ export function registerAdminHandlers(bot: AppBot) {
     await ctx.reply(
       `👨‍💼 پنل مدیریت\n\n👥 کاربران: ${stats.users.toLocaleString("fa-IR")}\n📂 دسته‌بندی‌ها: ${stats.categories.toLocaleString("fa-IR")}\n📦 محصولات: ${stats.products.toLocaleString("fa-IR")}\n🗄 موجودی کل: ${stats.totalAccounts.toLocaleString("fa-IR")}\n✅ آماده: ${stats.availableAccounts.toLocaleString("fa-IR")} | ⏳ رزرو: ${stats.reservedAccounts.toLocaleString("fa-IR")} | 💰 فروخته: ${stats.soldAccounts.toLocaleString("fa-IR")} | ⏸ غیرفعال: ${stats.disabledAccounts.toLocaleString("fa-IR")} | ⌛ منقضی: ${stats.expiredAccounts.toLocaleString("fa-IR")}\n💳 کیف پول‌ها: ${stats.wallets.toLocaleString("fa-IR")}\n💳 واریزی‌های در انتظار: ${stats.submittedDeposits.toLocaleString("fa-IR")}\n🎧 تیکت‌های باز: ${stats.openTickets.toLocaleString("fa-IR")}\n🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}\n💰 درآمد: ${stats.revenue.toLocaleString("fa-IR")} تومان`,
       adminKeyboard(),
+    );
+  });
+
+
+  bot.action("admin:monitoring", async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    await ctx.answerCbQuery();
+    const dashboard = await MonitoringService.dashboard();
+    const count = (type: string) => dashboard.events.filter((event) => event.type.includes(type)).length;
+    const recent = dashboard.events.slice(0, 8).map((event) => `• ${event.type} | ${dateFa(event.createdAt)} | ${event.section}`).join("\n") || "خطای اخیر ثبت نشده است.";
+    const paymentErrors = dashboard.events.filter((event) => event.type.startsWith("PAYMENT") || event.type === "PURCHASE_FAILED").length;
+    const ticketErrors = count("TICKET");
+    const jobErrors = count("JOB");
+    const rateLimitHits = count("RATE_LIMIT");
+    const failedDeliveries = count("DELIVERY");
+    const health = dashboard.events.some((event) => event.severity === "critical") ? "نیازمند بررسی" : "پایدار";
+    await ctx.reply(
+      `🛡 مانیتورینگ سیستم\n\nخطاهای اخیر:\n${recent}\n\nخطاهای پرداخت: ${paymentErrors.toLocaleString("fa-IR")}\nخطاهای تیکت: ${ticketErrors.toLocaleString("fa-IR")}\nخطاهای Job: ${jobErrors.toLocaleString("fa-IR")}\nRate limit hits: ${rateLimitHits.toLocaleString("fa-IR")}\nتحویل‌های ناموفق: ${failedDeliveries.toLocaleString("fa-IR")}\nسلامت سیستم: ${health}\n\nآخرین پرداخت موفق: ${dashboard.lastSuccessfulPayment ? `${dashboard.lastSuccessfulPayment.id} | ${dateFa(dashboard.lastSuccessfulPayment.completedAt)} | ${dashboard.lastSuccessfulPayment.user.telegramId}` : "-"}\nآخرین پرداخت ناموفق: ${dashboard.lastFailedPayment ? `${dashboard.lastFailedPayment.id} | ${dateFa(dashboard.lastFailedPayment.updatedAt)} | ${dashboard.lastFailedPayment.user.telegramId}` : "-"}\nآخرین callback: ${dashboard.lastCallbackReceived?.lastCallbackAt ? `${dashboard.lastCallbackReceived.id} | ${dateFa(dashboard.lastCallbackReceived.lastCallbackAt)} | ${dashboard.lastCallbackReceived.user.telegramId}` : "-"}`,
+      navigationKeyboard("admin:dashboard"),
     );
   });
 

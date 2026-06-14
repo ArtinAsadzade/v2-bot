@@ -1,6 +1,7 @@
 import { prisma } from "../../services/prisma";
 import { notificationService } from "../../services/notification.service";
 import { logger } from "../../services/logger";
+import { MonitoringService } from "../../services/monitoring.service";
 
 const STORE_STATUS_CACHE_TTL_MS = 30_000;
 const USER_STATUS_CACHE_TTL_MS = 15_000;
@@ -121,7 +122,9 @@ export class CryptoRateService {
       }));
       return rates;
     } catch (error) {
-      logger.error("Crypto rate refresh failed", { error: error instanceof Error ? error.message : String(error) });
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Crypto rate refresh failed", { error: message });
+      MonitoringService.record({ type: "CRYPTO_RATE_FAILED", section: "Crypto Rate", description: message, severity: "critical", suggestedAction: "منبع نرخ و مقدار USD_TOMAN_RATE را بررسی کنید.", metadata: { coins } });
       await this.notifyAdminsProviderUnavailable(coins.join(", "));
       return coins.map((coin) => rateCache.get(coin)).filter((rate): rate is MarketRate => Boolean(rate));
     }
