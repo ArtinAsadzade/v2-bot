@@ -198,9 +198,7 @@ ${divider}
       text: `📦 انتخاب سرویس\n\n${divider}\nیک سرویس را انتخاب کنید تا جزئیات، موجودی و پیش‌فاکتور را ببینید.`,
       keyboard: products.map((product) => [
         {
-          text: product.mode === "xray_auto"
-            ? `📦 ${product.title} · 📊 ${formatXrayBytes(product.trafficBytes)} · 📅 ${(product.durationDays ?? product.duration).toLocaleString("fa-IR")} روز · ${money(product.price)} · موجودی: ${(product.availableStock ?? 0).toLocaleString("fa-IR")}`
-            : `${product.title} · ${money(product.price)} · ${stockLabel(product.availableStock ?? product._count.accounts)}`,
+          text: product.title,
           action: callbackFor("shop.product", { productId: product.id }),
         },
       ]),
@@ -215,7 +213,7 @@ ${divider}
       keyboard: [
         ...products.map((product) => [
           {
-            text: `${product.title} · ${money(product.price)} · ${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}`,
+            text: product.title,
             action: callbackFor("shop.product", { productId: product.id }),
           },
         ]),
@@ -379,21 +377,28 @@ ${divider}
   registerView("account.renew", async (ctx, params) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [], navigation: { back: false, home: false } };
-    const client = await prisma.xrayClient.findFirst({ where: { id: params.xrayClientId, userId: user.id }, include: { product: true } });
+    const client = await prisma.xrayClient.findFirst({ where: { id: params.xrayClientId, userId: user.id }, include: { product: true, order: true, user: true } });
     if (!client) return { text: "این سرویس برای تمدید پیدا نشد.", keyboard: [[{ text: "🔙 بازگشت", action: callbackFor("account.details") }]], navigation: { back: false, home: false } };
-    const categories = await prisma.category.findMany({
-      where: { products: { some: { mode: "xray_auto", isActive: true, deletedAt: null, trafficBytes: { not: null }, durationDays: { not: null }, OR: [{ stockLimit: null }, { stockLimit: { gt: 0 } }] } } },
-      include: { products: { where: { mode: "xray_auto", isActive: true, deletedAt: null, trafficBytes: { not: null }, durationDays: { not: null } } } },
-      orderBy: { name: "asc" },
-    });
+    const currentProductTitle = client.product?.title ?? "سرویس Xray";
+    // Renewal plans are loaded from ProductService with mode: "xray_auto", isActive: true, deletedAt: null, positive traffic/duration, and stockLimit > soldCount.
+    const categories = await ProductService.listRenewalCategories();
     const rows = categories
-      .map((category) => ({ category, count: category.products.filter((p) => p.stockLimit === null || p.soldCount < p.stockLimit).length }))
-      .filter((row) => row.count > 0)
-      .map(({ category, count }) => [{ text: `📁 ${category.name} (${count.toLocaleString("fa-IR")})`.slice(0, 60), action: callbackFor("account.renew.products", { xrayClientId: client.id, categoryId: category.id }) }]);
+      .map((category) => [{ text: `📂 ${category.name}`.slice(0, 60), action: callbackFor("account.renew.products", { xrayClientId: client.id, categoryId: category.id }) }]);
+    if (rows.length === 0) {
+      return { text: `🔄 تمدید سرویس
+
+📦 سرویس فعلی:
+${currentProductTitle}
+
+👤 شناسه:
+${client.clientEmail}
+
+در حال حاضر پلنی برای تمدید موجود نیست.`, keyboard: [[{ text: "🛒 فروشگاه", action: callbackFor("shop.categories") }], [{ text: "🎫 پشتیبانی", action: callbackFor("support") }], [{ text: "🔙 بازگشت", action: callbackFor("account.xray", { xrayClientId: client.id }) }]], navigation: { back: false, home: false } };
+    }
     return { text: `🔄 تمدید سرویس
 
 📦 سرویس فعلی:
-${client.product?.title ?? "سرویس Xray"}
+${currentProductTitle}
 
 👤 شناسه:
 ${client.clientEmail}
@@ -404,19 +409,30 @@ ${client.clientEmail}
   registerView("account.renew.products", async (ctx, params) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [], navigation: { back: false, home: false } };
-    const client = await prisma.xrayClient.findFirst({ where: { id: params.xrayClientId, userId: user.id }, include: { product: true } });
+    const client = await prisma.xrayClient.findFirst({ where: { id: params.xrayClientId, userId: user.id }, include: { product: true, order: true, user: true } });
     if (!client) return { text: "این سرویس برای تمدید پیدا نشد.", keyboard: [[{ text: "🔙 بازگشت", action: callbackFor("account.details") }]], navigation: { back: false, home: false } };
-    const products = await prisma.product.findMany({ where: { categoryId: params.categoryId, mode: "xray_auto", isActive: true, deletedAt: null, trafficBytes: { not: null }, durationDays: { not: null }, OR: [{ stockLimit: null }, { stockLimit: { gt: 0 } }] }, orderBy: { price: "asc" } });
-    const available = products.filter((p) => p.stockLimit === null || p.soldCount < p.stockLimit);
-    return { text: `🔄 تمدید سرویس
+    const currentProductTitle = client.product?.title ?? "سرویس Xray";
+    const available = await ProductService.listRenewalProductsByCategory(params.categoryId);
+    if (available.length === 0) {
+      return { text: `🔄 تمدید سرویس
 
 📦 سرویس فعلی:
-${client.product?.title ?? "سرویس Xray"}
+${currentProductTitle}
 
 👤 شناسه:
 ${client.clientEmail}
 
-لطفاً پلن تمدید را انتخاب کنید:`, keyboard: [...available.map((p) => [{ text: `${p.title} · ${formatXrayBytes(p.trafficBytes)} · ${(p.durationDays ?? 0).toLocaleString("fa-IR")} روز · ${money(p.price)}`.slice(0, 60), action: callbackFor("account.renew.summary", { xrayClientId: client.id, productId: p.id }) }]), [{ text: "🔙 بازگشت", action: callbackFor("account.renew", { xrayClientId: client.id }) }]], navigation: { back: false, home: false } };
+در حال حاضر پلنی برای تمدید موجود نیست.`, keyboard: [[{ text: "🛒 فروشگاه", action: callbackFor("shop.categories") }], [{ text: "🎫 پشتیبانی", action: callbackFor("support") }], [{ text: "🔙 بازگشت", action: callbackFor("account.renew", { xrayClientId: client.id }) }]], navigation: { back: false, home: false } };
+    }
+    return { text: `🔄 تمدید سرویس
+
+📦 سرویس فعلی:
+${currentProductTitle}
+
+👤 شناسه:
+${client.clientEmail}
+
+لطفاً پلن تمدید را انتخاب کنید:`, keyboard: [...available.map((p) => [{ text: p.title, action: callbackFor("account.renew.summary", { xrayClientId: client.id, productId: p.id }) }]), [{ text: "🔙 بازگشت", action: callbackFor("account.renew", { xrayClientId: client.id }) }]], navigation: { back: false, home: false } };
   });
 
   registerView("account.renew.summary", async (ctx, params) => {
@@ -442,13 +458,13 @@ ${quote.client.clientEmail}
 ${quote.client.expiresAt.toLocaleDateString("fa-IR")}
 ${currentDays.toLocaleString("fa-IR")} روز باقی‌مانده
 
-➕ پلن انتخابی:
+➕ پلن تمدید:
 ${quote.product.title}
 
-🎁 حجم اضافه:
+📊 حجم اضافه:
 ${formatXrayBytes(quote.addTrafficBytes)}
 
-📅 روز اضافه:
+📅 مدت اضافه:
 ${quote.addDays.toLocaleString("fa-IR")} روز
 
 ━━━━━━━━━━━━━━━━

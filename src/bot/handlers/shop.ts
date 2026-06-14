@@ -27,10 +27,7 @@ export function registerShopHandlers(bot: AppBot) {
     const categoryId = ctx.match[1];
     const products = await ProductService.getProductsByCategory(categoryId);
     const buttons = await Promise.all(
-      products.map(async (product) => {
-        const stock = await ProductService.availableStock(product.id);
-        return [Markup.button.callback(`🛒 ${product.title} - ${product.price.toLocaleString("fa-IR")} تومان (${stock} عدد)`, `product:${product.id}`)];
-      }),
+      products.map(async (product) => [Markup.button.callback(product.title, `product:${product.id}`)]),
     );
     buttons.push([Markup.button.callback("⬅️ بازگشت", "shop"), Markup.button.callback("🏠 خانه", "home")]);
     await ctx.reply("محصول را انتخاب کنید:", Markup.inlineKeyboard(buttons));
