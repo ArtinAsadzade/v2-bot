@@ -1,7 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RenderMode = void 0;
+exports.PANEL_VIEW_IDS = exports.RenderMode = void 0;
 exports.registerView = registerView;
+exports.registeredPanelViewIds = registeredPanelViewIds;
 exports.isValidCallbackData = isValidCallbackData;
 exports.ensureCallbackData = ensureCallbackData;
 exports.actionFor = actionFor;
@@ -22,6 +23,9 @@ var RenderMode;
 const registry = new Map();
 function registerView(id, renderer) {
     registry.set(id, renderer);
+}
+function registeredPanelViewIds() {
+    return [...registry.keys()];
 }
 const PARAM_ALIASES = {
     page: "p",
@@ -69,9 +73,9 @@ function parseParams(raw) {
     return params;
 }
 function isPanelViewId(value) {
-    return PANEL_VIEW_IDS.has(value);
+    return exports.PANEL_VIEW_IDS.has(value);
 }
-const PANEL_VIEW_IDS = new Set([
+exports.PANEL_VIEW_IDS = new Set([
     "home",
     "shop.categories",
     "shop.products",
@@ -118,6 +122,8 @@ const PANEL_VIEW_IDS = new Set([
     "admin.transactions",
     "admin.notifications",
     "admin.settings",
+    "admin.xraySettings",
+    "admin.xrayClients",
     "admin.paymentGateway",
     "admin.paymentStats",
     "admin.invoices",
