@@ -59,7 +59,13 @@ export type PanelViewId =
   | "admin.ticket";
 
 export type ViewState = { id: PanelViewId; params?: Record<string, string | number | boolean | undefined> };
-export type ViewRenderResult = { text: string; keyboard: UiKeyboard; parseMode?: "HTML"; replyKeyboard?: ReplyKeyboardScope };
+export enum RenderMode {
+  EDIT_CURRENT = "EDIT_CURRENT",
+  SEND_NEW = "SEND_NEW",
+  AUTO = "AUTO",
+}
+
+export type ViewRenderResult = { text: string; keyboard: UiKeyboard; parseMode?: "HTML"; replyKeyboard?: ReplyKeyboardScope; renderMode?: RenderMode };
 export type ViewRenderer = (ctx: AppContext, params: Record<string, string>) => Promise<ViewRenderResult>;
 
 const registry = new Map<PanelViewId, ViewRenderer>();
@@ -84,8 +90,12 @@ const PARAM_ALIASES: Record<string, string> = {
 };
 const PARAM_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_ALIASES).map(([key, value]) => [value, key]));
 
+export function isValidCallbackData(action: string): boolean {
+  return Buffer.byteLength(action, "utf8") <= 64;
+}
+
 export function ensureCallbackData(action: string): string {
-  if (Buffer.byteLength(action, "utf8") > 64) {
+  if (!isValidCallbackData(action)) {
     throw new Error(`Telegram callback payload is too long (${Buffer.byteLength(action, "utf8")} bytes): ${action}`);
   }
   return action;
@@ -189,25 +199,42 @@ export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?
           if (button.action === "nav:back" || button.action === callbackFor("home")) seenNav.add(button.action);
           return true;
         })
-        .map((button) => Markup.button.callback(button.text, ensureCallbackData(button.action))),
+        .flatMap((button) => {
+          try {
+            return [Markup.button.callback(button.text, ensureCallbackData(button.action))];
+          } catch (error) {
+            console.error("CALLBACK_DATA_INVALID_PREVENTED", { text: button.text, action: button.action, error: error instanceof Error ? error.message : String(error) });
+            return [];
+          }
+        }),
     )
     .filter((row) => row.length > 0);
   const nav: InlineKeyboardButton.CallbackButton[] = [];
-  if (options.back && !seenNav.has("nav:back")) nav.push(Markup.button.callback("🔙 بازگشت", "nav:back"));
+  if (options.back && !seenNav.has("nav:back")) nav.push(Markup.button.callback("🔙 بازگشت", ensureCallbackData("nav:back")));
   if (options.home && !seenNav.has(callbackFor("home"))) nav.push(Markup.button.callback("🏠 خانه", callbackFor("home")));
   if (nav.length) normalized.push(nav);
   if (options.cancel) normalized.push([Markup.button.callback("❌ لغو عملیات", "flow:cancel")]);
   return Markup.inlineKeyboard(normalized);
 }
 
-export async function renderPanel(ctx: AppContext, state: ViewState, mode: "push" | "replace" | "back" = "push"): Promise<void> {
+export async function renderPanel(ctx: AppContext, state: ViewState, mode: "push" | "replace" | "back" = "push", renderMode: RenderMode = RenderMode.AUTO): Promise<void> {
   const renderer = registry.get(state.id);
   if (!renderer) throw new Error(`View is not registered: ${state.id}`);
   const params: Record<string, string> = {};
   for (const [key, value] of Object.entries(state.params ?? {})) {
     params[key] = String(value ?? "");
   }
-  const result = await renderer(ctx, params);
+  let result: ViewRenderResult;
+  try {
+    result = await renderer(ctx, params);
+  } catch (error) {
+    console.error("PANEL_RENDER_FAILED", { state, error: error instanceof Error ? error.message : String(error) });
+    result = {
+      text: "❌ نمایش این بخش ممکن نیست\n\nلطفاً از منوی اصلی دوباره وارد شوید.",
+      keyboard: [[{ text: "🏠 خانه", action: callbackFor("home") }, { text: "🎫 پشتیبانی", action: callbackFor("support") }]],
+    };
+    renderMode = RenderMode.SEND_NEW;
+  }
 
   ctx.session.navigation ??= { stack: [] };
   if (mode === "push") ctx.session.navigation.stack.push(state);
@@ -230,7 +257,10 @@ export async function renderPanel(ctx: AppContext, state: ViewState, mode: "push
     ctx.session.navigation!.panelMessageId = sent.message_id;
   };
 
-  if (ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message) {
+  const effectiveRenderMode = result.renderMode ?? renderMode;
+  const shouldEdit = effectiveRenderMode === RenderMode.EDIT_CURRENT || (effectiveRenderMode === RenderMode.AUTO && Boolean(ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message));
+
+  if (shouldEdit && ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message) {
     await ctx.editMessageText(result.text, extra).catch(async () => {
       await ctx.editMessageReplyMarkup(keyboard.reply_markup).catch(() => undefined);
       await fallbackReply();
@@ -245,5 +275,5 @@ export async function goBack(ctx: AppContext): Promise<void> {
   const stack = ctx.session.navigation?.stack ?? [];
   stack.pop();
   const previous = stack.pop() ?? { id: "home" };
-  await renderPanel(ctx, previous, "push");
+  await renderPanel(ctx, previous, "push", RenderMode.EDIT_CURRENT);
 }

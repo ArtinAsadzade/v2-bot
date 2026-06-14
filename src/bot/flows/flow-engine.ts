@@ -1,5 +1,5 @@
 import type { AppBot, AppContext, FlowName } from "../../types/bot";
-import { renderPanel, callbackFor, panelKeyboard, type UiKeyboard, type ViewState } from "../navigation/panel-ui";
+import { renderPanel, callbackFor, panelKeyboard, actionFor, RenderMode, type UiKeyboard, type ViewState } from "../navigation/panel-ui";
 import { UserService } from "../../modules/user/user.service";
 import { ProductService } from "../../modules/product/product.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
@@ -71,13 +71,13 @@ function currentReturnTo(ctx: AppContext): ViewState {
 }
 
 async function flowPrompt(ctx: AppContext, text: string, keyboard: UiKeyboard = []) {
-  await ctx.reply(text, { ...panelKeyboard(keyboard, { back: true, home: true, cancel: true }) });
+  await ctx.reply(text, { ...panelKeyboard(keyboard, { back: false, home: true, cancel: true }) });
 }
 
 async function productCategoryKeyboard(): Promise<UiKeyboard> {
   const categories = await ProductService.listSelectableCategoriesForAdmin(40);
   return categories.map((category) => [
-    { text: `${category.icon ?? "📂"} ${category.name}`, action: `flow:product_category:${category.id}` },
+    { text: `${category.icon ?? "📂"} ${category.name}`, action: actionFor("flow:product_category", category.id) },
   ]);
 }
 
@@ -154,17 +154,14 @@ const definitions: Record<FlowName, FlowDefinition> = {
         const invoice = await PaymentInvoiceService.createWalletTopupInvoice(user.id, amount);
         return {
           done: true,
-          text: `🧾 خلاصه پرداخت
+          text: `🧾 فاکتور پرداخت آماده شد
 
-💰 مبلغ: ${money(amount)}
-🎟 تخفیف: ${money(0)}
-✅ مبلغ نهایی: ${money(amount)}
-⚡ روش پرداخت: پرداخت آنی
-وضعیت: در انتظار پرداخت
-شناسه پرداخت: ${invoice.payId ?? "—"}
-زمان ایجاد: ${invoice.createdAt.toLocaleString("fa-IR")}
+💰 مبلغ نهایی:
+${money(amount)}
+⚡ روش پرداخت:
+پرداخت آنی
 
-پس از پرداخت موفق، کیف پول شما به صورت خودکار شارژ خواهد شد.
+برای ادامه، روی دکمه پرداخت بزنید.
 
 ⚡ لینک پرداخت:
 ${invoice.paymentLink}`,
@@ -196,7 +193,7 @@ ${invoice.paymentLink}`,
         return {
           text: `مبلغ شارژ: ${money(amount)}\n\nرمز ارز پرداخت را انتخاب کنید:`,
           nextStep: "wallet",
-          keyboard: wallets.map((wallet) => [{ text: `${wallet.coinName} ${wallet.networkName}`, action: `deposit:wallet:${wallet.id}` }]),
+          keyboard: wallets.map((wallet) => [{ text: `${wallet.coinName} ${wallet.networkName}`, action: actionFor("deposit:wallet", wallet.id) }]),
         };
       }
       return { text: "لطفا رمز ارز را فقط از دکمه‌های نمایش داده‌شده انتخاب کنید." };
@@ -327,7 +324,7 @@ ${message}
             [
               {
                 text: "✅ تایید و ارسال",
-                action: "broadcast:confirm",
+                action: actionFor("broadcast:confirm"),
               },
             ],
           ],
@@ -957,7 +954,7 @@ status: ${detail.wallet.status}`;
           return {
             text: `مرحله 4 از 4: تأیید نهایی\n\nAPI URL:\n${flow.data.apiBaseUrl}\n\nAPI Key:\n********${String(flow.data.apiKey).slice(-4).toUpperCase()}\n\nCallback:\n${flow.data.callbackUrl}\n\nپس از تأیید، تنظیمات یک‌جا ذخیره و تست اتصال اجرا می‌شود.\nبرای ادامه روی دکمه تأیید بزنید.`,
             nextStep: "confirm",
-            keyboard: [[{ text: "✅ تأیید و تست اتصال", action: "payment_gateway_setup:confirm" }]],
+            keyboard: [[{ text: "✅ تأیید و تست اتصال", action: actionFor("payment_gateway_setup:confirm") }]],
           };
         }
         if (flow.step === "confirm") return { text: "برای ادامه روی دکمه تأیید بزنید." };
@@ -1000,8 +997,8 @@ export async function handleActiveFlowText(ctx: AppContext, text: string) {
   if (!result) return false;
   if (result.done) {
     ctx.session.flow = undefined;
-    await ctx.reply(result.text, flow.name === "instant_topup" ? { reply_markup: paymentFlowReplyKeyboard() } : undefined);
-    await renderPanel(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace");
+    await ctx.reply(result.text, flow.name === "instant_topup" ? { reply_markup: { inline_keyboard: [[{ text: "💳 پرداخت", url: String(result.text.match(/https?:\/\/\S+/)?.[0] ?? "") }], [{ text: "🔄 بررسی وضعیت", callback_data: callbackFor("wallet.history") }, { text: "🎫 پشتیبانی", callback_data: callbackFor("support") }], [{ text: "🏠 خانه", callback_data: callbackFor("home") }]] } } : undefined);
+    await renderPanel(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace", RenderMode.SEND_NEW);
     return true;
   }
   await flowPrompt(ctx, result.text, result.keyboard);
@@ -1016,7 +1013,7 @@ export async function handleActiveFlowPhoto(ctx: AppContext, fileId: string) {
   if (result.done) {
     ctx.session.flow = undefined;
     await ctx.reply(result.text);
-    await renderPanel(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace");
+    await renderPanel(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace", RenderMode.SEND_NEW);
     return true;
   }
   await flowPrompt(ctx, result.text, result.keyboard);
@@ -1049,6 +1046,27 @@ export function registerFlowEngine(bot: AppBot) {
     } catch {
       await flowPrompt(ctx, "⚠️ دسته‌بندی نامعتبر یا حذف‌شده است. لطفاً دوباره انتخاب کنید.", await productCategoryKeyboard());
     }
+  });
+
+
+  bot.action(/^flow:back:([^:]+):?([^:]*)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const flow = ctx.session.flow;
+    if (!flow) return renderPanel(ctx, currentReturnTo(ctx), "replace", RenderMode.EDIT_CURRENT);
+    const target = ctx.match[1];
+    const step = ctx.match[2];
+    if (target === "deposit") {
+      flow.step = step || "amount";
+      delete flow.data.depositId;
+      await flowPrompt(ctx, "💳 مبلغ شارژ را به تومان وارد کنید:\n\nفقط عدد را ارسال کنید؛ مثال: 250000");
+      return;
+    }
+    if (target === "product" && (flow.name === "product_create" || flow.name === "product_edit")) {
+      flow.step = step || "category";
+      await flowPrompt(ctx, "📂 دسته‌بندی محصول را دوباره انتخاب کنید:", await productCategoryKeyboard());
+      return;
+    }
+    await renderPanel(ctx, flow.returnTo ?? { id: "home" }, "replace", RenderMode.EDIT_CURRENT);
   });
 
   bot.action("flow:cancel", async (ctx) => {

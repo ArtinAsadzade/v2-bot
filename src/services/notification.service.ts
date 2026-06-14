@@ -1,5 +1,5 @@
 import type { InlineKeyboardMarkup } from "telegraf/types";
-import { actionFor, callbackFor } from "../bot/navigation/panel-ui";
+import { actionFor, callbackFor, isValidCallbackData } from "../bot/navigation/panel-ui";
 import type { AppBot } from "../types/bot";
 import { prisma } from "./prisma";
 import { logger } from "./logger";
@@ -76,7 +76,13 @@ class NotificationService {
 
   private toInlineKeyboard(actions: NotificationAction[][]): InlineKeyboardMarkup {
     return {
-      inline_keyboard: actions.map((row) => row.map((action) => ({ text: action.text, callback_data: action.callbackData }))),
+      inline_keyboard: actions
+        .map((row) => row.filter((action) => {
+          const valid = isValidCallbackData(action.callbackData);
+          if (!valid) logger.warn("CALLBACK_DATA_INVALID_PREVENTED", { text: action.text, callbackData: action.callbackData });
+          return valid;
+        }).map((action) => ({ text: action.text, callback_data: action.callbackData })))
+        .filter((row) => row.length > 0),
     };
   }
 
@@ -106,7 +112,7 @@ export function registerNotificationEvents() {
   eventBus.on("deposit.created", async (event) => {
     await notificationService.notifyAdmins({
       text: screenMessage({ tone: "PAYMENT", title: "درخواست شارژ جدید", description: "یک درخواست شارژ برای بررسی ثبت شده است.", body: `شناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`, actionHint: "برای بررسی، دکمه مشاهده را انتخاب کنید." }),
-      actions: [[{ text: "👁 مشاهده", callbackData: actionFor("admin", "deposits") }]],
+      actions: [[{ text: "👁 مشاهده", callbackData: callbackFor("admin.deposits") }]],
     });
   });
 
