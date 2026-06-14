@@ -221,6 +221,19 @@ export function registerModernHandlers(bot: AppBot) {
     await ctx.reply("برای اعمال کد تخفیف از دکمه «🎟 اعمال کد تخفیف» در صفحه محصول استفاده کنید.");
   });
 
+
+  bot.action(/^coupon:remove:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const productId = ctx.match[1];
+    if (ctx.session.selectedCoupons?.[productId]) {
+      delete ctx.session.selectedCoupons[productId];
+      await ctx.reply("✅ کد تخفیف از فاکتور حذف شد.");
+    } else {
+      await ctx.reply("کد تخفیفی روی این فاکتور فعال نیست.");
+    }
+    await renderPanel(ctx, { id: "shop.checkout", params: { productId } }, "replace", RenderMode.EDIT_CURRENT);
+  });
+
   bot.action(/^buy:(?!confirm:|instant:)(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     await renderPanel(ctx, { id: "shop.checkout", params: { productId: ctx.match[1] } }, "replace", RenderMode.EDIT_CURRENT);
@@ -246,9 +259,12 @@ export function registerModernHandlers(bot: AppBot) {
         expiresAt: result.expiresAt,
       }), { reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") }, { text: "🛒 خرید مجدد", callback_data: callbackFor("shop.categories") }], [{ text: "🏠 خانه", callback_data: callbackFor("home") }]] } });
     } catch (error) {
-      await ctx.reply(`⚠️ خرید تکمیل نشد
-
-${error instanceof Error ? error.message : "در انجام درخواست مشکلی پیش آمد. لطفاً چند لحظه دیگر دوباره تلاش کنید."}`, { reply_markup: { inline_keyboard: [[{ text: "💳 شارژ کیف پول", callback_data: callbackFor("deposit") }, { text: "⬅️ بازگشت به پیش‌فاکتور", callback_data: callbackFor("shop.checkout", { productId }) }], [{ text: "🎫 پشتیبانی", callback_data: callbackFor("support") }]] } });
+      const message = error instanceof Error ? error.message : "در انجام درخواست مشکلی پیش آمد. لطفاً چند لحظه دیگر دوباره تلاش کنید.";
+      if (/کد تخفیف|کوپن|تخفیف/.test(message)) {
+        await ctx.reply(`⚠️ کد تخفیف دیگر قابل استفاده نیست\n\nاین کد بعد از اعمال اولیه منقضی یا مصرف شده است.`, { reply_markup: { inline_keyboard: [[{ text: "🎟 کد تخفیف جدید", callback_data: actionFor("flow:start", "coupon_code", productId) }, { text: "🗑 حذف کد تخفیف", callback_data: actionFor("coupon:remove", productId) }], [{ text: "🔙 بازگشت", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+      } else {
+        await ctx.reply(`⚠️ خرید تکمیل نشد\n\n${message}`, { reply_markup: { inline_keyboard: [[{ text: "💳 شارژ کیف پول", callback_data: callbackFor("deposit") }, { text: "⬅️ بازگشت به پیش‌فاکتور", callback_data: callbackFor("shop.checkout", { productId }) }], [{ text: "🎫 پشتیبانی", callback_data: callbackFor("support") }]] } });
+      }
     }
   });
 
@@ -314,9 +330,12 @@ ${invoice.amount.toLocaleString("fa-IR")} تومان
 
 برای ادامه، روی دکمه پرداخت بزنید.`, InvoiceActionKeyboard(invoice.paymentLink ?? "", callbackFor("shop.checkout", { productId })));
     } catch (error) {
-      await ctx.reply(`⚠️ ایجاد فاکتور ممکن نیست
-
-${error instanceof Error ? error.message : "ایجاد پرداخت ناموفق بود"}`, { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: callbackFor("shop.checkout", { productId }) }, { text: "🎫 پشتیبانی", callback_data: callbackFor("support") }]] } });
+      const message = error instanceof Error ? error.message : "ایجاد پرداخت ناموفق بود";
+      if (/کد تخفیف|کوپن|تخفیف/.test(message)) {
+        await ctx.reply(`⚠️ کد تخفیف دیگر قابل استفاده نیست\n\nاین کد بعد از اعمال اولیه منقضی یا مصرف شده است.`, { reply_markup: { inline_keyboard: [[{ text: "🎟 کد تخفیف جدید", callback_data: actionFor("flow:start", "coupon_code", productId) }, { text: "🗑 حذف کد تخفیف", callback_data: actionFor("coupon:remove", productId) }], [{ text: "🔙 بازگشت", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+      } else {
+        await ctx.reply(`⚠️ ایجاد فاکتور ممکن نیست\n\n${message}`, { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: callbackFor("shop.checkout", { productId }) }, { text: "🎫 پشتیبانی", callback_data: callbackFor("support") }]] } });
+      }
     }
   });
 

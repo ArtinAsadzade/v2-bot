@@ -18,6 +18,10 @@ export type CouponCalculation = {
   finalAmount: number;
 };
 
+export type CouponCheckoutValidation =
+  | { ok: true; coupon: Coupon; originalAmount: number; discountAmount: number; finalAmount: number }
+  | { ok: false; reason: string };
+
 function normalizeCode(code: string) {
   return code.trim().toUpperCase();
 }
@@ -37,6 +41,10 @@ function assertCouponRules(type: CouponType, value: number, maxUses: number, per
   if (type === "percentage" && value > 100) throw new Error("درصد تخفیف نمی‌تواند بیش از ۱۰۰ باشد");
   if (maxUses < usedCount) throw new Error("محدودیت کل نمی‌تواند کمتر از تعداد استفاده‌شده باشد");
   if (perUserLimit > maxUses) throw new Error("محدودیت هر کاربر نمی‌تواند بیشتر از محدودیت کل باشد");
+}
+
+export function normalizeCouponCode(code: string) {
+  return normalizeCode(code);
 }
 
 function couponValue(coupon: Pick<Coupon, "value" | "discountPercent">) {
@@ -141,19 +149,39 @@ export class CouponService {
     return Promise.all([prisma.coupon.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * take, take }), prisma.coupon.count({ where })]);
   }
 
-  static async validateForUser(code: string, userId: string, tx: Prisma.TransactionClient = prisma, originalAmount?: number) {
-    const normalizedCode = normalizeCode(code);
+  static validateCouponShape(coupon: Coupon, originalAmount: number, now = new Date()): string | null {
+    if (coupon.status === "deleted" || coupon.deletedAt) return "کد تخفیف پیدا نشد";
+    if (coupon.status !== "active") return "کد تخفیف غیرفعال است";
+    if (coupon.expiresAt <= now) return "کد تخفیف منقضی شده است";
+    if (coupon.usedCount >= coupon.maxUses) return "ظرفیت استفاده از این کد به پایان رسیده است";
+    if (originalAmount < coupon.minimumPurchaseAmount) return `حداقل مبلغ خرید برای این کد ${coupon.minimumPurchaseAmount.toLocaleString("fa-IR")} تومان است`;
+    if (coupon.type !== "percentage" && coupon.type !== "fixed") return "نوع کد تخفیف معتبر نیست";
+    const value = couponValue(coupon);
+    if (!Number.isInteger(value) || value <= 0) return "مقدار تخفیف معتبر نیست";
+    if (coupon.type === "percentage" && value > 100) return "درصد تخفیف معتبر نیست";
+    return null;
+  }
+
+  static async validateForCheckout(data: { code: string; userId: string; originalAmount: number; now?: Date; tx?: Prisma.TransactionClient | typeof prisma }): Promise<CouponCheckoutValidation> {
+    const tx = data.tx ?? prisma;
+    const now = data.now ?? new Date();
+    if (!Number.isInteger(data.originalAmount) || data.originalAmount < 0) return { ok: false, reason: "مبلغ سفارش معتبر نیست" };
+    const normalizedCode = normalizeCode(data.code);
+    if (!normalizedCode) return { ok: false, reason: "کد تخفیف وارد نشده است" };
     const coupon = await tx.coupon.findUnique({ where: { code: normalizedCode } });
+    if (!coupon) return { ok: false, reason: "کد تخفیف پیدا نشد" };
+    const shapeError = this.validateCouponShape(coupon, data.originalAmount, now);
+    if (shapeError) return { ok: false, reason: shapeError };
+    const usedByUser = await tx.couponUsage.count({ where: { couponId: coupon.id, userId: data.userId } });
+    if (usedByUser >= coupon.perUserLimit) return { ok: false, reason: "سقف استفاده شما از این کد تخفیف تکمیل شده است" };
+    const calculation = this.calculate(coupon, data.originalAmount);
+    if (calculation.finalAmount < 0) return { ok: false, reason: "مبلغ نهایی معتبر نیست" };
+    return { ok: true, coupon, ...calculation };
+  }
 
-    if (!coupon || coupon.status === "deleted") throw new Error("کد تخفیف پیدا نشد");
-    if (coupon.status !== "active") throw new Error("کد تخفیف غیرفعال است");
-    if (coupon.expiresAt <= new Date()) throw new Error("کد تخفیف منقضی شده است");
-    if (coupon.usedCount >= coupon.maxUses) throw new Error("ظرفیت استفاده از این کد به پایان رسیده است");
-    if (originalAmount !== undefined && originalAmount < coupon.minimumPurchaseAmount) throw new Error(`حداقل مبلغ خرید برای این کد ${coupon.minimumPurchaseAmount.toLocaleString("fa-IR")} تومان است`);
-
-    const usedByUser = await tx.couponUsage.count({ where: { couponId: coupon.id, userId } });
-    if (usedByUser >= coupon.perUserLimit) throw new Error("سقف استفاده شما از این کد تخفیف تکمیل شده است");
-
-    return coupon;
+  static async validateForUser(code: string, userId: string, tx: Prisma.TransactionClient = prisma, originalAmount = 0) {
+    const result = await this.validateForCheckout({ code, userId, originalAmount, tx });
+    if (!result.ok) throw new Error(result.reason);
+    return result.coupon;
   }
 }

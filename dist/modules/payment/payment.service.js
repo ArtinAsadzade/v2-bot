@@ -408,12 +408,16 @@ class PaymentService {
         let couponId = null;
         let couponCode = null;
         if (data.couponCode?.trim()) {
-            const coupon = await coupon_service_1.CouponService.validateForUser(data.couponCode, data.userId, tx, originalAmount);
-            const calculation = coupon_service_1.CouponService.calculate(coupon, originalAmount);
-            couponId = coupon.id;
-            couponCode = coupon.code;
-            discountAmount = calculation.discountAmount;
-            finalAmount = calculation.finalAmount;
+            const validation = await coupon_service_1.CouponService.validateForCheckout({ code: data.couponCode, userId: data.userId, originalAmount, tx });
+            if (!validation.ok) {
+                paymentLog("COUPON_RECHECK_FAILED", { userId: data.userId, productId: data.productId, couponCode: (0, coupon_service_1.normalizeCouponCode)(data.couponCode), reason: validation.reason, severity: "warning" });
+                await audit(tx, { userId: data.userId, action: "COUPON_RECHECK_FAILED", metadata: { productId: data.productId, couponCode: (0, coupon_service_1.normalizeCouponCode)(data.couponCode), reason: validation.reason, severity: "warning" } });
+                throw new Error(validation.reason);
+            }
+            couponId = validation.coupon.id;
+            couponCode = validation.coupon.code;
+            discountAmount = validation.discountAmount;
+            finalAmount = validation.finalAmount;
         }
         assertPositiveAmount(finalAmount);
         return { originalAmount, discountAmount, finalAmount, couponId, couponCode };
@@ -775,12 +779,16 @@ class PaymentService {
                 throw new Error("مبلغ فاکتور با مبلغ خرید همخوانی ندارد");
         }
         else if (data.couponCode) {
-            const coupon = await coupon_service_1.CouponService.validateForUser(data.couponCode, data.userId, tx, originalAmount);
-            couponId = coupon.id;
-            couponMaxUses = coupon.maxUses;
-            const calculation = coupon_service_1.CouponService.calculate(coupon, originalAmount);
-            discountAmount = calculation.discountAmount;
-            totalAmount = calculation.finalAmount;
+            const validation = await coupon_service_1.CouponService.validateForCheckout({ code: data.couponCode, userId: data.userId, originalAmount, tx });
+            if (!validation.ok) {
+                paymentLog("COUPON_RECHECK_FAILED", { userId: data.userId, productId: data.productId, couponCode: (0, coupon_service_1.normalizeCouponCode)(data.couponCode), reason: validation.reason, severity: "warning" });
+                await audit(tx, { userId: data.userId, invoiceId: undefined, action: "COUPON_RECHECK_FAILED", metadata: { productId: data.productId, couponCode: (0, coupon_service_1.normalizeCouponCode)(data.couponCode), reason: validation.reason, severity: "warning" } });
+                throw new Error(validation.reason);
+            }
+            couponId = validation.coupon.id;
+            couponMaxUses = validation.coupon.maxUses;
+            discountAmount = validation.discountAmount;
+            totalAmount = validation.finalAmount;
         }
         const isXray = product.mode === "xray_auto" && Boolean(product.trafficBytes && product.durationDays && product.stockLimit && product.inboundIds.length);
         let account = null;
@@ -811,11 +819,15 @@ class PaymentService {
         if (couponId) {
             const couponLimit = await tx.coupon.findUniqueOrThrow({ where: { id: couponId }, select: { maxUses: true, perUserLimit: true, status: true, deletedAt: true, expiresAt: true } });
             const usageCount = await tx.couponUsage.count({ where: { couponId, userId: data.userId } });
-            if (usageCount >= couponLimit.perUserLimit)
+            if (usageCount >= couponLimit.perUserLimit) {
+                await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "COUPON_USAGE_RACE_BLOCKED", metadata: { couponId, reason: "per_user_limit" } });
                 throw new Error("سقف استفاده شما از این کد تخفیف تکمیل شده است");
+            }
             const couponUpdated = await tx.coupon.updateMany({ where: { id: couponId, status: "active", deletedAt: null, usedCount: { lt: couponLimit.maxUses }, expiresAt: { gt: new Date() } }, data: { usedCount: { increment: 1 } } });
-            if (couponUpdated.count !== 1)
+            if (couponUpdated.count !== 1) {
+                await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "COUPON_USAGE_RACE_BLOCKED", metadata: { couponId, reason: "global_limit_or_expired" } });
                 throw new Error("کد تخفیف دیگر قابل استفاده نیست");
+            }
         }
         const order = await tx.order.create({ data: { userId: data.userId, productId: product.id, couponId, originalAmount, totalAmount, finalPaidAmount: totalAmount, discountAmount, status: "completed" } });
         const purchaseDate = new Date();
@@ -895,7 +907,12 @@ class PaymentService {
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            monitoring_service_1.MonitoringService.record({ type: "PURCHASE_FAILED", section: "Purchase Flow", description: message, userId, severity: "critical", suggestedAction: "موجودی، کیف پول و وضعیت محصول را بررسی کنید.", metadata: { productId, couponCode } });
+            if (/کد تخفیف|کوپن|تخفیف/.test(message)) {
+                paymentLog("COUPON_RECHECK_FAILED", { userId, productId, couponCode, reason: message, severity: "warning" });
+            }
+            else {
+                monitoring_service_1.MonitoringService.record({ type: "PURCHASE_FAILED", section: "Purchase Flow", description: message, userId, severity: "critical", suggestedAction: "موجودی، کیف پول و وضعیت محصول را بررسی کنید.", metadata: { productId, couponCode } });
+            }
             throw error;
         }
         admin_service_1.AdminService.invalidateDashboardCache();

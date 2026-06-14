@@ -246,14 +246,19 @@ ${invoice.paymentLink}`,
       try {
         const product = await ProductService.getProduct(productId);
         if (!product) throw new Error("محصول پیدا نشد");
-        await CouponService.validateForUser(text.trim(), user.id, undefined, product.price);
+        const validation = await CouponService.validateForCheckout({ code: text.trim(), userId: user.id, originalAmount: product.price });
+        if (!validation.ok) {
+          return {
+            text: `❌ کد تخفیف قابل استفاده نیست\n\nدلیل:\n${validation.reason}`,
+          };
+        }
 
         ctx.session.selectedCoupons ??= {};
-        ctx.session.selectedCoupons[productId] = text.trim().toUpperCase();
+        ctx.session.selectedCoupons[productId] = validation.coupon.code;
 
         return {
           done: true,
-          text: "✅ کد تخفیف روی پیش‌فاکتور اعمال شد.",
+          text: `✅ کد تخفیف اعمال شد\n\n💰 مبلغ اصلی:\n${validation.originalAmount.toLocaleString("fa-IR")} تومان\n\n🎁 تخفیف:\n${validation.discountAmount.toLocaleString("fa-IR")} تومان\n\n✅ مبلغ نهایی:\n${validation.finalAmount.toLocaleString("fa-IR")} تومان`,
           returnTo: { id: "shop.checkout", params: { productId } },
         };
       } catch (error) {
