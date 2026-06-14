@@ -67,12 +67,12 @@ export function registerModernViews() {
         { text: "👤 حساب کاربری", action: callbackFor("account") },
       ],
       [
-        { text: "🎁 دریافت اکانت تست", action: callbackFor("freeAccount") },
+        { text: "🆓 اکانت تست", action: callbackFor("freeAccount") },
         { text: "🎁 دعوت دوستان", action: callbackFor("referral") },
       ],
       [{ text: "📞 پشتیبانی", action: callbackFor("support") }],
     ];
-    if (isAdmin) keyboard.push([{ text: "⚙️ مرکز مدیریت", action: callbackFor("admin.dashboard") }]);
+    if (isAdmin) keyboard.push([{ text: "🛠 پنل مدیریت", action: callbackFor("admin.dashboard") }]);
 
     return {
       text: `سلام ${ctx.from?.first_name ?? "دوست عزیز"} 🌿\n\n${divider}\n👤 خلاصه حساب شما\n\n💰 موجودی کیف پول: ${money(user?.balance ?? 0)}\n👥 تعداد دعوت‌ها: ${(dashboard?.referralCount ?? 0).toLocaleString("fa-IR")} نفر\n🎁 جوایز فعال: ${(dashboard?.freeRewards ?? 0).toLocaleString("fa-IR")}\n📦 اکانت‌های فعال: ${((dashboard?.activeAccounts.length ?? 0) + (dashboard?.activeFreeAccounts.length ?? 0)).toLocaleString("fa-IR")}\n${divider}\n\n✨ سرویس‌های منتخب آماده تحویل هستند. برای ادامه، یکی از دکمه‌های زیر را انتخاب کنید.`,
@@ -419,7 +419,7 @@ ${divider}
 برای مشاهده اطلاعات اکانت از بخش «اکانت‌های من» استفاده کنید.
 
 ${divider}`,
-        keyboard: [[{ text: "📦 اکانت‌های من", action: callbackFor("account.details") }], [{ text: "🏠 منوی اصلی", action: callbackFor("home") }]],
+        keyboard: [[{ text: "📦 اکانت‌های من", action: callbackFor("account.details") }]],
       };
     }
     if (eligibility.reason === "cooldown") {
@@ -439,7 +439,7 @@ ${formatFreeAccountDate(lastClaimAt)}
 ${formatFreeAccountDate(eligibility.nextAvailableAt)}
 
 ${divider}`,
-        keyboard: [[{ text: "🏠 منوی اصلی", action: callbackFor("home") }]],
+        keyboard: [],
       };
     }
     if (eligibility.reason === "blocked") {
@@ -454,7 +454,7 @@ ${divider}
 برای بررسی بیشتر می‌توانید با پشتیبانی در ارتباط باشید.
 
 ${divider}`,
-        keyboard: [[{ text: "📞 پشتیبانی", action: callbackFor("support") }], [{ text: "🏠 منوی اصلی", action: callbackFor("home") }]],
+        keyboard: [[{ text: "📞 پشتیبانی", action: callbackFor("support") }]],
       };
     }
     if (!eligibility.available) {
@@ -469,7 +469,7 @@ ${divider}
 لطفاً بعداً مجدداً مراجعه کنید.
 
 ${divider}`,
-        keyboard: [[{ text: "🏠 منوی اصلی", action: callbackFor("home") }]],
+        keyboard: [],
       };
     }
     return {
@@ -501,7 +501,7 @@ ${divider}
     const stats = await AdminService.dashboard(true);
     return {
       replyKeyboard: "admin",
-      text: `⚙️ مرکز مدیریت
+      text: `🛠 پنل مدیریت
 
 ${divider}
 📊 نمای کلی عملیات
@@ -1231,7 +1231,7 @@ ${money(stats.monthlyRevenue)}`,
         [{ text: "🧭 راه‌اندازی مرحله‌ای", action: "flow:start:payment_gateway_setup" }],
         [{ text: "📡 تست اتصال", action: "admin:payment_gateway:test" }],
         [{ text: "🧾 مشاهده فاکتورها", action: callbackFor("admin.invoices") }, { text: "📊 آمار پرداخت‌ها", action: callbackFor("admin.paymentStats") }],
-        [{ text: "🏠 بازگشت", action: callbackFor("admin.dashboard") }],
+        [{ text: "↩️ پنل مدیریت", action: callbackFor("admin.dashboard") }],
       ],
     };
   });

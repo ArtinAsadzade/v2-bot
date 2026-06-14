@@ -16,6 +16,7 @@ const referral_service_1 = require("../../modules/referral/referral.service");
 const broadcast_service_1 = require("../../modules/broadcast/broadcast.service");
 const payment_service_1 = require("../../modules/payment/payment.service");
 const admin_middleware_1 = require("../middlewares/admin.middleware");
+const design_system_1 = require("../keyboards/design-system");
 const money = (value) => `${value.toLocaleString("fa-IR")} تومان`;
 const parseInteger = (value) => Number(value.replace(/[,،\s]/g, ""));
 const parseStatus = (value) => {
@@ -65,7 +66,7 @@ function currentReturnTo(ctx) {
     return stack[stack.length - 1] ?? { id: "home" };
 }
 async function flowPrompt(ctx, text, keyboard = []) {
-    await ctx.reply(text, { ...(0, panel_ui_1.panelKeyboard)(keyboard, { back: false, home: true, cancel: true }) });
+    await ctx.reply(text, { ...(0, panel_ui_1.panelKeyboard)(keyboard, { back: true, home: true, cancel: true }) });
 }
 async function productCategoryKeyboard() {
     const categories = await product_service_1.ProductService.listSelectableCategoriesForAdmin(40);
@@ -83,10 +84,7 @@ function requireUser(ctx) {
     });
 }
 function paymentFlowReplyKeyboard() {
-    return {
-        keyboard: [["🔙 بازگشت", "🔄 بروزرسانی وضعیت"], ["💳 پرداخت آنی", "👛 پرداخت از کیف پول"], ["🏠 منوی اصلی"]],
-        resize_keyboard: true,
-    };
+    return (0, design_system_1.MainMenuKeyboard)().reply_markup;
 }
 function paymentGatewaySavedMessage(field, config) {
     if (field === "apiKey")

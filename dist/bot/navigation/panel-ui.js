@@ -116,7 +116,7 @@ function panelKeyboard(rows, options = { back: true, home: true }) {
     if (options.back)
         nav.push(telegraf_1.Markup.button.callback("🔙 بازگشت", "nav:back"));
     if (options.home)
-        nav.push(telegraf_1.Markup.button.callback("🏠 منوی اصلی", callbackFor("home")));
+        nav.push(telegraf_1.Markup.button.callback("🏠 خانه", callbackFor("home")));
     if (nav.length)
         normalized.push(nav);
     if (options.cancel)
