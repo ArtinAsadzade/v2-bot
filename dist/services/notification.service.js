@@ -6,6 +6,7 @@ const prisma_1 = require("./prisma");
 const logger_1 = require("./logger");
 const event_bus_service_1 = require("./event-bus.service");
 const messages_1 = require("../utils/messages");
+const panel_ui_1 = require("../bot/navigation/panel-ui");
 class NotificationService {
     setBot(bot) {
         this.bot = bot;
@@ -88,7 +89,7 @@ function registerNotificationEvents() {
 👤 کاربر: ${event.telegramId}
 
 برای مشاهده تاریخچه یا پاسخ مستقیم، یکی از دکمه‌های زیر را انتخاب کنید.`,
-            actions: [[{ text: "👁 مشاهده تیکت", callbackData: `nav:admin.ticket?ticketId=${event.ticketId}` }, { text: "💬 ورود به چت", callbackData: `support:admin:chat:${event.ticketId}` }]],
+            actions: [[{ text: "👁 مشاهده تیکت", callbackData: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: event.ticketId }) }, { text: "💬 ورود به چت", callbackData: `support:admin:chat:${event.ticketId}` }]],
         });
     });
     event_bus_service_1.eventBus.on("referral.reward.claimed", async (event) => {
@@ -97,7 +98,7 @@ function registerNotificationEvents() {
     event_bus_service_1.eventBus.on("payment.delivery.failed", async (event) => {
         await exports.notificationService.notifyAdmins({
             text: (0, messages_1.screenMessage)({ tone: "WARNING", title: "تحویل پرداخت نیازمند بررسی است", description: "پرداخت ثبت شده اما تحویل خودکار کامل نشده است.", body: `فاکتور: ${event.invoiceId}\nکاربر: ${event.userId}`, actionHint: "لطفاً فاکتور را از پنل مدیریت بررسی کنید." }),
-            actions: [[{ text: "👁 مشاهده فاکتور", callbackData: `nav:admin.invoice?invoiceId=${event.invoiceId}` }]],
+            actions: [[{ text: "👁 مشاهده فاکتور", callbackData: (0, panel_ui_1.callbackFor)("admin.invoice", { invoiceId: event.invoiceId }) }]],
         });
     });
     event_bus_service_1.eventBus.on("free_config.claimed", async (event) => {

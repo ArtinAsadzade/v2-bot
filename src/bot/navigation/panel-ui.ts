@@ -170,7 +170,7 @@ export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?
   const normalized: InlineKeyboardButton.CallbackButton[][] = rows.map((row) => row.map((button) => Markup.button.callback(button.text, button.action)));
   const nav: InlineKeyboardButton.CallbackButton[] = [];
   if (options.back) nav.push(Markup.button.callback("🔙 بازگشت", "nav:back"));
-  if (options.home) nav.push(Markup.button.callback("🏠 منوی اصلی", callbackFor("home")));
+  if (options.home) nav.push(Markup.button.callback("🏠 خانه", callbackFor("home")));
   if (nav.length) normalized.push(nav);
   if (options.cancel) normalized.push([Markup.button.callback("❌ لغو عملیات", "flow:cancel")]);
   return Markup.inlineKeyboard(normalized);

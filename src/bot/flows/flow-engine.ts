@@ -11,6 +11,7 @@ import { ReferralService } from "../../modules/referral/referral.service";
 import { BroadcastService } from "../../modules/broadcast/broadcast.service";
 import { PaymentGatewayService, PaymentInvoiceService, type PaymentGatewayInput } from "../../modules/payment/payment.service";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
+import { MainMenuKeyboard } from "../keyboards/design-system";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
 const parseInteger = (value: string) => Number(value.replace(/[,،\s]/g, ""));
@@ -69,7 +70,7 @@ function currentReturnTo(ctx: AppContext): ViewState {
 }
 
 async function flowPrompt(ctx: AppContext, text: string, keyboard: UiKeyboard = []) {
-  await ctx.reply(text, { ...panelKeyboard(keyboard, { back: false, home: true, cancel: true }) });
+  await ctx.reply(text, { ...panelKeyboard(keyboard, { back: true, home: true, cancel: true }) });
 }
 
 async function productCategoryKeyboard(): Promise<UiKeyboard> {
@@ -89,10 +90,7 @@ function requireUser(ctx: AppContext) {
 
 
 function paymentFlowReplyKeyboard() {
-  return {
-    keyboard: [["🔙 بازگشت", "🔄 بروزرسانی وضعیت"], ["💳 پرداخت آنی", "👛 پرداخت از کیف پول"], ["🏠 منوی اصلی"]],
-    resize_keyboard: true,
-  };
+  return MainMenuKeyboard().reply_markup;
 }
 
 function paymentGatewaySavedMessage(field: keyof PaymentGatewayInput, config: Awaited<ReturnType<typeof PaymentGatewayService.getConfig>>) {

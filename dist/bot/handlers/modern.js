@@ -48,7 +48,7 @@ function registerModernHandlers(bot) {
 
 تیکت: #${ticket.id.slice(-6).toUpperCase()}
 
-پیام خود را ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: `support:close:${ticket.id}` }], [{ text: "🏠 منوی اصلی", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+پیام خود را ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: `support:close:${ticket.id}` }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
             return true;
         }
         if (target.id.startsWith("admin") && (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))) {
@@ -100,6 +100,14 @@ function registerModernHandlers(bot) {
         await ctx.answerCbQuery("لغو شد");
         await (0, panel_ui_1.renderPanel)(ctx, { id: "home" }, "replace");
     });
+    bot.action("free_config", async (ctx) => {
+        await ctx.answerCbQuery("این بخش به اکانت تست منتقل شد");
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "freeAccount" }, "replace");
+    });
+    bot.action("free_config:claim", async (ctx) => {
+        await ctx.answerCbQuery("برای دریافت از اکانت تست استفاده کنید");
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "freeAccount" }, "replace");
+    });
     bot.start(async (ctx) => {
         if (!ctx.from)
             return;
@@ -122,6 +130,23 @@ function registerModernHandlers(bot) {
         }
         await (0, panel_ui_1.renderPanel)(ctx, state, "push");
     });
+    bot.action(/^cat:(.+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "shop.products", params: { categoryId: ctx.match[1] } }, "replace");
+    });
+    bot.action(/^product:(.+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "shop.product", params: { productId: ctx.match[1] } }, "replace");
+    });
+    bot.action(/^coupon:(.+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "shop.product", params: { productId: ctx.match[1] } }, "replace");
+        await ctx.reply("برای اعمال کد تخفیف از دکمه «🎟 اعمال کد تخفیف» در صفحه محصول استفاده کنید.");
+    });
+    bot.action(/^buy:(?!confirm:|instant:)(.+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "shop.checkout", params: { productId: ctx.match[1] } }, "replace");
+    });
     bot.action(/^buy:confirm:(.+)$/, async (ctx) => {
         await ctx.answerCbQuery();
         if (!ctx.from)
@@ -141,7 +166,7 @@ function registerModernHandlers(bot) {
                 subscriptionLink: result.account.subscriptionLink,
                 config: result.account.configLink,
                 expiresAt: result.expiresAt,
-            }), { reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }, { text: "🎧 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") }], [{ text: "🏠 منوی اصلی", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+            }), { reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }, { text: "🎧 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
         }
         catch (error) {
             await ctx.editMessageText(`⚠️ خرید تکمیل نشد
@@ -179,7 +204,7 @@ ${invoice.amount.toLocaleString("fa-IR")} تومان
 پرداخت آنی
 
 پس از پرداخت، محصول به صورت خودکار تحویل خواهد شد.`, (0, design_system_1.InvoiceActionKeyboard)(invoice.paymentLink ?? "", (0, panel_ui_1.callbackFor)("shop.checkout", { productId })));
-            await ctx.reply("می‌توانید با دکمه‌های زیر سریع‌تر بین بخش‌های پرداخت جابه‌جا شوید.", (0, design_system_1.PaymentKeyboard)());
+            await ctx.reply("از منوی اصلی می‌توانید مسیر بعدی را انتخاب کنید.", (0, design_system_1.PaymentKeyboard)());
         }
         catch (error) {
             await ctx.editMessageText(`❌ ${error instanceof Error ? error.message : "ایجاد پرداخت ناموفق بود"}`, { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }]] } });
@@ -269,7 +294,7 @@ ${quote.cryptoAmount.toLocaleString("fa-IR", { maximumFractionDigits: 8 })} ${qu
 ${quote.wallet.walletAddress}
 
 ⏳ مهلت پرداخت: ۳۰ دقیقه
-📤 پس از پرداخت، تصویر رسید را همین‌جا ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "❌ لغو عملیات", callback_data: "flow:cancel" }]] } });
+📤 پس از پرداخت، تصویر رسید را همین‌جا ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "nav:back" }, { text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }], [{ text: "❌ لغو عملیات", callback_data: "flow:cancel" }]] } });
         }
         catch (error) {
             await ctx.reply(`⚠️ ${error instanceof Error ? error.message : "ایجاد درخواست شارژ ناموفق بود. لطفاً دوباره تلاش کنید."}`);
@@ -306,13 +331,13 @@ ${account.assignment.expiresAt.toLocaleDateString("fa-IR")}
 ━━━━━━━━━━━━━━━━
 
 📦 این اکانت به بخش «اکانت‌های من» اضافه شد و در هر زمان می‌توانید اطلاعات آن را مشاهده کنید.`, {
-                reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }], [{ text: "🏠 منوی اصلی", callback_data: (0, panel_ui_1.callbackFor)("home") }]] },
+                reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] },
             });
         }
         catch (error) {
             const keyboard = error instanceof free_account_service_1.FreeAccountError && error.code === "ACTIVE_ACCOUNT"
-                ? [[{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }], [{ text: "🏠 منوی اصلی", callback_data: (0, panel_ui_1.callbackFor)("home") }]]
-                : [[{ text: "🏠 منوی اصلی", callback_data: (0, panel_ui_1.callbackFor)("home") }]];
+                ? [[{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]]
+                : [[{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]];
             await ctx.reply((0, free_account_service_1.formatFreeAccountError)(error), { reply_markup: { inline_keyboard: keyboard } });
         }
     });
@@ -411,7 +436,7 @@ ${account.configLink}
 
 تیکت: #${ticket.id.slice(-6).toUpperCase()}
 
-پیام خود را ارسال کنید. محدودیتی در تعداد پیام‌ها وجود ندارد.`, { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: `support:close:${ticket.id}` }], [{ text: "🏠 منوی اصلی", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+پیام خود را ارسال کنید. محدودیتی در تعداد پیام‌ها وجود ندارد.`, { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: `support:close:${ticket.id}` }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
     });
     bot.action(/^support:chat:([^:]+)$/, async (ctx) => {
         await ctx.answerCbQuery();
@@ -469,7 +494,7 @@ ${account.configLink}
 تیکت: #${ticket.id.slice(-6).toUpperCase()}
 کاربر: ${ticket.user.telegramId}
 
-پاسخ خود را ارسال کنید. هر پیام جداگانه برای کاربر ارسال می‌شود.`, { reply_markup: { inline_keyboard: [[{ text: "👁 مشاهده تاریخچه", callback_data: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: ticket.id }) }, { text: "✅ بستن", callback_data: `admin:ticket:close:${ticket.id}` }], [{ text: "🏠 پنل مدیریت", callback_data: (0, panel_ui_1.callbackFor)("admin.dashboard") }]] } });
+پاسخ خود را ارسال کنید. هر پیام جداگانه برای کاربر ارسال می‌شود.`, { reply_markup: { inline_keyboard: [[{ text: "👁 مشاهده تاریخچه", callback_data: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: ticket.id }) }, { text: "✅ بستن", callback_data: `admin:ticket:close:${ticket.id}` }], [{ text: "🛠 پنل مدیریت", callback_data: (0, panel_ui_1.callbackFor)("admin.dashboard") }]] } });
     });
     bot.action(/^admin:store:status:(active|inactive)$/, async (ctx) => {
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
@@ -708,7 +733,7 @@ ${account.configLink}
                 if (!user)
                     return next();
                 await support_service_1.SupportService.addUserMessage(ctx.session.liveTicketId, user.id, text);
-                await ctx.reply("📩 پیام شما ارسال شد. برای ادامه گفتگو، پیام بعدی را ارسال کنید.", { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: `support:close:${ctx.session.liveTicketId}` }], [{ text: "🏠 منوی اصلی", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+                await ctx.reply("📩 پیام شما ارسال شد. برای ادامه گفتگو، پیام بعدی را ارسال کنید.", { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: `support:close:${ctx.session.liveTicketId}` }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
                 return;
             }
             catch (error) {

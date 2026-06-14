@@ -1,10 +1,11 @@
 import { prisma } from "../../services/prisma";
 import { notificationService } from "../../services/notification.service";
 import { eventBus } from "../../services/event-bus.service";
+import { callbackFor } from "../../bot/navigation/panel-ui";
 
 const divider = "━━━━━━━━━━━━━━";
 const shortId = (id: string) => id.slice(-6).toUpperCase();
-const ticketAction = (ticketId: string) => `nav:admin.ticket?ticketId=${ticketId}`;
+const ticketAction = (ticketId: string) => callbackFor("admin.ticket", { ticketId });
 const userTicketAction = (ticketId: string) => `support:chat:${ticketId}`;
 const preview = (message: string) => (message.length > 600 ? `${message.slice(0, 600)}…` : message);
 const statusLabel = (status: string) => (status === "open" ? "باز" : "بسته");

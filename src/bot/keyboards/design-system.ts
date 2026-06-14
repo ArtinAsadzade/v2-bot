@@ -28,6 +28,8 @@ export const labels = {
   shopLegacy: "🛒 فروشگاه",
   buyAgain: "🛒 خرید مجدد",
   coupon: "🎟 تخفیف‌ها",
+  account: "👤 حساب کاربری",
+  freeAccount: "🆓 اکانت تست",
   orders: "📦 اکانت‌های من",
   support: "🎫 پشتیبانی",
   settings: "⚙️ تنظیمات",
@@ -41,8 +43,11 @@ export const labels = {
   adminPayments: "💳 پرداخت‌ها",
   adminProducts: "📦 محصولات",
   adminCategories: "📂 دسته‌بندی‌ها",
+  adminInventory: "🗄 موجودی اکانت‌ها",
   adminUsers: "👥 کاربران",
-  adminCoupons: "🎟 تخفیف‌ها",
+  adminTickets: "🎫 تیکت‌ها",
+  adminNotifications: "📢 اطلاع‌رسانی",
+  adminCoupons: "🎟 کدهای تخفیف",
   adminDashboard: "🛠 پنل مدیریت",
 } as const;
 
@@ -93,9 +98,10 @@ export function buildInlineKeyboard(rows: InlineButton[][]): { reply_markup: Inl
 
 export function MainMenuKeyboard() {
   return buildReplyKeyboard([
-    [{ text: labels.shop }, { text: labels.wallet }],
-    [{ text: labels.orders }, { text: labels.support }],
-    [{ text: "🎁 اکانت تست" }],
+    [{ text: labels.home }, { text: labels.shop }],
+    [{ text: labels.wallet }, { text: labels.orders }],
+    [{ text: labels.freeAccount }, { text: labels.support }],
+    [{ text: labels.account }],
   ]);
 }
 
@@ -104,19 +110,11 @@ export function UserKeyboard() {
 }
 
 export function WalletKeyboard() {
-  return buildReplyKeyboard([
-    [{ text: labels.home }, { text: labels.wallet }],
-    [{ text: labels.shop }, { text: labels.orders }],
-    [{ text: "🎁 اکانت تست" }, { text: labels.support }],
-  ]);
+  return MainMenuKeyboard();
 }
 
 export function ShopKeyboard() {
-  return buildReplyKeyboard([
-    [{ text: labels.home }, { text: labels.shop }],
-    [{ text: labels.wallet }, { text: labels.orders }],
-    [{ text: "🎁 اکانت تست" }, { text: labels.support }],
-  ]);
+  return MainMenuKeyboard();
 }
 
 export function PurchaseKeyboard() {
@@ -124,18 +122,16 @@ export function PurchaseKeyboard() {
 }
 
 export function SupportKeyboard() {
-  return buildReplyKeyboard([
-    [{ text: labels.home }, { text: labels.support }],
-    [{ text: labels.shop }, { text: labels.wallet }],
-    [{ text: labels.orders }, { text: "🎁 اکانت تست" }],
-  ]);
+  return MainMenuKeyboard();
 }
 
 export function AdminKeyboard() {
   return buildReplyKeyboard([
     [{ text: labels.adminStats }, { text: labels.adminProducts }],
-    [{ text: labels.adminUsers }, { text: labels.adminPayments }],
-    [{ text: labels.settings }],
+    [{ text: labels.adminCategories }, { text: labels.adminInventory }],
+    [{ text: labels.adminPayments }, { text: labels.adminCoupons }],
+    [{ text: labels.adminUsers }, { text: labels.adminTickets }],
+    [{ text: labels.adminNotifications }, { text: labels.settings }],
   ]);
 }
 
@@ -175,7 +171,7 @@ export function InvoiceActionKeyboard(paymentLink: string, backAction: string) {
     [{ text: labels.instantPayment, url: paymentLink, tone: "success" }],
     [
       { text: labels.back, action: backAction },
-      { text: labels.home, action: "home" },
+      { text: labels.home, action: "nav:home" },
     ],
   ]);
 }
@@ -198,9 +194,11 @@ export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record
   [labels.shop]: { id: "shop.categories" },
   [labels.buyAgain]: { id: "shop.categories" },
   [labels.orders]: { id: "account.details" },
+  [labels.account]: { id: "account" },
+  [labels.freeAccount]: { id: "freeAccount" },
   "🎁 اکانت تست": { id: "freeAccount" },
-  "🆓 اکانت تست": { id: "freeAccount" },
   [labels.refresh]: "refresh",
+  [labels.retry]: { id: "deposit" },
   "🔄 بروزرسانی": "refresh",
   "👤 پروفایل": { id: "account" },
   [labels.wallet]: { id: "wallet" },
@@ -219,14 +217,16 @@ export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record
   [labels.adminStats]: { id: "admin.analytics" },
   [labels.adminProducts]: { id: "admin.products" },
   [labels.adminCategories]: { id: "admin.categories" },
+  [labels.adminInventory]: { id: "admin.accounts" },
   [labels.adminPayments]: { id: "admin.paymentGateway" },
   [labels.adminUsers]: { id: "admin.users" },
+  [labels.adminTickets]: { id: "admin.tickets" },
+  [labels.adminNotifications]: { id: "admin.notifications" },
   [labels.adminCoupons]: { id: "admin.coupons" },
   [labels.settings]: { id: "admin.settings" },
   [labels.adminDashboard]: { id: "admin.dashboard" },
   [labels.support]: { id: "support" },
   "🎧 پشتیبانی": { id: "support" },
-  "📢 اطلاع‌رسانی": { id: "admin.notifications" },
 };
 
 export function privateTopicArchitecture() {

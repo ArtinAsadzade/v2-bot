@@ -4,6 +4,7 @@ import { prisma } from "./prisma";
 import { logger } from "./logger";
 import { eventBus } from "./event-bus.service";
 import { screenMessage, successMessage } from "../utils/messages";
+import { callbackFor } from "../bot/navigation/panel-ui";
 
 export type NotificationAction = {
   text: string;
@@ -118,7 +119,7 @@ export function registerNotificationEvents() {
 👤 کاربر: ${event.telegramId}
 
 برای مشاهده تاریخچه یا پاسخ مستقیم، یکی از دکمه‌های زیر را انتخاب کنید.`,
-      actions: [[{ text: "👁 مشاهده تیکت", callbackData: `nav:admin.ticket?ticketId=${event.ticketId}` }, { text: "💬 ورود به چت", callbackData: `support:admin:chat:${event.ticketId}` }]],
+      actions: [[{ text: "👁 مشاهده تیکت", callbackData: callbackFor("admin.ticket", { ticketId: event.ticketId }) }, { text: "💬 ورود به چت", callbackData: `support:admin:chat:${event.ticketId}` }]],
     });
   });
 
@@ -129,7 +130,7 @@ export function registerNotificationEvents() {
   eventBus.on("payment.delivery.failed", async (event) => {
     await notificationService.notifyAdmins({
       text: screenMessage({ tone: "WARNING", title: "تحویل پرداخت نیازمند بررسی است", description: "پرداخت ثبت شده اما تحویل خودکار کامل نشده است.", body: `فاکتور: ${event.invoiceId}\nکاربر: ${event.userId}`, actionHint: "لطفاً فاکتور را از پنل مدیریت بررسی کنید." }),
-      actions: [[{ text: "👁 مشاهده فاکتور", callbackData: `nav:admin.invoice?invoiceId=${event.invoiceId}` }]],
+      actions: [[{ text: "👁 مشاهده فاکتور", callbackData: callbackFor("admin.invoice", { invoiceId: event.invoiceId }) }]],
     });
   });
 
@@ -140,4 +141,3 @@ export function registerNotificationEvents() {
     });
   });
 }
-
