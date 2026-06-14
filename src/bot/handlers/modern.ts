@@ -19,6 +19,8 @@ import { purchaseSuccessMessage } from "../../utils/messages";
 import { MonitoringService } from "../../services/monitoring.service";
 import { ProductGuideService } from "../../modules/system/product-guide.service";
 import { PublicPlansService } from "../../modules/product/public-plans.service";
+import { XrayPanelService } from "../../modules/xray/xray.service";
+import { prisma } from "../../services/prisma";
 
 
 export function registerModernHandlers(bot: AppBot) {
@@ -247,6 +249,34 @@ export function registerModernHandlers(bot: AppBot) {
       await ctx.reply(`⚠️ خرید تکمیل نشد
 
 ${error instanceof Error ? error.message : "در انجام درخواست مشکلی پیش آمد. لطفاً چند لحظه دیگر دوباره تلاش کنید."}`, { reply_markup: { inline_keyboard: [[{ text: "💳 شارژ کیف پول", callback_data: callbackFor("deposit") }, { text: "⬅️ بازگشت به پیش‌فاکتور", callback_data: callbackFor("shop.checkout", { productId }) }], [{ text: "🎫 پشتیبانی", callback_data: callbackFor("support") }]] } });
+    }
+  });
+
+  bot.action("admin:xray:test", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
+    const result = await XrayPanelService.testConnection();
+    await ctx.reply(result.ok ? `✅ اتصال موفق\nتعداد اینباندها: ${result.inboundCount.toLocaleString("fa-IR")}` : `⚠️ اتصال ناموفق\n${result.error}`);
+    await renderPanel(ctx, { id: "admin.xraySettings" }, "replace");
+  });
+
+  bot.action(/^admin:xray:enabled:(0|1)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
+    const config = await prisma.xrayPanelConfig.findFirst({ orderBy: { updatedAt: "desc" } });
+    if (!config) return void await ctx.reply("ابتدا تنظیمات پنل Xray را ثبت کنید.");
+    await prisma.xrayPanelConfig.update({ where: { id: config.id }, data: { enabled: ctx.match[1] === "1" } });
+    await renderPanel(ctx, { id: "admin.xraySettings" }, "replace");
+  });
+
+  bot.action(/^admin:xray:refresh:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
+    try {
+      const detail = await AdminService.refreshXrayClient(ctx.match[1]);
+      await ctx.reply(`✅ اطلاعات پنل دریافت شد\n${detail.client.clientEmail}`);
+    } catch (error) {
+      await ctx.reply(`⚠️ دریافت اطلاعات پنل ناموفق بود\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
     }
   });
 

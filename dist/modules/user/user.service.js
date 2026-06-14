@@ -33,19 +33,19 @@ class UserService {
                     OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
                     NOT: { productAccount: { is: { status: { in: ["disabled", "expired"] } } } },
                 },
-                include: { order: true, product: true, productAccount: true },
+                include: { order: true, product: true, productAccount: true, xrayClient: true },
                 orderBy: { purchaseDate: "desc" },
                 take: 20,
             }),
             prisma_1.prisma.orderItem.findMany({
                 where: { order: { userId, status: "completed" }, OR: [{ isActive: false }, { expiresAt: { lte: now } }, { productAccount: { is: { status: "expired" } } }] },
-                include: { order: true, product: true, productAccount: true },
+                include: { order: true, product: true, productAccount: true, xrayClient: true },
                 orderBy: { purchaseDate: "desc" },
                 take: 10,
             }),
             prisma_1.prisma.orderItem.findMany({
                 where: { order: { userId, status: "completed" } },
-                include: { order: true, product: true, productAccount: true },
+                include: { order: true, product: true, productAccount: true, xrayClient: true },
                 orderBy: { purchaseDate: "desc" },
             }),
             prisma_1.prisma.freeAccountAssignment.findMany({

@@ -21,6 +21,8 @@ const messages_1 = require("../../utils/messages");
 const monitoring_service_1 = require("../../services/monitoring.service");
 const product_guide_service_1 = require("../../modules/system/product-guide.service");
 const public_plans_service_1 = require("../../modules/product/public-plans.service");
+const xray_service_1 = require("../../modules/xray/xray.service");
+const prisma_1 = require("../../services/prisma");
 function registerModernHandlers(bot) {
     (0, modern_views_1.registerModernViews)();
     (0, flow_engine_1.registerFlowEngine)(bot);
@@ -243,6 +245,36 @@ function registerModernHandlers(bot) {
             await ctx.reply(`⚠️ خرید تکمیل نشد
 
 ${error instanceof Error ? error.message : "در انجام درخواست مشکلی پیش آمد. لطفاً چند لحظه دیگر دوباره تلاش کنید."}`, { reply_markup: { inline_keyboard: [[{ text: "💳 شارژ کیف پول", callback_data: (0, panel_ui_1.callbackFor)("deposit") }, { text: "⬅️ بازگشت به پیش‌فاکتور", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }], [{ text: "🎫 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") }]] } });
+        }
+    });
+    bot.action("admin:xray:test", async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return;
+        const result = await xray_service_1.XrayPanelService.testConnection();
+        await ctx.reply(result.ok ? `✅ اتصال موفق\nتعداد اینباندها: ${result.inboundCount.toLocaleString("fa-IR")}` : `⚠️ اتصال ناموفق\n${result.error}`);
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.xraySettings" }, "replace");
+    });
+    bot.action(/^admin:xray:enabled:(0|1)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return;
+        const config = await prisma_1.prisma.xrayPanelConfig.findFirst({ orderBy: { updatedAt: "desc" } });
+        if (!config)
+            return void await ctx.reply("ابتدا تنظیمات پنل Xray را ثبت کنید.");
+        await prisma_1.prisma.xrayPanelConfig.update({ where: { id: config.id }, data: { enabled: ctx.match[1] === "1" } });
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.xraySettings" }, "replace");
+    });
+    bot.action(/^admin:xray:refresh:(.+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return;
+        try {
+            const detail = await admin_service_1.AdminService.refreshXrayClient(ctx.match[1]);
+            await ctx.reply(`✅ اطلاعات پنل دریافت شد\n${detail.client.clientEmail}`);
+        }
+        catch (error) {
+            await ctx.reply(`⚠️ دریافت اطلاعات پنل ناموفق بود\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
         }
     });
     bot.action(/^buy:instant:(.+)$/, async (ctx) => {

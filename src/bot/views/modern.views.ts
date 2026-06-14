@@ -17,9 +17,11 @@ import { PaymentGatewayService, PaymentInvoiceService, maskApiKey } from "../../
 import { ProductGuideService } from "../../modules/system/product-guide.service";
 import { ForcedJoinService } from "../../modules/system/forced-join.service";
 import { PublicPlansService } from "../../modules/product/public-plans.service";
+import { formatXrayBytes, maskToken, XrayClientService, XrayPanelService } from "../../modules/xray/xray.service";
 import type { PaymentInvoiceStatus } from "@prisma/client";
 import { accountSummaryMessage, errorMessage, paymentSummaryMessage, walletSummaryMessage } from "../../utils/messages";
 import { MonitoringService } from "../../services/monitoring.service";
+import { prisma } from "../../services/prisma";
 
 const divider = "━━━━━━━━━━━━━━━━";
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
@@ -93,6 +95,55 @@ ${divider}
     };
   });
 
+  registerView("admin.xraySettings", async () => {
+    const config = await XrayPanelService.getEnabledConfig();
+    const anyConfig = config ?? await prisma.xrayPanelConfig.findFirst({ orderBy: { updatedAt: "desc" } });
+    return {
+      text: `⚙️ تنظیمات پنل Xray
+
+${divider}
+وضعیت: ${anyConfig?.enabled ? "فعال ✅" : "غیرفعال ⛔"}
+API Base URL: ${anyConfig?.apiBaseUrl ?? "ثبت نشده"}
+Subscription Base URL: ${anyConfig?.subscriptionBaseUrl ?? "ثبت نشده"}
+API Token: ${maskToken(anyConfig?.apiToken)}
+تعداد اینباندها: ${(anyConfig?.lastInboundCount ?? 0).toLocaleString("fa-IR")}
+آخرین تست موفق: ${anyConfig?.lastSuccessAt ? anyConfig.lastSuccessAt.toLocaleString("fa-IR") : "—"}
+آخرین خطا: ${anyConfig?.lastError ?? "—"}
+
+توکن کامل هرگز نمایش داده نمی‌شود.`,
+      keyboard: [
+        [{ text: "✏️ ثبت/ویرایش تنظیمات", action: "flow:start:xray_panel_setup" }],
+        [{ text: "🧪 تست اتصال", action: "admin:xray:test" }, { text: anyConfig?.enabled ? "⛔ غیرفعال‌سازی" : "✅ فعال‌سازی", action: `admin:xray:enabled:${anyConfig?.enabled ? "0" : "1"}` }],
+        [{ text: "🧩 کلاینت‌های Xray", action: callbackFor("admin.xrayClients") }],
+      ],
+    };
+  });
+
+  registerView("admin.xrayClients", async (_ctx, params) => {
+    const current = page(params);
+    const status = ["provisioning", "active", "failed", "expired"].includes(params.status) ? params.status as "provisioning" | "active" | "failed" | "expired" : undefined;
+    const [clients, total] = await AdminService.xrayClientList(current, 8, status);
+    return {
+      text: `🧩 کلاینت‌های Xray
+
+${divider}
+فیلتر: ${status ?? "همه"}
+صفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}
+
+${clients.map((client) => `• ${client.telegramId} · ${client.product.title}
+ایمیل: ${client.clientEmail}
+وضعیت: ${client.status}
+انقضا: ${client.expiresAt.toLocaleDateString("fa-IR")}
+اینباندها: ${client.inboundIds.join(", ")}
+${client.lastError ? `خطا: ${client.lastError}` : ""}`).join("\n\n") || "کلاینتی ثبت نشده است."}`,
+      keyboard: [
+        [{ text: "همه", action: callbackFor("admin.xrayClients") }, { text: "فعال", action: callbackFor("admin.xrayClients", { status: "active" }) }],
+        [{ text: "در حال ساخت", action: callbackFor("admin.xrayClients", { status: "provisioning" }) }, { text: "ناموفق", action: callbackFor("admin.xrayClients", { status: "failed" }) }],
+        ...clients.map((client) => [{ text: `🔄 Refresh ${client.clientEmail.slice(0, 20)}`, action: `admin:xray:refresh:${client.id}` }]),
+      ],
+    };
+  });
+
 
 
   registerView("productGuide", async () => {
@@ -142,7 +193,7 @@ ${divider}
       text: `📦 انتخاب سرویس\n\n${divider}\nیک سرویس را انتخاب کنید تا جزئیات، موجودی و پیش‌فاکتور را ببینید.`,
       keyboard: products.map((product) => [
         {
-          text: `${product.title} · ${money(product.price)} · ${stockLabel(product._count.accounts)}`,
+            text: `${product.title} · ${money(product.price)} · ${stockLabel(product.availableStock ?? product._count.accounts)}`,
           action: callbackFor("shop.product", { productId: product.id }),
         },
       ]),
@@ -254,6 +305,64 @@ ${divider}
     const dashboard = await UserService.dashboard(user.id);
     const activeFreeAccounts = await FreeAccountService.assignedForUser(user.id, true);
     const purchasedAccounts = dashboard.purchasedAccounts;
+    const purchasedLines = await Promise.all(purchasedAccounts.map(async (item) => {
+      if (item.xrayClient || item.product.mode === "xray_auto") {
+        const client = item.xrayClient;
+        if (!client) return `🛒 خریداری شده\n📦 سرویس: ${item.product.title}\n\n⚠️ رکورد محلی Xray پیدا نشد. لطفاً با پشتیبانی تماس بگیرید.`;
+        try {
+          const [links, traffic] = await Promise.all([XrayClientService.links(client.clientEmail), XrayClientService.traffic(client.clientEmail)]);
+          const linksText = Array.isArray(links) ? links.join("\n") : typeof links === "string" ? links : JSON.stringify(links ?? {});
+          const used = traffic?.up || traffic?.down ? BigInt(Number(traffic.up ?? 0) + Number(traffic.down ?? 0)) : client.usedBytes;
+          const total = traffic?.total ? BigInt(Number(traffic.total)) : client.trafficBytes;
+          return `🧩 سرویس Xray
+📦 سرویس: ${item.product.title}
+👤 شناسه: ${client.clientEmail}
+
+📊 مصرف:
+${formatXrayBytes(used)} / ${formatXrayBytes(total)}
+
+⏳ اعتبار:
+${client.expiresAt.toLocaleDateString("fa-IR")}
+
+🔗 لینک‌ها:
+${linksText || "لینکی از پنل دریافت نشد."}
+
+📌 وضعیت:
+${client.status}`;
+        } catch (error) {
+          MonitoringService.record({ type: "XRAY_LIVE_LINKS_FAILED", section: "Xray Live Accounts", description: error instanceof Error ? error.message : String(error), userId: user.id, severity: "warning", suggestedAction: "اتصال پنل Xray و لینک‌های کلاینت را بررسی کنید.", metadata: { xrayClientId: client.id } });
+          return `🧩 سرویس Xray
+📦 سرویس: ${item.product.title}
+👤 شناسه: ${client.clientEmail}
+📊 حجم: ${formatXrayBytes(client.trafficBytes)}
+⏳ اعتبار: ${client.expiresAt.toLocaleDateString("fa-IR")}
+📌 وضعیت: ${client.status}
+
+⚠️ اطلاعات لحظه‌ای پنل در دسترس نیست.
+لینک‌ها ممکن است موقتاً قابل بروزرسانی نباشند.`;
+        }
+      }
+      return `🛒 خریداری شده
+📦 محصول: ${item.product.title}
+
+👤 نام کاربری:
+${item.deliveredUsername}
+
+🔗 لینک اشتراک:
+${item.deliveredSubscriptionLink ?? "ثبت نشده"}
+
+⚙️ لینک کانفیگ:
+${item.deliveredConfigLink ?? item.deliveredConfig}
+
+📅 تاریخ دریافت:
+${item.purchaseDate.toLocaleString("fa-IR")}
+
+⏳ اعتبار:
+${item.expiresAt ? `تا ${item.expiresAt.toLocaleDateString("fa-IR")}` : "نامحدود"}
+
+📌 وضعیت:
+${purchasedAccountStatusLabel(item)}`;
+    }));
     return {
       replyKeyboard: "profile",
       text: `📦 اکانت‌های من
@@ -280,28 +389,7 @@ ${freeAccountExpiry(item).toLocaleDateString("fa-IR")}
 📌 وضعیت:
 فعال و قابل استفاده`,
     ),
-    ...purchasedAccounts.map(
-      (item) => `🛒 خریداری شده
-📦 محصول: ${item.product.title}
-
-👤 نام کاربری:
-${item.deliveredUsername}
-
-🔗 لینک اشتراک:
-${item.deliveredSubscriptionLink ?? "ثبت نشده"}
-
-⚙️ لینک کانفیگ:
-${item.deliveredConfigLink ?? item.deliveredConfig}
-
-📅 تاریخ دریافت:
-${item.purchaseDate.toLocaleString("fa-IR")}
-
-⏳ اعتبار:
-${item.expiresAt ? `تا ${item.expiresAt.toLocaleDateString("fa-IR")}` : "نامحدود"}
-
-📌 وضعیت:
-${purchasedAccountStatusLabel(item)}`,
-    ),
+    ...purchasedLines,
   ].join(`
 
 ${divider}
@@ -576,7 +664,8 @@ ${divider}
 مدیریت محصولات، دسته‌بندی‌ها، موجودی اکانت‌ها، اکانت تست و راهنمای محصولات از این بخش انجام می‌شود.`,
       keyboard: [
         [{ text: "📦 محصولات", action: callbackFor("admin.products") }, { text: "📂 دسته‌بندی‌ها", action: callbackFor("admin.categories") }],
-        [{ text: "🗄 موجودی اکانت‌ها", action: callbackFor("admin.accounts") }, { text: "🆓 اکانت تست", action: callbackFor("admin.freeAccounts") }],
+        [{ text: "🗄 موجودی اکانت‌ها", action: callbackFor("admin.accounts") }, { text: "🧩 کلاینت‌های Xray", action: callbackFor("admin.xrayClients") }],
+        [{ text: "⚙️ تنظیمات پنل Xray", action: callbackFor("admin.xraySettings") }, { text: "🆓 اکانت تست", action: callbackFor("admin.freeAccounts") }],
         [{ text: "📘 راهنمای محصولات", action: callbackFor("admin.productGuides") }],
         [{ text: "🏠 منوی کاربر", action: callbackFor("home") }],
       ],

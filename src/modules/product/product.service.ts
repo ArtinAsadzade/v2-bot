@@ -3,43 +3,49 @@ import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, categ
 import { gbToBytes } from "../xray/xray.service";
 
 export class ProductService {
+  private static isXrayInStock(product: { mode: string; stockLimit: number | null; soldCount: number }) {
+    return product.mode === "xray_auto" && product.stockLimit !== null && product.stockLimit > product.soldCount;
+  }
+
   static async getCategories() {
-    return prisma.category.findMany({
-      where: { AND: [activeCategoryWhere(), { products: { some: { AND: [activeProductWhere(), { OR: [{ mode: "xray_auto", stockLimit: { not: null }, soldCount: { lt: 999999999 } }, { accounts: { some: availableInventoryWhere() } }] }] } } }] },
+    const categories = await prisma.category.findMany({
+      where: activeCategoryWhere(),
       orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
-      include: { products: { where: { AND: [activeProductWhere(), { OR: [{ mode: "xray_auto", stockLimit: { not: null }, soldCount: { lt: 999999999 } }, { accounts: { some: availableInventoryWhere() } }] }] }, orderBy: { title: "asc" } } },
+      include: { products: { where: activeProductWhere(), include: { _count: { select: { accounts: { where: availableInventoryWhere() } } } }, orderBy: { title: "asc" } } },
     });
+    return categories.map((category) => ({ ...category, products: category.products.filter((product) => this.isXrayInStock(product) || product._count.accounts > 0) })).filter((category) => category.products.length > 0);
   }
 
   static async getProductsByCategory(categoryId: string) {
-    return prisma.product.findMany({
-      where: { categoryId, AND: [activeProductWhere(), { category: { is: activeCategoryWhere() } }, { OR: [{ mode: "xray_auto", stockLimit: { not: null }, soldCount: { lt: 999999999 } }, { accounts: { some: availableInventoryWhere() } }] }] },
+    const products = await prisma.product.findMany({
+      where: { categoryId, AND: [activeProductWhere(), { category: { is: activeCategoryWhere() } }] },
       include: { _count: { select: { accounts: { where: availableInventoryWhere() } } } },
       orderBy: { title: "asc" },
     });
+    return products.filter((product) => this.isXrayInStock(product) || product._count.accounts > 0).map((product) => ({ ...product, availableStock: this.isXrayInStock(product) ? Math.max((product.stockLimit ?? 0) - product.soldCount, 0) : product._count.accounts }));
   }
 
   static async listFeaturedProducts(take = 6) {
-    return prisma.product.findMany({
-      where: { AND: [activeProductWhere(), { category: { is: activeCategoryWhere() } }, { OR: [{ mode: "xray_auto", stockLimit: { not: null }, soldCount: { lt: 999999999 } }, { accounts: { some: availableInventoryWhere() } }] }] },
+    const products = await prisma.product.findMany({
+      where: { AND: [activeProductWhere(), { category: { is: activeCategoryWhere() } }] },
       include: { category: true, _count: { select: { accounts: { where: availableInventoryWhere() } } } },
       orderBy: [{ orders: { _count: "desc" } }, { price: "asc" }],
-      take,
     });
+    return products.filter((product) => this.isXrayInStock(product) || product._count.accounts > 0).slice(0, take);
   }
 
   static async searchActiveProducts(query: string, take = 10) {
     const normalized = query.trim();
     if (normalized.length < 2) return [];
-    return prisma.product.findMany({
+    const products = await prisma.product.findMany({
       where: {
-        AND: [activeProductWhere(), { category: { is: activeCategoryWhere() } }, { OR: [{ mode: "xray_auto", stockLimit: { not: null }, soldCount: { lt: 999999999 } }, { accounts: { some: availableInventoryWhere() } }] }],
+        AND: [activeProductWhere(), { category: { is: activeCategoryWhere() } }],
         OR: [{ title: { contains: normalized } }, { category: { is: { name: { contains: normalized } } } }],
       },
       include: { category: true, _count: { select: { accounts: { where: availableInventoryWhere() } } } },
       orderBy: [{ price: "asc" }, { title: "asc" }],
-      take,
     });
+    return products.filter((product) => this.isXrayInStock(product) || product._count.accounts > 0).slice(0, take);
   }
 
   static async getProduct(productId: string) {
@@ -52,7 +58,7 @@ export class ProductService {
       : await prisma.category.upsert({ where: { name: (data.categoryName ?? "عمومی").trim() }, update: { isActive: true, deletedAt: null }, create: { name: (data.categoryName ?? "عمومی").trim(), isActive: true } });
 
     const inboundIds = data.inboundIds ?? [];
-    return prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: data.duration, durationDays: data.duration, mode: inboundIds.length ? "xray_auto" : "manual_inventory", trafficBytes: data.trafficGB ? gbToBytes(data.trafficGB) : undefined, stockLimit: data.stockLimit, inboundIds, inboundSnapshot: data.inboundSnapshot } });
+    return prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: data.duration, durationDays: inboundIds.length ? data.duration : undefined, mode: inboundIds.length ? "xray_auto" : "manual_inventory", trafficBytes: inboundIds.length && data.trafficGB ? gbToBytes(data.trafficGB) : undefined, stockLimit: inboundIds.length ? data.stockLimit : undefined, soldCount: 0, inboundIds, inboundSnapshot: data.inboundSnapshot } });
   }
 
   static async addAccount(productId: string, data: { username: string; subscriptionLink: string; configLink: string; durationDays?: number }) {

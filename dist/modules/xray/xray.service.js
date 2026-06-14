@@ -4,6 +4,8 @@ exports.XrayClientService = exports.XrayPanelService = void 0;
 exports.gbToBytes = gbToBytes;
 exports.maskToken = maskToken;
 exports.sanitizePanelError = sanitizePanelError;
+exports.xrayInboundSnapshot = xrayInboundSnapshot;
+exports.formatXrayBytes = formatXrayBytes;
 const prisma_1 = require("../../services/prisma");
 const logger_1 = require("../../services/logger");
 const XRAY_TIMEOUT_MS = 10000;
@@ -11,6 +13,16 @@ const GB = 1024n * 1024n * 1024n;
 function gbToBytes(gb) { return BigInt(gb) * GB; }
 function maskToken(token) { return token ? `${"*".repeat(Math.max(token.length - 4, 8))}${token.slice(-4)}` : "—"; }
 function sanitizePanelError(error) { return error instanceof Error ? error.message.replace(/Bearer\s+\S+/gi, "Bearer ********") : String(error); }
+function xrayInboundSnapshot(inbounds, selectedIds) {
+    const selected = new Set(selectedIds);
+    return JSON.stringify(inbounds.filter((inbound) => selected.has(inbound.id)).map(({ id, remark, protocol, port, tag, nodeId }) => ({ id, remark, protocol, port, tag, nodeId })));
+}
+function formatXrayBytes(value) {
+    const bytes = typeof value === "bigint" ? Number(value) : Number(value ?? 0);
+    if (!Number.isFinite(bytes) || bytes <= 0)
+        return "0 GB";
+    return `${(bytes / (1024 ** 3)).toFixed(2)} GB`;
+}
 function normalizeBaseUrl(url) { const parsed = new URL(url.trim()); if (!["http:", "https:"].includes(parsed.protocol))
     throw new Error("آدرس پنل باید http یا https باشد"); return parsed.toString().replace(/\/+$/, ""); }
 async function request(path, init = {}, config) { const panel = config ?? await XrayPanelService.getEnabledConfig(); if (!panel)
@@ -45,10 +57,18 @@ class XrayPanelService {
 exports.XrayPanelService = XrayPanelService;
 class XrayClientService {
     static async listInbounds(config) { const res = await request("/panel/api/inbounds/options", {}, config); const inbounds = (res.obj ?? []).filter((inbound) => inbound.enabled !== false && inbound.enable !== false); logger_1.logger.info("XRAY_INBOUNDS_FETCHED", { count: inbounds.length }); return inbounds; }
-    static async createClient(input) { logger_1.logger.info("XRAY_CLIENT_CREATE_REQUEST", { email: input.email, inboundIds: input.inboundIds }); const res = await request("/panel/api/clients/add", { method: "POST", body: JSON.stringify({ client: { email: input.email, totalGB: Number(input.trafficBytes), expiryTime: input.expiresAt.getTime(), tgId: Number(input.telegramId), limitIp: 0, enable: true }, inboundIds: input.inboundIds }) }); logger_1.logger.info("XRAY_CLIENT_CREATED", { email: input.email }); return res.obj ?? {}; }
-    static async updateClient(email, input) { logger_1.logger.info("XRAY_CLIENT_RENEW_REQUEST", { email }); const res = await request(`/panel/api/clients/update/${encodeURIComponent(email)}`, { method: "POST", body: JSON.stringify({ email, totalGB: Number(input.totalBytes), expiryTime: input.expiresAt.getTime(), tgId: Number(input.telegramId), enable: true }) }); logger_1.logger.info("XRAY_CLIENT_RENEW_SUCCESS", { email }); return res.obj; }
+    static async createClient(input) { logger_1.logger.info("XRAY_CLIENT_CREATE_REQUEST", { email: input.email, inboundIds: input.inboundIds }); const res = await request("/panel/api/clients/add", { method: "POST", body: JSON.stringify({ client: { email: input.email, totalGB: Number(input.trafficBytes) / Number(GB), expiryTime: input.expiresAt.getTime(), tgId: Number(input.telegramId), limitIp: 0, enable: true }, inboundIds: input.inboundIds }) }); logger_1.logger.info("XRAY_CLIENT_CREATED", { email: input.email }); return res.obj ?? {}; }
+    static async updateClient(email, input) { logger_1.logger.info("XRAY_CLIENT_RENEW_REQUEST", { email }); try {
+        const res = await request(`/panel/api/clients/update/${encodeURIComponent(email)}`, { method: "POST", body: JSON.stringify({ email, totalGB: Number(input.totalBytes) / Number(GB), expiryTime: input.expiresAt.getTime(), tgId: Number(input.telegramId), enable: true }) });
+        logger_1.logger.info("XRAY_CLIENT_RENEW_SUCCESS", { email });
+        return res.obj;
+    }
+    catch (error) {
+        logger_1.logger.error("XRAY_CLIENT_RENEW_FAILED", { email, error: sanitizePanelError(error) });
+        throw error;
+    } }
     static getClient(email) { return request(`/panel/api/clients/get/${encodeURIComponent(email)}`); }
     static links(email) { return request(`/panel/api/clients/links/${encodeURIComponent(email)}`).then((r) => { logger_1.logger.info("XRAY_CLIENT_LINKS_FETCHED", { email }); return r.obj; }).catch((e) => { logger_1.logger.warn("XRAY_CLIENT_LINKS_FAILED", { email, error: sanitizePanelError(e) }); throw e; }); }
-    static traffic(email) { return request(`/panel/api/clients/traffic/${encodeURIComponent(email)}`).then((r) => { logger_1.logger.info("XRAY_CLIENT_TRAFFIC_FETCHED", { email }); return r.obj; }); }
+    static traffic(email) { return request(`/panel/api/clients/traffic/${encodeURIComponent(email)}`).then((r) => { logger_1.logger.info("XRAY_CLIENT_TRAFFIC_FETCHED", { email }); return r.obj; }).catch((e) => { logger_1.logger.warn("XRAY_CLIENT_TRAFFIC_FAILED", { email, error: sanitizePanelError(e) }); throw e; }); }
 }
 exports.XrayClientService = XrayClientService;

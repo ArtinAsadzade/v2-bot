@@ -437,17 +437,26 @@ active: ${detail.category.isActive}`;
                 flow.step = "inbounds";
                 let list = "";
                 try {
+                    const config = await xray_service_1.XrayPanelService.getEnabledConfig();
+                    if (!config)
+                        return { text: "⚠️ اتصال پنل Xray فعال نیست. ابتدا از تنظیمات پنل Xray، اتصال را فعال و تست کنید.", returnTo: { id: "admin.xraySettings" } };
                     const inbounds = await xray_service_1.XrayClientService.listInbounds();
+                    flow.data.inboundOptions = JSON.stringify(inbounds);
                     list = inbounds.map((i) => `${i.id}: ${i.remark ?? i.tag ?? `inbound-${i.id}`} | ${i.protocol ?? "—"} | ${i.port ?? "—"}`).join("\n");
                 }
-                catch {
-                    list = "⚠️ دریافت لیست اینباند ناموفق بود. شناسه‌ها را دستی وارد کنید.";
+                catch (error) {
+                    return { text: `⚠️ دریافت لیست اینباند ناموفق بود.\n${error instanceof Error ? error.message : "خطای نامشخص"}\n\nلطفاً تنظیمات پنل را بررسی کنید.`, returnTo: { id: "admin.xraySettings" } };
                 }
                 return { text: `شناسه اینباندها را با کاما وارد کنید (حداقل یکی):\n\n${list}`, nextStep: "inbounds" };
             }
             const inboundIds = text.split(/[,،\s]+/).map(Number).filter((n) => Number.isInteger(n) && n > 0);
             if (!inboundIds.length)
                 return { text: "حداقل یک inbound ID معتبر وارد کنید:" };
+            const inboundOptions = JSON.parse(String(flow.data.inboundOptions ?? "[]"));
+            const validIds = new Set(inboundOptions.map((inbound) => inbound.id));
+            const invalidIds = inboundIds.filter((id) => !validIds.has(id));
+            if (invalidIds.length)
+                return { text: `شناسه‌های اینباند نامعتبر هستند: ${invalidIds.join(", ")}\nلطفاً فقط از لیست زنده پنل انتخاب کنید.` };
             const duration = Number(flow.data.duration);
             const categoryId = String(flow.data.categoryId ?? "");
             if (!categoryId)
@@ -460,7 +469,7 @@ active: ${detail.category.isActive}`;
                 trafficGB: Number(flow.data.trafficGB),
                 stockLimit: Number(flow.data.stockLimit),
                 inboundIds,
-                inboundSnapshot: JSON.stringify(inboundIds.map((id) => ({ id, label: `Inbound ${id}` }))),
+                inboundSnapshot: (0, xray_service_1.xrayInboundSnapshot)(inboundOptions, inboundIds),
             });
             return { done: true, text: "✅ محصول Xray با موجودی خودکار ثبت شد.", returnTo: { id: "admin.products" } };
         },
@@ -1009,6 +1018,31 @@ status: ${detail.wallet.status}`;
             return { text: "⚠️ مرحله نامعتبر است." };
         },
     },
+    xray_panel_setup: {
+        firstStep: "fields",
+        prompt: `⚙️ تنظیمات پنل Xray را به شکل key:value ارسال کنید.
+
+apiBaseUrl: https://panel.example.com
+apiToken: TOKEN
+subscriptionBaseUrl: https://sub.example.com
+enabled: true
+
+توکن کامل در پنل نمایش داده نمی‌شود.`,
+        async handleText(ctx, text) {
+            const data = parseKeyValueLines(text);
+            const apiBaseUrl = data.apiBaseUrl ?? data.url ?? data.baseUrl;
+            const apiToken = data.apiToken ?? data.token;
+            if (!apiBaseUrl || !apiToken)
+                return { text: "apiBaseUrl و apiToken الزامی هستند." };
+            await xray_service_1.XrayPanelService.upsertConfig({
+                apiBaseUrl,
+                apiToken,
+                subscriptionBaseUrl: data.subscriptionBaseUrl || undefined,
+                enabled: parseActive(data.enabled) ?? true,
+            });
+            return { done: true, text: "✅ تنظیمات پنل Xray ذخیره شد. برای اطمینان تست اتصال را اجرا کنید.", returnTo: { id: "admin.xraySettings" } };
+        },
+    },
     wallet_adjust: {
         firstStep: "amount",
         prompt: "💳 مبلغ تغییر موجودی را به تومان وارد کنید:",
@@ -1183,6 +1217,7 @@ function registerFlowEngine(bot) {
             "broadcast_create",
             "payment_gateway_update",
             "payment_gateway_setup",
+            "xray_panel_setup",
             "free_account_create",
             "free_account_edit",
         ];
@@ -1196,6 +1231,8 @@ function registerFlowEngine(bot) {
             return startFlow(ctx, "payment_gateway_update", { field: ctx.match[2] });
         if (name === "payment_gateway_setup")
             return startFlow(ctx, "payment_gateway_setup");
+        if (name === "xray_panel_setup")
+            return startFlow(ctx, "xray_panel_setup");
         if (name === "coupon_edit")
             return startFlow(ctx, "coupon_edit", { couponId: ctx.match[2] });
         if (name === "broadcast_create") {

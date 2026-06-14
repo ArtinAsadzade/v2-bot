@@ -53,6 +53,7 @@ enum ProductMode {
 
 enum XrayClientStatus {
   creating
+  provisioning
   active
   expired
   disabled
@@ -455,7 +456,7 @@ model Product {
   title             String
   price             Int
   duration          Int
-  mode              ProductMode @default(xray_auto)
+  mode              ProductMode @default(manual_inventory)
   trafficBytes      BigInt?
   durationDays      Int?
   stockLimit        Int?
@@ -601,7 +602,7 @@ model XrayClient {
   expiresAt     DateTime
   trafficBytes  BigInt
   usedBytes     BigInt           @default(0)
-  status        XrayClientStatus @default(creating)
+  status        XrayClientStatus @default(provisioning)
   lastError     String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
