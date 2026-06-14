@@ -1,32 +1,33 @@
+import { callbackFor } from "../navigation/panel-ui";
 import { buildInlineKeyboard } from "./design-system";
 
 export function adminKeyboard() {
   return buildInlineKeyboard([
     [
-      { text: "📊 آمار", action: "nav:admin.analytics", tone: "primary" },
-      { text: "💳 پرداخت‌ها", action: "nav:admin.paymentGateway" },
+      { text: "📊 آمار", action: callbackFor("admin.analytics"), tone: "primary" },
+      { text: "💳 پرداخت‌ها", action: callbackFor("admin.paymentGateway") },
       { text: "🛡 مانیتورینگ سیستم", action: "admin:monitoring" },
     ],
     [
-      { text: "📦 محصولات", action: "nav:admin.products" },
-      { text: "📂 مدیریت دسته‌بندی‌ها", action: "nav:admin.categories" },
+      { text: "📦 محصولات", action: callbackFor("admin.products") },
+      { text: "📂 مدیریت دسته‌بندی‌ها", action: callbackFor("admin.categories") },
     ],
     [
-      { text: "👥 کاربران", action: "admin:users" },
-      { text: "🎟 تخفیف‌ها", action: "admin:coupons" },
+      { text: "👥 کاربران", action: callbackFor("admin.users") },
+      { text: "🎟 تخفیف‌ها", action: callbackFor("admin.coupons") },
     ],
     [
-      { text: "🗄 موجودی اکانت‌ها", action: "admin:accounts" },
-      { text: "💳 واریزی‌ها", action: "admin:deposits" },
+      { text: "🗄 موجودی اکانت‌ها", action: callbackFor("admin.accounts") },
+      { text: "💳 واریزی‌ها", action: callbackFor("admin.deposits") },
     ],
     [
-      { text: "🧾 فاکتورهای پرداخت", action: "nav:admin.invoices" },
-      { text: "🎫 پشتیبانی", action: "admin:tickets" },
+      { text: "🧾 فاکتورهای پرداخت", action: callbackFor("admin.invoices") },
+      { text: "🎫 پشتیبانی", action: callbackFor("admin.tickets") },
     ],
     [
       { text: "➕ محصول جدید", action: "flow:start:product_create", tone: "primary" },
-      { text: "📦 سفارش‌ها", action: "admin:orders" },
+      { text: "📦 سفارش‌ها", action: callbackFor("admin.orders") },
     ],
-    [{ text: "🏠 منوی اصلی", action: "home" }],
+    [{ text: "🏠 منوی اصلی", action: callbackFor("home") }],
   ]);
 }

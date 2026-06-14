@@ -1,5 +1,5 @@
 import type { InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup } from "telegraf/types";
-import type { PanelViewId } from "../navigation/panel-ui";
+import { callbackFor, ensureCallbackData, type PanelViewId } from "../navigation/panel-ui";
 
 export type ButtonTone = "primary" | "success" | "danger" | "warning" | "neutral";
 export type TelegramButtonStyle = "primary" | "success" | "danger" | "warning";
@@ -82,7 +82,7 @@ function replyButton(button: ReplyButton): StyledKeyboardButton {
 
 function inlineButton(button: InlineButton): StyledInlineKeyboardButton | StyledUrlInlineKeyboardButton {
   if ("url" in button) return { text: button.text, url: button.url, ...buttonDecorations(button) };
-  return { text: button.text, callback_data: button.action, ...buttonDecorations(button) };
+  return { text: button.text, callback_data: ensureCallbackData(button.action), ...buttonDecorations(button) };
 }
 
 export function buildReplyKeyboard(rows: ReplyButton[][]): { reply_markup: ReplyKeyboardMarkup } {
@@ -159,8 +159,8 @@ export function AdminSettingsKeyboard() {
 
 export function WalletActionKeyboard() {
   return buildInlineKeyboard([
-    [{ text: labels.topup, action: "nav:deposit", tone: "primary" }],
-    [{ text: labels.transactions, action: "nav:wallet.history" }],
+    [{ text: labels.topup, action: callbackFor("deposit"), tone: "primary" }],
+    [{ text: labels.transactions, action: callbackFor("wallet.history") }],
   ]);
 }
 
@@ -174,25 +174,26 @@ export function SettingsKeyboard() {
 
 export function InvoiceActionKeyboard(paymentLink: string, backAction: string) {
   return buildInlineKeyboard([
-    [{ text: labels.instantPayment, url: paymentLink, tone: "success" }],
+    [{ text: "💳 پرداخت", url: paymentLink, tone: "success" }],
     [
-      { text: labels.back, action: backAction },
-      { text: labels.home, action: "nav:home" },
+      { text: "🔄 بررسی وضعیت", action: backAction },
+      { text: labels.support, action: callbackFor("support") },
+      { text: labels.home, action: callbackFor("home") },
     ],
   ]);
 }
 
 export function paymentSuccessKeyboard(_type: "wallet" | "product") {
   return buildInlineKeyboard([
-    [{ text: labels.orders, action: "nav:account.details", tone: "success" }, { text: labels.buyAgain, action: "nav:shop.categories", tone: "primary" }],
-    [{ text: labels.home, action: "nav:home" }],
+    [{ text: labels.orders, action: callbackFor("account.details"), tone: "success" }, { text: labels.buyAgain, action: callbackFor("shop.categories"), tone: "primary" }],
+    [{ text: labels.home, action: callbackFor("home") }],
   ]);
 }
 
 export function paymentFailureKeyboard() {
   return buildInlineKeyboard([
-    [{ text: labels.retry, action: "nav:deposit", tone: "primary" }, { text: labels.support, action: "nav:support", tone: "danger" }],
-    [{ text: labels.home, action: "nav:home" }],
+    [{ text: labels.retry, action: callbackFor("deposit"), tone: "primary" }, { text: labels.support, action: callbackFor("support"), tone: "danger" }],
+    [{ text: labels.home, action: callbackFor("home") }],
   ]);
 }
 
