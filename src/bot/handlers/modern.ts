@@ -17,6 +17,8 @@ import { quickReplyTarget } from "../keyboards/reply.keyboard";
 import { InvoiceActionKeyboard, PaymentKeyboard } from "../keyboards/design-system";
 import { purchaseSuccessMessage } from "../../utils/messages";
 import { MonitoringService } from "../../services/monitoring.service";
+import { ProductGuideService } from "../../modules/system/product-guide.service";
+import { PublicPlansService } from "../../modules/product/public-plans.service";
 
 
 export function registerModernHandlers(bot: AppBot) {
@@ -114,10 +116,32 @@ export function registerModernHandlers(bot: AppBot) {
     await renderPanel(ctx, { id: "freeAccount" }, "replace");
   });
 
+
+
+  const publicPlansCooldown = new Map<number, number>();
+  async function handlePublicPlansCommand(ctx: AppContext) {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    const isPrivate = ctx.chat?.type === "private";
+    const setting = await PublicPlansService.getSetting();
+    if (!setting.enabled) { if (isPrivate) await ctx.reply("نمایش پلن‌ها در گروه‌ها فعلاً غیرفعال است."); return; }
+    const now = Date.now();
+    if (!isPrivate && (publicPlansCooldown.get(chatId) ?? 0) > now - 60_000) return;
+    publicPlansCooldown.set(chatId, now);
+    const categories = await PublicPlansService.listPublicPlans();
+    const botInfo = await ctx.telegram.getMe();
+    const planLines = categories.map((category) => `📂 ${category.name}\n\n${category.products.map((product) => `▫️ ${product.title}\nمدت: ${product.duration.toLocaleString("fa-IR")} روز\nقیمت: ${product.price.toLocaleString("fa-IR")} تومان\nموجودی: ${product._count.accounts.toLocaleString("fa-IR")}`).join("\n\n")}`).join("\n\n━━━━━━━━━━━━━━\n\n");
+    const text = `🛒 پلن‌های فعال فروشگاه\n\n━━━━━━━━━━━━━━\n\n${planLines || "در حال حاضر پلن آماده فروشی وجود ندارد."}\n\n━━━━━━━━━━━━━━\nبرای خرید و مشاهده جزئیات، وارد ربات شوید.`;
+    await ctx.reply(text.slice(0, 3900), { reply_markup: { inline_keyboard: [[{ text: "🛒 خرید سرویس", url: `https://t.me/${botInfo.username}?start=shop` }]] } });
+  }
+
+  bot.command(["plans", "plan", "products"], handlePublicPlansCommand);
+
   bot.start(async (ctx) => {
     if (!ctx.from) return;
     const user = await UserService.findOrCreateUser(ctx);
     const payload = ctx.startPayload;
+    if (payload === "shop") { await renderPanel(ctx, { id: "shop.categories" }, "replace"); return; }
     if (payload) await ReferralService.linkReferral(user.id, payload);
     await renderPanel(ctx, { id: "home" }, "replace");
   });
@@ -217,6 +241,29 @@ ${invoice.amount.toLocaleString("fa-IR")} تومان
     } catch (error) {
       await ctx.editMessageText(`❌ ${error instanceof Error ? error.message : "ایجاد پرداخت ناموفق بود"}`, { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
     }
+  });
+
+
+
+  bot.action(/^admin:product_guide:status:([^:]+):([01])$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery("وضعیت راهنما ذخیره شد");
+    await ProductGuideService.setActive(ctx.match[1], ctx.match[2] === "1", String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.productGuides" }, "replace");
+  });
+
+  bot.action(/^admin:product_guide:delete:([^:]+)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery("حذف شد");
+    await ProductGuideService.delete(ctx.match[1], String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.productGuides" }, "replace");
+  });
+
+  bot.action(/^admin:public_plans:(enabled|disabled)$/, async (ctx) => {
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
+    await ctx.answerCbQuery("تنظیمات ذخیره شد");
+    await PublicPlansService.setEnabled(ctx.match[1] === "enabled", String(ctx.from.id));
+    await renderPanel(ctx, { id: "admin.productGuides" }, "replace");
   });
 
   bot.action(/^admin:payment_gateway:status:(enabled|disabled)$/, async (ctx) => {

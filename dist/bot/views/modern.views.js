@@ -12,6 +12,9 @@ const support_service_1 = require("../../modules/support/support.service");
 const coupon_service_1 = require("../../modules/coupon/coupon.service");
 const broadcast_service_1 = require("../../modules/broadcast/broadcast.service");
 const payment_service_1 = require("../../modules/payment/payment.service");
+const product_guide_service_1 = require("../../modules/system/product-guide.service");
+const forced_join_service_1 = require("../../modules/system/forced-join.service");
+const public_plans_service_1 = require("../../modules/product/public-plans.service");
 const messages_1 = require("../../utils/messages");
 const divider = "━━━━━━━━━━━━━━━━";
 const money = (value) => `${value.toLocaleString("fa-IR")} تومان`;
@@ -61,6 +64,7 @@ function registerModernViews() {
                 { text: "🆓 اکانت تست", action: (0, panel_ui_1.callbackFor)("freeAccount") },
                 { text: "🎁 دعوت دوستان", action: (0, panel_ui_1.callbackFor)("referral") },
             ],
+            [{ text: "📘 راهنمای محصولات", action: (0, panel_ui_1.callbackFor)("productGuide") }],
             [{ text: "📞 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }],
         ];
         if (isAdmin)
@@ -69,6 +73,29 @@ function registerModernViews() {
             text: `سلام ${ctx.from?.first_name ?? "دوست عزیز"} 🌿\n\n${divider}\n👤 خلاصه حساب شما\n\n💰 موجودی کیف پول: ${money(user?.balance ?? 0)}\n👥 تعداد دعوت‌ها: ${(dashboard?.referralCount ?? 0).toLocaleString("fa-IR")} نفر\n🎁 جوایز فعال: ${(dashboard?.freeRewards ?? 0).toLocaleString("fa-IR")}\n📦 اکانت‌های فعال: ${((dashboard?.activeAccounts.length ?? 0) + (dashboard?.activeFreeAccounts.length ?? 0)).toLocaleString("fa-IR")}\n${divider}\n\n✨ سرویس‌های منتخب آماده تحویل هستند. برای ادامه، یکی از دکمه‌های زیر را انتخاب کنید.`,
             keyboard,
             replyKeyboard: isAdmin ? "admin" : "home",
+        };
+    });
+    (0, panel_ui_1.registerView)("productGuide", async () => {
+        const sections = await product_guide_service_1.ProductGuideService.listActive();
+        return {
+            replyKeyboard: "home",
+            text: `📘 راهنمای محصولات
+
+${divider}
+
+${sections.map((section) => `${section.icon || "🔹"} ${section.title}
+${section.shortDescription}
+
+${section.body}`).join(`
+
+${divider}
+
+`) || "در حال حاضر راهنمایی برای نمایش ثبت نشده است."}
+
+${divider}
+
+اگر سوالی دارید، پشتیبانی در کنار شماست.`,
+            keyboard: [[{ text: "🛒 مشاهده پلن‌ها", action: (0, panel_ui_1.callbackFor)("shop.categories") }], [{ text: "🎫 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }], [{ text: "🏠 خانه", action: (0, panel_ui_1.callbackFor)("home") }]],
         };
     });
     (0, panel_ui_1.registerView)("shop.categories", async () => {
@@ -525,6 +552,7 @@ ${divider}
                 ],
                 [
                     { text: "⚙️ تنظیمات", action: (0, panel_ui_1.callbackFor)("admin.settings") },
+                    { text: "📘 راهنمای محصولات", action: (0, panel_ui_1.callbackFor)("admin.productGuides") },
                     { text: "🎫 تیکت‌ها", action: (0, panel_ui_1.callbackFor)("admin.tickets") },
                 ],
             ],
@@ -905,15 +933,34 @@ ${inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleS
             ],
         };
     });
-    (0, panel_ui_1.registerView)("admin.forcedJoin", async () => {
+    (0, panel_ui_1.registerView)("admin.forcedJoin", async (ctx) => {
         const channels = await admin_service_1.AdminService.forcedJoinChannels();
+        const botInfo = await ctx.telegram.getMe().catch(() => null);
+        if (botInfo) {
+            await Promise.all(channels.map(async (channel) => {
+                try {
+                    const member = await ctx.telegram.getChatMember(channel.chatId, botInfo.id);
+                    if (member.status !== channel.lastBotAdminStatus)
+                        await forced_join_service_1.ForcedJoinService.updateBotAdminStatus(channel.id, member.status);
+                    channel.lastBotAdminStatus = member.status;
+                }
+                catch {
+                    if (channel.lastBotAdminStatus !== "unknown")
+                        await forced_join_service_1.ForcedJoinService.updateBotAdminStatus(channel.id, "unknown").catch(() => undefined);
+                    channel.lastBotAdminStatus = "unknown";
+                }
+            }));
+        }
+        const reminderCounts = await forced_join_service_1.ForcedJoinService.leaveReminderCounts();
         const activeCount = channels.filter((channel) => channel.status === "active").length;
         const inactiveCount = channels.length - activeCount;
         const channelLines = channels
             .map((channel, index) => `• ${index + 1}. ${channel.title}
   شناسه: ${channel.chatId}
   وضعیت: ${channel.status === "active" ? "✅ فعال" : "⛔ غیرفعال"}
-  لینک: ${channel.inviteLink || (channel.chatId.startsWith("@") ? `https://t.me/${channel.chatId.slice(1)}` : "ثبت نشده")}`)
+  لینک: ${channel.inviteLink || (channel.chatId.startsWith("@") ? `https://t.me/${channel.chatId.slice(1)}` : "ثبت نشده")}
+  وضعیت ادمین ربات: ${channel.lastBotAdminStatus ?? "نیازمند بررسی"}${channel.lastBotAdminStatus && channel.lastBotAdminStatus !== "administrator" && channel.lastBotAdminStatus !== "creator" ? " ⚠️" : ""}
+  یادآوری خروج: ${(reminderCounts.get(channel.id) ?? 0).toLocaleString("fa-IR")}`)
             .join("\n\n");
         return {
             text: `📢 مدیریت عضویت اجباری
@@ -932,6 +979,31 @@ ${channelLines || "کانالی ثبت نشده است."}
                     },
                     { text: "🗑 حذف", action: `admin:forced_join:delete:${channel.id}` },
                 ]),
+            ],
+        };
+    });
+    (0, panel_ui_1.registerView)("admin.productGuides", async () => {
+        const [sections, plansSetting] = await Promise.all([product_guide_service_1.ProductGuideService.listAll(), public_plans_service_1.PublicPlansService.getSetting()]);
+        return {
+            text: `📘 راهنمای محصولات
+
+${divider}
+
+${sections.map((section, index) => `${index + 1}. ${section.icon} ${section.title}
+  توضیح: ${section.shortDescription}
+  ترتیب: ${section.displayOrder.toLocaleString("fa-IR")} · وضعیت: ${section.isActive ? "✅ فعال" : "⛔ غیرفعال"}`).join("\n\n") || "هنوز بخشی ثبت نشده است."}
+
+${divider}
+
+نمایش پلن‌ها در گروه‌ها: ${plansSetting.enabled ? "✅ فعال" : "⛔ غیرفعال"}`,
+            keyboard: [
+                [{ text: "➕ ساخت بخش راهنما", action: "flow:start:product_guide_create" }],
+                ...sections.map((section) => [
+                    { text: `✏️ ${section.title}`, action: `flow:start:product_guide_edit:${section.id}` },
+                    { text: section.isActive ? "⛔ غیرفعال" : "✅ فعال", action: `admin:product_guide:status:${section.id}:${section.isActive ? "0" : "1"}` },
+                    { text: "🗑 حذف", action: `admin:product_guide:delete:${section.id}` },
+                ]),
+                [{ text: plansSetting.enabled ? "⛔ غیرفعال‌سازی /plans" : "✅ فعال‌سازی /plans", action: `admin:public_plans:${plansSetting.enabled ? "disabled" : "enabled"}` }],
             ],
         };
     });
@@ -1081,6 +1153,7 @@ ${recentLines}`,
                     { text: "⚙️ تنظیمات مالی", action: (0, panel_ui_1.callbackFor)("admin.crypto") },
                 ],
                 [{ text: "📢 عضویت اجباری", action: (0, panel_ui_1.callbackFor)("admin.forcedJoin") }],
+                [{ text: "📘 راهنمای محصولات", action: (0, panel_ui_1.callbackFor)("admin.productGuides") }],
             ],
         };
     });

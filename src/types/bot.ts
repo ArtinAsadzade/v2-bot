@@ -38,6 +38,8 @@ export type FlowName =
   | "referral_tier_create"
   | "store_status"
   | "forced_join_create"
+  | "product_guide_create"
+  | "product_guide_edit"
   | "payment_gateway_update"
   | "payment_gateway_setup";
 

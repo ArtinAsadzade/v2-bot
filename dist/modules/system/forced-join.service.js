@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ForcedJoinService = void 0;
 const prisma_1 = require("../../services/prisma");
+const LEAVE_REMINDER_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 function normalizeInviteLink(inviteLink) {
     const value = inviteLink?.trim();
     return value || null;
@@ -26,6 +27,24 @@ class ForcedJoinService {
     }
     static async listAll() {
         return prisma_1.prisma.forcedJoinChannel.findMany({ orderBy: [{ status: "asc" }, { createdAt: "desc" }] });
+    }
+    static async findActiveByChatId(chatId) {
+        return prisma_1.prisma.forcedJoinChannel.findFirst({ where: { chatId: String(chatId), status: "active" } });
+    }
+    static async canSendLeaveReminder(userId, channelId) {
+        const since = new Date(Date.now() - LEAVE_REMINDER_COOLDOWN_MS);
+        const recent = await prisma_1.prisma.forcedJoinLeaveReminderLog.findFirst({ where: { userId, channelId, sentAt: { gte: since } }, orderBy: { sentAt: "desc" } });
+        return !recent;
+    }
+    static async recordLeaveReminder(data) {
+        return prisma_1.prisma.forcedJoinLeaveReminderLog.create({ data });
+    }
+    static async leaveReminderCounts() {
+        const groups = await prisma_1.prisma.forcedJoinLeaveReminderLog.groupBy({ by: ["channelId"], _count: { _all: true } });
+        return new Map(groups.map((group) => [group.channelId, group._count._all]));
+    }
+    static async updateBotAdminStatus(channelId, status) {
+        return prisma_1.prisma.forcedJoinChannel.update({ where: { id: channelId }, data: { lastBotAdminStatus: status, lastBotAdminCheckedAt: new Date() } });
     }
     static async upsert(data, actorId) {
         const { chatId, title, inviteLink } = validateForcedJoinChannel(data);

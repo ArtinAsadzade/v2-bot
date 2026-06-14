@@ -15,6 +15,7 @@ const free_account_service_1 = require("../../modules/free-account/free-account.
 const referral_service_1 = require("../../modules/referral/referral.service");
 const broadcast_service_1 = require("../../modules/broadcast/broadcast.service");
 const payment_service_1 = require("../../modules/payment/payment.service");
+const product_guide_service_1 = require("../../modules/system/product-guide.service");
 const admin_middleware_1 = require("../middlewares/admin.middleware");
 const design_system_1 = require("../keyboards/design-system");
 const money = (value) => `${value.toLocaleString("fa-IR")} تومان`;
@@ -837,6 +838,76 @@ status: ${detail.wallet.status}`;
             return { done: true, text: "✅ کانال عضویت اجباری ذخیره شد.", returnTo: { id: "admin.forcedJoin" } };
         },
     },
+    product_guide_create: {
+        firstStep: "title",
+        prompt: "📘 عنوان بخش راهنما را وارد کنید:\n\nمثال: سرویس‌ها چطور کار می‌کنند؟",
+        async handleText(ctx, text) {
+            const flow = ctx.session.flow;
+            if (flow.step === "title") {
+                flow.data.title = text.trim();
+                flow.step = "shortDescription";
+                return { text: "توضیح کوتاه این کارت را وارد کنید:", nextStep: "shortDescription" };
+            }
+            if (flow.step === "shortDescription") {
+                flow.data.shortDescription = text.trim();
+                flow.step = "body";
+                return { text: "متن اصلی کوتاه و تمیز را وارد کنید:", nextStep: "body" };
+            }
+            if (flow.step === "body") {
+                flow.data.body = text.trim();
+                flow.step = "icon";
+                return { text: "آیکن را وارد کنید (مثلاً 📘 یا 🔹):", nextStep: "icon" };
+            }
+            if (flow.step === "icon") {
+                flow.data.icon = text.trim() || "📘";
+                flow.step = "displayOrder";
+                return { text: "ترتیب نمایش را به عدد وارد کنید:", nextStep: "displayOrder" };
+            }
+            const order = parseInteger(text);
+            try {
+                await product_guide_service_1.ProductGuideService.save({ title: String(flow.data.title), shortDescription: String(flow.data.shortDescription), body: String(flow.data.body), icon: String(flow.data.icon ?? "📘"), displayOrder: Number.isFinite(order) ? order : 0, isActive: true }, String(ctx.from?.id ?? "admin"));
+                return { done: true, text: "✅ بخش راهنمای محصولات ذخیره شد.", returnTo: { id: "admin.productGuides" } };
+            }
+            catch (error) {
+                return { text: error instanceof Error ? `⚠️ ${error.message}` : "⚠️ ذخیره راهنما ناموفق بود." };
+            }
+        },
+    },
+    product_guide_edit: {
+        firstStep: "title",
+        prompt: "📘 اطلاعات جدید راهنما را مرحله‌ای وارد کنید. ابتدا عنوان جدید را بفرستید:",
+        async handleText(ctx, text) {
+            const flow = ctx.session.flow;
+            if (flow.step === "title") {
+                flow.data.title = text.trim();
+                flow.step = "shortDescription";
+                return { text: "توضیح کوتاه جدید:", nextStep: "shortDescription" };
+            }
+            if (flow.step === "shortDescription") {
+                flow.data.shortDescription = text.trim();
+                flow.step = "body";
+                return { text: "متن اصلی جدید:", nextStep: "body" };
+            }
+            if (flow.step === "body") {
+                flow.data.body = text.trim();
+                flow.step = "icon";
+                return { text: "آیکن جدید:", nextStep: "icon" };
+            }
+            if (flow.step === "icon") {
+                flow.data.icon = text.trim() || "📘";
+                flow.step = "displayOrder";
+                return { text: "ترتیب نمایش جدید:", nextStep: "displayOrder" };
+            }
+            const order = parseInteger(text);
+            try {
+                await product_guide_service_1.ProductGuideService.save({ title: String(flow.data.title), shortDescription: String(flow.data.shortDescription), body: String(flow.data.body), icon: String(flow.data.icon ?? "📘"), displayOrder: Number.isFinite(order) ? order : 0, isActive: true }, String(ctx.from?.id ?? "admin"), String(flow.data.sectionId));
+                return { done: true, text: "✅ بخش راهنما ویرایش شد.", returnTo: { id: "admin.productGuides" } };
+            }
+            catch (error) {
+                return { text: error instanceof Error ? `⚠️ ${error.message}` : "⚠️ ویرایش راهنما ناموفق بود." };
+            }
+        },
+    },
     payment_gateway_update: {
         firstStep: "fields",
         prompt: (ctx) => {
@@ -1051,6 +1122,8 @@ function registerFlowEngine(bot) {
             "referral_tier_create",
             "store_status",
             "forced_join_create",
+            "product_guide_create",
+            "product_guide_edit",
             "wallet_adjust",
             "broadcast_create",
             "payment_gateway_update",
@@ -1062,6 +1135,8 @@ function registerFlowEngine(bot) {
             await ctx.answerCbQuery("دسترسی غیرمجاز");
             return;
         }
+        if (name === "product_guide_edit")
+            return startFlow(ctx, "product_guide_edit", { sectionId: ctx.match[2] });
         if (name === "payment_gateway_update")
             return startFlow(ctx, "payment_gateway_update", { field: ctx.match[2] });
         if (name === "payment_gateway_setup")
