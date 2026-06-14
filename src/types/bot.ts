@@ -29,6 +29,7 @@ export type FlowName =
   | "wallet_adjust"
   | "free_account_create"
   | "free_account_edit"
+  | "free_test_config"
   | "broadcast_create"
   | "category_create"
   | "category_edit"
@@ -64,6 +65,7 @@ export interface SessionData {
   flow?: ActiveFlow;
   navigation?: { panelMessageId?: number; stack: ViewState[] };
   quickKeyboardSignature?: string;
+  freeTestInboundSelection?: { inboundOptions: string; selectedIds: number[] };
 }
 
 export interface AppContext extends Context {

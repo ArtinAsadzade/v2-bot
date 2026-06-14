@@ -352,6 +352,20 @@ function registerModernHandlers(bot) {
             }
         }
     });
+    function freeTestInboundKeyboard(inbounds, selectedIds) {
+        const selected = new Set(selectedIds);
+        const rows = inbounds.map((inbound) => [{ text: `${selected.has(inbound.id) ? "☑" : "☐"} ${inbound.remark ?? inbound.tag ?? `inbound-${inbound.id}`} | ${inbound.protocol ?? "—"} · port ${inbound.port ?? "—"}`, callback_data: `admin:free_test:inbound:toggle:${inbound.id}` }]);
+        rows.push([{ text: "✅ ذخیره اینباندها", callback_data: "admin:free_test:inbounds:save" }]);
+        rows.push([{ text: "🔄 بروزرسانی لیست", callback_data: "admin:free_test:inbounds" }, { text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("admin.freeAccounts") }]);
+        return { inline_keyboard: rows };
+    }
+    async function showFreeTestInboundSelector(ctx) {
+        const [cfg, inbounds] = await Promise.all([free_account_service_1.FreeAccountService.getXrayConfig(), xray_service_1.XrayClientService.listInbounds()]);
+        const selectedIds = cfg.inboundIds.filter((id) => inbounds.some((inbound) => inbound.id === id));
+        ctx.session.freeTestInboundSelection = { inboundOptions: JSON.stringify(inbounds), selectedIds };
+        const selected = new Set(selectedIds);
+        await ctx.reply(`🔗 انتخاب اینباندهای اکانت تست\n\n${inbounds.map((i) => `${selected.has(i.id) ? "☑" : "☐"} ${i.remark ?? i.tag ?? `inbound-${i.id}`} | ${i.protocol ?? "—"}\n${i.protocol ?? "—"} · port ${i.port ?? "—"}`).join("\n\n") || "⚠️ هیچ اینباند زنده‌ای از پنل دریافت نشد."}`, { reply_markup: freeTestInboundKeyboard(inbounds, selectedIds) });
+    }
     bot.action("admin:xray:test", async (ctx) => {
         await ctx.answerCbQuery();
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
@@ -359,6 +373,48 @@ function registerModernHandlers(bot) {
         const result = await xray_service_1.XrayPanelService.testConnection();
         await ctx.reply(result.ok ? `✅ اتصال موفق\nتعداد اینباندها: ${result.inboundCount.toLocaleString("fa-IR")}` : `⚠️ اتصال ناموفق\n${result.error}`);
         await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.xraySettings" }, "replace");
+    });
+    bot.action("admin:free_test:inbounds", async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return;
+        try {
+            await showFreeTestInboundSelector(ctx);
+        }
+        catch (error) {
+            await ctx.reply(`⚠️ ${error instanceof Error ? error.message : "دریافت اینباندها ناموفق بود"}`);
+        }
+    });
+    bot.action(/^admin:free_test:inbound:toggle:(\d+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return;
+        const state = ctx.session.freeTestInboundSelection;
+        if (!state)
+            return showFreeTestInboundSelector(ctx);
+        const id = Number(ctx.match[1]);
+        const inbounds = JSON.parse(state.inboundOptions);
+        if (!inbounds.some((inbound) => inbound.id === id))
+            return void await ctx.reply("⚠️ اینباند انتخابی در لیست زنده وجود ندارد.");
+        state.selectedIds = state.selectedIds.includes(id) ? state.selectedIds.filter((item) => item !== id) : [...state.selectedIds, id];
+        await ctx.editMessageReplyMarkup(freeTestInboundKeyboard(inbounds, state.selectedIds)).catch(() => undefined);
+    });
+    bot.action("admin:free_test:inbounds:save", async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return;
+        const state = ctx.session.freeTestInboundSelection;
+        if (!state?.selectedIds.length)
+            return void await ctx.reply("⚠️ حداقل یک اینباند لازم است");
+        try {
+            await free_account_service_1.FreeAccountService.updateXrayConfig({ inboundIds: state.selectedIds }, String(ctx.from.id));
+            ctx.session.freeTestInboundSelection = undefined;
+            await ctx.reply("✅ اینباندهای اکانت تست ذخیره شدند.");
+            await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.freeAccounts" }, "replace");
+        }
+        catch (error) {
+            await ctx.reply(`⚠️ ${error instanceof Error ? error.message : "ذخیره اینباندها ناموفق بود"}`);
+        }
     });
     bot.action(/^admin:free_test:enabled:(0|1)$/, async (ctx) => {
         await ctx.answerCbQuery();
