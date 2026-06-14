@@ -1,8 +1,5 @@
 import { prisma } from "../../services/prisma";
 
-export const LEAVE_REMINDER_COOLDOWN_HOURS = 12;
-export const LEAVE_REMINDER_COOLDOWN_MS = LEAVE_REMINDER_COOLDOWN_HOURS * 60 * 60 * 1000;
-
 function normalizeInviteLink(inviteLink?: string) {
   const value = inviteLink?.trim();
   return value || null;
@@ -36,21 +33,6 @@ export class ForcedJoinService {
 
   static async findActiveByChatId(chatId: string) {
     return prisma.forcedJoinChannel.findFirst({ where: { chatId: String(chatId), status: "active" } });
-  }
-
-  static async canSendLeaveReminder(userId: string, channelId: string) {
-    const since = new Date(Date.now() - LEAVE_REMINDER_COOLDOWN_MS);
-    const recent = await prisma.forcedJoinLeaveReminderLog.findFirst({ where: { userId, channelId, sentAt: { gte: since } }, orderBy: { sentAt: "desc" } });
-    return !recent;
-  }
-
-  static async recordLeaveReminder(data: { userId: string; channelId: string; telegramId: string; chatId: string }) {
-    return prisma.forcedJoinLeaveReminderLog.create({ data });
-  }
-
-  static async leaveReminderCounts() {
-    const groups = await prisma.forcedJoinLeaveReminderLog.groupBy({ by: ["channelId"], _count: { _all: true } });
-    return new Map(groups.map((group) => [group.channelId, group._count._all]));
   }
 
   static async updateBotAdminStatus(channelId: string, status: string) {
