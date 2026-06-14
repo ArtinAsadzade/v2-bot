@@ -220,6 +220,32 @@ export function registerModernHandlers(bot: AppBot) {
   });
 
 
+
+  async function sendPurchaseDelivery(ctx: AppContext, result: Awaited<ReturnType<typeof PurchaseService.buyProduct>>) {
+    if (result.product.mode === "xray_auto") {
+      const client = result.xrayClient ?? (result.orderItem?.xrayClientId ? await prisma.xrayClient.findUnique({ where: { id: result.orderItem.xrayClientId } }) : null);
+      if (!client) {
+        await ctx.reply(`✅ خرید با موفقیت انجام شد
+
+سرویس ساخته شده است. لطفاً از بخش «📦 اکانت‌های من» آن را باز کنید.`, { reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") }], [{ text: "🏠 خانه", callback_data: callbackFor("home") }]] } });
+        return;
+      }
+      await ctx.reply(`✅ خرید با موفقیت انجام شد
+
+سرویس شما ساخته شد و آماده استفاده است.
+
+برای دریافت لینک اشتراک، QR و کانفیگ‌ها از دکمه‌های زیر استفاده کنید.`, { reply_markup: { inline_keyboard: [[{ text: "📦 مشاهده سرویس", callback_data: callbackFor("account.xray", { xrayClientId: client.id }) }], [{ text: "🔗 دریافت لینک اشتراک", callback_data: `xray:sub:${client.id}` }, { text: "⚙️ دریافت کانفیگ‌ها", callback_data: `xray:configs:${client.id}` }], [{ text: "🏠 خانه", callback_data: callbackFor("home") }]] } });
+      return;
+    }
+    await ctx.reply(purchaseSuccessMessage({
+      productTitle: result.product.title,
+      username: result.account.username,
+      subscriptionLink: result.account.subscriptionLink,
+      config: result.account.configLink,
+      expiresAt: result.expiresAt,
+    }), { reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") }, { text: "🛒 خرید مجدد", callback_data: callbackFor("shop.categories") }], [{ text: "🏠 خانه", callback_data: callbackFor("home") }]] } });
+  }
+
   async function ownedXrayClient(ctx: AppContext, id: string) {
     if (!ctx.from) return null;
     const user = await UserService.getByTelegramId(ctx.from.id);
@@ -330,14 +356,8 @@ export function registerModernHandlers(bot: AppBot) {
       const coupon = ctx.session.selectedCoupons?.[productId];
       const result = await PurchaseService.buyProduct(user.id, productId, coupon);
       delete ctx.session.selectedCoupons?.[productId];
-      await ctx.editMessageText("✅ خرید با موفقیت تکمیل شد. اطلاعات اکانت در پیام بعدی ارسال شد.", { reply_markup: { inline_keyboard: [] } });
-      await ctx.reply(purchaseSuccessMessage({
-        productTitle: result.product.title,
-        username: result.account.username,
-        subscriptionLink: result.account.subscriptionLink,
-        config: result.account.configLink,
-        expiresAt: result.expiresAt,
-      }), { reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") }, { text: "🛒 خرید مجدد", callback_data: callbackFor("shop.categories") }], [{ text: "🏠 خانه", callback_data: callbackFor("home") }]] } });
+      await ctx.editMessageText(result.product.mode === "xray_auto" ? "✅ خرید با موفقیت تکمیل شد. سرویس Xray آماده مشاهده است." : "✅ خرید با موفقیت تکمیل شد. اطلاعات اکانت در پیام بعدی ارسال شد.", { reply_markup: { inline_keyboard: [] } });
+      await sendPurchaseDelivery(ctx, result);
     } catch (error) {
       const message = error instanceof Error ? error.message : "در انجام درخواست مشکلی پیش آمد. لطفاً چند لحظه دیگر دوباره تلاش کنید.";
       if (/کد تخفیف|کوپن|تخفیف/.test(message)) {
