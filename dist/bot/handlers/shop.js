@@ -24,10 +24,7 @@ function registerShopHandlers(bot) {
         await ctx.answerCbQuery();
         const categoryId = ctx.match[1];
         const products = await product_service_1.ProductService.getProductsByCategory(categoryId);
-        const buttons = await Promise.all(products.map(async (product) => {
-            const stock = await product_service_1.ProductService.availableStock(product.id);
-            return [telegraf_1.Markup.button.callback(`🛒 ${product.title} - ${product.price.toLocaleString("fa-IR")} تومان (${stock} عدد)`, `product:${product.id}`)];
-        }));
+        const buttons = await Promise.all(products.map(async (product) => [telegraf_1.Markup.button.callback(product.title, `product:${product.id}`)]));
         buttons.push([telegraf_1.Markup.button.callback("⬅️ بازگشت", "shop"), telegraf_1.Markup.button.callback("🏠 خانه", "home")]);
         await ctx.reply("محصول را انتخاب کنید:", telegraf_1.Markup.inlineKeyboard(buttons));
     });

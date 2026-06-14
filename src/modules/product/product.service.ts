@@ -3,8 +3,49 @@ import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, categ
 import { gbToBytes } from "../xray/xray.service";
 
 export class ProductService {
-  private static isXrayInStock(product: { mode: string; stockLimit: number | null; soldCount: number }) {
-    return product.mode === "xray_auto" && product.stockLimit !== null && product.stockLimit > product.soldCount;
+  private static isXrayInStock(product: { mode: string; stockLimit: number | null; soldCount: number; trafficBytes?: bigint | null; durationDays?: number | null }) {
+    return product.mode === "xray_auto"
+      && product.stockLimit !== null
+      && product.stockLimit > product.soldCount
+      && (product.trafficBytes === undefined || (product.trafficBytes !== null && product.trafficBytes > 0n))
+      && (product.durationDays === undefined || (product.durationDays !== null && product.durationDays > 0));
+  }
+
+  private static renewalProductWhere(categoryId?: string) {
+    return {
+      ...(categoryId ? { categoryId } : {}),
+      mode: "xray_auto" as const,
+      isActive: true,
+      deletedAt: null,
+      stockLimit: { gt: 0 },
+      trafficBytes: { gt: 0n },
+      durationDays: { gt: 0 },
+      category: { is: activeCategoryWhere() },
+    };
+  }
+
+  static async listRenewalCategories() {
+    const categories = await prisma.category.findMany({
+      where: {
+        AND: [
+          activeCategoryWhere(),
+          { products: { some: this.renewalProductWhere() } },
+        ],
+      },
+      include: { products: { where: this.renewalProductWhere(), orderBy: { title: "asc" } } },
+      orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+    });
+    return categories
+      .map((category) => ({ ...category, products: category.products.filter((product) => this.isXrayInStock(product)) }))
+      .filter((category) => category.products.length > 0);
+  }
+
+  static async listRenewalProductsByCategory(categoryId: string) {
+    const products = await prisma.product.findMany({
+      where: this.renewalProductWhere(categoryId),
+      orderBy: [{ price: "asc" }, { title: "asc" }],
+    });
+    return products.filter((product) => this.isXrayInStock(product)).map((product) => ({ ...product, availableStock: Math.max((product.stockLimit ?? 0) - product.soldCount, 0) }));
   }
 
   static async getCategories() {

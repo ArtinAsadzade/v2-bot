@@ -6,7 +6,45 @@ const visibility_1 = require("./visibility");
 const xray_service_1 = require("../xray/xray.service");
 class ProductService {
     static isXrayInStock(product) {
-        return product.mode === "xray_auto" && product.stockLimit !== null && product.stockLimit > product.soldCount;
+        return product.mode === "xray_auto"
+            && product.stockLimit !== null
+            && product.stockLimit > product.soldCount
+            && (product.trafficBytes === undefined || (product.trafficBytes !== null && product.trafficBytes > 0n))
+            && (product.durationDays === undefined || (product.durationDays !== null && product.durationDays > 0));
+    }
+    static renewalProductWhere(categoryId) {
+        return {
+            ...(categoryId ? { categoryId } : {}),
+            mode: "xray_auto",
+            isActive: true,
+            deletedAt: null,
+            stockLimit: { gt: 0 },
+            trafficBytes: { gt: 0n },
+            durationDays: { gt: 0 },
+            category: { is: (0, visibility_1.activeCategoryWhere)() },
+        };
+    }
+    static async listRenewalCategories() {
+        const categories = await prisma_1.prisma.category.findMany({
+            where: {
+                AND: [
+                    (0, visibility_1.activeCategoryWhere)(),
+                    { products: { some: this.renewalProductWhere() } },
+                ],
+            },
+            include: { products: { where: this.renewalProductWhere(), orderBy: { title: "asc" } } },
+            orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+        });
+        return categories
+            .map((category) => ({ ...category, products: category.products.filter((product) => this.isXrayInStock(product)) }))
+            .filter((category) => category.products.length > 0);
+    }
+    static async listRenewalProductsByCategory(categoryId) {
+        const products = await prisma_1.prisma.product.findMany({
+            where: this.renewalProductWhere(categoryId),
+            orderBy: [{ price: "asc" }, { title: "asc" }],
+        });
+        return products.filter((product) => this.isXrayInStock(product)).map((product) => ({ ...product, availableStock: Math.max((product.stockLimit ?? 0) - product.soldCount, 0) }));
     }
     static async getCategories() {
         const categories = await prisma_1.prisma.category.findMany({
