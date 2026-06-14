@@ -346,6 +346,13 @@ export function registerModernHandlers(bot: AppBot) {
     await renderPanel(ctx, { id: "admin.xraySettings" }, "replace");
   });
 
+  bot.action(/^admin:free_test:enabled:(0|1)$/ , async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
+    try { await FreeAccountService.updateXrayConfig({ enabled: ctx.match[1] === "1" }, String(ctx.from.id)); } catch (error) { await ctx.reply(`⚠️ ${error instanceof Error ? error.message : "خطا"}`); }
+    await renderPanel(ctx, { id: "admin.freeAccounts" }, "replace");
+  });
+
   bot.action(/^admin:xray:enabled:(0|1)$/, async (ctx) => {
     await ctx.answerCbQuery();
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
@@ -516,36 +523,23 @@ ${quote.wallet.walletAddress}
     const user = await UserService.getByTelegramId(ctx.from.id);
     if (!user) return;
     try {
-      const account = await FreeAccountService.assign(user.id, "user_claim");
-      await ctx.reply(`🎉 اکانت تست شما آماده است
+      const client = await FreeAccountService.claimXray(user.id);
+      await ctx.reply(`🎉 اکانت تست Xray شما آماده است
 
 ━━━━━━━━━━━━━━━━
 
-👤 نام کاربری:
-${account.username}
-
-🔗 لینک اشتراک:
-${account.subscriptionLink}
-
-⚙️ لینک کانفیگ:
-${account.configLink}
+👤 شناسه سرویس:
+${client.clientEmail}
 
 ⏳ اعتبار:
-${account.durationDays.toLocaleString("fa-IR")} روز
+${client.expiresAt.toLocaleDateString("fa-IR")}
 
-📅 تاریخ انقضا:
-${account.assignment.expiresAt.toLocaleDateString("fa-IR")}
-
-━━━━━━━━━━━━━━━━
-
-📦 این اکانت به بخش «اکانت‌های من» اضافه شد و در هر زمان می‌توانید اطلاعات آن را مشاهده کنید.`, {
-        reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") }], [{ text: "🏠 خانه", callback_data: callbackFor("home") }]] },
+📦 این سرویس به بخش «اکانت‌های من» اضافه شد.`, {
+        reply_markup: { inline_keyboard: [[{ text: "📦 مشاهده اکانت", callback_data: callbackFor("account.xray", { xrayClientId: client.id }) }], [{ text: "🏠 خانه", callback_data: callbackFor("home") }]] },
       });
     } catch (error) {
-      const keyboard = error instanceof FreeAccountError && error.code === "ACTIVE_ACCOUNT"
-        ? [[{ text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") }], [{ text: "🏠 خانه", callback_data: callbackFor("home") }]]
-        : [[{ text: "🏠 خانه", callback_data: callbackFor("home") }]];
-      await ctx.reply(formatFreeAccountError(error), { reply_markup: { inline_keyboard: keyboard } });
+      const failedProvision = !(error instanceof FreeAccountError);
+      await ctx.reply(failedProvision ? "درخواست ثبت شد اما ساخت اکانت تست نیازمند بررسی است." : formatFreeAccountError(error), { reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") }], [{ text: "🎫 پشتیبانی", callback_data: callbackFor("support") }]] } });
     }
   });
 

@@ -973,7 +973,7 @@ export class PaymentService {
     const client = await prisma.xrayClient.findFirstOrThrow({ where: { orderId }, include: { order: true } });
     if (client.status === "active") {
       const orderItem = await prisma.orderItem.findFirst({ where: { xrayClientId: client.id } });
-      const product = await prisma.product.findUniqueOrThrow({ where: { id: client.productId } });
+      const product = await prisma.product.findUniqueOrThrow({ where: { id: client.productId ?? "" } });
       return { order: client.order!, product, account: { id: client.id, username: client.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem, xrayClient: client, totalAmount: client.order?.totalAmount ?? 0, originalAmount: client.order?.originalAmount ?? 0, discountAmount: client.order?.discountAmount ?? 0, couponId: client.order?.couponId ?? null, couponCode: undefined, expiresAt: client.expiresAt };
     }
     if (client.status !== "provisioning" && client.status !== "creating") throw new Error("تحویل Xray قبلاً ناموفق شده و نیازمند بررسی مدیر است");
@@ -984,7 +984,7 @@ export class PaymentService {
       await prisma.order.update({ where: { id: orderId }, data: { status: "completed" } });
       if (invoiceId) await prisma.paymentInvoice.update({ where: { id: invoiceId }, data: { deliveryStatus: "COMPLETED", status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), orderId } });
       await audit(prisma, { userId: client.userId, invoiceId, action: "XRAY_PRODUCT_DELIVERED", metadata: { orderId, xrayClientId: client.id } });
-      const product = await prisma.product.findUniqueOrThrow({ where: { id: client.productId } });
+      const product = await prisma.product.findUniqueOrThrow({ where: { id: client.productId ?? "" } });
       const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
       const item = await prisma.orderItem.findFirst({ where: { xrayClientId: client.id } });
       return { order, product, account: { id: updated.id, username: updated.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem: item, xrayClient: updated, totalAmount: order.totalAmount, originalAmount: order.originalAmount, discountAmount: order.discountAmount, couponId: order.couponId, couponCode: undefined, expiresAt: updated.expiresAt };

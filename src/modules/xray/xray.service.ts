@@ -17,7 +17,7 @@ export function formatXrayBytes(value?: bigint | number | string | null, options
   const gb = bytes / (1024 ** 3);
   return `${gb.toLocaleString("fa-IR", { maximumFractionDigits: options.maximumFractionDigits ?? 2 })} GB`;
 }
-export function normalizeXrayStatus(status?: string | null) { return ({ active: "فعال ✅", creating: "در حال آماده‌سازی ⏳", provisioning: "در حال آماده‌سازی ⏳", failed: "نیازمند بررسی ⚠️", renewal_failed: "نیازمند بررسی ⚠️", expired: "منقضی شده ⛔", disabled: "غیرفعال 🚫" } as Record<string, string>)[String(status ?? "")] ?? "نامشخص"; }
+export function normalizeXrayStatus(status?: string | null) { return ({ active: "فعال ✅", creating: "در حال آماده‌سازی ⏳", provisioning: "در حال آماده‌سازی ⏳", failed: "نیازمند بررسی ⚠️", renewal_failed: "نیازمند بررسی ⚠️", expired: "منقضی شده ⛔", disabled: "غیرفعال 🚫", missing_on_panel: "حذف‌شده از پنل", deleted: "حذف‌شده" } as Record<string, string>)[String(status ?? "")] ?? "نامشخص"; }
 export function xrayTrafficSnapshot(traffic: any, fallbackTotal: bigint, fallbackUsed: bigint = 0n) {
   const up = BigInt(Math.max(0, Number(traffic?.up ?? 0)));
   const down = BigInt(Math.max(0, Number(traffic?.down ?? 0)));
@@ -47,6 +47,13 @@ export class XrayClientService {
  static links(email: string) { return request<{ obj?: any }>(`/panel/api/clients/links/${encodeURIComponent(email)}`).then((r) => r.obj); }
  static traffic(email: string) { return request<{ obj?: any }>(`/panel/api/clients/traffic/${encodeURIComponent(email)}`).then((r) => r.obj); }
  static subLinks(subId: string) { return request<{ obj?: any }>(`/panel/api/clients/subLinks/${encodeURIComponent(subId)}`).then((r) => r.obj); }
+ static async ensureExistsOrMarkMissing(client: { id: string; clientEmail: string; userId?: string; status?: string }) {
+   try { const detail = await this.getClient(client.clientEmail); const obj = detail?.obj; if (obj && (Array.isArray(obj) ? obj.length > 0 : Object.keys(obj).length > 0)) return { exists: true, detail }; }
+   catch (error) { const message = sanitizePanelError(error); if (!/404|not found|پیدا|HTTP 404/i.test(message)) throw error; }
+   await prisma.xrayClient.update({ where: { id: client.id }, data: { status: "missing_on_panel", lastError: "XRAY_CLIENT_MISSING_ON_PANEL" } });
+   logger.warn("XRAY_CLIENT_MISSING_ON_PANEL", { xrayClientId: client.id, email: client.clientEmail, userId: client.userId });
+   return { exists: false, detail: null };
+ }
  static async subscriptionUrl(client: { id: string; clientEmail: string; clientSubId?: string | null }) { const config = await XrayPanelService.getEnabledConfig(); let subId = client.clientSubId ?? undefined; if (!subId) { const detail = await this.getClient(client.clientEmail).catch(() => null); subId = detail?.obj?.subId ?? detail?.obj?.client?.subId ?? detail?.obj?.sub_id; if (subId) await prisma.xrayClient.update({ where: { id: client.id }, data: { clientSubId: String(subId) } }); }
    if (!subId) throw new Error("شناسه اشتراک برای این سرویس هنوز از پنل دریافت نشده است.");
    if (!config?.subscriptionBaseUrl) throw new Error("لینک پایه اشتراک در تنظیمات Xray ثبت نشده است.");
