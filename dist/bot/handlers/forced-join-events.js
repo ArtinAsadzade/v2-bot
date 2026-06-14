@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendForcedJoinLeaveReminder = sendForcedJoinLeaveReminder;
+exports.sendForcedJoinLeaveReminderToUserOnly = sendForcedJoinLeaveReminderToUserOnly;
 exports.registerForcedJoinEventHandlers = registerForcedJoinEventHandlers;
 const forced_join_service_1 = require("../../modules/system/forced-join.service");
 const user_service_1 = require("../../modules/user/user.service");
@@ -14,65 +14,85 @@ function joinUrl(channel) {
         return `https://t.me/${channel.chatId.slice(1)}`;
     return "https://t.me/";
 }
-function isChannelLikeTelegramId(telegramId) {
-    return telegramId < 0 || String(telegramId).startsWith("-100");
+function isPrivateUserDestination(destinationChatId) {
+    if (destinationChatId === null || destinationChatId === undefined || destinationChatId === "")
+        return false;
+    if (typeof destinationChatId === "string" && destinationChatId.startsWith("-"))
+        return false;
+    const numericDestination = Number(destinationChatId);
+    return Number.isSafeInteger(numericDestination) && numericDestination > 0;
 }
-async function sendForcedJoinLeaveReminder({ telegram, affectedUserId, channel, logContext, }) {
-    if (!affectedUserId || String(affectedUserId) === String(channel.chatId) || isChannelLikeTelegramId(affectedUserId)) {
-        logger_1.logger.warn("FORCED_JOIN_REMINDER_BLOCKED_CHANNEL_DESTINATION", logContext);
+function logBlockedChannelDestination(logContext) {
+    const destination = logContext.destinationChatId;
+    const numericDestination = Number(destination);
+    const isCritical = (typeof destination === "string" && destination.startsWith("-")) || (Number.isFinite(numericDestination) && numericDestination < 0);
+    logger_1.logger.error("FORCED_JOIN_CHANNEL_DESTINATION_BLOCKED", { ...logContext, severity: isCritical ? "CRITICAL" : "ERROR" });
+}
+async function sendForcedJoinLeaveReminderToUserOnly({ telegram, affectedUserTelegramId, forcedJoinChannel, logContext, }) {
+    const destinationChatId = affectedUserTelegramId;
+    const completeLogContext = {
+        affectedUserTelegramId,
+        channelId: forcedJoinChannel.chatId,
+        destinationChatId,
+        oldStatus: logContext?.oldStatus ?? "unknown",
+        newStatus: logContext?.newStatus ?? "unknown",
+    };
+    if (!isPrivateUserDestination(destinationChatId)) {
+        logBlockedChannelDestination({ ...completeLogContext, forcedJoinChannelChatId: forcedJoinChannel.chatId, reason: "destination_is_not_private_user_id" });
         return false;
     }
-    await telegram.sendMessage(affectedUserId, `⚠️ عضویت شما در کانال الزامی قطع شد
+    if (String(destinationChatId) === String(forcedJoinChannel.chatId)) {
+        logBlockedChannelDestination({ ...completeLogContext, forcedJoinChannelChatId: forcedJoinChannel.chatId, reason: "destination_equals_forced_join_channel" });
+        return false;
+    }
+    try {
+        await telegram.sendMessage(Number(destinationChatId), `⚠️ عضویت شما در کانال الزامی قطع شد
 
 شما از کانال زیر خارج شده‌اید:
 
-📢 ${channel.title}
+📢 ${forcedJoinChannel.title}
 
 برای استفاده کامل از ربات، لطفاً دوباره عضو شوید.`, {
-        reply_markup: { inline_keyboard: [[{ text: "🔗 عضویت دوباره", url: joinUrl(channel) }], [{ text: "✅ عضو شدم", callback_data: `forced_join:verify:${channel.id}` }]] },
-    });
-    return true;
+            reply_markup: { inline_keyboard: [[{ text: "🔗 عضویت دوباره", url: joinUrl(forcedJoinChannel) }], [{ text: "✅ عضو شدم", callback_data: `forced_join:verify:${forcedJoinChannel.id}` }]] },
+        });
+        logger_1.logger.info("FORCED_JOIN_REMINDER_SENT_TO_USER", completeLogContext);
+        return true;
+    }
+    catch (error) {
+        logger_1.logger.warn("FORCED_JOIN_REMINDER_DM_FAILED", { ...completeLogContext, error: error instanceof Error ? error.message : String(error) });
+        return false;
+    }
 }
 function registerForcedJoinEventHandlers(bot) {
     bot.on("chat_member", async (ctx) => {
         const update = ctx.chatMember;
-        const channelChatId = String(update.chat.id);
+        const channelId = String(update.chat.id);
         const oldStatus = update.old_chat_member.status;
         const newStatus = update.new_chat_member.status;
         const affectedUser = update.new_chat_member.user;
-        const channel = await forced_join_service_1.ForcedJoinService.findActiveByChatId(channelChatId);
+        const affectedUserTelegramId = affectedUser.id;
+        const eventLogContext = { affectedUserTelegramId, channelId, destinationChatId: affectedUserTelegramId, oldStatus, newStatus };
+        logger_1.logger.info("FORCED_JOIN_LEAVE_EVENT_RECEIVED", eventLogContext);
+        logger_1.logger.info("FORCED_JOIN_AFFECTED_USER_RESOLVED", eventLogContext);
+        const channel = await forced_join_service_1.ForcedJoinService.findActiveByChatId(channelId);
         if (!channel)
             return;
-        if (affectedUser.is_bot)
+        if (affectedUser.is_bot === true)
             return;
         if (!PREVIOUS_MEMBER_STATUSES.has(oldStatus) || !LEFT_STATUSES.has(newStatus))
             return;
-        const logContext = {
-            affectedUserTelegramId: String(affectedUser.id),
-            channelId: channel.id,
-            channelTitle: channel.title,
-            oldStatus,
-            newStatus,
-        };
-        logger_1.logger.info("FORCED_JOIN_LEAVE_DETECTED", logContext);
-        const user = await user_service_1.UserService.getByTelegramId(affectedUser.id);
+        if (String(affectedUserTelegramId) === channelId || String(affectedUserTelegramId) === String(channel.chatId)) {
+            logBlockedChannelDestination({ ...eventLogContext, forcedJoinChannelChatId: channel.chatId, reason: "destination_equals_update_or_forced_join_channel" });
+            return;
+        }
+        const user = await user_service_1.UserService.getByTelegramId(affectedUserTelegramId);
         if (!user)
             return;
-        if (!(await forced_join_service_1.ForcedJoinService.canSendLeaveReminder(user.id, channel.id))) {
-            logger_1.logger.info("FORCED_JOIN_REMINDER_SKIPPED_COOLDOWN", logContext);
+        if (!(await forced_join_service_1.ForcedJoinService.canSendLeaveReminder(user.id, channel.id)))
             return;
-        }
-        try {
-            const sent = await sendForcedJoinLeaveReminder({ telegram: ctx.telegram, affectedUserId: affectedUser.id, channel, logContext });
-            if (!sent)
-                return;
-            await forced_join_service_1.ForcedJoinService.recordLeaveReminder({ userId: user.id, channelId: channel.id, telegramId: user.telegramId, chatId: channel.chatId });
-            logger_1.logger.info("FORCED_JOIN_REMINDER_SENT_DM", logContext);
-        }
-        catch (error) {
-            const errorContext = { ...logContext, error: error instanceof Error ? error.message : String(error) };
-            logger_1.logger.warn("FORCED_JOIN_REMINDER_DM_FAILED", errorContext);
-            logger_1.logger.warn("FORCED_JOIN_REMINDER_SKIPPED_DM_FAILED", errorContext);
-        }
+        const sent = await sendForcedJoinLeaveReminderToUserOnly({ telegram: ctx.telegram, affectedUserTelegramId, forcedJoinChannel: channel, logContext: eventLogContext });
+        if (!sent)
+            return;
+        await forced_join_service_1.ForcedJoinService.recordLeaveReminder({ userId: user.id, channelId: channel.id, telegramId: user.telegramId, chatId: channel.chatId });
     });
 }
