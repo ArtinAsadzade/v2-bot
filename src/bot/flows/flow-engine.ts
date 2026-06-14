@@ -540,6 +540,26 @@ stockLimit: ${detail.product.stockLimit ?? ""}
       return { done: true, text: "✅ محصول به‌روزرسانی شد.", returnTo: { id: "admin.product", params: { productId: product.id } } };
     },
   },
+
+  free_test_config: {
+    firstStep: "value",
+    prompt: async (ctx) => {
+      const field = String(ctx.session.flow?.data.field ?? "");
+      if (field === "trafficGB") return "📊 حجم تست را به گیگابایت وارد کنید:";
+      if (field === "durationDays") return "📅 مدت اکانت تست را به روز وارد کنید:";
+      if (field === "stockLimit") return "📦 موجودی کل اکانت تست را وارد کنید:";
+      return "⚠️ فیلد تنظیمات معتبر نیست.";
+    },
+    async handleText(ctx, text) {
+      const field = String(ctx.session.flow?.data.field ?? "");
+      const value = parseInteger(text);
+      if (!Number.isInteger(value) || value <= 0) return { text: "یک عدد مثبت وارد کنید:" };
+      const patch = field === "trafficGB" ? { trafficGB: value } : field === "durationDays" ? { durationDays: value } : field === "stockLimit" ? { stockLimit: value } : undefined;
+      if (!patch) return { done: true, text: "⚠️ فیلد تنظیمات معتبر نیست.", returnTo: { id: "admin.freeAccounts" } };
+      await FreeAccountService.updateXrayConfig(patch, String(ctx.from?.id ?? "admin"));
+      return { done: true, text: "✅ تنظیمات اکانت تست ذخیره شد.", returnTo: { id: "admin.freeAccounts" } };
+    },
+  },
   product_xray_inbounds: {
     firstStep: "inbounds",
     prompt: async (ctx) => {
@@ -1287,6 +1307,7 @@ const adminOnlyFlows: FlowName[] = [
   "xray_panel_setup",
   "free_account_create",
   "free_account_edit",
+  "free_test_config",
 ];
     if (adminOnlyFlows.includes(name) && (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))) {
       await ctx.answerCbQuery("دسترسی غیرمجاز");
@@ -1305,6 +1326,7 @@ if (name === "broadcast_create") {
     if (name === "category_edit") return startFlow(ctx, "category_edit", { categoryId: ctx.match[2] });
     if (name === "product_edit") return startFlow(ctx, "product_edit", { productId: ctx.match[2] });
     if (name === "product_xray_inbounds") return startFlow(ctx, "product_xray_inbounds", { productId: ctx.match[2] });
+    if (name === "free_test_config") return startFlow(ctx, "free_test_config", { field: ctx.match[2] });
     if (name === "account_create") return startFlow(ctx, "account_create", { productId: ctx.match[2] });
     if (name === "account_edit") return startFlow(ctx, "account_edit", { accountId: ctx.match[2] });
     if (name === "crypto_wallet_edit") return startFlow(ctx, "crypto_wallet_edit", { walletId: ctx.match[2] });

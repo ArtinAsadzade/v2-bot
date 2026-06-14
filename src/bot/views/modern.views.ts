@@ -1044,10 +1044,31 @@ ${history}`,
     const selected = new Set(cfg.inboundIds);
     const snapshot = cfg.inboundSnapshot ? JSON.parse(cfg.inboundSnapshot) : live.filter((i) => selected.has(i.id));
     return {
-      text: `🆓 مدیریت اکانت تست\n\n${divider}\n\nوضعیت: ${cfg.enabled ? "فعال ✅" : "غیرفعال ⛔"}\nپنل Xray: ${panel ? "فعال ✅" : "غیرفعال ⛔"}\n\n📊 حجم تست:\n${formatXrayBytes(cfg.trafficBytes)}\n\n📅 مدت:\n${cfg.durationDays.toLocaleString("fa-IR")} روز\n\n📦 موجودی:\n${cfg.available.toLocaleString("fa-IR")} از ${cfg.stockLimit.toLocaleString("fa-IR")}\nمصرف‌شده: ${cfg.usedCount.toLocaleString("fa-IR")}\n\n🔗 اینباندها:\n${snapshot.map((i: any) => `• ${i.remark ?? i.tag ?? i.id} / ${i.protocol ?? "—"} / ${i.port ?? "—"}`).join("\n") || "انتخاب نشده"}\n\nاینباندهای زنده پنل: ${live.length.toLocaleString("fa-IR")}`,
+      text: `🆓 مدیریت اکانت تست
+
+${divider}
+
+وضعیت: ${cfg.enabled ? "فعال ✅" : "غیرفعال ⛔"}
+پنل Xray: ${panel ? "فعال ✅" : "غیرفعال ⛔"}
+
+📊 حجم تست:
+${formatXrayBytes(cfg.trafficBytes)}
+
+📅 مدت:
+${cfg.durationDays.toLocaleString("fa-IR")} روز
+
+📦 موجودی:
+${cfg.available.toLocaleString("fa-IR")} از ${cfg.stockLimit.toLocaleString("fa-IR")}
+مصرف‌شده: ${cfg.usedCount.toLocaleString("fa-IR")}
+
+🔗 اینباندهای انتخاب‌شده:
+${snapshot.map((i: any) => `• ${i.remark ?? i.tag ?? i.id} / ${i.protocol ?? "—"} / ${i.port ?? "—"}`).join("\n") || "انتخاب نشده"}
+
+اینباندهای زنده پنل: ${live.length.toLocaleString("fa-IR")}${cfg.inboundIds.length ? "" : "\n\nبرای فعال‌سازی اکانت تست، از دکمه «🔗 انتخاب اینباندها» حداقل یک اینباند انتخاب کنید."}`,
       keyboard: [
-        [{ text: cfg.enabled ? "🚫 غیرفعال‌سازی تست" : "✅ فعال‌سازی تست", action: `admin:free_test:enabled:${cfg.enabled ? "0" : "1"}` }, { text: "📡 تست اتصال", action: "admin:xray:test" }],
-        [{ text: "⚙️ تنظیمات پنل Xray", action: callbackFor("admin.xraySettings") }],
+        [{ text: "📊 تغییر حجم", action: "flow:start:free_test_config:trafficGB" }, { text: "📅 تغییر مدت", action: "flow:start:free_test_config:durationDays" }],
+        [{ text: "📦 تغییر موجودی", action: "flow:start:free_test_config:stockLimit" }, { text: "🔗 انتخاب اینباندها", action: "admin:free_test:inbounds" }],
+        [{ text: cfg.enabled ? "🚫 غیرفعال‌سازی" : "✅ فعال‌سازی", action: `admin:free_test:enabled:${cfg.enabled ? "0" : "1"}` }, { text: "🔄 بروزرسانی اینباندها", action: "admin:free_test:inbounds" }],
         [{ text: "🔙 بازگشت", action: callbackFor("admin.dashboard") }],
       ],
     };
