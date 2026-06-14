@@ -173,7 +173,7 @@ export class CouponService {
     const shapeError = this.validateCouponShape(coupon, data.originalAmount, now);
     if (shapeError) return { ok: false, reason: shapeError };
     const usedByUser = await tx.couponUsage.count({ where: { couponId: coupon.id, userId: data.userId } });
-    if (usedByUser >= coupon.perUserLimit) return { ok: false, reason: "سقف استفاده شما از این کد تخفیف تکمیل شده است" };
+    if (usedByUser >= coupon.perUserLimit) return { ok: false, reason: "❌ این کد قبلاً توسط شما استفاده شده است." };
     const calculation = this.calculate(coupon, data.originalAmount);
     if (calculation.finalAmount < 0) return { ok: false, reason: "مبلغ نهایی معتبر نیست" };
     return { ok: true, coupon, ...calculation };

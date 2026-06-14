@@ -119,11 +119,11 @@ ${divider}
             text: `🧩 کلاینت‌های Xray
 
 ${divider}
-${productId ? `محصول: ${clients[0]?.product.title ?? productId}\n` : ""}
+${productId ? `محصول: ${clients[0]?.product?.title ?? productId}\n` : ""}
 فیلتر: ${status ?? "همه"}
 صفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}
 
-${clients.map((client) => `• ${client.telegramId} · ${client.product.title}
+${clients.map((client) => `• ${client.telegramId} · ${client.isFreeTest ? "🆓 اکانت تست" : client.product?.title ?? "سرویس Xray"}
 ایمیل: ${client.clientEmail}
 وضعیت: ${client.status}
 ساخته‌شده: ${client.createdAt.toLocaleString("fa-IR")}
@@ -292,6 +292,13 @@ ${divider}
         await free_account_service_1.FreeAccountService.expireDueAccounts();
         const dashboard = await user_service_1.UserService.dashboard(user.id);
         const activeFreeAccounts = await free_account_service_1.FreeAccountService.assignedForUser(user.id, true);
+        const freeXrayClients = await prisma_1.prisma.xrayClient.findMany({ where: { userId: user.id, isFreeTest: true, status: { in: ["active", "provisioning", "creating"] }, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } });
+        for (const client of freeXrayClients) {
+            const exists = await xray_service_1.XrayClientService.ensureExistsOrMarkMissing(client).catch(() => ({ exists: true }));
+            if (!exists.exists)
+                client.status = "missing_on_panel";
+        }
+        const visibleFreeXrayClients = freeXrayClients.filter((c) => c.status !== "missing_on_panel" && c.status !== "deleted");
         const purchasedAccounts = dashboard.purchasedAccounts;
         const lines = [];
         const keyboard = [];
@@ -299,6 +306,11 @@ ${divider}
         for (const item of purchasedAccounts) {
             if (item.xrayClient || item.product.mode === "xray_auto") {
                 const client = item.xrayClient;
+                if (client) {
+                    const exists = await xray_service_1.XrayClientService.ensureExistsOrMarkMissing(client).catch(() => ({ exists: true }));
+                    if (!exists.exists)
+                        continue;
+                }
                 const days = client ? Math.max(Math.ceil((client.expiresAt.getTime() - Date.now()) / 86400000), 0) : 0;
                 lines.push(`${index}. ${item.product.title}\n   وضعیت: ${(0, xray_service_1.normalizeXrayStatus)(client?.status)}\n   اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`);
                 if (client)
@@ -311,9 +323,15 @@ ${divider}
             }
             index++;
         }
+        for (const client of visibleFreeXrayClients) {
+            const days = Math.max(Math.ceil((client.expiresAt.getTime() - Date.now()) / 86400000), 0);
+            lines.push(`${index}. 🆓 اکانت تست\n   وضعیت: ${(0, xray_service_1.normalizeXrayStatus)(client.status)}\n   اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`);
+            keyboard.push([{ text: `🆓 اکانت تست ${client.clientEmail}`.slice(0, 60), action: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: client.id }) }]);
+            index++;
+        }
         for (const item of activeFreeAccounts) {
             const days = Math.max(Math.ceil((freeAccountExpiry(item).getTime() - Date.now()) / 86400000), 0);
-            lines.push(`${index}. اکانت تست رایگان\n   وضعیت: فعال ✅\n   اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`);
+            lines.push(`${index}. اکانت تست قدیمی\n   وضعیت: فعال ✅\n   اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`);
             index++;
         }
         return { replyKeyboard: "profile", text: `📦 اکانت‌های من\n\nسرویس‌های فعال شما:\n\n${lines.join("\n\n") || "هنوز اکانتی برای نمایش وجود ندارد."}`, keyboard: [...keyboard, [{ text: "🛒 خرید", action: (0, panel_ui_1.callbackFor)("shop.categories") }, { text: "🎫 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }]] };
@@ -325,6 +343,9 @@ ${divider}
         const client = await prisma_1.prisma.xrayClient.findFirst({ where: { id: params.xrayClientId, userId: user.id }, include: { product: true } });
         if (!client)
             return { text: "⚠️ سرویس Xray پیدا نشد.", keyboard: [[{ text: "🔙 بازگشت", action: (0, panel_ui_1.callbackFor)("account.details") }]] };
+        const exists = await xray_service_1.XrayClientService.ensureExistsOrMarkMissing(client).catch(() => ({ exists: true }));
+        if (!exists.exists)
+            return { text: "این سرویس در پنل فعال نیست و از لیست سرویس‌های فعال حذف شد.", keyboard: [[{ text: "🔙 بازگشت", action: (0, panel_ui_1.callbackFor)("account.details") }, { text: "🎫 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }]] };
         let warning = "";
         let traffic = null;
         try {
@@ -343,9 +364,9 @@ ${divider}
         const snap = (0, xray_service_1.xrayTrafficSnapshot)(traffic, client.trafficBytes, client.usedBytes);
         const days = Math.max(Math.ceil((client.expiresAt.getTime() - Date.now()) / 86400000), 0);
         const status = client.expiresAt <= new Date() ? "منقضی شده ⛔" : (0, xray_service_1.normalizeXrayStatus)(client.status);
-        return { text: `🧩 سرویس Xray\n\n📦 سرویس:\n${client.product.title}\n\n👤 شناسه:\n${client.clientEmail}\n\n📊 حجم:\n${(0, xray_service_1.formatXrayBytes)(snap.usedBytes)} / ${(0, xray_service_1.formatXrayBytes)(snap.totalBytes, { unlimitedIfZero: true })}\n\n📉 باقی‌مانده:\n${(0, xray_service_1.formatXrayBytes)(snap.remainingBytes, { unlimitedIfZero: snap.totalBytes === 0n })}\n\n⏳ اعتبار:\n${client.expiresAt.toLocaleDateString("fa-IR")}\n${days.toLocaleString("fa-IR")} روز باقی‌مانده\n\n📌 وضعیت:\n${status}${warning}`, keyboard: [
+        return { text: `🧩 سرویس Xray\n\n📦 سرویس:\n${client.isFreeTest ? "🆓 اکانت تست" : client.product?.title ?? "سرویس Xray"}\n\n👤 شناسه:\n${client.clientEmail}\n\n📊 حجم:\n${(0, xray_service_1.formatXrayBytes)(snap.usedBytes)} / ${(0, xray_service_1.formatXrayBytes)(snap.totalBytes, { unlimitedIfZero: true })}\n\n📉 باقی‌مانده:\n${(0, xray_service_1.formatXrayBytes)(snap.remainingBytes, { unlimitedIfZero: snap.totalBytes === 0n })}\n\n⏳ اعتبار:\n${client.expiresAt.toLocaleDateString("fa-IR")}\n${days.toLocaleString("fa-IR")} روز باقی‌مانده\n\n📌 وضعیت:\n${status}${warning}`, keyboard: [
                 [{ text: "🔗 دریافت لینک اشتراک", action: `xray:sub:${client.id}` }, { text: "📲 دریافت QR اشتراک", action: `xray:qr:${client.id}` }],
-                [{ text: "⚙️ دریافت کانفیگ‌ها", action: `xray:configs:${client.id}` }, { text: "🔄 تمدید سرویس", action: (0, panel_ui_1.callbackFor)("account.renew", { xrayClientId: client.id }) }],
+                client.isFreeTest ? [{ text: "⚙️ دریافت کانفیگ‌ها", action: `xray:configs:${client.id}` }, { text: "🎫 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }] : [{ text: "⚙️ دریافت کانفیگ‌ها", action: `xray:configs:${client.id}` }, { text: "🔄 تمدید سرویس", action: (0, panel_ui_1.callbackFor)("account.renew", { xrayClientId: client.id }) }],
                 [{ text: "📊 بروزرسانی اطلاعات", action: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: client.id }) }, { text: "🎫 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }],
                 [{ text: "🔙 بازگشت", action: (0, panel_ui_1.callbackFor)("account.details") }],
             ] };
@@ -368,7 +389,7 @@ ${divider}
         const currentDays = Math.max(Math.ceil((quote.client.expiresAt.getTime() - Date.now()) / 86400000), 0);
         const finalDays = Math.max(Math.ceil((quote.newExpiry.getTime() - Date.now()) / 86400000), 0);
         const finalRemaining = quote.remainingBytes + quote.addTrafficBytes;
-        return { text: `🔄 تمدید سرویس\n\n📦 سرویس فعلی:\n${quote.currentProduct.title}\n\n📊 حجم باقی‌مانده:\n${(0, xray_service_1.formatXrayBytes)(quote.remainingBytes)}\n\n⏳ اعتبار باقی‌مانده:\n${currentDays.toLocaleString("fa-IR")} روز\n\n➕ پلن تمدید:\n${quote.product.title}\n\n🎁 حجم اضافه:\n${(0, xray_service_1.formatXrayBytes)(quote.addTrafficBytes)}\n\n📅 روز اضافه:\n${quote.addDays.toLocaleString("fa-IR")} روز\n\nنتیجه بعد از تمدید:\n\n📊 حجم نهایی:\n${(0, xray_service_1.formatXrayBytes)(finalRemaining)}\n\n⏳ اعتبار نهایی:\n${finalDays.toLocaleString("fa-IR")} روز\n\n💰 مبلغ:\n${money(quote.product.price)}${quote.liveOk ? "" : "\n\n⚠️ اطلاعات لحظه‌ای پنل در دسترس نبود؛ محاسبه با داده محلی انجام شد."}`, keyboard: [[{ text: "💳 پرداخت با کیف پول", action: `xray:renew:wallet:${quote.client.id}:${quote.product.id}` }, { text: "⚡ پرداخت آنی", action: `xray:renew:instant:${quote.client.id}:${quote.product.id}` }], [{ text: "🔙 بازگشت", action: (0, panel_ui_1.callbackFor)("account.renew", { xrayClientId: quote.client.id }) }]] };
+        return { text: `🔄 تمدید سرویس\n\n📦 سرویس فعلی:\n${quote.currentProduct?.title ?? "سرویس Xray"}\n\n📊 حجم باقی‌مانده:\n${(0, xray_service_1.formatXrayBytes)(quote.remainingBytes)}\n\n⏳ اعتبار باقی‌مانده:\n${currentDays.toLocaleString("fa-IR")} روز\n\n➕ پلن تمدید:\n${quote.product.title}\n\n🎁 حجم اضافه:\n${(0, xray_service_1.formatXrayBytes)(quote.addTrafficBytes)}\n\n📅 روز اضافه:\n${quote.addDays.toLocaleString("fa-IR")} روز\n\nنتیجه بعد از تمدید:\n\n📊 حجم نهایی:\n${(0, xray_service_1.formatXrayBytes)(finalRemaining)}\n\n⏳ اعتبار نهایی:\n${finalDays.toLocaleString("fa-IR")} روز\n\n💰 مبلغ:\n${money(quote.product.price)}${quote.liveOk ? "" : "\n\n⚠️ اطلاعات لحظه‌ای پنل در دسترس نبود؛ محاسبه با داده محلی انجام شد."}`, keyboard: [[{ text: "💳 پرداخت با کیف پول", action: `xray:renew:wallet:${quote.client.id}:${quote.product.id}` }, { text: "⚡ پرداخت آنی", action: `xray:renew:instant:${quote.client.id}:${quote.product.id}` }], [{ text: "🔙 بازگشت", action: (0, panel_ui_1.callbackFor)("account.renew", { xrayClientId: quote.client.id }) }]] };
     });
     (0, panel_ui_1.registerView)("account.history", async (ctx) => {
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
@@ -495,94 +516,14 @@ ${link}
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
         if (!user)
             return { text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.", keyboard: [] };
-        const eligibility = await free_account_service_1.FreeAccountService.eligibility(user.id);
-        if (eligibility.reason === "active") {
-            return {
-                replyKeyboard: "freeAccount",
-                text: `⚠️ اکانت تست فعال دارید
-
-${divider}
-
-اکانت تست شما مستقل از دعوت دوستان است و فقط هر ۳۰ روز یک‌بار قابل دریافت است.
-
-برای مشاهده اطلاعات اکانت از بخش «اکانت‌های من» استفاده کنید.
-
-${divider}`,
-                keyboard: [[{ text: "📦 اکانت‌های من", action: (0, panel_ui_1.callbackFor)("account.details") }]],
-            };
-        }
-        if (eligibility.reason === "cooldown") {
-            const lastClaimAt = eligibility.last?.assignedAt ?? eligibility.last?.createdAt;
-            return {
-                replyKeyboard: "freeAccount",
-                text: `⏳ زمان دریافت بعدی هنوز نرسیده است
-
-${divider}
-
-اکانت تست برای هر کاربر هر ۳۰ روز یک‌بار فعال می‌شود و ارتباطی با تعداد دعوت دوستان ندارد.
-
-📅 دریافت قبلی:
-${(0, free_account_service_1.formatFreeAccountDate)(lastClaimAt)}
-
-⏳ امکان دریافت مجدد:
-${(0, free_account_service_1.formatFreeAccountDate)(eligibility.nextAvailableAt)}
-
-${divider}`,
-                keyboard: [],
-            };
-        }
-        if (eligibility.reason === "blocked") {
-            return {
-                replyKeyboard: "freeAccount",
-                text: `⚠️ دسترسی محدود شده است
-
-${divider}
-
-امکان دریافت اکانت تست برای حساب شما در حال حاضر فعال نیست.
-
-برای بررسی بیشتر می‌توانید با پشتیبانی در ارتباط باشید.
-
-${divider}`,
-                keyboard: [[{ text: "🎫 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }]],
-            };
-        }
-        if (!eligibility.available) {
-            return {
-                replyKeyboard: "freeAccount",
-                text: `🚫 ظرفیت امروز تکمیل شده است
-
-${divider}
-
-اکانت‌های تست محدود و آماده تحویل هستند. موجودی فعلی تمام شده است.
-
-لطفاً بعداً مجدداً مراجعه کنید.
-
-${divider}`,
-                keyboard: [],
-            };
-        }
+        const e = await free_account_service_1.FreeAccountService.xrayEligibility(user.id);
+        const cfg = e.config;
+        const blocked = !e.eligible;
+        const reason = user.isBanned ? "حساب شما محدود شده است." : !cfg.enabled ? "اکانت تست فعلاً غیرفعال است." : e.active ? "شما یک اکانت تست فعال دارید." : e.nextAvailableAt && e.nextAvailableAt > new Date() ? "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید." : cfg.available <= 0 ? "موجودی اکانت تست تکمیل شده است." : "آماده دریافت";
         return {
             replyKeyboard: "freeAccount",
-            text: `🎁 اکانت تست رایگان
-
-${divider}
-
-برای تجربه کیفیت نیمه‌شب، می‌توانید یک اکانت تست محدود و رایگان دریافت کنید.
-
-📌 نکات مهم:
-
-• این هدیه مستقل از دعوت دوستان است.
-• هر کاربر هر ۳۰ روز یک‌بار امکان دریافت دارد.
-• موجودی اکانت تست محدود است و به‌ترتیب درخواست تحویل می‌شود.
-• اطلاعات اکانت پس از دریافت در بخش «اکانت‌های من» ذخیره می‌شود.
-
-${divider}
-
-📌 وضعیت شما:
-آماده دریافت
-
-برای دریافت اکانت تست روی دکمه زیر کلیک کنید.`,
-            keyboard: [[{ text: "✅ دریافت اکانت تست", action: "freeAccount:claim" }]],
+            text: `🎁 اکانت تست رایگان Xray\n\n${divider}\n\n📌 وضعیت شما:\n${reason}\n\n📅 آخرین دریافت:\n${(0, free_account_service_1.formatFreeAccountDate)(e.lastClaimAt)}\n\n⏳ دریافت بعدی:\n${(0, free_account_service_1.formatFreeAccountDate)(e.nextAvailableAt && e.nextAvailableAt > new Date() ? e.nextAvailableAt : undefined)}\n\n📦 موجودی:\n${cfg.available.toLocaleString("fa-IR")} از ${cfg.stockLimit.toLocaleString("fa-IR")}\n\n📊 حجم تست:\n${(0, xray_service_1.formatXrayBytes)(cfg.trafficBytes)}\n\n📅 مدت:\n${cfg.durationDays.toLocaleString("fa-IR")} روز\n\nاکانت تست به‌صورت خودکار در پنل Xray ساخته می‌شود و از بخش «اکانت‌های من» قابل مشاهده است.`,
+            keyboard: blocked ? [[{ text: "📦 اکانت‌های من", action: (0, panel_ui_1.callbackFor)("account.details") }, { text: "🎫 پشتیبانی", action: (0, panel_ui_1.callbackFor)("support") }]] : [[{ text: "✅ دریافت اکانت تست", action: "freeAccount:claim" }]],
         };
     });
     (0, panel_ui_1.registerView)("admin.dashboard", async () => {
@@ -1068,41 +1009,22 @@ ${history}`,
             ],
         };
     });
-    (0, panel_ui_1.registerView)("admin.freeAccounts", async (_ctx, params) => {
-        await free_account_service_1.FreeAccountService.expireDueAccounts();
-        const current = page(params);
-        const stats = await free_account_service_1.FreeAccountService.stats();
-        const [inventory, total] = await free_account_service_1.FreeAccountService.listInventory(current, 8);
+    (0, panel_ui_1.registerView)("admin.freeAccounts", async () => {
+        const cfg = await free_account_service_1.FreeAccountService.getXrayConfig();
+        const panel = await xray_service_1.XrayPanelService.getEnabledConfig();
+        let live = [];
+        try {
+            live = await xray_service_1.XrayClientService.listInbounds();
+        }
+        catch { }
+        const selected = new Set(cfg.inboundIds);
+        const snapshot = cfg.inboundSnapshot ? JSON.parse(cfg.inboundSnapshot) : live.filter((i) => selected.has(i.id));
         return {
-            text: `🆓 مدیریت اکانت تست
-
-${divider}
-
-📊 آمار اختصاصی اکانت تست
-
-• کل اکانت‌ها: ${stats.total.toLocaleString("fa-IR")}
-• موجودی آماده: ${stats.available.toLocaleString("fa-IR")}
-• تخصیص‌یافته فعال: ${stats.assigned.toLocaleString("fa-IR")}
-• منقضی‌شده: ${stats.expired.toLocaleString("fa-IR")}
-• تخصیص‌های ۳۰ روز اخیر: ${stats.monthlyAssignments.toLocaleString("fa-IR")}
-• کاربران یکتای سرویس‌گرفته: ${stats.uniqueUsers.toLocaleString("fa-IR")}
-
-${divider}
-
-🧾 آخرین تخصیص‌ها:
-${stats.recentAssignments.map((item) => `• ${item.user.telegramId} ← ${item.account.username} · ${(item.assignedAt ?? item.createdAt).toLocaleDateString("fa-IR")} · انقضا ${(item.expiresAt ?? new Date((item.assignedAt ?? item.createdAt).getTime() + item.account.durationDays * 86400000)).toLocaleDateString("fa-IR")}`).join("\n") || "هنوز تخصیصی ثبت نشده است."}
-
-📦 موجودی صفحه ${current.toLocaleString("fa-IR")} از ${pages(total, 8)}:
-${inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleString("fa-IR")} روز · ${free_account_service_1.FREE_ACCOUNT_STATUS_LABELS[item.status]}`).join("\n") || "موجودی ثبت نشده است."}`,
+            text: `🆓 مدیریت اکانت تست\n\n${divider}\n\nوضعیت: ${cfg.enabled ? "فعال ✅" : "غیرفعال ⛔"}\nپنل Xray: ${panel ? "فعال ✅" : "غیرفعال ⛔"}\n\n📊 حجم تست:\n${(0, xray_service_1.formatXrayBytes)(cfg.trafficBytes)}\n\n📅 مدت:\n${cfg.durationDays.toLocaleString("fa-IR")} روز\n\n📦 موجودی:\n${cfg.available.toLocaleString("fa-IR")} از ${cfg.stockLimit.toLocaleString("fa-IR")}\nمصرف‌شده: ${cfg.usedCount.toLocaleString("fa-IR")}\n\n🔗 اینباندها:\n${snapshot.map((i) => `• ${i.remark ?? i.tag ?? i.id} / ${i.protocol ?? "—"} / ${i.port ?? "—"}`).join("\n") || "انتخاب نشده"}\n\nاینباندهای زنده پنل: ${live.length.toLocaleString("fa-IR")}`,
             keyboard: [
-                [{ text: "➕ افزودن اکانت تست", action: "flow:start:free_account_create" }],
-                ...inventory.map((item) => [
-                    { text: `👁 ${item.username} · ${free_account_service_1.FREE_ACCOUNT_STATUS_LABELS[item.status]}`, action: `admin:free_account:view:${item.id}` },
-                ]),
-                [
-                    { text: "◀️ قبلی", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts", { page: Math.max(current - 1, 1) }) },
-                    { text: "بعدی ▶️", action: (0, panel_ui_1.callbackFor)("admin.freeAccounts", { page: current + 1 }) },
-                ],
+                [{ text: cfg.enabled ? "🚫 غیرفعال‌سازی تست" : "✅ فعال‌سازی تست", action: `admin:free_test:enabled:${cfg.enabled ? "0" : "1"}` }, { text: "📡 تست اتصال", action: "admin:xray:test" }],
+                [{ text: "⚙️ تنظیمات پنل Xray", action: (0, panel_ui_1.callbackFor)("admin.xraySettings") }],
+                [{ text: "🔙 بازگشت", action: (0, panel_ui_1.callbackFor)("admin.dashboard") }],
             ],
         };
     });

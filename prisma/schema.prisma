@@ -59,6 +59,8 @@ enum XrayClientStatus {
   disabled
   failed
   renewal_failed
+  missing_on_panel
+  deleted
 }
 
 enum OrderStatus {
@@ -599,8 +601,9 @@ model XrayClient {
   panelConfigId String?          @db.ObjectId
   userId        String           @db.ObjectId
   telegramId    String
-  productId     String           @db.ObjectId
+  productId     String?          @db.ObjectId
   orderId       String?          @db.ObjectId
+  isFreeTest    Boolean          @default(false)
   clientEmail   String           @unique
   clientSubId   String?
   panelClientId String?
@@ -615,7 +618,7 @@ model XrayClient {
 
   panelConfig XrayPanelConfig? @relation(fields: [panelConfigId], references: [id])
   user        User             @relation(fields: [userId], references: [id])
-  product     Product          @relation(fields: [productId], references: [id])
+  product     Product?         @relation(fields: [productId], references: [id])
   order       Order?           @relation(fields: [orderId], references: [id])
   orderItems  OrderItem[]
   renewals    XrayRenewal[]
@@ -787,4 +790,18 @@ model AccountExpirationNotification {
 
   @@unique([orderItemId, daysBefore])
   @@index([sentAt])
+}
+
+
+model FreeTestConfig {
+  id              String   @id @default("singleton") @map("_id")
+  enabled         Boolean  @default(false)
+  trafficBytes    BigInt   @default(0)
+  durationDays    Int      @default(1)
+  stockLimit      Int      @default(0)
+  usedCount       Int      @default(0)
+  inboundIds      Int[]
+  inboundSnapshot String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
