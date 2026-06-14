@@ -81,6 +81,10 @@ export function registerView(id: PanelViewId, renderer: ViewRenderer): void {
   registry.set(id, renderer);
 }
 
+export function registeredPanelViewIds(): PanelViewId[] {
+  return [...registry.keys()];
+}
+
 const PARAM_ALIASES: Record<string, string> = {
   page: "p",
   productPage: "pp",
@@ -135,7 +139,7 @@ function isPanelViewId(value: string): value is PanelViewId {
   return PANEL_VIEW_IDS.has(value);
 }
 
-const PANEL_VIEW_IDS = new Set<string>([
+export const PANEL_VIEW_IDS = new Set<string>([
   "home",
   "shop.categories",
   "shop.products",
@@ -182,6 +186,8 @@ const PANEL_VIEW_IDS = new Set<string>([
   "admin.transactions",
   "admin.notifications",
   "admin.settings",
+  "admin.xraySettings",
+  "admin.xrayClients",
   "admin.paymentGateway",
   "admin.paymentStats",
   "admin.invoices",
