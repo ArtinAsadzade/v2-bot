@@ -137,7 +137,11 @@ export function registerModernHandlers(bot: AppBot) {
     publicPlansCooldown.set(chatId, now);
     const categories = await PublicPlansService.listPublicPlans();
     const botInfo = await ctx.telegram.getMe();
-    const planLines = categories.map((category) => `📂 ${category.name}\n\n${category.products.map((product) => `▫️ ${product.title}\nمدت: ${product.duration.toLocaleString("fa-IR")} روز\nقیمت: ${product.price.toLocaleString("fa-IR")} تومان\nموجودی: ${product._count.accounts.toLocaleString("fa-IR")}`).join("\n\n")}`).join("\n\n━━━━━━━━━━━━━━\n\n");
+    const planLines = categories.map((category) => `📂 ${category.name}\n\n${category.products.map((product) => {
+      const duration = product.mode === "xray_auto" ? (product.durationDays ?? product.duration) : product.duration;
+      const traffic = product.mode === "xray_auto" && product.trafficBytes ? `\nحجم: ${(Number(product.trafficBytes) / 1_073_741_824).toLocaleString("fa-IR")} GB` : "";
+      return `▫️ ${product.title}${traffic}\nمدت: ${duration.toLocaleString("fa-IR")} روز\nقیمت: ${product.price.toLocaleString("fa-IR")} تومان\nموجودی: ${product.availableStock.toLocaleString("fa-IR")}`;
+    }).join("\n\n")}`).join("\n\n━━━━━━━━━━━━━━\n\n");
     const text = `🛒 پلن‌های فعال فروشگاه\n\n━━━━━━━━━━━━━━\n\n${planLines || "در حال حاضر پلن آماده فروشی وجود ندارد."}\n\n━━━━━━━━━━━━━━\nبرای خرید و مشاهده جزئیات، وارد ربات شوید.`;
     await ctx.reply(text.slice(0, 3900), { reply_markup: { inline_keyboard: [[{ text: "🛒 خرید سرویس", url: `https://t.me/${botInfo.username}?start=shop` }]] } });
   }

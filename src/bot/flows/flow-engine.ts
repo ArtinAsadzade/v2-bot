@@ -35,8 +35,8 @@ const parseCouponType = (value?: string) => {
 
 export function parseKeyValueLines(text: string): Record<string, string> {
   const entries: [string, string][] = [];
-  const aliases: Record<string, string> = { url: "apiBaseUrl", baseUrl: "apiBaseUrl", token: "apiToken", اشتراک: "subscriptionBaseUrl", فعال: "enabled", وضعیت: "enabled" };
-  const allowed = new Set(["apiBaseUrl", "apiToken", "subscriptionBaseUrl", "enabled", "url", "baseUrl", "token", "اشتراک", "فعال", "وضعیت"]);
+  const aliases: Record<string, string> = { url: "apiBaseUrl", baseUrl: "apiBaseUrl", token: "apiToken", اشتراک: "subscriptionBaseUrl", فعال: "enabled", وضعیت: "enabled", name: "title", "عنوان": "title", "قیمت": "price", "مدت": "durationDays", "حجم": "trafficGB", "موجودی": "stockLimit", "دسته": "categoryId" };
+  const allowed = new Set(["apiBaseUrl", "apiToken", "subscriptionBaseUrl", "enabled", "url", "baseUrl", "token", "اشتراک", "فعال", "وضعیت", "title", "name", "categoryId", "category", "price", "duration", "durationDays", "trafficGB", "stockLimit", "active", "عنوان", "قیمت", "مدت", "حجم", "موجودی", "دسته"]);
   for (const rawLine of text.split(/\n+/)) {
     const line = rawLine.trim();
     if (!line) continue;
@@ -508,6 +508,11 @@ categoryId: ${detail.product.categoryId}
 price: ${detail.product.price}
 duration: ${detail.product.duration}
 active: ${detail.product.isActive}
+${detail.product.mode === "xray_auto" ? `trafficGB: ${detail.product.trafficBytes ? Number(detail.product.trafficBytes) / 1_073_741_824 : ""}
+durationDays: ${detail.product.durationDays ?? detail.product.duration}
+stockLimit: ${detail.product.stockLimit ?? ""}
+
+نکته: تغییر حجم/مدت/اینباند فقط روی خریدهای بعدی اعمال می‌شود و سرویس‌های قبلی را تغییر نمی‌دهد.` : ""}
 
 برای تغییر دسته‌بندی می‌توانید یکی از دکمه‌های دسته‌بندی فعال را انتخاب کنید.`;
     },
@@ -516,18 +521,56 @@ active: ${detail.product.isActive}
       const data = parseKeyValueLines(text);
       const productId = String(flow.data.productId);
       const selectedCategoryId = flow.data.categoryId ? String(flow.data.categoryId) : undefined;
+      const detail = await AdminService.productDetail(productId);
+      const isXray = detail.product?.mode === "xray_auto";
       const product = await AdminService.updateProduct(
         productId,
         {
           title: data.title ?? data.name ?? data["عنوان"],
           categoryId: data.categoryId ?? data.category ?? data["دسته"] ?? selectedCategoryId,
           price: data.price || data["قیمت"] ? parseInteger(data.price ?? data["قیمت"] ?? "0") : undefined,
-          duration: data.duration || data["مدت"] ? parseInteger(data.duration ?? data["مدت"] ?? "0") : undefined,
+          duration: data.duration || (!isXray && data.durationDays) ? parseInteger(data.duration ?? data.durationDays ?? "0") : undefined,
+          trafficGB: data.trafficGB || data["حجم"] ? parseInteger(data.trafficGB ?? data["حجم"] ?? "0") : undefined,
+          durationDays: isXray && data.durationDays ? parseInteger(data.durationDays) : undefined,
+          stockLimit: data.stockLimit || data["موجودی"] ? parseInteger(data.stockLimit ?? data["موجودی"] ?? "0") : undefined,
           isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
         },
         String(ctx.from?.id ?? "admin"),
       );
       return { done: true, text: "✅ محصول به‌روزرسانی شد.", returnTo: { id: "admin.product", params: { productId: product.id } } };
+    },
+  },
+  product_xray_inbounds: {
+    firstStep: "inbounds",
+    prompt: async (ctx) => {
+      const productId = String(ctx.session.flow?.data.productId ?? "");
+      const detail = productId ? await AdminService.productDetail(productId) : undefined;
+      if (!detail?.product || detail.product.mode !== "xray_auto") return "⚠️ محصول Xray پیدا نشد.";
+      const inbounds = await XrayClientService.listInbounds();
+      ctx.session.flow!.data.inboundOptions = JSON.stringify(inbounds);
+      const selected = new Set(detail.product.inboundIds);
+      return `🔗 تغییر اینباندهای محصول ${detail.product.title}
+
+اینباندهای فعلی: ${detail.product.inboundIds.join(", ") || "—"}
+
+⚠️ تغییر اینباندها فقط روی خریدهای جدید اعمال می‌شود.
+کلاینت‌های قبلی تغییر نمی‌کنند.
+
+شناسه اینباندهای جدید را با کاما وارد کنید (حداقل یکی):
+
+${inbounds.map((i) => `${selected.has(i.id) ? "✅" : "▫️"} ${i.id}: ${i.remark ?? i.tag ?? `inbound-${i.id}`} / ${i.protocol ?? "—"} / ${i.port ?? "—"}`).join("\n")}`;
+    },
+    async handleText(ctx, text) {
+      const flow = ctx.session.flow!;
+      const productId = String(flow.data.productId);
+      const inboundIds = [...new Set(text.split(/[,،\s]+/).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+      if (!inboundIds.length) return { text: "حداقل یک inbound ID معتبر وارد کنید:" };
+      const inboundOptions = JSON.parse(String(flow.data.inboundOptions ?? "[]")) as Awaited<ReturnType<typeof XrayClientService.listInbounds>>;
+      const validIds = new Set(inboundOptions.map((inbound) => inbound.id));
+      const invalidIds = inboundIds.filter((id) => !validIds.has(id));
+      if (invalidIds.length) return { text: `شناسه‌های اینباند نامعتبر هستند: ${invalidIds.join(", ")}\nلطفاً فقط از لیست زنده پنل انتخاب کنید.` };
+      await AdminService.updateProduct(productId, { inboundIds, inboundSnapshot: xrayInboundSnapshot(inboundOptions, inboundIds) }, String(ctx.from?.id ?? "admin"));
+      return { done: true, text: "✅ اینباندهای محصول برای خریدهای بعدی به‌روزرسانی شد.", returnTo: { id: "admin.product", params: { productId } } };
     },
   },
   account_create: {
@@ -1221,6 +1264,7 @@ export function registerFlowEngine(bot: AppBot) {
 const adminOnlyFlows: FlowName[] = [
   "product_create",
   "product_edit",
+  "product_xray_inbounds",
   "account_create",
   "account_edit",
   "coupon_create",
@@ -1260,6 +1304,7 @@ if (name === "broadcast_create") {
 }
     if (name === "category_edit") return startFlow(ctx, "category_edit", { categoryId: ctx.match[2] });
     if (name === "product_edit") return startFlow(ctx, "product_edit", { productId: ctx.match[2] });
+    if (name === "product_xray_inbounds") return startFlow(ctx, "product_xray_inbounds", { productId: ctx.match[2] });
     if (name === "account_create") return startFlow(ctx, "account_create", { productId: ctx.match[2] });
     if (name === "account_edit") return startFlow(ctx, "account_edit", { accountId: ctx.match[2] });
     if (name === "crypto_wallet_edit") return startFlow(ctx, "crypto_wallet_edit", { walletId: ctx.match[2] });
