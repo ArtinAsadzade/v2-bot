@@ -53,7 +53,14 @@ class NotificationService {
     }
     toInlineKeyboard(actions) {
         return {
-            inline_keyboard: actions.map((row) => row.map((action) => ({ text: action.text, callback_data: action.callbackData }))),
+            inline_keyboard: actions
+                .map((row) => row.filter((action) => {
+                const valid = (0, panel_ui_1.isValidCallbackData)(action.callbackData);
+                if (!valid)
+                    logger_1.logger.warn("CALLBACK_DATA_INVALID_PREVENTED", { text: action.text, callbackData: action.callbackData });
+                return valid;
+            }).map((action) => ({ text: action.text, callback_data: action.callbackData })))
+                .filter((row) => row.length > 0),
         };
     }
     async getAdminTelegramIds() {
@@ -77,7 +84,7 @@ function registerNotificationEvents() {
     event_bus_service_1.eventBus.on("deposit.created", async (event) => {
         await exports.notificationService.notifyAdmins({
             text: (0, messages_1.screenMessage)({ tone: "PAYMENT", title: "درخواست شارژ جدید", description: "یک درخواست شارژ برای بررسی ثبت شده است.", body: `شناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`, actionHint: "برای بررسی، دکمه مشاهده را انتخاب کنید." }),
-            actions: [[{ text: "👁 مشاهده", callbackData: (0, panel_ui_1.actionFor)("admin", "deposits") }]],
+            actions: [[{ text: "👁 مشاهده", callbackData: (0, panel_ui_1.callbackFor)("admin.deposits") }]],
         });
     });
     event_bus_service_1.eventBus.on("ticket.created", async (event) => {

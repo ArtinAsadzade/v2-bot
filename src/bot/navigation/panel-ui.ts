@@ -41,6 +41,11 @@ export type PanelViewId =
   | "admin.coupon"
   | "admin.crypto"
   | "admin.store"
+  | "admin.finance"
+  | "admin.usersSupport"
+  | "admin.content"
+  | "admin.botSettings"
+  | "admin.monitoring"
   | "admin.forcedJoin"
   | "admin.productGuides"
   | "admin.referrals"
@@ -163,6 +168,11 @@ const PANEL_VIEW_IDS = new Set<string>([
   "admin.coupon",
   "admin.crypto",
   "admin.store",
+  "admin.finance",
+  "admin.usersSupport",
+  "admin.content",
+  "admin.botSettings",
+  "admin.monitoring",
   "admin.forcedJoin",
   "admin.productGuides",
   "admin.referrals",

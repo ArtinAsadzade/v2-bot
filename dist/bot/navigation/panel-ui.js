@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.RenderMode = void 0;
 exports.registerView = registerView;
+exports.isValidCallbackData = isValidCallbackData;
 exports.ensureCallbackData = ensureCallbackData;
 exports.actionFor = actionFor;
 exports.callbackFor = callbackFor;
@@ -11,6 +13,12 @@ exports.goBack = goBack;
 const telegraf_1 = require("telegraf");
 const reply_keyboard_1 = require("../keyboards/reply.keyboard");
 const admin_middleware_1 = require("../middlewares/admin.middleware");
+var RenderMode;
+(function (RenderMode) {
+    RenderMode["EDIT_CURRENT"] = "EDIT_CURRENT";
+    RenderMode["SEND_NEW"] = "SEND_NEW";
+    RenderMode["AUTO"] = "AUTO";
+})(RenderMode || (exports.RenderMode = RenderMode = {}));
 const registry = new Map();
 function registerView(id, renderer) {
     registry.set(id, renderer);
@@ -30,8 +38,11 @@ const PARAM_ALIASES = {
     status: "s",
 };
 const PARAM_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_ALIASES).map(([key, value]) => [value, key]));
+function isValidCallbackData(action) {
+    return Buffer.byteLength(action, "utf8") <= 64;
+}
 function ensureCallbackData(action) {
-    if (Buffer.byteLength(action, "utf8") > 64) {
+    if (!isValidCallbackData(action)) {
         throw new Error(`Telegram callback payload is too long (${Buffer.byteLength(action, "utf8")} bytes): ${action}`);
     }
     return action;
@@ -95,6 +106,11 @@ const PANEL_VIEW_IDS = new Set([
     "admin.coupon",
     "admin.crypto",
     "admin.store",
+    "admin.finance",
+    "admin.usersSupport",
+    "admin.content",
+    "admin.botSettings",
+    "admin.monitoring",
     "admin.forcedJoin",
     "admin.productGuides",
     "admin.referrals",
@@ -132,11 +148,19 @@ function panelKeyboard(rows, options = { back: true, home: true }) {
             seenNav.add(button.action);
         return true;
     })
-        .map((button) => telegraf_1.Markup.button.callback(button.text, ensureCallbackData(button.action))))
+        .flatMap((button) => {
+        try {
+            return [telegraf_1.Markup.button.callback(button.text, ensureCallbackData(button.action))];
+        }
+        catch (error) {
+            console.error("CALLBACK_DATA_INVALID_PREVENTED", { text: button.text, action: button.action, error: error instanceof Error ? error.message : String(error) });
+            return [];
+        }
+    }))
         .filter((row) => row.length > 0);
     const nav = [];
     if (options.back && !seenNav.has("nav:back"))
-        nav.push(telegraf_1.Markup.button.callback("🔙 بازگشت", "nav:back"));
+        nav.push(telegraf_1.Markup.button.callback("🔙 بازگشت", ensureCallbackData("nav:back")));
     if (options.home && !seenNav.has(callbackFor("home")))
         nav.push(telegraf_1.Markup.button.callback("🏠 خانه", callbackFor("home")));
     if (nav.length)
@@ -145,7 +169,7 @@ function panelKeyboard(rows, options = { back: true, home: true }) {
         normalized.push([telegraf_1.Markup.button.callback("❌ لغو عملیات", "flow:cancel")]);
     return telegraf_1.Markup.inlineKeyboard(normalized);
 }
-async function renderPanel(ctx, state, mode = "push") {
+async function renderPanel(ctx, state, mode = "push", renderMode = RenderMode.AUTO) {
     var _a;
     const renderer = registry.get(state.id);
     if (!renderer)
@@ -154,7 +178,18 @@ async function renderPanel(ctx, state, mode = "push") {
     for (const [key, value] of Object.entries(state.params ?? {})) {
         params[key] = String(value ?? "");
     }
-    const result = await renderer(ctx, params);
+    let result;
+    try {
+        result = await renderer(ctx, params);
+    }
+    catch (error) {
+        console.error("PANEL_RENDER_FAILED", { state, error: error instanceof Error ? error.message : String(error) });
+        result = {
+            text: "❌ نمایش این بخش ممکن نیست\n\nلطفاً از منوی اصلی دوباره وارد شوید.",
+            keyboard: [[{ text: "🏠 خانه", action: callbackFor("home") }, { text: "🎫 پشتیبانی", action: callbackFor("support") }]],
+        };
+        renderMode = RenderMode.SEND_NEW;
+    }
     (_a = ctx.session).navigation ?? (_a.navigation = { stack: [] });
     if (mode === "push")
         ctx.session.navigation.stack.push(state);
@@ -175,7 +210,9 @@ async function renderPanel(ctx, state, mode = "push") {
         const sent = await ctx.reply(result.text, extra);
         ctx.session.navigation.panelMessageId = sent.message_id;
     };
-    if (ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message) {
+    const effectiveRenderMode = result.renderMode ?? renderMode;
+    const shouldEdit = effectiveRenderMode === RenderMode.EDIT_CURRENT || (effectiveRenderMode === RenderMode.AUTO && Boolean(ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message));
+    if (shouldEdit && ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message) {
         await ctx.editMessageText(result.text, extra).catch(async () => {
             await ctx.editMessageReplyMarkup(keyboard.reply_markup).catch(() => undefined);
             await fallbackReply();
@@ -188,5 +225,5 @@ async function goBack(ctx) {
     const stack = ctx.session.navigation?.stack ?? [];
     stack.pop();
     const previous = stack.pop() ?? { id: "home" };
-    await renderPanel(ctx, previous, "push");
+    await renderPanel(ctx, previous, "push", RenderMode.EDIT_CURRENT);
 }

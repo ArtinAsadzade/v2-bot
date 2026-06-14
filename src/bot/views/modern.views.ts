@@ -19,6 +19,7 @@ import { ForcedJoinService } from "../../modules/system/forced-join.service";
 import { PublicPlansService } from "../../modules/product/public-plans.service";
 import type { PaymentInvoiceStatus } from "@prisma/client";
 import { accountSummaryMessage, errorMessage, paymentSummaryMessage, walletSummaryMessage } from "../../utils/messages";
+import { MonitoringService } from "../../services/monitoring.service";
 
 const divider = "━━━━━━━━━━━━━━━━";
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
@@ -53,33 +54,40 @@ export function registerModernViews() {
   registerView("home", async (ctx) => {
     const user = ctx.from ? await UserService.findOrCreateUser(ctx) : undefined;
     const isAdmin = ctx.from ? await isAdminByTelegramId(ctx.from.id) : false;
-    const featured = await ProductService.listFeaturedProducts(4);
     const dashboard = user ? await UserService.dashboard(user.id) : undefined;
-    const featuredKeyboard = featured.map((product) => [
-      { text: `🛒 خرید ${product.title} · ${money(product.price)}`, action: callbackFor("shop.product", { productId: product.id }) },
-    ]);
+    const activeCount = (dashboard?.activeAccounts.length ?? 0) + (dashboard?.activeFreeAccounts.length ?? 0);
     const keyboard: UiKeyboard = [
-      ...featuredKeyboard,
-      [{ text: "🛒 فروشگاه", action: callbackFor("shop.categories") }],
       [
-        { text: "🔎 جستجوی محصول", action: "flow:start:product_search" },
-        { text: "💳 شارژ کیف پول", action: callbackFor("deposit") },
+        { text: "🛒 فروشگاه", action: callbackFor("shop.categories") },
+        { text: "📦 اکانت‌های من", action: callbackFor("account.details") },
       ],
       [
-        { text: "📦 اکانت‌های من", action: callbackFor("account.details") },
+        { text: "💳 کیف پول", action: callbackFor("wallet") },
+        { text: "🆓 اکانت تست", action: callbackFor("freeAccount") },
+      ],
+      [
+        { text: "📘 راهنما", action: callbackFor("productGuide") },
+        { text: "🎫 پشتیبانی", action: callbackFor("support") },
+      ],
+      [
+        { text: "🎁 دعوت دوستان", action: callbackFor("referral") },
         { text: "👤 حساب کاربری", action: callbackFor("account") },
       ],
-      [
-        { text: "🆓 اکانت تست", action: callbackFor("freeAccount") },
-        { text: "🎁 دعوت دوستان", action: callbackFor("referral") },
-      ],
-      [{ text: "📘 راهنما", action: callbackFor("productGuide") }],
-      [{ text: "🎫 پشتیبانی", action: callbackFor("support") }],
     ];
     if (isAdmin) keyboard.push([{ text: "🛡 پنل مدیریت", action: callbackFor("admin.dashboard") }]);
 
     return {
-      text: `سلام ${ctx.from?.first_name ?? "دوست عزیز"} 🌿\n\n${divider}\n👤 خلاصه حساب شما\n\n💰 موجودی کیف پول: ${money(user?.balance ?? 0)}\n👥 تعداد دعوت‌ها: ${(dashboard?.referralCount ?? 0).toLocaleString("fa-IR")} نفر\n🎁 جوایز فعال: ${(dashboard?.freeRewards ?? 0).toLocaleString("fa-IR")}\n📦 اکانت‌های فعال: ${((dashboard?.activeAccounts.length ?? 0) + (dashboard?.activeFreeAccounts.length ?? 0)).toLocaleString("fa-IR")}\n${divider}\n\n✨ سرویس‌های منتخب آماده تحویل هستند. برای ادامه، یکی از دکمه‌های زیر را انتخاب کنید.`,
+      text: `سلام ${ctx.from?.first_name ?? "دوست عزیز"} 🌿
+
+${divider}
+🏠 داشبورد کاربر
+
+💰 موجودی کیف پول: ${money(user?.balance ?? 0)}
+📦 اکانت‌های فعال: ${activeCount.toLocaleString("fa-IR")}
+👥 دعوت‌های موفق: ${(dashboard?.referralCount ?? 0).toLocaleString("fa-IR")} نفر
+${divider}
+
+از مسیرهای سریع زیر وارد بخش موردنظر شوید. محصولات فقط از مسیر «فروشگاه ← دسته‌بندی ← محصول» نمایش داده می‌شوند.`,
       keyboard,
       replyKeyboard: "home",
     };
@@ -217,22 +225,24 @@ ${divider}
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.", keyboard: [] };
     const dashboard = await UserService.dashboard(user.id);
+    const activeCount = dashboard.activeAccounts.length + dashboard.activeFreeAccounts.length;
+    const username = ctx.from?.username ? `@${ctx.from.username}` : user.username ? `@${user.username}` : "ثبت نشده";
     return {
       replyKeyboard: "profile",
-      text: accountSummaryMessage({ balance: dashboard.user.balance, referralCount: dashboard.referralCount, freeRewards: dashboard.freeRewards, activeAccounts: dashboard.activeAccounts.length + dashboard.activeFreeAccounts.length, recentOrders: dashboard.recentOrders.length, pendingReferralAmount: dashboard.pendingReferralAmount }),
+      text: `👤 حساب کاربری
+
+${divider}
+🆔 Telegram ID: ${user.telegramId}
+👤 Username: ${username}
+💰 موجودی: ${money(dashboard.user.balance)}
+📦 اکانت‌های فعال: ${activeCount.toLocaleString("fa-IR")}
+🧾 کل خریدها: ${dashboard.recentOrders.length.toLocaleString("fa-IR")}
+${divider}
+
+برای مدیریت حساب، یکی از بخش‌های زیر را انتخاب کنید.`,
       keyboard: [
-        [
-          { text: "🛒 خرید", action: callbackFor("shop.categories") },
-          { text: "💳 شارژ کیف پول", action: callbackFor("deposit") },
-        ],
-        [
-          { text: "📦 اکانت‌های من", action: callbackFor("account.details") },
-          { text: "🎁 دعوت دوستان", action: callbackFor("referral") },
-        ],
-        [
-          { text: "🧾 خریدها", action: callbackFor("account.history") },
-          { text: "📜 گردش کیف پول", action: callbackFor("wallet.history") },
-        ],
+        [{ text: "📦 اکانت‌های من", action: callbackFor("account.details") }, { text: "💳 کیف پول", action: callbackFor("wallet") }],
+        [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }, { text: "🎫 پشتیبانی", action: callbackFor("support") }],
       ],
     };
   });
@@ -322,18 +332,23 @@ ${divider}`,
 
   registerView("wallet", async (ctx) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    const dashboard = user ? await UserService.dashboard(user.id) : undefined;
+    const recent = dashboard?.walletTransactions.slice(0, 3).map((tx) => `• ${tx.type === "credit" || tx.type === "transfer_in" ? "افزایش" : "کاهش"}: ${money(tx.amount)} · ${tx.createdAt.toLocaleDateString("fa-IR")}`).join("\n") || "تراکنش اخیری ثبت نشده است.";
     return {
       replyKeyboard: "wallet",
-      text: walletSummaryMessage(user?.balance ?? 0, "شارژ کیف پول: افزایش موجودی برای خرید سریع‌تر\nتاریخچه تراکنش‌ها: مشاهده واریزها و برداشت‌ها\nبرداشت‌ها: دریافت پاداش‌های قابل برداشت\nپاداش‌ها: جوایز دعوت و پیشنهادهای فعال"),
+      text: `💳 کیف پول
+
+${divider}
+💰 موجودی فعلی: ${money(user?.balance ?? 0)}
+
+📜 خلاصه تراکنش‌های اخیر:
+${recent}
+${divider}
+
+روش شارژ یا گزارش مالی موردنظر را انتخاب کنید.`,
       keyboard: [
-        [
-          { text: "➕ شارژ کیف پول", action: callbackFor("deposit") },
-          { text: "📜 تاریخچه تراکنش‌ها", action: callbackFor("wallet.history") },
-        ],
-        [
-          { text: "💸 برداشت پاداش", action: "referral:claim" },
-          { text: "🎁 پاداش‌ها", action: callbackFor("referral") },
-        ],
+        [{ text: "➕ شارژ کیف پول", action: callbackFor("deposit") }, { text: "📜 تاریخچه تراکنش‌ها", action: callbackFor("wallet.history") }],
+        [{ text: "⚡ پرداخت آنی", action: "flow:start:instant_topup" }, { text: "💎 شارژ با رمزارز", action: "flow:start:deposit_submit" }],
       ],
     };
   });
@@ -526,32 +541,148 @@ ${divider}
   });
 
   registerView("admin.dashboard", async () => {
+    const [stats, paymentStats] = await Promise.all([AdminService.dashboard(true), PaymentInvoiceService.stats()]);
+    const lowInventory = stats.availableAccounts <= 5 ? `⚠️ ${stats.availableAccounts.toLocaleString("fa-IR")} اکانت آماده` : "عادی ✅";
+    return {
+      replyKeyboard: "admin",
+      text: `📊 داشبورد مدیریت
+
+${divider}
+👥 کل کاربران: ${stats.users.toLocaleString("fa-IR")}
+📦 اکانت‌های فعال/فروخته: ${stats.soldAccounts.toLocaleString("fa-IR")}
+💰 درآمد امروز: ${money(paymentStats.todayRevenue)}
+⏳ پرداخت‌های در انتظار: ${paymentStats.pending.toLocaleString("fa-IR")}
+🎫 تیکت‌های باز: ${stats.openTickets.toLocaleString("fa-IR")}
+🗄 هشدار موجودی کم: ${lowInventory}
+🛡 وضعیت سیستم: ساختار مانیتورینگ فعال
+${divider}
+
+برای مدیریت، وارد یکی از گروه‌های اصلی شوید.`,
+      keyboard: [
+        [{ text: "🛒 فروشگاه", action: callbackFor("admin.store") }, { text: "💳 مالی", action: callbackFor("admin.finance") }],
+        [{ text: "👥 کاربران و پشتیبانی", action: callbackFor("admin.usersSupport") }, { text: "🛡 مانیتورینگ", action: callbackFor("admin.monitoring") }],
+        [{ text: "⚙️ تنظیمات", action: callbackFor("admin.botSettings") }],
+        [{ text: "🏠 منوی کاربر", action: callbackFor("home") }],
+      ],
+    };
+  });
+
+  registerView("admin.store", async () => {
+    return {
+      replyKeyboard: "admin",
+      text: `🛒 فروشگاه
+
+${divider}
+مدیریت محصولات، دسته‌بندی‌ها، موجودی اکانت‌ها، اکانت تست و راهنمای محصولات از این بخش انجام می‌شود.`,
+      keyboard: [
+        [{ text: "📦 محصولات", action: callbackFor("admin.products") }, { text: "📂 دسته‌بندی‌ها", action: callbackFor("admin.categories") }],
+        [{ text: "🗄 موجودی اکانت‌ها", action: callbackFor("admin.accounts") }, { text: "🆓 اکانت تست", action: callbackFor("admin.freeAccounts") }],
+        [{ text: "📘 راهنمای محصولات", action: callbackFor("admin.productGuides") }],
+        [{ text: "🏠 منوی کاربر", action: callbackFor("home") }],
+      ],
+    };
+  });
+
+  registerView("admin.finance", async () => {
+    const stats = await PaymentInvoiceService.stats();
+    return {
+      replyKeyboard: "admin",
+      text: `💳 مالی
+
+${divider}
+⏳ پرداخت‌های در انتظار: ${stats.pending.toLocaleString("fa-IR")}
+✅ پرداخت‌های موفق: ${stats.successful.toLocaleString("fa-IR")}
+💰 درآمد امروز: ${money(stats.todayRevenue)}
+
+مدیریت همه ابزارهای مالی از این زیرمنو انجام می‌شود.`,
+      keyboard: [
+        [{ text: "⚡ پرداخت آنی", action: callbackFor("admin.paymentGateway") }, { text: "💎 واریزی‌های رمزارزی", action: callbackFor("admin.deposits") }],
+        [{ text: "💳 کیف پول‌ها", action: callbackFor("admin.wallets") }, { text: "🎟 کدهای تخفیف", action: callbackFor("admin.coupons") }],
+        [{ text: "🧾 فاکتورها", action: callbackFor("admin.invoices") }, { text: "💰 تراکنش‌ها", action: callbackFor("admin.transactions") }],
+        [{ text: "⚙️ تنظیمات مالی", action: callbackFor("admin.crypto") }],
+
+      ],
+    };
+  });
+
+  registerView("admin.usersSupport", async () => {
     const stats = await AdminService.dashboard(true);
     return {
       replyKeyboard: "admin",
-      text: `🛡 پنل مدیریت
+      text: `👥 کاربران و پشتیبانی
 
 ${divider}
-📊 نمای کلی عملیات
-
 👥 کاربران: ${stats.users.toLocaleString("fa-IR")}
-💰 درآمد موفق: ${money(stats.revenue)}
-🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}
-🎧 تیکت‌های فعال: ${stats.openTickets.toLocaleString("fa-IR")}
-💳 واریزی‌های منتظر: ${stats.submittedDeposits.toLocaleString("fa-IR")}
-📦 موجودی آماده فروش: ${stats.availableAccounts.toLocaleString("fa-IR")}
-${divider}
+🎫 تیکت‌های باز: ${stats.openTickets.toLocaleString("fa-IR")}
+🎁 پاداش دعوت: ${money(stats.referralRewards)}
 
-ماژول موردنظر را از گروه‌های زیر انتخاب کنید:`,
+بخش موردنظر را انتخاب کنید.`,
       keyboard: [
-        [{ text: "📊 گزارش‌ها: آمار", action: callbackFor("admin.analytics") }, { text: "💰 گزارش‌ها: تراکنش‌ها", action: callbackFor("admin.transactions") }],
-        [{ text: "📦 فروشگاه: محصولات", action: callbackFor("admin.products") }, { text: "📂 فروشگاه: دسته‌بندی‌ها", action: callbackFor("admin.categories") }],
-        [{ text: "🗄 فروشگاه: موجودی اکانت‌ها", action: callbackFor("admin.accounts") }],
-        [{ text: "💳 مالی: پرداخت‌ها", action: callbackFor("admin.paymentGateway") }, { text: "💳 مالی: کیف پول‌ها", action: callbackFor("admin.wallets") }],
-        [{ text: "🎟 مالی: کدهای تخفیف", action: callbackFor("admin.coupons") }, { text: "🎁 دعوت دوستان", action: callbackFor("admin.referrals") }],
-        [{ text: "👥 کاربران", action: callbackFor("admin.users") }, { text: "🎫 تیکت‌ها", action: callbackFor("admin.tickets") }],
-        [{ text: "📢 اطلاع‌رسانی", action: callbackFor("admin.notifications") }, { text: "🆓 اکانت تست", action: callbackFor("admin.freeAccounts") }],
-        [{ text: "⚙️ تنظیمات", action: callbackFor("admin.settings") }, { text: "📢 عضویت اجباری", action: callbackFor("admin.forcedJoin") }, { text: "📘 راهنما", action: callbackFor("admin.productGuides") }],
+        [{ text: "👥 مدیریت کاربران", action: callbackFor("admin.users") }, { text: "🎫 تیکت‌ها", action: callbackFor("admin.tickets") }],
+        [{ text: "🎁 پاداش دعوت", action: callbackFor("admin.referrals") }, { text: "📊 گزارش کاربران", action: callbackFor("admin.analytics") }],
+
+      ],
+    };
+  });
+
+  registerView("admin.content", async () => {
+    return {
+      replyKeyboard: "admin",
+      text: `📢 محتوا و اطلاع‌رسانی
+
+${divider}
+ارسال اطلاعیه، راهنمای محصولات و نمایش عمومی پلن‌ها در این بخش گروه‌بندی شده‌اند.`,
+      keyboard: [
+        [{ text: "📢 اطلاع‌رسانی", action: callbackFor("admin.notifications") }, { text: "📘 راهنمای محصولات", action: callbackFor("admin.productGuides") }],
+        [{ text: "📦 پیام پلن‌ها", action: callbackFor("admin.productGuides") }],
+
+      ],
+    };
+  });
+
+  registerView("admin.botSettings", async () => {
+    const stats = await AdminService.cryptoWalletStats();
+    return {
+      replyKeyboard: "settings",
+      text: `⚙️ تنظیمات بات
+
+${divider}
+🏪 وضعیت فروشگاه: ${stats.setting.storeStatus === "active" ? "فعال ✅" : "غیرفعال ⛔"}
+💳 حداقل شارژ: ${money(stats.setting.minimumTopupAmount)}
+
+یادداشت: تغییر یوزرنیم فقط از طریق BotFather امکان‌پذیر است.`,
+      keyboard: [
+        [{ text: "🏷 نام ربات", action: callbackFor("admin.botSettings") }, { text: "📝 توضیحات", action: callbackFor("admin.botSettings") }],
+        [{ text: "🖼 عکس پروفایل", action: callbackFor("admin.botSettings") }, { text: "👤 یوزرنیم", action: callbackFor("admin.botSettings") }],
+        [{ text: "🏪 وضعیت فروشگاه", action: callbackFor("admin.settings") }, { text: "📢 عضویت اجباری", action: callbackFor("admin.forcedJoin") }],
+        [{ text: "🔐 امنیت", action: callbackFor("admin.forcedJoin") }],
+
+      ],
+    };
+  });
+
+  registerView("admin.monitoring", async () => {
+    const [monitoring, gateway] = await Promise.all([MonitoringService.dashboard(), PaymentGatewayService.getConfig()]);
+    const recentErrors = monitoring.events.slice(0, 5).map((event) => `• ${event.severity === "critical" ? "🚨" : "⚠️"} ${event.section}: ${event.description}`).join("\n") || "خطای اخیری ثبت نشده است.";
+    return {
+      replyKeyboard: "admin",
+      text: `🛡 مانیتورینگ سیستم
+
+${divider}
+💳 وضعیت درگاه پرداخت: ${gateway.enabled ? "فعال ✅" : "غیرفعال ⛔"}
+🔁 Callback پرداخت: ${monitoring.lastCallbackReceived?.lastCallbackAt ? monitoring.lastCallbackReceived.lastCallbackAt.toLocaleString("fa-IR") : "ثبت نشده"}
+🗄 MongoDB: قابل بررسی از اجرای پنل ✅
+🤖 Telegram API: وابسته به اتصال ربات
+
+🚨 خطاهای اخیر:
+${recentErrors}
+${divider}
+آخرین پرداخت موفق: ${monitoring.lastSuccessfulPayment?.completedAt ? monitoring.lastSuccessfulPayment.completedAt.toLocaleString("fa-IR") : "—"}
+آخرین پرداخت ناموفق: ${monitoring.lastFailedPayment?.updatedAt ? monitoring.lastFailedPayment.updatedAt.toLocaleString("fa-IR") : "—"}`,
+      keyboard: [
+        [{ text: "🚨 خطاهای اخیر", action: callbackFor("admin.monitoring") }, { text: "💳 خطاهای پرداخت", action: callbackFor("admin.paymentStats") }],
+        [{ text: "🎫 خطاهای تیکت", action: callbackFor("admin.tickets") }, { text: "⚙️ وضعیت سرویس‌ها", action: callbackFor("admin.monitoring") }],
+        [{ text: "🔄 بروزرسانی", action: callbackFor("admin.monitoring") }],
       ],
     };
   });
@@ -924,19 +1055,6 @@ ${inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleS
         [
           { text: "⚙️ حداقل شارژ", action: "flow:start:minimum_topup" },
           { text: "⚙️ وضعیت فروشگاه", action: callbackFor("admin.store") },
-        ],
-      ],
-    };
-  });
-
-  registerView("admin.store", async () => {
-    const stats = await AdminService.cryptoWalletStats();
-    return {
-      text: `⚙️ وضعیت فروشگاه\n\nوضعیت فعلی: ${stats.setting.storeStatus === "active" ? "فعال" : "غیرفعال"}\n\nدر حالت غیرفعال، کاربران عادی به خرید دسترسی ندارند اما مدیران همچنان می‌توانند عملیات را مدیریت کنند.`,
-      keyboard: [
-        [
-          { text: "✅ فعال", action: "admin:store:status:active" },
-          { text: "⛔ غیرفعال", action: "admin:store:status:inactive" },
         ],
       ],
     };

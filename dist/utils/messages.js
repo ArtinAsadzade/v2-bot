@@ -69,7 +69,7 @@ function purchaseSuccessMessage(data) {
         tone: "SUCCESS",
         title: "خرید با موفقیت انجام شد",
         description: "اطلاعات سرویس شما آماده استفاده است.",
-        body: [`📦 محصول: ${data.productTitle}`, `👤 نام کاربری: ${clean(data.username)}`, `🔗 لینک اشتراک: ${clean(data.subscriptionLink)}`, `⚙️ کانفیگ: ${clean(data.config)}`, `📅 انقضا: ${data.expiresAt ? data.expiresAt.toLocaleDateString("fa-IR") : "—"}`].join("\n\n"),
+        body: [`📦 سرویس:\n${data.productTitle}`, `👤 نام کاربری:\n${clean(data.username)}`, `🔗 لینک اشتراک:\n${clean(data.subscriptionLink)}`, `⚙️ لینک کانفیگ:\n${clean(data.config)}`, `📅 تاریخ انقضا:\n${data.expiresAt ? data.expiresAt.toLocaleDateString("fa-IR") : "—"}`].join("\n\n"),
         actionHint: "این اطلاعات همیشه از بخش اکانت‌های من در دسترس است.",
     });
 }

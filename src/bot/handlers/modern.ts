@@ -160,9 +160,13 @@ export function registerModernHandlers(bot: AppBot) {
 
   const adminCommands: Array<[string, Parameters<typeof renderPanel>[1]]> = [
     ["admin", { id: "admin.dashboard" }],
-    ["stats", { id: "admin.analytics" }],
-    ["payments", { id: "admin.paymentGateway" }],
+    ["store", { id: "admin.store" }],
+    ["finance", { id: "admin.finance" }],
+    ["payments", { id: "admin.finance" }],
     ["tickets", { id: "admin.tickets" }],
+    ["settings", { id: "admin.botSettings" }],
+    ["monitoring", { id: "admin.monitoring" }],
+    ["stats", { id: "admin.analytics" }],
   ];
 
   for (const [command, state] of adminCommands) {

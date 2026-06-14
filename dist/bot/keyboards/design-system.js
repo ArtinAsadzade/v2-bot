@@ -21,6 +21,7 @@ exports.InvoiceActionKeyboard = InvoiceActionKeyboard;
 exports.paymentSuccessKeyboard = paymentSuccessKeyboard;
 exports.paymentFailureKeyboard = paymentFailureKeyboard;
 exports.privateTopicArchitecture = privateTopicArchitecture;
+const panel_ui_1 = require("../navigation/panel-ui");
 exports.labels = {
     home: "🏠 خانه",
     userMenu: "🏠 منوی کاربر",
@@ -47,7 +48,13 @@ exports.labels = {
     cancel: "❌ لغو عملیات",
     paymentSuccess: "✅ موفق",
     paymentFailure: "❌ ناموفق",
-    adminStats: "📊 آمار",
+    adminStats: "📊 داشبورد",
+    adminStore: "🛒 فروشگاه",
+    adminFinance: "💳 مالی",
+    adminUsersSupport: "👥 کاربران و پشتیبانی",
+    adminContent: "📢 محتوا و اطلاع‌رسانی",
+    adminBotSettings: "⚙️ تنظیمات بات",
+    adminMonitoring: "🛡 مانیتورینگ سیستم",
     adminPayments: "💳 پرداخت‌ها",
     adminProducts: "📦 محصولات",
     adminCategories: "📂 دسته‌بندی‌ها",
@@ -84,7 +91,7 @@ function replyButton(button) {
 function inlineButton(button) {
     if ("url" in button)
         return { text: button.text, url: button.url, ...buttonDecorations(button) };
-    return { text: button.text, callback_data: button.action, ...buttonDecorations(button) };
+    return { text: button.text, callback_data: (0, panel_ui_1.ensureCallbackData)(button.action), ...buttonDecorations(button) };
 }
 function buildReplyKeyboard(rows) {
     return {
@@ -126,11 +133,10 @@ function SupportKeyboard() {
 }
 function AdminKeyboard() {
     return buildReplyKeyboard([
-        [{ text: exports.labels.adminStats }, { text: exports.labels.adminPayments }],
-        [{ text: exports.labels.adminProducts }, { text: exports.labels.adminCategories }],
-        [{ text: exports.labels.adminInventory }, { text: exports.labels.adminUsers }],
-        [{ text: exports.labels.adminCoupons }, { text: exports.labels.adminTickets }],
-        [{ text: exports.labels.adminNotifications }, { text: exports.labels.settings }],
+        [{ text: exports.labels.adminStats }, { text: exports.labels.adminStore }],
+        [{ text: exports.labels.adminFinance }, { text: exports.labels.adminUsersSupport }],
+        [{ text: exports.labels.adminContent }, { text: exports.labels.adminBotSettings }],
+        [{ text: exports.labels.adminMonitoring }],
         [{ text: exports.labels.userMenu }],
     ]);
 }
@@ -148,8 +154,8 @@ function AdminSettingsKeyboard() {
 }
 function WalletActionKeyboard() {
     return buildInlineKeyboard([
-        [{ text: exports.labels.topup, action: "nav:deposit", tone: "primary" }],
-        [{ text: exports.labels.transactions, action: "nav:wallet.history" }],
+        [{ text: exports.labels.topup, action: (0, panel_ui_1.callbackFor)("deposit"), tone: "primary" }],
+        [{ text: exports.labels.transactions, action: (0, panel_ui_1.callbackFor)("wallet.history") }],
     ]);
 }
 function PaymentKeyboard() {
@@ -160,23 +166,24 @@ function SettingsKeyboard() {
 }
 function InvoiceActionKeyboard(paymentLink, backAction) {
     return buildInlineKeyboard([
-        [{ text: exports.labels.instantPayment, url: paymentLink, tone: "success" }],
+        [{ text: "💳 پرداخت", url: paymentLink, tone: "success" }],
         [
-            { text: exports.labels.back, action: backAction },
-            { text: exports.labels.home, action: "nav:home" },
+            { text: "🔄 بررسی وضعیت", action: backAction },
+            { text: exports.labels.support, action: (0, panel_ui_1.callbackFor)("support") },
+            { text: exports.labels.home, action: (0, panel_ui_1.callbackFor)("home") },
         ],
     ]);
 }
 function paymentSuccessKeyboard(_type) {
     return buildInlineKeyboard([
-        [{ text: exports.labels.orders, action: "nav:account.details", tone: "success" }, { text: exports.labels.buyAgain, action: "nav:shop.categories", tone: "primary" }],
-        [{ text: exports.labels.home, action: "nav:home" }],
+        [{ text: exports.labels.orders, action: (0, panel_ui_1.callbackFor)("account.details"), tone: "success" }, { text: exports.labels.buyAgain, action: (0, panel_ui_1.callbackFor)("shop.categories"), tone: "primary" }],
+        [{ text: exports.labels.home, action: (0, panel_ui_1.callbackFor)("home") }],
     ]);
 }
 function paymentFailureKeyboard() {
     return buildInlineKeyboard([
-        [{ text: exports.labels.retry, action: "nav:deposit", tone: "primary" }, { text: exports.labels.support, action: "nav:support", tone: "danger" }],
-        [{ text: exports.labels.home, action: "nav:home" }],
+        [{ text: exports.labels.retry, action: (0, panel_ui_1.callbackFor)("deposit"), tone: "primary" }, { text: exports.labels.support, action: (0, panel_ui_1.callbackFor)("support"), tone: "danger" }],
+        [{ text: exports.labels.home, action: (0, panel_ui_1.callbackFor)("home") }],
     ]);
 }
 exports.quickReplyRoutes = {
@@ -206,7 +213,12 @@ exports.quickReplyRoutes = {
     "➕ تیکت جدید": "newTicket",
     "📂 تیکت‌های من": { id: "support" },
     "🎁 دریافت اکانت تست": "claimFree",
-    [exports.labels.adminStats]: { id: "admin.analytics" },
+    [exports.labels.adminStats]: { id: "admin.dashboard" },
+    [exports.labels.adminFinance]: { id: "admin.finance" },
+    [exports.labels.adminUsersSupport]: { id: "admin.usersSupport" },
+    [exports.labels.adminContent]: { id: "admin.content" },
+    [exports.labels.adminBotSettings]: { id: "admin.botSettings" },
+    [exports.labels.adminMonitoring]: { id: "admin.monitoring" },
     [exports.labels.adminProducts]: { id: "admin.products" },
     [exports.labels.adminCategories]: { id: "admin.categories" },
     [exports.labels.adminInventory]: { id: "admin.accounts" },
@@ -215,7 +227,7 @@ exports.quickReplyRoutes = {
     [exports.labels.adminTickets]: { id: "admin.tickets" },
     [exports.labels.adminNotifications]: { id: "admin.notifications" },
     [exports.labels.adminCoupons]: { id: "admin.coupons" },
-    [exports.labels.settings]: { id: "admin.settings" },
+    [exports.labels.settings]: { id: "admin.botSettings" },
     [exports.labels.adminDashboard]: { id: "admin.dashboard" },
     [exports.labels.support]: { id: "support" },
     "🎧 پشتیبانی": { id: "support" },

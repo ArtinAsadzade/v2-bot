@@ -67,12 +67,12 @@ function currentReturnTo(ctx) {
     return stack[stack.length - 1] ?? { id: "home" };
 }
 async function flowPrompt(ctx, text, keyboard = []) {
-    await ctx.reply(text, { ...(0, panel_ui_1.panelKeyboard)(keyboard, { back: true, home: true, cancel: true }) });
+    await ctx.reply(text, { ...(0, panel_ui_1.panelKeyboard)(keyboard, { back: false, home: true, cancel: true }) });
 }
 async function productCategoryKeyboard() {
     const categories = await product_service_1.ProductService.listSelectableCategoriesForAdmin(40);
     return categories.map((category) => [
-        { text: `${category.icon ?? "📂"} ${category.name}`, action: `flow:product_category:${category.id}` },
+        { text: `${category.icon ?? "📂"} ${category.name}`, action: (0, panel_ui_1.actionFor)("flow:product_category", category.id) },
     ]);
 }
 function requireUser(ctx) {
@@ -151,17 +151,14 @@ const definitions = {
                 const invoice = await payment_service_1.PaymentInvoiceService.createWalletTopupInvoice(user.id, amount);
                 return {
                     done: true,
-                    text: `🧾 خلاصه پرداخت
+                    text: `🧾 فاکتور پرداخت آماده شد
 
-💰 مبلغ: ${money(amount)}
-🎟 تخفیف: ${money(0)}
-✅ مبلغ نهایی: ${money(amount)}
-⚡ روش پرداخت: پرداخت آنی
-وضعیت: در انتظار پرداخت
-شناسه پرداخت: ${invoice.payId ?? "—"}
-زمان ایجاد: ${invoice.createdAt.toLocaleString("fa-IR")}
+💰 مبلغ نهایی:
+${money(amount)}
+⚡ روش پرداخت:
+پرداخت آنی
 
-پس از پرداخت موفق، کیف پول شما به صورت خودکار شارژ خواهد شد.
+برای ادامه، روی دکمه پرداخت بزنید.
 
 ⚡ لینک پرداخت:
 ${invoice.paymentLink}`,
@@ -196,7 +193,7 @@ ${invoice.paymentLink}`,
                 return {
                     text: `مبلغ شارژ: ${money(amount)}\n\nرمز ارز پرداخت را انتخاب کنید:`,
                     nextStep: "wallet",
-                    keyboard: wallets.map((wallet) => [{ text: `${wallet.coinName} ${wallet.networkName}`, action: `deposit:wallet:${wallet.id}` }]),
+                    keyboard: wallets.map((wallet) => [{ text: `${wallet.coinName} ${wallet.networkName}`, action: (0, panel_ui_1.actionFor)("deposit:wallet", wallet.id) }]),
                 };
             }
             return { text: "لطفا رمز ارز را فقط از دکمه‌های نمایش داده‌شده انتخاب کنید." };
@@ -320,7 +317,7 @@ ${message}
                         [
                             {
                                 text: "✅ تایید و ارسال",
-                                action: "broadcast:confirm",
+                                action: (0, panel_ui_1.actionFor)("broadcast:confirm"),
                             },
                         ],
                     ],
@@ -962,7 +959,7 @@ status: ${detail.wallet.status}`;
                     return {
                         text: `مرحله 4 از 4: تأیید نهایی\n\nAPI URL:\n${flow.data.apiBaseUrl}\n\nAPI Key:\n********${String(flow.data.apiKey).slice(-4).toUpperCase()}\n\nCallback:\n${flow.data.callbackUrl}\n\nپس از تأیید، تنظیمات یک‌جا ذخیره و تست اتصال اجرا می‌شود.\nبرای ادامه روی دکمه تأیید بزنید.`,
                         nextStep: "confirm",
-                        keyboard: [[{ text: "✅ تأیید و تست اتصال", action: "payment_gateway_setup:confirm" }]],
+                        keyboard: [[{ text: "✅ تأیید و تست اتصال", action: (0, panel_ui_1.actionFor)("payment_gateway_setup:confirm") }]],
                     };
                 }
                 if (flow.step === "confirm")
@@ -1007,8 +1004,8 @@ async function handleActiveFlowText(ctx, text) {
         return false;
     if (result.done) {
         ctx.session.flow = undefined;
-        await ctx.reply(result.text, flow.name === "instant_topup" ? { reply_markup: paymentFlowReplyKeyboard() } : undefined);
-        await (0, panel_ui_1.renderPanel)(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace");
+        await ctx.reply(result.text, flow.name === "instant_topup" ? { reply_markup: { inline_keyboard: [[{ text: "💳 پرداخت", url: String(result.text.match(/https?:\/\/\S+/)?.[0] ?? "") }], [{ text: "🔄 بررسی وضعیت", callback_data: (0, panel_ui_1.callbackFor)("wallet.history") }, { text: "🎫 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } } : undefined);
+        await (0, panel_ui_1.renderPanel)(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace", panel_ui_1.RenderMode.SEND_NEW);
         return true;
     }
     await flowPrompt(ctx, result.text, result.keyboard);
@@ -1024,7 +1021,7 @@ async function handleActiveFlowPhoto(ctx, fileId) {
     if (result.done) {
         ctx.session.flow = undefined;
         await ctx.reply(result.text);
-        await (0, panel_ui_1.renderPanel)(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace");
+        await (0, panel_ui_1.renderPanel)(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace", panel_ui_1.RenderMode.SEND_NEW);
         return true;
     }
     await flowPrompt(ctx, result.text, result.keyboard);
@@ -1057,6 +1054,26 @@ function registerFlowEngine(bot) {
         catch {
             await flowPrompt(ctx, "⚠️ دسته‌بندی نامعتبر یا حذف‌شده است. لطفاً دوباره انتخاب کنید.", await productCategoryKeyboard());
         }
+    });
+    bot.action(/^flow:back:([^:]+):?([^:]*)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        const flow = ctx.session.flow;
+        if (!flow)
+            return (0, panel_ui_1.renderPanel)(ctx, currentReturnTo(ctx), "replace", panel_ui_1.RenderMode.EDIT_CURRENT);
+        const target = ctx.match[1];
+        const step = ctx.match[2];
+        if (target === "deposit") {
+            flow.step = step || "amount";
+            delete flow.data.depositId;
+            await flowPrompt(ctx, "💳 مبلغ شارژ را به تومان وارد کنید:\n\nفقط عدد را ارسال کنید؛ مثال: 250000");
+            return;
+        }
+        if (target === "product" && (flow.name === "product_create" || flow.name === "product_edit")) {
+            flow.step = step || "category";
+            await flowPrompt(ctx, "📂 دسته‌بندی محصول را دوباره انتخاب کنید:", await productCategoryKeyboard());
+            return;
+        }
+        await (0, panel_ui_1.renderPanel)(ctx, flow.returnTo ?? { id: "home" }, "replace", panel_ui_1.RenderMode.EDIT_CURRENT);
     });
     bot.action("flow:cancel", async (ctx) => {
         ctx.session.flow = undefined;
