@@ -1006,6 +1006,7 @@ ${inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleS
       text: `📢 مدیریت عضویت اجباری
 
 کانال فعال: ${activeCount.toLocaleString("fa-IR")} · غیرفعال: ${inactiveCount.toLocaleString("fa-IR")}
+⏱ فاصله یادآوری خروج: ۱۲ ساعت برای هر کاربر در هر کانال
 
 ${channelLines || "کانالی ثبت نشده است."}
 

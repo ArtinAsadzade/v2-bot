@@ -1,6 +1,7 @@
 import { prisma } from "../../services/prisma";
 
-const LEAVE_REMINDER_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+export const LEAVE_REMINDER_COOLDOWN_HOURS = 12;
+export const LEAVE_REMINDER_COOLDOWN_MS = LEAVE_REMINDER_COOLDOWN_HOURS * 60 * 60 * 1000;
 
 function normalizeInviteLink(inviteLink?: string) {
   const value = inviteLink?.trim();
