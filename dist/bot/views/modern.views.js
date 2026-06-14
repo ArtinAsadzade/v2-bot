@@ -223,36 +223,35 @@ ${divider}
         if (!product || !user)
             return { text: "⚠️ اطلاعات خرید کامل نیست. لطفاً دوباره از فروشگاه اقدام کنید.", keyboard: [] };
         const couponCode = ctx.session.selectedCoupons?.[product.id];
-        let couponLine = "ثبت نشده";
         let discountAmount = 0;
         let payableAmount = product.price;
+        let couponLine;
         if (couponCode) {
-            try {
-                const coupon = await coupon_service_1.CouponService.validateForUser(couponCode, user.id, undefined, product.price);
-                const calculation = coupon_service_1.CouponService.calculate(coupon, product.price);
-                discountAmount = calculation.discountAmount;
-                payableAmount = calculation.finalAmount;
-                couponLine = `${coupon.code} (${money(discountAmount)} تخفیف)`;
+            const validation = await coupon_service_1.CouponService.validateForCheckout({ code: couponCode, userId: user.id, originalAmount: product.price });
+            if (validation.ok) {
+                discountAmount = validation.discountAmount;
+                payableAmount = validation.finalAmount;
+                couponLine = validation.coupon.code;
+                ctx.session.selectedCoupons = { ...(ctx.session.selectedCoupons ?? {}), [product.id]: validation.coupon.code };
             }
-            catch (error) {
+            else {
                 delete ctx.session.selectedCoupons?.[product.id];
-                couponLine = "نیازمند بررسی دوباره";
             }
         }
         const shortage = Math.max(payableAmount - user.balance, 0);
         const gateway = await payment_service_1.PaymentGatewayService.get();
-        const paymentMethods = [[{ text: "💳 پرداخت با کیف پول", action: (0, panel_ui_1.actionFor)("buy:confirm", product.id) }]];
+        const keyboard = [];
+        if (couponLine)
+            keyboard.push([{ text: "🗑 حذف کد تخفیف", action: (0, panel_ui_1.actionFor)("coupon:remove", product.id) }, { text: "🎟 تغییر کد تخفیف", action: (0, panel_ui_1.actionFor)("flow:start", "coupon_code", product.id) }]);
+        else
+            keyboard.push([{ text: "🎟 افزودن کد تخفیف", action: (0, panel_ui_1.actionFor)("flow:start", "coupon_code", product.id) }]);
+        const paymentRow = [{ text: "💳 پرداخت با کیف پول", action: (0, panel_ui_1.actionFor)("buy:confirm", product.id) }];
         if (gateway.enabled)
-            paymentMethods[0].push({ text: "⚡ پرداخت آنی", action: (0, panel_ui_1.actionFor)("buy:instant", product.id) });
+            paymentRow.push({ text: "⚡ پرداخت آنی", action: (0, panel_ui_1.actionFor)("buy:instant", product.id) });
+        keyboard.push(paymentRow, [{ text: "🔙 بازگشت", action: (0, panel_ui_1.callbackFor)("shop.product", { productId: product.id }) }]);
         return {
-            text: (0, messages_1.paymentSummaryMessage)({ productTitle: product.title, amount: product.price, discountAmount, payableAmount, balance: user.balance, shortage, couponLine, gatewayEnabled: gateway.enabled }),
-            keyboard: [
-                ...paymentMethods,
-                [
-                    { text: "🎟 کد تخفیف", action: (0, panel_ui_1.actionFor)("flow:start", "coupon_code", product.id) },
-                    { text: "💳 شارژ کیف پول", action: (0, panel_ui_1.callbackFor)("deposit") },
-                ],
-            ],
+            text: `🧾 خلاصه سفارش\n\n📦 محصول:\n${product.title}\n\n${couponLine ? `🎟 کد تخفیف:\n${couponLine}\n\n` : ""}💰 مبلغ اصلی:\n${money(product.price)}\n\n🎁 تخفیف:\n${money(discountAmount)}\n\n✅ مبلغ نهایی:\n${money(payableAmount)}\n\n💳 موجودی کیف پول:\n${money(user.balance)}${shortage > 0 ? `\n\n⚠️ کسری کیف پول: ${money(shortage)}` : ""}`,
+            keyboard,
         };
     });
     (0, panel_ui_1.registerView)("account", async (ctx) => {
@@ -1218,8 +1217,10 @@ ${divider}
         const direct = await admin_service_1.AdminService.couponDetail(params.couponId);
         if (!direct)
             return { text: "⚠️ کوپن پیدا نشد.", keyboard: [] };
+        const expired = direct.expiresAt <= new Date();
+        const activeLabel = direct.status === "active" && !expired && !direct.deletedAt ? "فعال ✅" : expired ? "⛔ منقضی شده" : direct.status === "deleted" || direct.deletedAt ? "حذف‌شده" : "غیرفعال ⛔";
         return {
-            text: `🎟 جزئیات کوپن ${direct.code}\n\nنوع: ${direct.type === "percentage" ? "درصدی" : "مبلغ ثابت"}\nمقدار: ${direct.type === "percentage" ? `${(direct.value || direct.discountPercent || 0).toLocaleString("fa-IR")}%` : money(direct.value)}\nوضعیت: ${direct.status}\nمصرف: ${direct.usedCount.toLocaleString("fa-IR")}/${direct.maxUses.toLocaleString("fa-IR")}\nسقف هر کاربر: ${direct.perUserLimit.toLocaleString("fa-IR")}\nحداقل خرید: ${money(direct.minimumPurchaseAmount)}\nانقضا: ${direct.expiresAt.toLocaleDateString("fa-IR")}`,
+            text: `🎟 جزئیات کوپن ${direct.code}\n\nوضعیت: ${activeLabel}\nفعال/غیرفعال: ${direct.status === "active" && !expired && !direct.deletedAt ? "فعال" : "غیرفعال"}\nانقضا: ${expired ? "⛔ منقضی شده" : "منقضی نشده"}\nexpiresAt: ${direct.expiresAt.toLocaleString("fa-IR")}\nusedCount/maxUses: ${direct.usedCount.toLocaleString("fa-IR")}/${direct.maxUses.toLocaleString("fa-IR")}\nperUserLimit: ${direct.perUserLimit.toLocaleString("fa-IR")}\nminimumPurchaseAmount: ${money(direct.minimumPurchaseAmount)}\nنوع: ${direct.type === "percentage" ? "درصدی" : "مبلغ ثابت"}\nمقدار: ${direct.type === "percentage" ? `${(direct.value || direct.discountPercent || 0).toLocaleString("fa-IR")}%` : money(direct.value)}`,
             keyboard: [
                 [
                     { text: "✏️ ویرایش", action: `flow:start:coupon_edit:${direct.id}` },

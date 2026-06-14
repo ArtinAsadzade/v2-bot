@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CouponService = void 0;
+exports.normalizeCouponCode = normalizeCouponCode;
 const prisma_1 = require("../../services/prisma");
 function normalizeCode(code) {
     return code.trim().toUpperCase();
@@ -30,6 +31,9 @@ function assertCouponRules(type, value, maxUses, perUserLimit, usedCount = 0) {
         throw new Error("محدودیت کل نمی‌تواند کمتر از تعداد استفاده‌شده باشد");
     if (perUserLimit > maxUses)
         throw new Error("محدودیت هر کاربر نمی‌تواند بیشتر از محدودیت کل باشد");
+}
+function normalizeCouponCode(code) {
+    return normalizeCode(code);
 }
 function couponValue(coupon) {
     return coupon.value || coupon.discountPercent || 0;
@@ -137,23 +141,53 @@ class CouponService {
         };
         return Promise.all([prisma_1.prisma.coupon.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * take, take }), prisma_1.prisma.coupon.count({ where })]);
     }
-    static async validateForUser(code, userId, tx = prisma_1.prisma, originalAmount) {
-        const normalizedCode = normalizeCode(code);
-        const coupon = await tx.coupon.findUnique({ where: { code: normalizedCode } });
-        if (!coupon || coupon.status === "deleted")
-            throw new Error("کد تخفیف پیدا نشد");
+    static validateCouponShape(coupon, originalAmount, now = new Date()) {
+        if (coupon.status === "deleted" || coupon.deletedAt)
+            return "کد تخفیف پیدا نشد";
         if (coupon.status !== "active")
-            throw new Error("کد تخفیف غیرفعال است");
-        if (coupon.expiresAt <= new Date())
-            throw new Error("کد تخفیف منقضی شده است");
+            return "کد تخفیف غیرفعال است";
+        if (coupon.expiresAt <= now)
+            return "کد تخفیف منقضی شده است";
         if (coupon.usedCount >= coupon.maxUses)
-            throw new Error("ظرفیت استفاده از این کد به پایان رسیده است");
-        if (originalAmount !== undefined && originalAmount < coupon.minimumPurchaseAmount)
-            throw new Error(`حداقل مبلغ خرید برای این کد ${coupon.minimumPurchaseAmount.toLocaleString("fa-IR")} تومان است`);
-        const usedByUser = await tx.couponUsage.count({ where: { couponId: coupon.id, userId } });
+            return "ظرفیت استفاده از این کد به پایان رسیده است";
+        if (originalAmount < coupon.minimumPurchaseAmount)
+            return `حداقل مبلغ خرید برای این کد ${coupon.minimumPurchaseAmount.toLocaleString("fa-IR")} تومان است`;
+        if (coupon.type !== "percentage" && coupon.type !== "fixed")
+            return "نوع کد تخفیف معتبر نیست";
+        const value = couponValue(coupon);
+        if (!Number.isInteger(value) || value <= 0)
+            return "مقدار تخفیف معتبر نیست";
+        if (coupon.type === "percentage" && value > 100)
+            return "درصد تخفیف معتبر نیست";
+        return null;
+    }
+    static async validateForCheckout(data) {
+        const tx = data.tx ?? prisma_1.prisma;
+        const now = data.now ?? new Date();
+        if (!Number.isInteger(data.originalAmount) || data.originalAmount < 0)
+            return { ok: false, reason: "مبلغ سفارش معتبر نیست" };
+        const normalizedCode = normalizeCode(data.code);
+        if (!normalizedCode)
+            return { ok: false, reason: "کد تخفیف وارد نشده است" };
+        const coupon = await tx.coupon.findUnique({ where: { code: normalizedCode } });
+        if (!coupon)
+            return { ok: false, reason: "کد تخفیف پیدا نشد" };
+        const shapeError = this.validateCouponShape(coupon, data.originalAmount, now);
+        if (shapeError)
+            return { ok: false, reason: shapeError };
+        const usedByUser = await tx.couponUsage.count({ where: { couponId: coupon.id, userId: data.userId } });
         if (usedByUser >= coupon.perUserLimit)
-            throw new Error("سقف استفاده شما از این کد تخفیف تکمیل شده است");
-        return coupon;
+            return { ok: false, reason: "سقف استفاده شما از این کد تخفیف تکمیل شده است" };
+        const calculation = this.calculate(coupon, data.originalAmount);
+        if (calculation.finalAmount < 0)
+            return { ok: false, reason: "مبلغ نهایی معتبر نیست" };
+        return { ok: true, coupon, ...calculation };
+    }
+    static async validateForUser(code, userId, tx = prisma_1.prisma, originalAmount = 0) {
+        const result = await this.validateForCheckout({ code, userId, originalAmount, tx });
+        if (!result.ok)
+            throw new Error(result.reason);
+        return result.coupon;
     }
 }
 exports.CouponService = CouponService;
