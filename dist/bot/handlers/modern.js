@@ -18,6 +18,7 @@ const admin_middleware_1 = require("../middlewares/admin.middleware");
 const reply_keyboard_1 = require("../keyboards/reply.keyboard");
 const design_system_1 = require("../keyboards/design-system");
 const messages_1 = require("../../utils/messages");
+const monitoring_service_1 = require("../../services/monitoring.service");
 function registerModernHandlers(bot) {
     (0, modern_views_1.registerModernViews)();
     (0, flow_engine_1.registerFlowEngine)(bot);
@@ -122,8 +123,10 @@ function registerModernHandlers(bot) {
         if (ctx.match[1] === "back")
             return (0, panel_ui_1.goBack)(ctx);
         const state = (0, panel_ui_1.parseNavAction)(`nav:${ctx.match[1]}`);
-        if (!state)
+        if (!state) {
+            monitoring_service_1.MonitoringService.record({ type: "BUTTON_DATA_INVALID", section: "Telegram Callback", description: `Invalid nav callback: nav:${ctx.match[1]}`, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined, userId: ctx.state.userId, severity: "warning", suggestedAction: "callback_data دکمه‌های منتشرشده را بررسی کنید." });
             return;
+        }
         if (state.id.startsWith("admin") && (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))) {
             await ctx.answerCbQuery("دسترسی غیرمجاز");
             return;
@@ -737,6 +740,8 @@ ${account.configLink}
                 return;
             }
             catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                monitoring_service_1.MonitoringService.record({ type: "TICKET_HANDLER_FAILED", section: "Ticket Handler", description: message, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined, userId: ctx.state.userId, severity: "critical", suggestedAction: "وضعیت تیکت، دسترسی پیام‌رسانی ربات و دیتابیس را بررسی کنید.", metadata: { ticketId: ctx.session.liveTicketId, role: ctx.session.liveTicketRole } });
                 await ctx.reply(`⚠️ ${error instanceof Error ? error.message : "ارسال پیام ناموفق بود."}`);
                 return;
             }

@@ -1,6 +1,7 @@
 import type { MiddlewareFn } from "telegraf";
 import type { AppContext } from "../../types/bot";
 import { logger } from "../../services/logger";
+import { MonitoringService } from "../../services/monitoring.service";
 
 export type RateLimitAction = "message" | "callback" | "payment" | "ticket" | "admin";
 
@@ -145,6 +146,7 @@ export function rateLimitMiddleware(): MiddlewareFn<AppContext> {
       count: result.count,
       limit: result.limit,
     });
+    MonitoringService.rateLimitHit({ telegramId: String(telegramId), userId: ctx.state.userId, actionType: type, count: result.count, limit: result.limit });
 
     if (result.warningAllowed) {
       store.markWarned(key, now);

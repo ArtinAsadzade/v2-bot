@@ -4,6 +4,7 @@ exports.CryptoRateService = exports.SystemSettingsService = exports.STORE_DISABL
 const prisma_1 = require("../../services/prisma");
 const notification_service_1 = require("../../services/notification.service");
 const logger_1 = require("../../services/logger");
+const monitoring_service_1 = require("../../services/monitoring.service");
 const STORE_STATUS_CACHE_TTL_MS = 30000;
 const USER_STATUS_CACHE_TTL_MS = 15000;
 exports.BLOCKED_USER_MESSAGE = "⛔ حساب کاربری شما مسدود شده است.";
@@ -111,7 +112,9 @@ class CryptoRateService {
             return rates;
         }
         catch (error) {
-            logger_1.logger.error("Crypto rate refresh failed", { error: error instanceof Error ? error.message : String(error) });
+            const message = error instanceof Error ? error.message : String(error);
+            logger_1.logger.error("Crypto rate refresh failed", { error: message });
+            monitoring_service_1.MonitoringService.record({ type: "CRYPTO_RATE_FAILED", section: "Crypto Rate", description: message, severity: "critical", suggestedAction: "منبع نرخ و مقدار USD_TOMAN_RATE را بررسی کنید.", metadata: { coins } });
             await this.notifyAdminsProviderUnavailable(coins.join(", "));
             return coins.map((coin) => rateCache.get(coin)).filter((rate) => Boolean(rate));
         }

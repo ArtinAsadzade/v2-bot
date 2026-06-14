@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.rateLimitMiddleware = rateLimitMiddleware;
 exports.rateLimit = rateLimit;
 const logger_1 = require("../../services/logger");
+const monitoring_service_1 = require("../../services/monitoring.service");
 const WARNING_TEXT = "⚠️ لطفاً کمی آهسته‌تر ادامه دهید.\nبرای جلوگیری از اسپم، چند ثانیه صبر کنید و دوباره تلاش کنید.";
 const WARNING_COOLDOWN_MS = 10000;
 const RULES = {
@@ -107,6 +108,7 @@ function rateLimitMiddleware() {
             count: result.count,
             limit: result.limit,
         });
+        monitoring_service_1.MonitoringService.rateLimitHit({ telegramId: String(telegramId), userId: ctx.state.userId, actionType: type, count: result.count, limit: result.limit });
         if (result.warningAllowed) {
             store.markWarned(key, now);
             await warnUser(ctx, type);

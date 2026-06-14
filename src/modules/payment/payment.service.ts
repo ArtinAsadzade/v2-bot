@@ -8,6 +8,7 @@ import { CouponService } from "../coupon/coupon.service";
 import { AdminService } from "../admin/admin.service";
 import { eventBus } from "../../services/event-bus.service";
 import { logger } from "../../services/logger";
+import { MonitoringService } from "../../services/monitoring.service";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, unassignedInventoryWhere } from "../product/visibility";
 
 export type PaymentGatewayInput = {
@@ -565,9 +566,11 @@ export class PaymentService {
       await prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastFailedRequest: new Date(), lastConnectionStatus: "failed", lastConnectionError: message } });
       await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_REQUEST_FAILED", metadata: { stage: "gateway_create", error: message } });
       if (error instanceof DuplicateGatewayPayIdError) {
+        MonitoringService.record({ type: "PAYMENT_FAILED", section: "Payment Gateway", description: `Duplicate gateway pay_id: ${error.payId}`, userId: data.userId, severity: "critical", suggestedAction: "درگاه پرداخت و یکتایی pay_id را بررسی کنید.", metadata: { invoiceId: invoice.id, duplicateInvoiceId: error.existingInvoiceId } });
         await prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { gatewayResponse: safeJson({ error: error.message, payId: error.payId, duplicateInvoiceId: error.existingInvoiceId }), deliveryStatus: "DUPLICATE_GATEWAY_PAY_ID" } });
         throw new Error("پاسخ درگاه پرداخت معتبر نبود. موضوع ثبت شد و پشتیبانی در حال بررسی است.");
       }
+      MonitoringService.record({ type: "PAYMENT_FAILED", section: "Payment Gateway", description: message, userId: data.userId, severity: "critical", suggestedAction: "وضعیت API درگاه، کلید API و شبکه سرور را بررسی کنید.", metadata: { invoiceId: invoice.id, stage: "gateway_create" } });
       throw new Error("ارتباط با درگاه پرداخت برقرار نشد. لطفاً چند دقیقه دیگر دوباره تلاش کنید");
     }
   }
@@ -610,6 +613,7 @@ export class PaymentService {
     if (!normalizedReference.token && !normalizedReference.invoice && !normalizedReference.invoice_id && !normalizedReference.pay_id) {
       paymentLog("PAYMENT_CALLBACK_REJECTED", { reason: "missing_callback_reference", query: metadata.query });
       await prisma.auditLog.create({ data: { actorId: "system", action: "PAYMENT_CALLBACK_REJECTED", metadata: JSON.stringify({ reason: "missing_callback_reference", ...metadata }) } });
+      MonitoringService.record({ type: "PAYMENT_CALLBACK_FAILED", section: "Payment Callback", description: "Missing callback reference", severity: "critical", suggestedAction: "پارامترهای callback درگاه را بررسی کنید.", metadata });
       return { statusCode: 400, text: "Invalid payment callback." };
     }
 
@@ -617,6 +621,7 @@ export class PaymentService {
     if (!resolved) {
       paymentLog("PAYMENT_CALLBACK_REJECTED", { reason: "invoice_not_found", reference: normalizedReference, query: metadata.query });
       await prisma.auditLog.create({ data: { actorId: "system", action: "PAYMENT_CALLBACK_REJECTED", metadata: JSON.stringify({ reason: "invoice_not_found", reference: normalizedReference, ...metadata }) } });
+      MonitoringService.record({ type: "PAYMENT_CALLBACK_FAILED", section: "Payment Callback", description: "Payment invoice not found", severity: "critical", suggestedAction: "ارسال invoice_id/token/pay_id از سمت درگاه را بررسی کنید.", metadata: { reference: normalizedReference, ...metadata } });
       return { statusCode: 404, text: "Payment invoice not found." };
     }
     const invoice = resolved.invoice;
@@ -631,12 +636,14 @@ export class PaymentService {
       const failed = await prisma.paymentInvoice.updateMany({ where: { id: invoice.id, status: "PENDING" }, data: { status: "FAILED", verifiedAt: new Date(), deliveryStatus: "FAILED" } });
       paymentLog("PAYMENT_PROCESS_FAILED", { invoiceId: invoice.id, userId: invoice.userId, stage: "callback_security", reason: integrity.reason, statusChanged: failed.count === 1 });
       await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_PROCESS_FAILED", metadata: { stage: "callback_security", reason: integrity.reason, gatewayAmount: invoice.gatewayAmount, amount: invoice.amount, originalAmount: invoice.originalAmount, discountAmount: invoice.discountAmount, amountExpected: integrity.expectedAmount } });
+      MonitoringService.record({ type: "PAYMENT_CALLBACK_FAILED", section: "Payment Callback", description: `Invoice amount mismatch: ${integrity.reason}`, userId: invoice.userId, severity: "critical", suggestedAction: "مبلغ فاکتور و مقدار برگشتی درگاه را بررسی کنید.", metadata: { invoiceId: invoice.id } });
       return { statusCode: 409, text: "Invoice amount mismatch.", failed: { invoice: { ...invoice, status: failed.count === 1 ? "FAILED" : invoice.status }, type: invoice.type as PaymentInvoiceType } };
     }
 
     if (normalizedReference.pay_id && invoice.payId && normalizedReference.pay_id !== invoice.payId) {
       paymentLog("PAYMENT_CALLBACK_REJECTED", { invoiceId: invoice.id, userId: invoice.userId, reason: "pay_id_mismatch", expectedPayId: invoice.payId, receivedPayId: normalizedReference.pay_id });
       await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_REJECTED", metadata: { reason: "pay_id_mismatch", expectedPayId: invoice.payId, receivedPayId: normalizedReference.pay_id, reference: normalizedReference } });
+      MonitoringService.record({ type: "PAYMENT_CALLBACK_FAILED", section: "Payment Callback", description: "pay_id mismatch", userId: invoice.userId, severity: "critical", suggestedAction: "احتمال callback اشتباه یا دستکاری شده را بررسی کنید.", metadata: { invoiceId: invoice.id, expectedPayId: invoice.payId, receivedPayId: normalizedReference.pay_id } });
       return { statusCode: 409, text: "Payment callback pay_id mismatch." };
     }
 
@@ -645,6 +652,7 @@ export class PaymentService {
       if (duplicate) {
         paymentLog("PAYMENT_CALLBACK_REJECTED", { invoiceId: invoice.id, userId: invoice.userId, reason: "duplicate_callback_pay_id", payId: normalizedReference.pay_id, duplicateInvoiceId: duplicate.id });
         await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_DUPLICATE_PAY_ID", metadata: { source: "callback", payId: normalizedReference.pay_id, duplicateInvoiceId: duplicate.id, duplicateUserId: duplicate.userId, duplicateStatus: duplicate.status } });
+        MonitoringService.record({ type: "PAYMENT_DUPLICATE_CALLBACK", section: "Payment Callback", description: `Duplicate callback pay_id: ${normalizedReference.pay_id}`, userId: invoice.userId, severity: "critical", suggestedAction: "pay_id تکراری در درگاه را فوری بررسی کنید.", metadata: { invoiceId: invoice.id, duplicateInvoiceId: duplicate.id } });
         return { statusCode: 409, text: "Duplicate gateway pay_id." };
       }
     }
@@ -657,6 +665,7 @@ export class PaymentService {
     if (invoice.status === "COMPLETED" || invoice.status === "PAID") {
       paymentLog("PAYMENT_DUPLICATE_CALLBACK_IGNORED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status });
       await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_DUPLICATE_CALLBACK_IGNORED", metadata: { status: invoice.status, reference: normalizedReference } });
+      MonitoringService.record({ type: "PAYMENT_DUPLICATE_CALLBACK", section: "Payment Callback", description: `Duplicate callback ignored for ${invoice.status}`, userId: invoice.userId, severity: "warning", suggestedAction: "اگر تکرار زیاد است، retry درگاه را بررسی کنید.", metadata: { invoiceId: invoice.id, status: invoice.status } });
       if (invoice.status === "COMPLETED") return { statusCode: 200, text: ALREADY_PROCESSED_FA };
     }
     if (invoice.status === "FAILED" || invoice.status === "CANCELED" || invoice.status === "EXPIRED") return { statusCode: 409, text: "Payment invoice is not payable." };
@@ -698,6 +707,7 @@ export class PaymentService {
       paymentLog("PAYMENT_PROCESS_FAILED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, stage: "fulfillment", error: message });
       paymentLog("PAYMENT_FAILED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, stage: "fulfillment", error: message });
       await prisma.paymentInvoice.update({ where: { id: paidInvoice.id }, data: { deliveryStatus: "FAILED_DELIVERY", verifiedAt: new Date() } });
+      MonitoringService.record({ type: "PAYMENT_DELIVERY_FAILED", section: "Payment Delivery", description: message, userId: paidInvoice.userId, severity: "critical", suggestedAction: "تحویل محصول/شارژ کیف پول را از پنل مدیریت بررسی و دستی اصلاح کنید.", metadata: { invoiceId: paidInvoice.id, type: paidInvoice.type } });
       eventBus.emit("payment.delivery.failed", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type, error: message });
       await audit(prisma, { userId: paidInvoice.userId, invoiceId: paidInvoice.id, action: "PAYMENT_PROCESS_FAILED", metadata: { stage: "fulfillment", error: message, statusKept: "PAID" } });
       return { statusCode: 500, text: "Payment processing failed.", failed: { invoice: paidInvoice, type: paidInvoice.type as PaymentInvoiceType, error: message } };
@@ -832,7 +842,14 @@ export class PaymentService {
   }
 
   static async purchaseProductWithWallet(userId: string, productId: string, couponCode?: string) {
-    const result = await prisma.$transaction((tx) => this.purchaseProduct(tx, { userId, productId, couponCode, method: "WALLET" }));
+    let result;
+    try {
+      result = await prisma.$transaction((tx) => this.purchaseProduct(tx, { userId, productId, couponCode, method: "WALLET" }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      MonitoringService.record({ type: "PURCHASE_FAILED", section: "Purchase Flow", description: message, userId, severity: "critical", suggestedAction: "موجودی، کیف پول و وضعیت محصول را بررسی کنید.", metadata: { productId, couponCode } });
+      throw error;
+    }
     AdminService.invalidateDashboardCache();
     eventBus.emit("order.created", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });
     eventBus.emit("order.completed", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });

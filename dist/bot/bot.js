@@ -8,6 +8,7 @@ const notification_service_1 = require("../services/notification.service");
 const access_control_middleware_1 = require("./middlewares/access-control.middleware");
 const forced_join_middleware_1 = require("./middlewares/forced-join.middleware");
 const rate_limit_middleware_1 = require("./middlewares/rate-limit.middleware");
+const monitoring_service_1 = require("../services/monitoring.service");
 if (!process.env.BOT_TOKEN) {
     throw new Error("BOT_TOKEN is missing");
 }
@@ -28,8 +29,10 @@ exports.bot.use((0, rate_limit_middleware_1.rateLimitMiddleware)());
 exports.bot.use((0, access_control_middleware_1.accessControlMiddleware)());
 exports.bot.use((0, forced_join_middleware_1.forcedJoinMiddleware)());
 exports.bot.catch((error, ctx) => {
+    const message = error instanceof Error ? error.message : String(error);
     logger_1.logger.error("Unhandled bot error", {
         updateId: ctx.update.update_id,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
     });
+    monitoring_service_1.MonitoringService.record({ type: "UNHANDLED_BOT_ERROR", section: "Telegram Bot", description: message, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined, userId: ctx.state.userId, severity: "critical", suggestedAction: "لاگ سرور و آخرین آپدیت تلگرام را بررسی کنید." });
 });
