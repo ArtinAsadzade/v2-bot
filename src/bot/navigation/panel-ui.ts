@@ -75,7 +75,7 @@ export enum RenderMode {
   AUTO = "AUTO",
 }
 
-export type ViewRenderResult = { text: string; keyboard: UiKeyboard; parseMode?: "HTML"; replyKeyboard?: ReplyKeyboardScope; renderMode?: RenderMode };
+export type ViewRenderResult = { text: string; keyboard: UiKeyboard; parseMode?: "HTML"; replyKeyboard?: ReplyKeyboardScope; renderMode?: RenderMode; navigation?: { back?: boolean; home?: boolean } };
 export type ViewRenderer = (ctx: AppContext, params: Record<string, string>) => Promise<ViewRenderResult>;
 
 const registry = new Map<PanelViewId, ViewRenderer>();
@@ -275,7 +275,7 @@ export async function renderPanel(ctx: AppContext, state: ViewState, mode: "push
   }
 
   const isHome = state.id === "home";
-  const keyboard = panelKeyboard(result.keyboard, { back: !isHome, home: !isHome });
+  const keyboard = panelKeyboard(result.keyboard, { back: result.navigation?.back ?? !isHome, home: result.navigation?.home ?? !isHome });
   const extra = { parse_mode: result.parseMode, ...keyboard };
   const fallbackReply = async () => {
     const sent = await ctx.reply(result.text, extra);

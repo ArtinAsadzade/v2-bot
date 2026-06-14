@@ -255,6 +255,8 @@ ${invoice.paymentLink}`,
                 const product = await product_service_1.ProductService.getProduct(productId);
                 if (!product)
                     throw new Error("محصول پیدا نشد");
+                if (ctx.session.selectedCoupons?.[productId])
+                    delete ctx.session.selectedCoupons[productId];
                 const validation = await coupon_service_1.CouponService.validateForCheckout({ code: text.trim(), userId: user.id, originalAmount: product.price });
                 if (!validation.ok) {
                     return {

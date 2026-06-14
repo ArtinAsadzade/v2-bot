@@ -265,14 +265,15 @@ ${divider}
     const shortage = Math.max(payableAmount - user.balance, 0);
     const gateway = await PaymentGatewayService.get();
     const keyboard: UiKeyboard = [];
-    if (couponLine) keyboard.push([{ text: "🗑 حذف کد تخفیف", action: actionFor("coupon:remove", product.id) }, { text: "🎟 تغییر کد تخفیف", action: actionFor("flow:start", "coupon_code", product.id) }]);
+    if (couponLine) keyboard.push([{ text: "🗑 حذف کد تخفیف", action: actionFor("coupon:remove", product.id) }, { text: "🎟 تغییر کد تخفیف", action: actionFor("coupon:change", product.id) }]);
     else keyboard.push([{ text: "🎟 افزودن کد تخفیف", action: actionFor("flow:start", "coupon_code", product.id) }]);
     const paymentRow = [{ text: "💳 پرداخت با کیف پول", action: actionFor("buy:confirm", product.id) }];
     if (gateway.enabled) paymentRow.push({ text: "⚡ پرداخت آنی", action: actionFor("buy:instant", product.id) });
     keyboard.push(paymentRow, [{ text: "🔙 بازگشت", action: callbackFor("shop.product", { productId: product.id }) }]);
     return {
-      text: `🧾 خلاصه سفارش\n\n📦 محصول:\n${product.title}\n\n${couponLine ? `🎟 کد تخفیف:\n${couponLine}\n\n` : ""}💰 مبلغ اصلی:\n${money(product.price)}\n\n🎁 تخفیف:\n${money(discountAmount)}\n\n✅ مبلغ نهایی:\n${money(payableAmount)}\n\n💳 موجودی کیف پول:\n${money(user.balance)}${shortage > 0 ? `\n\n⚠️ کسری کیف پول: ${money(shortage)}` : ""}`,
+      text: `🧾 خلاصه سفارش\n\n📦 محصول:\n${product.title}\n\n${couponLine ? `🎟 کد تخفیف:\n${couponLine}\n\n` : ""}💰 مبلغ:\n${money(product.price)}${discountAmount > 0 ? `\n\n🎁 تخفیف:\n${money(discountAmount)}` : ""}\n\n✅ مبلغ نهایی:\n${money(payableAmount)}\n\n💳 موجودی کیف پول:\n${money(user.balance)}${shortage > 0 ? `\n\n⚠️ کسری کیف پول: ${money(shortage)}` : ""}`,
       keyboard,
+      navigation: { back: false, home: false },
     };
   });
 

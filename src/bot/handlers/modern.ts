@@ -1,7 +1,7 @@
 import type { AppBot, AppContext } from "../../types/bot";
 import { registerModernViews } from "../views/modern.views";
 import { goBack, parseNavAction, renderPanel, callbackFor, actionFor, RenderMode } from "../navigation/panel-ui";
-import { registerFlowEngine, handleActiveFlowPhoto, handleActiveFlowText } from "../flows/flow-engine";
+import { registerFlowEngine, handleActiveFlowPhoto, handleActiveFlowText, startFlow } from "../flows/flow-engine";
 import { UserService } from "../../modules/user/user.service";
 import { ReferralService } from "../../modules/referral/referral.service";
 import { PurchaseService } from "../../modules/product/purchase.service";
@@ -285,23 +285,33 @@ export function registerModernHandlers(bot: AppBot) {
     } catch (error) { await ctx.reply(`⚠️ ایجاد فاکتور تمدید ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`); }
   });
 
-  bot.action(/^coupon:(.+)$/, async (ctx) => {
-    await ctx.answerCbQuery();
-    await renderPanel(ctx, { id: "shop.product", params: { productId: ctx.match[1] } }, "replace", RenderMode.EDIT_CURRENT);
-    await ctx.reply("برای اعمال کد تخفیف از دکمه «🎟 اعمال کد تخفیف» در صفحه محصول استفاده کنید.");
-  });
-
+  async function showExpiredCheckoutRecovery(ctx: AppContext) {
+    await ctx.reply("این پیش‌فاکتور منقضی شده است.\nلطفاً محصول را دوباره انتخاب کنید.", { reply_markup: { inline_keyboard: [[{ text: "🛒 بازگشت به فروشگاه", callback_data: callbackFor("shop.categories") }, { text: "🏠 خانه", callback_data: callbackFor("home") }]] } });
+  }
 
   bot.action(/^coupon:remove:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     const productId = ctx.match[1];
-    if (ctx.session.selectedCoupons?.[productId]) {
-      delete ctx.session.selectedCoupons[productId];
-      await ctx.reply("✅ کد تخفیف از فاکتور حذف شد.");
-    } else {
-      await ctx.reply("کد تخفیفی روی این فاکتور فعال نیست.");
-    }
+    const product = await ProductService.getProduct(productId);
+    if (!product) return showExpiredCheckoutRecovery(ctx);
+    if (ctx.session.selectedCoupons?.[productId]) delete ctx.session.selectedCoupons[productId];
+    await ctx.reply("✅ کد تخفیف از فاکتور حذف شد.");
     await renderPanel(ctx, { id: "shop.checkout", params: { productId } }, "replace", RenderMode.EDIT_CURRENT);
+  });
+
+  bot.action(/^coupon:change:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const productId = ctx.match[1];
+    const product = await ProductService.getProduct(productId);
+    if (!product) return showExpiredCheckoutRecovery(ctx);
+    if (ctx.session.selectedCoupons?.[productId]) delete ctx.session.selectedCoupons[productId];
+    await startFlow(ctx, "coupon_code", { productId });
+  });
+
+  bot.action(/^coupon:(?!remove:|change:)(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    await renderPanel(ctx, { id: "shop.product", params: { productId: ctx.match[1] } }, "replace", RenderMode.EDIT_CURRENT);
+    await ctx.reply("برای اعمال کد تخفیف از دکمه «🎟 اعمال کد تخفیف» در صفحه محصول استفاده کنید.");
   });
 
   bot.action(/^buy:(?!confirm:|instant:)(.+)$/, async (ctx) => {
