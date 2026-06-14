@@ -2,11 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.notificationService = void 0;
 exports.registerNotificationEvents = registerNotificationEvents;
+const panel_ui_1 = require("../bot/navigation/panel-ui");
 const prisma_1 = require("./prisma");
 const logger_1 = require("./logger");
 const event_bus_service_1 = require("./event-bus.service");
 const messages_1 = require("../utils/messages");
-const panel_ui_1 = require("../bot/navigation/panel-ui");
 class NotificationService {
     setBot(bot) {
         this.bot = bot;
@@ -77,7 +77,7 @@ function registerNotificationEvents() {
     event_bus_service_1.eventBus.on("deposit.created", async (event) => {
         await exports.notificationService.notifyAdmins({
             text: (0, messages_1.screenMessage)({ tone: "PAYMENT", title: "درخواست شارژ جدید", description: "یک درخواست شارژ برای بررسی ثبت شده است.", body: `شناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`, actionHint: "برای بررسی، دکمه مشاهده را انتخاب کنید." }),
-            actions: [[{ text: "👁 مشاهده", callbackData: `admin:deposits` }]],
+            actions: [[{ text: "👁 مشاهده", callbackData: (0, panel_ui_1.actionFor)("admin", "deposits") }]],
         });
     });
     event_bus_service_1.eventBus.on("ticket.created", async (event) => {
@@ -89,7 +89,7 @@ function registerNotificationEvents() {
 👤 کاربر: ${event.telegramId}
 
 برای مشاهده تاریخچه یا پاسخ مستقیم، یکی از دکمه‌های زیر را انتخاب کنید.`,
-            actions: [[{ text: "👁 مشاهده تیکت", callbackData: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: event.ticketId }) }, { text: "💬 ورود به چت", callbackData: `support:admin:chat:${event.ticketId}` }]],
+            actions: [[{ text: "👁 مشاهده تیکت", callbackData: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: event.ticketId }) }, { text: "💬 ورود به چت", callbackData: (0, panel_ui_1.actionFor)("support:admin:chat", event.ticketId) }]],
         });
     });
     event_bus_service_1.eventBus.on("referral.reward.claimed", async (event) => {
@@ -104,7 +104,7 @@ function registerNotificationEvents() {
     event_bus_service_1.eventBus.on("free_config.claimed", async (event) => {
         await exports.notificationService.notifyUser(event.userId, {
             text: `🎁 کانفیگ رایگان شما:\n\n${event.config}`,
-            actions: [[{ text: "🏠 خانه", callbackData: "nav:home" }]],
+            actions: [[{ text: "🏠 خانه", callbackData: (0, panel_ui_1.callbackFor)("home") }]],
         });
     });
 }

@@ -2,6 +2,7 @@ import { Markup } from "telegraf";
 import type { InlineKeyboardButton } from "telegraf/types";
 import type { AppContext } from "../../types/bot";
 import { replyKeyboard, replyKeyboardSignature, type ReplyKeyboardScope } from "../keyboards/reply.keyboard";
+import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 
 export type UiButton = { text: string; action: string };
 export type UiKeyboard = UiButton[][];
@@ -83,16 +84,24 @@ const PARAM_ALIASES: Record<string, string> = {
 };
 const PARAM_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_ALIASES).map(([key, value]) => [value, key]));
 
+export function ensureCallbackData(action: string): string {
+  if (Buffer.byteLength(action, "utf8") > 64) {
+    throw new Error(`Telegram callback payload is too long (${Buffer.byteLength(action, "utf8")} bytes): ${action}`);
+  }
+  return action;
+}
+
+export function actionFor(prefix: string, ...parts: Array<string | number | boolean | undefined>): string {
+  return ensureCallbackData([prefix, ...parts.filter((part) => part !== undefined && part !== "").map(String)].join(":"));
+}
+
 export function callbackFor(view: PanelViewId, params: Record<string, string | number | boolean | undefined> = {}): string {
   const query = Object.entries(params)
     .filter(([, value]) => value !== undefined && value !== "")
     .map(([key, value]) => `${encodeURIComponent(PARAM_ALIASES[key] ?? key)}=${encodeURIComponent(String(value))}`)
     .join("&");
   const callback = query ? `nav:${view}?${query}` : `nav:${view}`;
-  if (Buffer.byteLength(callback, "utf8") > 64) {
-    throw new Error(`Telegram callback payload is too long (${Buffer.byteLength(callback, "utf8")} bytes): ${callback}`);
-  }
-  return callback;
+  return ensureCallbackData(callback);
 }
 
 function parseParams(raw?: string): Record<string, string> {
@@ -171,10 +180,21 @@ export function parseNavAction(action: string): ViewState | undefined {
 }
 
 export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?: boolean; cancel?: boolean } = { back: true, home: true }) {
-  const normalized: InlineKeyboardButton.CallbackButton[][] = rows.map((row) => row.map((button) => Markup.button.callback(button.text, button.action)));
+  const seenNav = new Set<string>();
+  const normalized: InlineKeyboardButton.CallbackButton[][] = rows
+    .map((row) =>
+      row
+        .filter((button) => {
+          if ((button.action === "nav:back" || button.action === callbackFor("home")) && seenNav.has(button.action)) return false;
+          if (button.action === "nav:back" || button.action === callbackFor("home")) seenNav.add(button.action);
+          return true;
+        })
+        .map((button) => Markup.button.callback(button.text, ensureCallbackData(button.action))),
+    )
+    .filter((row) => row.length > 0);
   const nav: InlineKeyboardButton.CallbackButton[] = [];
-  if (options.back) nav.push(Markup.button.callback("🔙 بازگشت", "nav:back"));
-  if (options.home) nav.push(Markup.button.callback("🏠 خانه", callbackFor("home")));
+  if (options.back && !seenNav.has("nav:back")) nav.push(Markup.button.callback("🔙 بازگشت", "nav:back"));
+  if (options.home && !seenNav.has(callbackFor("home"))) nav.push(Markup.button.callback("🏠 خانه", callbackFor("home")));
   if (nav.length) normalized.push(nav);
   if (options.cancel) normalized.push([Markup.button.callback("❌ لغو عملیات", "flow:cancel")]);
   return Markup.inlineKeyboard(normalized);
@@ -194,14 +214,16 @@ export async function renderPanel(ctx: AppContext, state: ViewState, mode: "push
   if (mode === "replace") ctx.session.navigation.stack = [state];
 
   if (result.replyKeyboard) {
-    const signature = replyKeyboardSignature(result.replyKeyboard);
+    const isAdmin = result.replyKeyboard !== "admin" && result.replyKeyboard !== "settings" && ctx.from ? await isAdminByTelegramId(ctx.from.id) : false;
+    const signature = replyKeyboardSignature(result.replyKeyboard, { isAdmin });
     if (!ctx.callbackQuery && ctx.session.quickKeyboardSignature !== signature) {
-      await ctx.reply("⌨️ منوی دسترسی سریع", replyKeyboard(result.replyKeyboard));
+      await ctx.reply("⌨️ منوی دسترسی سریع", replyKeyboard(result.replyKeyboard, { isAdmin }));
     }
     ctx.session.quickKeyboardSignature = signature;
   }
 
-  const keyboard = panelKeyboard(result.keyboard, { back: state.id !== "home", home: true });
+  const isHome = state.id === "home";
+  const keyboard = panelKeyboard(result.keyboard, { back: !isHome, home: !isHome });
   const extra = { parse_mode: result.parseMode, ...keyboard };
   const fallbackReply = async () => {
     const sent = await ctx.reply(result.text, extra);

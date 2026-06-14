@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerView = registerView;
+exports.ensureCallbackData = ensureCallbackData;
+exports.actionFor = actionFor;
 exports.callbackFor = callbackFor;
 exports.parseNavAction = parseNavAction;
 exports.panelKeyboard = panelKeyboard;
@@ -8,6 +10,7 @@ exports.renderPanel = renderPanel;
 exports.goBack = goBack;
 const telegraf_1 = require("telegraf");
 const reply_keyboard_1 = require("../keyboards/reply.keyboard");
+const admin_middleware_1 = require("../middlewares/admin.middleware");
 const registry = new Map();
 function registerView(id, renderer) {
     registry.set(id, renderer);
@@ -27,16 +30,22 @@ const PARAM_ALIASES = {
     status: "s",
 };
 const PARAM_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_ALIASES).map(([key, value]) => [value, key]));
+function ensureCallbackData(action) {
+    if (Buffer.byteLength(action, "utf8") > 64) {
+        throw new Error(`Telegram callback payload is too long (${Buffer.byteLength(action, "utf8")} bytes): ${action}`);
+    }
+    return action;
+}
+function actionFor(prefix, ...parts) {
+    return ensureCallbackData([prefix, ...parts.filter((part) => part !== undefined && part !== "").map(String)].join(":"));
+}
 function callbackFor(view, params = {}) {
     const query = Object.entries(params)
         .filter(([, value]) => value !== undefined && value !== "")
         .map(([key, value]) => `${encodeURIComponent(PARAM_ALIASES[key] ?? key)}=${encodeURIComponent(String(value))}`)
         .join("&");
     const callback = query ? `nav:${view}?${query}` : `nav:${view}`;
-    if (Buffer.byteLength(callback, "utf8") > 64) {
-        throw new Error(`Telegram callback payload is too long (${Buffer.byteLength(callback, "utf8")} bytes): ${callback}`);
-    }
-    return callback;
+    return ensureCallbackData(callback);
 }
 function parseParams(raw) {
     if (!raw)
@@ -113,11 +122,22 @@ function parseNavAction(action) {
     return { id, params: parseParams(params) };
 }
 function panelKeyboard(rows, options = { back: true, home: true }) {
-    const normalized = rows.map((row) => row.map((button) => telegraf_1.Markup.button.callback(button.text, button.action)));
+    const seenNav = new Set();
+    const normalized = rows
+        .map((row) => row
+        .filter((button) => {
+        if ((button.action === "nav:back" || button.action === callbackFor("home")) && seenNav.has(button.action))
+            return false;
+        if (button.action === "nav:back" || button.action === callbackFor("home"))
+            seenNav.add(button.action);
+        return true;
+    })
+        .map((button) => telegraf_1.Markup.button.callback(button.text, ensureCallbackData(button.action))))
+        .filter((row) => row.length > 0);
     const nav = [];
-    if (options.back)
+    if (options.back && !seenNav.has("nav:back"))
         nav.push(telegraf_1.Markup.button.callback("🔙 بازگشت", "nav:back"));
-    if (options.home)
+    if (options.home && !seenNav.has(callbackFor("home")))
         nav.push(telegraf_1.Markup.button.callback("🏠 خانه", callbackFor("home")));
     if (nav.length)
         normalized.push(nav);
@@ -141,13 +161,15 @@ async function renderPanel(ctx, state, mode = "push") {
     if (mode === "replace")
         ctx.session.navigation.stack = [state];
     if (result.replyKeyboard) {
-        const signature = (0, reply_keyboard_1.replyKeyboardSignature)(result.replyKeyboard);
+        const isAdmin = result.replyKeyboard !== "admin" && result.replyKeyboard !== "settings" && ctx.from ? await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id) : false;
+        const signature = (0, reply_keyboard_1.replyKeyboardSignature)(result.replyKeyboard, { isAdmin });
         if (!ctx.callbackQuery && ctx.session.quickKeyboardSignature !== signature) {
-            await ctx.reply("⌨️ منوی دسترسی سریع", (0, reply_keyboard_1.replyKeyboard)(result.replyKeyboard));
+            await ctx.reply("⌨️ منوی دسترسی سریع", (0, reply_keyboard_1.replyKeyboard)(result.replyKeyboard, { isAdmin }));
         }
         ctx.session.quickKeyboardSignature = signature;
     }
-    const keyboard = panelKeyboard(result.keyboard, { back: state.id !== "home", home: true });
+    const isHome = state.id === "home";
+    const keyboard = panelKeyboard(result.keyboard, { back: !isHome, home: !isHome });
     const extra = { parse_mode: result.parseMode, ...keyboard };
     const fallbackReply = async () => {
         const sent = await ctx.reply(result.text, extra);

@@ -23,6 +23,7 @@ exports.paymentFailureKeyboard = paymentFailureKeyboard;
 exports.privateTopicArchitecture = privateTopicArchitecture;
 exports.labels = {
     home: "🏠 خانه",
+    userMenu: "🏠 منوی کاربر",
     wallet: "💳 کیف پول",
     walletBalance: "💳 موجودی فعلی",
     topup: "➕ شارژ کیف پول",
@@ -35,8 +36,10 @@ exports.labels = {
     coupon: "🎟 تخفیف‌ها",
     account: "👤 حساب کاربری",
     freeAccount: "🆓 اکانت تست",
+    referral: "🎁 دعوت دوستان",
     orders: "📦 اکانت‌های من",
     support: "🎫 پشتیبانی",
+    guide: "📘 راهنما",
     settings: "⚙️ تنظیمات",
     retry: "🔄 تلاش مجدد",
     refresh: "🔄 بروزرسانی وضعیت",
@@ -53,7 +56,7 @@ exports.labels = {
     adminTickets: "🎫 تیکت‌ها",
     adminNotifications: "📢 اطلاع‌رسانی",
     adminCoupons: "🎟 کدهای تخفیف",
-    adminDashboard: "🛠 پنل مدیریت",
+    adminDashboard: "🛡 پنل مدیریت",
 };
 const toneToStyle = {
     primary: "primary",
@@ -95,13 +98,16 @@ function buildReplyKeyboard(rows) {
 function buildInlineKeyboard(rows) {
     return { reply_markup: { inline_keyboard: rows.map((row) => row.map(inlineButton)) } };
 }
-function MainMenuKeyboard() {
-    return buildReplyKeyboard([
-        [{ text: exports.labels.home }, { text: exports.labels.shop }],
-        [{ text: exports.labels.wallet }, { text: exports.labels.orders }],
-        [{ text: exports.labels.freeAccount }, { text: exports.labels.support }],
-        [{ text: exports.labels.account }],
-    ]);
+function MainMenuKeyboard(isAdmin = false) {
+    const rows = [
+        [{ text: exports.labels.shop }, { text: exports.labels.wallet }],
+        [{ text: exports.labels.orders }, { text: exports.labels.freeAccount }],
+        [{ text: exports.labels.guide }, { text: exports.labels.support }],
+        [{ text: exports.labels.referral }, { text: exports.labels.account }],
+    ];
+    if (isAdmin)
+        rows.push([{ text: exports.labels.adminDashboard }]);
+    return buildReplyKeyboard(rows);
 }
 function UserKeyboard() {
     return MainMenuKeyboard();
@@ -120,11 +126,12 @@ function SupportKeyboard() {
 }
 function AdminKeyboard() {
     return buildReplyKeyboard([
-        [{ text: exports.labels.adminStats }, { text: exports.labels.adminProducts }],
-        [{ text: exports.labels.adminCategories }, { text: exports.labels.adminInventory }],
-        [{ text: exports.labels.adminPayments }, { text: exports.labels.adminCoupons }],
-        [{ text: exports.labels.adminUsers }, { text: exports.labels.adminTickets }],
+        [{ text: exports.labels.adminStats }, { text: exports.labels.adminPayments }],
+        [{ text: exports.labels.adminProducts }, { text: exports.labels.adminCategories }],
+        [{ text: exports.labels.adminInventory }, { text: exports.labels.adminUsers }],
+        [{ text: exports.labels.adminCoupons }, { text: exports.labels.adminTickets }],
         [{ text: exports.labels.adminNotifications }, { text: exports.labels.settings }],
+        [{ text: exports.labels.userMenu }],
     ]);
 }
 function AdminProductsKeyboard() {
@@ -161,15 +168,15 @@ function InvoiceActionKeyboard(paymentLink, backAction) {
     ]);
 }
 function paymentSuccessKeyboard(_type) {
-    return buildReplyKeyboard([[{ text: exports.labels.home }, { text: exports.labels.buyAgain, tone: "primary" }], [{ text: exports.labels.orders, tone: "success" }]]);
+    return buildInlineKeyboard([
+        [{ text: exports.labels.orders, action: "nav:account.details", tone: "success" }, { text: exports.labels.buyAgain, action: "nav:shop.categories", tone: "primary" }],
+        [{ text: exports.labels.home, action: "nav:home" }],
+    ]);
 }
 function paymentFailureKeyboard() {
-    return buildReplyKeyboard([
-        [
-            { text: exports.labels.retry, tone: "primary" },
-            { text: exports.labels.support, tone: "danger" },
-        ],
-        [{ text: exports.labels.home }],
+    return buildInlineKeyboard([
+        [{ text: exports.labels.retry, action: "nav:deposit", tone: "primary" }, { text: exports.labels.support, action: "nav:support", tone: "danger" }],
+        [{ text: exports.labels.home, action: "nav:home" }],
     ]);
 }
 exports.quickReplyRoutes = {
@@ -178,6 +185,8 @@ exports.quickReplyRoutes = {
     [exports.labels.orders]: { id: "account.details" },
     [exports.labels.account]: { id: "account" },
     [exports.labels.freeAccount]: { id: "freeAccount" },
+    [exports.labels.guide]: { id: "productGuide" },
+    [exports.labels.referral]: { id: "referral" },
     "🎁 اکانت تست": { id: "freeAccount" },
     [exports.labels.refresh]: "refresh",
     [exports.labels.retry]: { id: "deposit" },
@@ -188,6 +197,7 @@ exports.quickReplyRoutes = {
     "💸 برداشت‌ها": { id: "referral" },
     "🎁 پاداش‌ها": { id: "referral" },
     [exports.labels.home]: { id: "home" },
+    [exports.labels.userMenu]: { id: "home" },
     [exports.labels.topup]: { id: "deposit" },
     "➕ شارژ حساب": { id: "deposit" },
     [exports.labels.transactions]: { id: "wallet.history" },

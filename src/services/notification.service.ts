@@ -1,10 +1,10 @@
 import type { InlineKeyboardMarkup } from "telegraf/types";
+import { actionFor, callbackFor } from "../bot/navigation/panel-ui";
 import type { AppBot } from "../types/bot";
 import { prisma } from "./prisma";
 import { logger } from "./logger";
 import { eventBus } from "./event-bus.service";
 import { screenMessage, successMessage } from "../utils/messages";
-import { callbackFor } from "../bot/navigation/panel-ui";
 
 export type NotificationAction = {
   text: string;
@@ -106,7 +106,7 @@ export function registerNotificationEvents() {
   eventBus.on("deposit.created", async (event) => {
     await notificationService.notifyAdmins({
       text: screenMessage({ tone: "PAYMENT", title: "درخواست شارژ جدید", description: "یک درخواست شارژ برای بررسی ثبت شده است.", body: `شناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`, actionHint: "برای بررسی، دکمه مشاهده را انتخاب کنید." }),
-      actions: [[{ text: "👁 مشاهده", callbackData: `admin:deposits` }]],
+      actions: [[{ text: "👁 مشاهده", callbackData: actionFor("admin", "deposits") }]],
     });
   });
 
@@ -119,7 +119,7 @@ export function registerNotificationEvents() {
 👤 کاربر: ${event.telegramId}
 
 برای مشاهده تاریخچه یا پاسخ مستقیم، یکی از دکمه‌های زیر را انتخاب کنید.`,
-      actions: [[{ text: "👁 مشاهده تیکت", callbackData: callbackFor("admin.ticket", { ticketId: event.ticketId }) }, { text: "💬 ورود به چت", callbackData: `support:admin:chat:${event.ticketId}` }]],
+      actions: [[{ text: "👁 مشاهده تیکت", callbackData: callbackFor("admin.ticket", { ticketId: event.ticketId }) }, { text: "💬 ورود به چت", callbackData: actionFor("support:admin:chat", event.ticketId) }]],
     });
   });
 
@@ -137,7 +137,7 @@ export function registerNotificationEvents() {
   eventBus.on("free_config.claimed", async (event) => {
     await notificationService.notifyUser(event.userId, {
       text: `🎁 کانفیگ رایگان شما:\n\n${event.config}`,
-      actions: [[{ text: "🏠 خانه", callbackData: "nav:home" }]],
+      actions: [[{ text: "🏠 خانه", callbackData: callbackFor("home") }]],
     });
   });
 }

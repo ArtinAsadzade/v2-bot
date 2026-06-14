@@ -18,6 +18,7 @@ export type ReplyKeyboardScope = "home" | "shop" | "profile" | "wallet" | "payme
 
 export const labels = {
   home: "🏠 خانه",
+  userMenu: "🏠 منوی کاربر",
   wallet: "💳 کیف پول",
   walletBalance: "💳 موجودی فعلی",
   topup: "➕ شارژ کیف پول",
@@ -30,8 +31,10 @@ export const labels = {
   coupon: "🎟 تخفیف‌ها",
   account: "👤 حساب کاربری",
   freeAccount: "🆓 اکانت تست",
+  referral: "🎁 دعوت دوستان",
   orders: "📦 اکانت‌های من",
   support: "🎫 پشتیبانی",
+  guide: "📘 راهنما",
   settings: "⚙️ تنظیمات",
   retry: "🔄 تلاش مجدد",
   refresh: "🔄 بروزرسانی وضعیت",
@@ -48,7 +51,7 @@ export const labels = {
   adminTickets: "🎫 تیکت‌ها",
   adminNotifications: "📢 اطلاع‌رسانی",
   adminCoupons: "🎟 کدهای تخفیف",
-  adminDashboard: "🛠 پنل مدیریت",
+  adminDashboard: "🛡 پنل مدیریت",
 } as const;
 
 const toneToStyle: Record<Exclude<ButtonTone, "neutral">, TelegramButtonStyle> = {
@@ -96,13 +99,15 @@ export function buildInlineKeyboard(rows: InlineButton[][]): { reply_markup: Inl
   return { reply_markup: { inline_keyboard: rows.map((row) => row.map(inlineButton)) } };
 }
 
-export function MainMenuKeyboard() {
-  return buildReplyKeyboard([
-    [{ text: labels.home }, { text: labels.shop }],
-    [{ text: labels.wallet }, { text: labels.orders }],
-    [{ text: labels.freeAccount }, { text: labels.support }],
-    [{ text: labels.account }],
-  ]);
+export function MainMenuKeyboard(isAdmin = false) {
+  const rows: ReplyButton[][] = [
+    [{ text: labels.shop }, { text: labels.wallet }],
+    [{ text: labels.orders }, { text: labels.freeAccount }],
+    [{ text: labels.guide }, { text: labels.support }],
+    [{ text: labels.referral }, { text: labels.account }],
+  ];
+  if (isAdmin) rows.push([{ text: labels.adminDashboard }]);
+  return buildReplyKeyboard(rows);
 }
 
 export function UserKeyboard() {
@@ -127,11 +132,12 @@ export function SupportKeyboard() {
 
 export function AdminKeyboard() {
   return buildReplyKeyboard([
-    [{ text: labels.adminStats }, { text: labels.adminProducts }],
-    [{ text: labels.adminCategories }, { text: labels.adminInventory }],
-    [{ text: labels.adminPayments }, { text: labels.adminCoupons }],
-    [{ text: labels.adminUsers }, { text: labels.adminTickets }],
+    [{ text: labels.adminStats }, { text: labels.adminPayments }],
+    [{ text: labels.adminProducts }, { text: labels.adminCategories }],
+    [{ text: labels.adminInventory }, { text: labels.adminUsers }],
+    [{ text: labels.adminCoupons }, { text: labels.adminTickets }],
     [{ text: labels.adminNotifications }, { text: labels.settings }],
+    [{ text: labels.userMenu }],
   ]);
 }
 
@@ -177,16 +183,16 @@ export function InvoiceActionKeyboard(paymentLink: string, backAction: string) {
 }
 
 export function paymentSuccessKeyboard(_type: "wallet" | "product") {
-  return buildReplyKeyboard([[{ text: labels.home }, { text: labels.buyAgain, tone: "primary" }], [{ text: labels.orders, tone: "success" }]]);
+  return buildInlineKeyboard([
+    [{ text: labels.orders, action: "nav:account.details", tone: "success" }, { text: labels.buyAgain, action: "nav:shop.categories", tone: "primary" }],
+    [{ text: labels.home, action: "nav:home" }],
+  ]);
 }
 
 export function paymentFailureKeyboard() {
-  return buildReplyKeyboard([
-    [
-      { text: labels.retry, tone: "primary" },
-      { text: labels.support, tone: "danger" },
-    ],
-    [{ text: labels.home }],
+  return buildInlineKeyboard([
+    [{ text: labels.retry, action: "nav:deposit", tone: "primary" }, { text: labels.support, action: "nav:support", tone: "danger" }],
+    [{ text: labels.home, action: "nav:home" }],
   ]);
 }
 
@@ -196,6 +202,8 @@ export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record
   [labels.orders]: { id: "account.details" },
   [labels.account]: { id: "account" },
   [labels.freeAccount]: { id: "freeAccount" },
+  [labels.guide]: { id: "productGuide" },
+  [labels.referral]: { id: "referral" },
   "🎁 اکانت تست": { id: "freeAccount" },
   [labels.refresh]: "refresh",
   [labels.retry]: { id: "deposit" },
@@ -206,6 +214,7 @@ export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record
   "💸 برداشت‌ها": { id: "referral" },
   "🎁 پاداش‌ها": { id: "referral" },
   [labels.home]: { id: "home" },
+  [labels.userMenu]: { id: "home" },
   [labels.topup]: { id: "deposit" },
   "➕ شارژ حساب": { id: "deposit" },
   [labels.transactions]: { id: "wallet.history" },

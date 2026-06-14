@@ -29,11 +29,15 @@ const keyboardFactories = {
     admin: design_system_1.AdminKeyboard,
     settings: design_system_1.SettingsKeyboard,
 };
-function replyKeyboard(scope) {
+function replyKeyboard(scope, options = {}) {
+    if (options.isAdmin && scope !== "admin" && scope !== "settings")
+        return (0, design_system_1.MainMenuKeyboard)(true);
+    if (scope === "home")
+        return (0, design_system_1.MainMenuKeyboard)(false);
     return keyboardFactories[scope]();
 }
-function replyKeyboardSignature(scope) {
-    return JSON.stringify(replyKeyboard(scope).reply_markup.keyboard.map((row) => row.map((button) => (typeof button === "string" ? button : button.text))));
+function replyKeyboardSignature(scope, options = {}) {
+    return JSON.stringify(replyKeyboard(scope, options).reply_markup.keyboard.map((row) => row.map((button) => (typeof button === "string" ? button : button.text))));
 }
 function quickReplyTarget(text) {
     return design_system_1.quickReplyRoutes[text];
