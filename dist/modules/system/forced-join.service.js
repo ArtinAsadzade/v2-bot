@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ForcedJoinService = void 0;
+exports.ForcedJoinService = exports.LEAVE_REMINDER_COOLDOWN_MS = exports.LEAVE_REMINDER_COOLDOWN_HOURS = void 0;
 const prisma_1 = require("../../services/prisma");
-const LEAVE_REMINDER_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+exports.LEAVE_REMINDER_COOLDOWN_HOURS = 12;
+exports.LEAVE_REMINDER_COOLDOWN_MS = exports.LEAVE_REMINDER_COOLDOWN_HOURS * 60 * 60 * 1000;
 function normalizeInviteLink(inviteLink) {
     const value = inviteLink?.trim();
     return value || null;
@@ -32,7 +33,7 @@ class ForcedJoinService {
         return prisma_1.prisma.forcedJoinChannel.findFirst({ where: { chatId: String(chatId), status: "active" } });
     }
     static async canSendLeaveReminder(userId, channelId) {
-        const since = new Date(Date.now() - LEAVE_REMINDER_COOLDOWN_MS);
+        const since = new Date(Date.now() - exports.LEAVE_REMINDER_COOLDOWN_MS);
         const recent = await prisma_1.prisma.forcedJoinLeaveReminderLog.findFirst({ where: { userId, channelId, sentAt: { gte: since } }, orderBy: { sentAt: "desc" } });
         return !recent;
     }

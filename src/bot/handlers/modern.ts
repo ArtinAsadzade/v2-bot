@@ -474,6 +474,11 @@ ${account.configLink}
     await renderPanel(ctx, { id: "home" }, "replace");
   });
 
+  bot.action(/^forced_join:verify:([^:]+)$/, async (ctx) => {
+    await ctx.answerCbQuery("عضویت شما تایید شد ✅");
+    await renderPanel(ctx, { id: "home" }, "replace");
+  });
+
   bot.action("support:chat:start", async (ctx) => {
     await ctx.answerCbQuery();
     if (!ctx.from) return;
