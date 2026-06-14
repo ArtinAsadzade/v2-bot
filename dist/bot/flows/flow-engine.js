@@ -11,6 +11,7 @@ const coupon_service_1 = require("../../modules/coupon/coupon.service");
 const deposit_service_1 = require("../../modules/deposit/deposit.service");
 const support_service_1 = require("../../modules/support/support.service");
 const admin_service_1 = require("../../modules/admin/admin.service");
+const xray_service_1 = require("../../modules/xray/xray.service");
 const free_account_service_1 = require("../../modules/free-account/free-account.service");
 const referral_service_1 = require("../../modules/referral/referral.service");
 const broadcast_service_1 = require("../../modules/broadcast/broadcast.service");
@@ -409,12 +410,45 @@ active: ${detail.category.isActive}`;
                 if (!Number.isInteger(price) || price < 0)
                     return { text: "قیمت معتبر نیست. دوباره وارد کنید:" };
                 flow.data.price = price;
+                flow.step = "traffic";
+                return { text: "حجم سرویس را به گیگابایت وارد کنید:", nextStep: "traffic" };
+            }
+            if (flow.step === "traffic") {
+                const traffic = Number(text.replace(/[,،\s]/g, ""));
+                if (!Number.isInteger(traffic) || traffic <= 0)
+                    return { text: "حجم معتبر نیست. دوباره وارد کنید:" };
+                flow.data.trafficGB = traffic;
                 flow.step = "duration";
                 return { text: "مدت سرویس را به روز وارد کنید:", nextStep: "duration" };
             }
-            const duration = Number(text.replace(/[,،\s]/g, ""));
-            if (!Number.isInteger(duration) || duration <= 0)
-                return { text: "مدت معتبر نیست. دوباره وارد کنید:" };
+            if (flow.step === "duration") {
+                const duration = Number(text.replace(/[,،\s]/g, ""));
+                if (!Number.isInteger(duration) || duration <= 0)
+                    return { text: "مدت معتبر نیست. دوباره وارد کنید:" };
+                flow.data.duration = duration;
+                flow.step = "stock";
+                return { text: "محدودیت فروش/موجودی محصول را وارد کنید:", nextStep: "stock" };
+            }
+            if (flow.step === "stock") {
+                const stock = Number(text.replace(/[,،\s]/g, ""));
+                if (!Number.isInteger(stock) || stock <= 0)
+                    return { text: "موجودی معتبر نیست. دوباره وارد کنید:" };
+                flow.data.stockLimit = stock;
+                flow.step = "inbounds";
+                let list = "";
+                try {
+                    const inbounds = await xray_service_1.XrayClientService.listInbounds();
+                    list = inbounds.map((i) => `${i.id}: ${i.remark ?? i.tag ?? `inbound-${i.id}`} | ${i.protocol ?? "—"} | ${i.port ?? "—"}`).join("\n");
+                }
+                catch {
+                    list = "⚠️ دریافت لیست اینباند ناموفق بود. شناسه‌ها را دستی وارد کنید.";
+                }
+                return { text: `شناسه اینباندها را با کاما وارد کنید (حداقل یکی):\n\n${list}`, nextStep: "inbounds" };
+            }
+            const inboundIds = text.split(/[,،\s]+/).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+            if (!inboundIds.length)
+                return { text: "حداقل یک inbound ID معتبر وارد کنید:" };
+            const duration = Number(flow.data.duration);
             const categoryId = String(flow.data.categoryId ?? "");
             if (!categoryId)
                 return { text: "⚠️ دسته‌بندی نامعتبر یا حذف‌شده است. دوباره دسته‌بندی را انتخاب کنید.", keyboard: await productCategoryKeyboard() };
@@ -423,8 +457,12 @@ active: ${detail.category.isActive}`;
                 title: String(flow.data.title),
                 price: Number(flow.data.price),
                 duration,
+                trafficGB: Number(flow.data.trafficGB),
+                stockLimit: Number(flow.data.stockLimit),
+                inboundIds,
+                inboundSnapshot: JSON.stringify(inboundIds.map((id) => ({ id, label: `Inbound ${id}` }))),
             });
-            return { done: true, text: "✅ محصول جدید ثبت شد.", returnTo: { id: "admin.products" } };
+            return { done: true, text: "✅ محصول Xray با موجودی خودکار ثبت شد.", returnTo: { id: "admin.products" } };
         },
     },
     product_edit: {

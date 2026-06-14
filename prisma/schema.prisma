@@ -46,6 +46,20 @@ enum ProductAccountStatus {
   expired
 }
 
+enum ProductMode {
+  manual_inventory
+  xray_auto
+}
+
+enum XrayClientStatus {
+  creating
+  active
+  expired
+  disabled
+  failed
+  renewal_failed
+}
+
 enum OrderStatus {
   completed
   cancelled
@@ -124,18 +138,19 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  walletTransactions WalletTransaction[]
-  deposits           Deposit[]
-  tickets            Ticket[]
-  couponUsages       CouponUsage[]
-  orders             Order[]
-  referralsMade      Referral[]          @relation("Referrer")
-  referredReferral   Referral?           @relation("Referred")
-  referralRewards    ReferralReward[]
-  freeConfigRewards  FreeConfigReward[]
+  walletTransactions     WalletTransaction[]
+  deposits               Deposit[]
+  tickets                Ticket[]
+  couponUsages           CouponUsage[]
+  orders                 Order[]
+  referralsMade          Referral[]              @relation("Referrer")
+  referredReferral       Referral?               @relation("Referred")
+  referralRewards        ReferralReward[]
+  freeConfigRewards      FreeConfigReward[]
   freeAccountAssignments FreeAccountAssignment[]
-  paymentInvoices    PaymentInvoice[]
-  paymentAuditLogs   PaymentAuditLog[]
+  paymentInvoices        PaymentInvoice[]
+  paymentAuditLogs       PaymentAuditLog[]
+  xrayClients            XrayClient[]
 
   @@index([role])
   @@index([referredById])
@@ -273,7 +288,6 @@ model FinancialSetting {
   updatedAt          DateTime    @updatedAt
 }
 
-
 model PaymentGatewayConfig {
   id                    String    @id @default("singleton") @map("_id")
   enabled               Boolean   @default(false)
@@ -293,32 +307,32 @@ model PaymentGatewayConfig {
 }
 
 model PaymentInvoice {
-  id             String               @id @default(auto()) @map("_id") @db.ObjectId
-  userId         String               @db.ObjectId
-  amount         Int
-  originalAmount Int                  @default(0)
-  discountAmount Int                  @default(0)
-  couponId       String?              @db.ObjectId
-  couponCode     String?
-  gatewayAmount  Int?
-  payId          String?
-  paymentLink    String?
-  gatewayResponse String?
-  callbackCount  Int                  @default(0)
-  lastCallbackAt DateTime?
-  deliveryStatus String?
+  id                 String               @id @default(auto()) @map("_id") @db.ObjectId
+  userId             String               @db.ObjectId
+  amount             Int
+  originalAmount     Int                  @default(0)
+  discountAmount     Int                  @default(0)
+  couponId           String?              @db.ObjectId
+  couponCode         String?
+  gatewayAmount      Int?
+  payId              String?
+  paymentLink        String?
+  gatewayResponse    String?
+  callbackCount      Int                  @default(0)
+  lastCallbackAt     DateTime?
+  deliveryStatus     String?
   notificationStatus String?
-  callbackToken  String               @unique
-  type           PaymentInvoiceType
-  status         PaymentInvoiceStatus @default(PENDING)
-  productId      String?              @db.ObjectId
-  depositId      String?              @db.ObjectId
-  orderId        String?              @db.ObjectId
-  createdAt      DateTime             @default(now())
-  paidAt         DateTime?
-  verifiedAt     DateTime?
-  completedAt    DateTime?
-  updatedAt      DateTime             @updatedAt
+  callbackToken      String               @unique
+  type               PaymentInvoiceType
+  status             PaymentInvoiceStatus @default(PENDING)
+  productId          String?              @db.ObjectId
+  depositId          String?              @db.ObjectId
+  orderId            String?              @db.ObjectId
+  createdAt          DateTime             @default(now())
+  paidAt             DateTime?
+  verifiedAt         DateTime?
+  completedAt        DateTime?
+  updatedAt          DateTime             @updatedAt
 
   user    User              @relation(fields: [userId], references: [id])
   product Product?          @relation(fields: [productId], references: [id])
@@ -395,8 +409,8 @@ model Coupon {
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
-  usages CouponUsage[]
-  orders Order[]
+  usages          CouponUsage[]
+  orders          Order[]
   paymentInvoices PaymentInvoice[]
 
   @@index([status, expiresAt])
@@ -436,21 +450,30 @@ model Category {
 }
 
 model Product {
-  id         String    @id @default(auto()) @map("_id") @db.ObjectId
-  categoryId String    @db.ObjectId
-  title      String
-  price      Int
-  duration   Int
-  isActive   Boolean   @default(true)
-  deletedAt  DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id                String      @id @default(auto()) @map("_id") @db.ObjectId
+  categoryId        String      @db.ObjectId
+  title             String
+  price             Int
+  duration          Int
+  mode              ProductMode @default(xray_auto)
+  trafficBytes      BigInt?
+  durationDays      Int?
+  stockLimit        Int?
+  soldCount         Int         @default(0)
+  inboundIds        Int[]
+  inboundSnapshot   String?
+  xrayPanelConfigId String?     @db.ObjectId
+  isActive          Boolean     @default(true)
+  deletedAt         DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
-  category        Category          @relation(fields: [categoryId], references: [id])
+  category        Category         @relation(fields: [categoryId], references: [id])
   accounts        ProductAccount[]
   orders          Order[]
   orderItems      OrderItem[]
   paymentInvoices PaymentInvoice[]
+  xrayClients     XrayClient[]
 
   @@index([categoryId])
   @@index([isActive, deletedAt])
@@ -473,7 +496,7 @@ model ProductAccount {
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
-  product Product     @relation(fields: [productId], references: [id])
+  product Product                 @relation(fields: [productId], references: [id])
   items   OrderItem[]
   history ProductAccountHistory[]
 
@@ -509,11 +532,12 @@ model Order {
   status          OrderStatus @default(completed)
   createdAt       DateTime    @default(now())
 
-  user    User        @relation(fields: [userId], references: [id])
-  product Product     @relation(fields: [productId], references: [id])
-  coupon  Coupon?     @relation(fields: [couponId], references: [id])
-  items   OrderItem[]
+  user            User             @relation(fields: [userId], references: [id])
+  product         Product          @relation(fields: [productId], references: [id])
+  coupon          Coupon?          @relation(fields: [couponId], references: [id])
+  items           OrderItem[]
   paymentInvoices PaymentInvoice[]
+  xrayClients     XrayClient[]
 
   @@index([userId, createdAt])
   @@index([productId, createdAt])
@@ -524,7 +548,8 @@ model OrderItem {
   id                        String    @id @default(auto()) @map("_id") @db.ObjectId
   orderId                   String    @db.ObjectId
   productId                 String    @db.ObjectId
-  productAccountId          String    @db.ObjectId
+  productAccountId          String?   @db.ObjectId
+  xrayClientId              String?   @db.ObjectId
   deliveredUsername         String
   deliveredPassword         String?
   deliveredSubscriptionLink String?
@@ -534,14 +559,62 @@ model OrderItem {
   expiresAt                 DateTime?
   isActive                  Boolean   @default(true)
 
-  order          Order          @relation(fields: [orderId], references: [id])
-  product        Product        @relation(fields: [productId], references: [id])
-  productAccount ProductAccount @relation(fields: [productAccountId], references: [id])
+  order          Order           @relation(fields: [orderId], references: [id])
+  product        Product         @relation(fields: [productId], references: [id])
+  productAccount ProductAccount? @relation(fields: [productAccountId], references: [id])
+  xrayClient     XrayClient?     @relation(fields: [xrayClientId], references: [id])
 
   @@index([orderId])
   @@index([productId])
   @@index([productAccountId])
+  @@index([xrayClientId])
   @@index([expiresAt, isActive])
+}
+
+model XrayPanelConfig {
+  id                  String    @id @default(auto()) @map("_id") @db.ObjectId
+  name                String    @default("default")
+  apiBaseUrl          String
+  apiToken            String
+  subscriptionBaseUrl String?
+  enabled             Boolean   @default(false)
+  lastSuccessAt       DateTime?
+  lastError           String?
+  lastInboundCount    Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  clients XrayClient[]
+}
+
+model XrayClient {
+  id            String           @id @default(auto()) @map("_id") @db.ObjectId
+  panelConfigId String?          @db.ObjectId
+  userId        String           @db.ObjectId
+  telegramId    String
+  productId     String           @db.ObjectId
+  orderId       String?          @db.ObjectId
+  clientEmail   String           @unique
+  clientSubId   String?
+  panelClientId String?
+  inboundIds    Int[]
+  expiresAt     DateTime
+  trafficBytes  BigInt
+  usedBytes     BigInt           @default(0)
+  status        XrayClientStatus @default(creating)
+  lastError     String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  panelConfig XrayPanelConfig? @relation(fields: [panelConfigId], references: [id])
+  user        User             @relation(fields: [userId], references: [id])
+  product     Product          @relation(fields: [productId], references: [id])
+  order       Order?           @relation(fields: [orderId], references: [id])
+  orderItems  OrderItem[]
+
+  @@index([userId, status])
+  @@index([productId, createdAt])
+  @@index([orderId])
 }
 
 model AuditLog {
@@ -594,14 +667,14 @@ model FreeAccount {
 }
 
 model FreeAccountAssignment {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String   @db.ObjectId
-  accountId String   @unique @db.ObjectId
-  reason    String
-  isActive  Boolean  @default(true)
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @db.ObjectId
+  accountId  String   @unique @db.ObjectId
+  reason     String
+  isActive   Boolean  @default(true)
   assignedAt DateTime @default(now())
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
 
   user    User        @relation(fields: [userId], references: [id])
   account FreeAccount @relation(fields: [accountId], references: [id])
@@ -634,15 +707,15 @@ model UserBlockHistory {
 }
 
 model ForcedJoinChannel {
-  id          String                  @id @default(auto()) @map("_id") @db.ObjectId
-  chatId      String                  @unique
-  title       String
-  inviteLink  String?
-  status      ForcedJoinChannelStatus @default(active)
-  lastBotAdminStatus String?
+  id                    String                  @id @default(auto()) @map("_id") @db.ObjectId
+  chatId                String                  @unique
+  title                 String
+  inviteLink            String?
+  status                ForcedJoinChannelStatus @default(active)
+  lastBotAdminStatus    String?
   lastBotAdminCheckedAt DateTime?
-  createdAt   DateTime                @default(now())
-  updatedAt   DateTime                @updatedAt
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
 
   @@index([status])
 }
