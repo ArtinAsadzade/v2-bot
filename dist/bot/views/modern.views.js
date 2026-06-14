@@ -951,7 +951,6 @@ ${inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleS
                 }
             }));
         }
-        const reminderCounts = await forced_join_service_1.ForcedJoinService.leaveReminderCounts();
         const activeCount = channels.filter((channel) => channel.status === "active").length;
         const inactiveCount = channels.length - activeCount;
         const channelLines = channels
@@ -959,14 +958,12 @@ ${inventory.map((item) => `• ${item.username} · ${item.durationDays.toLocaleS
   شناسه: ${channel.chatId}
   وضعیت: ${channel.status === "active" ? "✅ فعال" : "⛔ غیرفعال"}
   لینک: ${channel.inviteLink || (channel.chatId.startsWith("@") ? `https://t.me/${channel.chatId.slice(1)}` : "ثبت نشده")}
-  وضعیت ادمین ربات: ${channel.lastBotAdminStatus ?? "نیازمند بررسی"}${channel.lastBotAdminStatus && channel.lastBotAdminStatus !== "administrator" && channel.lastBotAdminStatus !== "creator" ? " ⚠️" : ""}
-  یادآوری خروج: ${(reminderCounts.get(channel.id) ?? 0).toLocaleString("fa-IR")}`)
+  وضعیت ادمین ربات: ${channel.lastBotAdminStatus ?? "نیازمند بررسی"}${channel.lastBotAdminStatus && channel.lastBotAdminStatus !== "administrator" && channel.lastBotAdminStatus !== "creator" ? " ⚠️" : ""}`)
             .join("\n\n");
         return {
             text: `📢 مدیریت عضویت اجباری
 
 کانال فعال: ${activeCount.toLocaleString("fa-IR")} · غیرفعال: ${inactiveCount.toLocaleString("fa-IR")}
-⏱ فاصله یادآوری خروج: ۱۲ ساعت برای هر کاربر در هر کانال
 
 ${channelLines || "کانالی ثبت نشده است."}
 

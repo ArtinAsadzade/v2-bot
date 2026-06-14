@@ -29,7 +29,7 @@ async function bootstrap() {
             system_service_1.CryptoRateService.refreshAll().catch((error) => { const message = error instanceof Error ? error.message : String(error); logger_1.logger.error("Crypto rate refresh failed", { error: message }); monitoring_service_1.MonitoringService.record({ type: "CRYPTO_RATE_FAILED", section: "Crypto Rate", description: message, severity: "critical", suggestedAction: "اتصال Coingecko و نرخ USD_TOMAN_RATE را بررسی کنید." }); });
         }, 5 * 60000);
         const paymentServer = (0, payment_callback_server_1.startPaymentCallbackServer)(bot_1.bot);
-        await bot_1.bot.launch({ allowedUpdates: ["message", "callback_query", "chat_member", "my_chat_member"] });
+        await bot_1.bot.launch({ allowedUpdates: ["message", "callback_query"] });
         logger_1.logger.info("Bot is running");
         process.once("SIGINT", () => paymentServer.close());
         process.once("SIGTERM", () => paymentServer.close());
