@@ -134,6 +134,7 @@ model User {
   referralRewards    ReferralReward[]
   freeConfigRewards  FreeConfigReward[]
   freeAccountAssignments FreeAccountAssignment[]
+  forcedJoinLeaveReminderLogs ForcedJoinLeaveReminderLog[]
   paymentInvoices    PaymentInvoice[]
   paymentAuditLogs   PaymentAuditLog[]
 
@@ -639,10 +640,52 @@ model ForcedJoinChannel {
   title       String
   inviteLink  String?
   status      ForcedJoinChannelStatus @default(active)
+  lastBotAdminStatus String?
+  lastBotAdminCheckedAt DateTime?
   createdAt   DateTime                @default(now())
   updatedAt   DateTime                @updatedAt
 
+  leaveReminderLogs ForcedJoinLeaveReminderLog[]
+
   @@index([status])
+}
+
+model ProductGuideSection {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  title            String
+  shortDescription String
+  body             String
+  icon             String   @default("📘")
+  isActive         Boolean  @default(true)
+  displayOrder     Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([isActive, displayOrder])
+  @@index([createdAt])
+}
+
+model ForcedJoinLeaveReminderLog {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  channelId String   @db.ObjectId
+  telegramId String
+  chatId    String
+  sentAt    DateTime @default(now())
+
+  user    User              @relation(fields: [userId], references: [id])
+  channel ForcedJoinChannel @relation(fields: [channelId], references: [id])
+
+  @@index([userId, channelId, sentAt])
+  @@index([telegramId, chatId, sentAt])
+  @@index([channelId, sentAt])
+}
+
+model PublicPlansSetting {
+  id        String   @id @default("singleton") @map("_id")
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model AccountExpirationNotification {

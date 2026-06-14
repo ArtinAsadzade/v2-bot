@@ -29,7 +29,7 @@ async function bootstrap() {
     }, 5 * 60_000);
 
     const paymentServer = startPaymentCallbackServer(bot);
-    await bot.launch();
+    await bot.launch({ allowedUpdates: ["message", "callback_query", "chat_member", "my_chat_member"] });
     logger.info("Bot is running");
     process.once("SIGINT", () => paymentServer.close());
     process.once("SIGTERM", () => paymentServer.close());

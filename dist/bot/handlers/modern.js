@@ -19,6 +19,8 @@ const reply_keyboard_1 = require("../keyboards/reply.keyboard");
 const design_system_1 = require("../keyboards/design-system");
 const messages_1 = require("../../utils/messages");
 const monitoring_service_1 = require("../../services/monitoring.service");
+const product_guide_service_1 = require("../../modules/system/product-guide.service");
+const public_plans_service_1 = require("../../modules/product/public-plans.service");
 function registerModernHandlers(bot) {
     (0, modern_views_1.registerModernViews)();
     (0, flow_engine_1.registerFlowEngine)(bot);
@@ -109,11 +111,38 @@ function registerModernHandlers(bot) {
         await ctx.answerCbQuery("برای دریافت از اکانت تست استفاده کنید");
         await (0, panel_ui_1.renderPanel)(ctx, { id: "freeAccount" }, "replace");
     });
+    const publicPlansCooldown = new Map();
+    async function handlePublicPlansCommand(ctx) {
+        const chatId = ctx.chat?.id;
+        if (!chatId)
+            return;
+        const isPrivate = ctx.chat?.type === "private";
+        const setting = await public_plans_service_1.PublicPlansService.getSetting();
+        if (!setting.enabled) {
+            if (isPrivate)
+                await ctx.reply("نمایش پلن‌ها در گروه‌ها فعلاً غیرفعال است.");
+            return;
+        }
+        const now = Date.now();
+        if (!isPrivate && (publicPlansCooldown.get(chatId) ?? 0) > now - 60000)
+            return;
+        publicPlansCooldown.set(chatId, now);
+        const categories = await public_plans_service_1.PublicPlansService.listPublicPlans();
+        const botInfo = await ctx.telegram.getMe();
+        const planLines = categories.map((category) => `📂 ${category.name}\n\n${category.products.map((product) => `▫️ ${product.title}\nمدت: ${product.duration.toLocaleString("fa-IR")} روز\nقیمت: ${product.price.toLocaleString("fa-IR")} تومان\nموجودی: ${product._count.accounts.toLocaleString("fa-IR")}`).join("\n\n")}`).join("\n\n━━━━━━━━━━━━━━\n\n");
+        const text = `🛒 پلن‌های فعال فروشگاه\n\n━━━━━━━━━━━━━━\n\n${planLines || "در حال حاضر پلن آماده فروشی وجود ندارد."}\n\n━━━━━━━━━━━━━━\nبرای خرید و مشاهده جزئیات، وارد ربات شوید.`;
+        await ctx.reply(text.slice(0, 3900), { reply_markup: { inline_keyboard: [[{ text: "🛒 خرید سرویس", url: `https://t.me/${botInfo.username}?start=shop` }]] } });
+    }
+    bot.command(["plans", "plan", "products"], handlePublicPlansCommand);
     bot.start(async (ctx) => {
         if (!ctx.from)
             return;
         const user = await user_service_1.UserService.findOrCreateUser(ctx);
         const payload = ctx.startPayload;
+        if (payload === "shop") {
+            await (0, panel_ui_1.renderPanel)(ctx, { id: "shop.categories" }, "replace");
+            return;
+        }
         if (payload)
             await referral_service_1.ReferralService.linkReferral(user.id, payload);
         await (0, panel_ui_1.renderPanel)(ctx, { id: "home" }, "replace");
@@ -212,6 +241,27 @@ ${invoice.amount.toLocaleString("fa-IR")} تومان
         catch (error) {
             await ctx.editMessageText(`❌ ${error instanceof Error ? error.message : "ایجاد پرداخت ناموفق بود"}`, { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }]] } });
         }
+    });
+    bot.action(/^admin:product_guide:status:([^:]+):([01])$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery("وضعیت راهنما ذخیره شد");
+        await product_guide_service_1.ProductGuideService.setActive(ctx.match[1], ctx.match[2] === "1", String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.productGuides" }, "replace");
+    });
+    bot.action(/^admin:product_guide:delete:([^:]+)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery("حذف شد");
+        await product_guide_service_1.ProductGuideService.delete(ctx.match[1], String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.productGuides" }, "replace");
+    });
+    bot.action(/^admin:public_plans:(enabled|disabled)$/, async (ctx) => {
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
+            return ctx.answerCbQuery("دسترسی غیرمجاز");
+        await ctx.answerCbQuery("تنظیمات ذخیره شد");
+        await public_plans_service_1.PublicPlansService.setEnabled(ctx.match[1] === "enabled", String(ctx.from.id));
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.productGuides" }, "replace");
     });
     bot.action(/^admin:payment_gateway:status:(enabled|disabled)$/, async (ctx) => {
         await ctx.answerCbQuery();

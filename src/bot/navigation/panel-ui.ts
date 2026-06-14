@@ -21,6 +21,7 @@ export type PanelViewId =
   | "support"
   | "referral"
   | "freeAccount"
+  | "productGuide"
   | "admin.dashboard"
   | "admin.users"
   | "admin.user"
@@ -40,6 +41,7 @@ export type PanelViewId =
   | "admin.crypto"
   | "admin.store"
   | "admin.forcedJoin"
+  | "admin.productGuides"
   | "admin.referrals"
   | "admin.analytics"
   | "admin.transactions"
@@ -123,6 +125,7 @@ const PANEL_VIEW_IDS = new Set<string>([
   "support",
   "referral",
   "freeAccount",
+  "productGuide",
   "admin.dashboard",
   "admin.users",
   "admin.user",
@@ -142,6 +145,7 @@ const PANEL_VIEW_IDS = new Set<string>([
   "admin.crypto",
   "admin.store",
   "admin.forcedJoin",
+  "admin.productGuides",
   "admin.referrals",
   "admin.analytics",
   "admin.transactions",
