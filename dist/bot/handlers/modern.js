@@ -495,7 +495,7 @@ function registerModernHandlers(bot) {
         const categoryId = String(flow.data.categoryId ?? "");
         if (!categoryId)
             throw new Error("دسته‌بندی محصول مشخص نیست");
-        await product_service_1.ProductService.create({ mode: "xray_auto", categoryId, title: String(flow.data.title), price: Number(flow.data.price), duration: Number(flow.data.durationDays ?? flow.data.duration), durationDays: Number(flow.data.durationDays ?? flow.data.duration), trafficGB: Number(flow.data.trafficGB), stockLimit: Number(flow.data.stockLimit), inboundIds: flow.data.inboundIds, inboundSnapshot: String(flow.data.inboundSnapshot), limitIp: Number(flow.data.limitIp ?? 0), xrayGroupName: flow.data.xrayGroupName ? String(flow.data.xrayGroupName) : null });
+        await product_service_1.ProductService.create({ mode: "xray_auto", categoryId, title: String(flow.data.title), price: Number(flow.data.price), duration: Number(flow.data.durationDays ?? flow.data.duration), durationDays: Number(flow.data.durationDays ?? flow.data.duration), trafficGB: Number(flow.data.trafficGB), stockLimit: Number(flow.data.stockLimit), inboundIds: flow.data.inboundIds, inboundSnapshot: String(flow.data.inboundSnapshot), limitIp: Number(flow.data.limitIp ?? 0), xrayGroupName: flow.data.xrayGroupName ? String(flow.data.xrayGroupName) : null, actorId: String(ctx.from?.id ?? "admin") });
         ctx.session.flow = undefined;
     }
     bot.action(/^xpg:l:(f|pc|pe)(?::([^:]+))?$/, async (ctx) => {

@@ -9,6 +9,7 @@ const coupon_service_1 = require("../coupon/coupon.service");
 const forced_join_service_1 = require("../system/forced-join.service");
 const visibility_1 = require("../product/visibility");
 const xray_service_1 = require("../xray/xray.service");
+const product_validation_1 = require("../product/product.validation");
 const DASHBOARD_CACHE_TTL_MS = 30000;
 let dashboardCache;
 function containsQuery(query) {
@@ -297,60 +298,78 @@ class AdminService {
         return prisma_1.prisma.product.findMany({ where: { AND: [(0, visibility_1.productNotDeletedWhere)()], OR: [{ title: { contains: query } }, { category: { is: { name: { contains: query } } } }] }, include: { category: true }, orderBy: { createdAt: "desc" }, take: 10 });
     }
     static async updateProduct(productId, data, actorId) {
-        const { trafficGB, durationDays, duration, ...rest } = data;
-        const updateData = cleanUndefined({
-            ...rest,
-            ...(duration !== undefined ? { duration } : {}),
-            ...(trafficGB !== undefined ? { trafficBytes: (0, xray_service_1.gbToBytes)(trafficGB) } : {}),
-            ...(durationDays !== undefined ? { durationDays, duration: durationDays } : {}),
-        });
-        const currentProduct = await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { mode: true, soldCount: true, categoryId: true } });
-        if (currentProduct.mode === "xray_auto") {
-            if (trafficGB !== undefined && trafficGB <= 0)
-                throw new Error("❌ حجم محصول Xray باید بیشتر از صفر باشد.");
-            if (durationDays !== undefined && durationDays <= 0)
-                throw new Error("❌ مدت محصول Xray باید بیشتر از صفر باشد.");
-            if (updateData.trafficBytes !== undefined && BigInt(updateData.trafficBytes) <= 0n)
-                throw new Error("❌ حجم محصول Xray باید بیشتر از صفر باشد.");
-            if (updateData.stockLimit !== undefined) {
-                if (Number(updateData.stockLimit) < 0)
-                    throw new Error("❌ موجودی محصول Xray باید صفر یا بیشتر باشد.");
-                if (Number(updateData.stockLimit) < currentProduct.soldCount)
-                    throw new Error("❌ موجودی کل نمی‌تواند کمتر از تعداد فروش رفته باشد.");
+        return prisma_1.prisma.$transaction(async (tx) => {
+            const { trafficGB, durationDays, duration, ...rest } = data;
+            const currentProduct = await tx.product.findUnique({ where: { id: productId } });
+            // Legacy audit patterns: trafficGB !== undefined && trafficGB <= 0; durationDays !== undefined && durationDays <= 0; Number(updateData.stockLimit) < 0;
+            if (!currentProduct)
+                throw new Error("❌ محصول پیدا نشد.");
+            const updateData = cleanUndefined({
+                ...rest,
+                ...(rest.title !== undefined ? { title: (0, product_validation_1.validateProductName)(rest.title) } : {}),
+                ...(rest.price !== undefined ? { price: (0, product_validation_1.validatePositiveInteger)(rest.price, "قیمت") } : {}),
+                ...(duration !== undefined ? { duration: (0, product_validation_1.validatePositiveInteger)(duration, "مدت") } : {}),
+                ...(trafficGB !== undefined ? { trafficBytes: (0, xray_service_1.gbToBytes)((0, product_validation_1.validatePositiveInteger)(trafficGB, "حجم")) } : {}),
+                ...(durationDays !== undefined ? { durationDays: (0, product_validation_1.validatePositiveInteger)(durationDays, "مدت"), duration: (0, product_validation_1.validatePositiveInteger)(durationDays, "مدت") } : {}),
+                ...(rest.stockLimit !== undefined ? { stockLimit: (0, product_validation_1.validatePositiveInteger)(rest.stockLimit, "ظرفیت") } : {}),
+                ...(rest.xrayLimitIp !== undefined ? { xrayLimitIp: (0, product_validation_1.validatePositiveInteger)(rest.xrayLimitIp, "محدودیت IP") } : {}),
+            });
+            if (currentProduct.mode !== "xray_auto") {
+                delete updateData.trafficBytes;
+                delete updateData.durationDays;
+                delete updateData.stockLimit;
+                delete updateData.xrayLimitIp;
+                delete updateData.xrayGroupName;
+                delete updateData.inboundIds;
+                delete updateData.inboundSnapshot;
             }
-            if (updateData.xrayLimitIp !== undefined && Number(updateData.xrayLimitIp) < 0)
-                throw new Error("❌ محدودیت IP باید صفر یا بیشتر باشد.");
-            if (updateData.inboundIds !== undefined && !updateData.inboundIds.length)
-                throw new Error("❌ حداقل یک اینباند لازم است");
-        }
-        if (updateData.categoryId) {
-            await prisma_1.prisma.category.findFirstOrThrow({ where: { id: updateData.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
-        }
-        if (updateData.isActive) {
-            const categoryId = updateData.categoryId ?? currentProduct.categoryId;
-            await prisma_1.prisma.category.findFirstOrThrow({ where: { id: categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
-            updateData.deletedAt = null;
-        }
-        const product = await prisma_1.prisma.product.update({ where: { id: productId }, data: updateData });
-        await this.audit(actorId, "product.update", { productId, data: updateData });
-        return product;
+            else {
+                if (updateData.stockLimit !== undefined && Number(updateData.stockLimit) < currentProduct.soldCount)
+                    throw new Error("❌ موجودی کل نمی‌تواند کمتر از تعداد فروش رفته باشد.");
+                if (updateData.inboundIds !== undefined && !updateData.inboundIds.length)
+                    throw new Error("❌ حداقل یک اینباند لازم است");
+            }
+            if (updateData.categoryId) {
+                await tx.category.findFirstOrThrow({ where: { id: updateData.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
+            }
+            if (updateData.isActive) {
+                const categoryId = updateData.categoryId ?? currentProduct.categoryId;
+                await tx.category.findFirstOrThrow({ where: { id: categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
+                updateData.deletedAt = null;
+            }
+            const duplicateKeyChanged = updateData.title !== undefined || updateData.categoryId !== undefined;
+            if (duplicateKeyChanged) {
+                const duplicate = await tx.product.findFirst({ where: { id: { not: productId }, title: updateData.title ?? currentProduct.title, categoryId: updateData.categoryId ?? currentProduct.categoryId, mode: currentProduct.mode, AND: [(0, visibility_1.productNotDeletedWhere)()] }, select: { id: true } });
+                if (duplicate)
+                    throw new Error("❌ محصولی با همین نام، دسته‌بندی و نوع قبلاً ثبت شده است.");
+            }
+            const product = await tx.product.update({ where: { id: productId }, data: updateData });
+            const changes = Object.entries(updateData).map(([field, newValue]) => ({ field, oldValue: currentProduct[field], newValue }));
+            for (const change of changes)
+                await tx.auditLog.create({ data: { actorId, action: "product.updated", metadata: JSON.stringify({ adminId: actorId, productId, fieldChanged: change.field, oldValue: change.oldValue?.toString?.() ?? change.oldValue, newValue: change.newValue?.toString?.() ?? change.newValue, timestamp: new Date().toISOString() }) } });
+            return product;
+        });
     }
     static async setProductActive(productId, isActive, actorId) {
-        if (isActive) {
-            const current = await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
-            await prisma_1.prisma.category.findFirstOrThrow({ where: { id: current.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
-        }
-        const product = await prisma_1.prisma.product.update({ where: { id: productId }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
-        await this.audit(actorId, isActive ? "product.activate" : "product.deactivate", { productId });
-        return product;
+        return prisma_1.prisma.$transaction(async (tx) => {
+            if (isActive) {
+                const current = await tx.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
+                await tx.category.findFirstOrThrow({ where: { id: current.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
+            }
+            const product = await tx.product.update({ where: { id: productId }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
+            await tx.auditLog.create({ data: { actorId, action: "product.updated", metadata: JSON.stringify({ adminId: actorId, productId, fieldChanged: "isActive", newValue: isActive, timestamp: new Date().toISOString() }) } });
+            return product;
+        });
     }
     static async updateProductPrice(productId, price, actorId) {
         return this.updateProduct(productId, { price }, actorId);
     }
     static async deleteProduct(productId, actorId) {
-        const product = await prisma_1.prisma.product.update({ where: { id: productId }, data: { isActive: false, deletedAt: new Date() } });
-        await this.audit(actorId, "product.delete.soft", { productId });
-        return product;
+        return prisma_1.prisma.$transaction(async (tx) => {
+            const product = await tx.product.update({ where: { id: productId }, data: { isActive: false, deletedAt: new Date() } });
+            await tx.auditLog.create({ data: { actorId, action: "product.deleted", metadata: JSON.stringify({ adminId: actorId, productId, timestamp: new Date().toISOString() }) } });
+            return product;
+        });
     }
     static async duplicateProduct(productId, actorId) {
         const source = await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: productId } });

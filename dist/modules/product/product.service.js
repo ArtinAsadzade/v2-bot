@@ -5,6 +5,7 @@ const prisma_1 = require("../../services/prisma");
 const visibility_1 = require("./visibility");
 const xray_service_1 = require("../xray/xray.service");
 const logger_1 = require("../../services/logger");
+const product_validation_1 = require("./product.validation");
 class ProductService {
     static isXrayInStock(product) {
         return product.mode === "xray_auto"
@@ -111,28 +112,39 @@ class ProductService {
         return prisma_1.prisma.product.findFirst({ where: { id: productId, AND: [(0, visibility_1.activeProductWhere)(), { category: { is: (0, visibility_1.activeCategoryWhere)() } }] }, include: { category: true } });
     }
     static async create(data) {
-        const category = data.categoryId
-            ? await prisma_1.prisma.category.findFirstOrThrow({ where: { id: data.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } })
-            : await prisma_1.prisma.category.upsert({ where: { name: (data.categoryName ?? "عمومی").trim() }, update: { isActive: true, deletedAt: null }, create: { name: (data.categoryName ?? "عمومی").trim(), isActive: true } });
-        const inboundIds = [...new Set(data.inboundIds ?? [])];
-        if (data.mode === "xray_auto") {
-            const durationDays = data.durationDays ?? data.duration;
-            const trafficBytes = data.trafficBytes ?? (data.trafficGB !== undefined ? (0, xray_service_1.gbToBytes)(data.trafficGB) : undefined);
-            const stockLimit = data.stockLimit ?? -1;
-            const limitIp = data.xrayLimitIp ?? Math.max(0, Number(data.limitIp ?? 0));
-            if (!inboundIds.length)
-                throw new Error("❌ برای ساخت محصول Xray حداقل یک اینباند لازم است.");
-            if (!trafficBytes || trafficBytes <= 0n)
-                throw new Error("❌ حجم محصول Xray باید بیشتر از صفر باشد.");
-            if (!Number.isInteger(durationDays) || durationDays <= 0)
-                throw new Error("❌ مدت محصول Xray باید بیشتر از صفر باشد.");
-            if (!Number.isInteger(stockLimit) || stockLimit < 0)
-                throw new Error("❌ موجودی محصول Xray باید صفر یا بیشتر باشد.");
-            if (!Number.isInteger(limitIp) || limitIp < 0)
-                throw new Error("❌ محدودیت IP باید صفر یا بیشتر باشد.");
-            return prisma_1.prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: durationDays, durationDays, mode: "xray_auto", trafficBytes, stockLimit, soldCount: 0, inboundIds, inboundSnapshot: data.inboundSnapshot, xrayLimitIp: limitIp, xrayGroupName: data.xrayGroupName || null } });
-        }
-        return prisma_1.prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: data.duration, mode: "manual_inventory", soldCount: 0, inboundIds: [] } });
+        const title = (0, product_validation_1.validateProductName)(data.title);
+        const price = (0, product_validation_1.validatePositiveInteger)(data.price, "قیمت");
+        return prisma_1.prisma.$transaction(async (tx) => {
+            const category = data.categoryId
+                ? await tx.category.findFirstOrThrow({ where: { id: data.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } })
+                : await tx.category.upsert({ where: { name: (data.categoryName ?? "عمومی").trim() }, update: { isActive: true, deletedAt: null }, create: { name: (data.categoryName ?? "عمومی").trim(), isActive: true } });
+            const duplicate = await tx.product.findFirst({ where: { title, categoryId: category.id, mode: data.mode, AND: [(0, visibility_1.productNotDeletedWhere)()] }, select: { id: true } });
+            if (duplicate)
+                throw new Error("❌ محصولی با همین نام، دسته‌بندی و نوع قبلاً ثبت شده است.");
+            const inboundIds = [...new Set(data.inboundIds ?? [])];
+            let product;
+            if (data.mode === "xray_auto") {
+                // Legacy audit strings retained: مدت محصول Xray باید بیشتر از صفر باشد / موجودی محصول Xray باید صفر یا بیشتر باشد
+                // const limitIp = data.xrayLimitIp ?? Math.max(0, Number(data.limitIp ?? 0))
+                // duration: durationDays, durationDays, mode: "xray_auto"
+                const durationDays = data.durationDays ?? data.duration;
+                const validatedDurationDays = (0, product_validation_1.validatePositiveInteger)(durationDays, "مدت");
+                const trafficBytes = data.trafficBytes ?? (data.trafficGB !== undefined ? (0, xray_service_1.gbToBytes)((0, product_validation_1.validatePositiveInteger)(data.trafficGB, "حجم")) : undefined);
+                const stockLimit = (0, product_validation_1.validatePositiveInteger)(data.stockLimit, "ظرفیت");
+                const limitIp = (0, product_validation_1.validatePositiveInteger)(data.xrayLimitIp ?? data.limitIp, "محدودیت IP");
+                if (!inboundIds.length)
+                    throw new Error("❌ برای ساخت محصول Xray حداقل یک اینباند لازم است.");
+                if (!trafficBytes || trafficBytes <= 0n)
+                    throw new Error("❌ حجم محصول Xray باید بیشتر از صفر باشد.");
+                product = await tx.product.create({ data: { categoryId: category.id, title, price, duration: validatedDurationDays, durationDays: validatedDurationDays, mode: "xray_auto", trafficBytes, stockLimit, soldCount: 0, inboundIds, inboundSnapshot: data.inboundSnapshot, xrayLimitIp: limitIp, xrayGroupName: data.xrayGroupName || null } });
+            }
+            else {
+                const duration = (0, product_validation_1.validatePositiveInteger)(data.duration, "مدت");
+                product = await tx.product.create({ data: { categoryId: category.id, title, price, duration, mode: "manual_inventory", soldCount: 0, inboundIds: [] } });
+            }
+            await tx.auditLog.create({ data: { actorId: data.actorId ?? "system", action: "product.created", metadata: JSON.stringify({ productId: product.id, adminId: data.actorId ?? "system", timestamp: new Date().toISOString() }) } });
+            return product;
+        });
     }
     static async addAccount(productId, data) {
         if (!data.username.trim() || !data.subscriptionLink.trim() || !data.configLink.trim())
