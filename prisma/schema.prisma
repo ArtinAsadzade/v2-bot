@@ -60,6 +60,7 @@ enum XrayClientStatus {
   failed
   renewal_failed
   missing_on_panel
+  orphaned_panel_client
   deleted
 }
 
@@ -595,7 +596,7 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productId])
-  @@index([productAccountId])
+  @@unique([productAccountId])
   @@index([xrayClientId])
   @@index([expiresAt, isActive])
 }

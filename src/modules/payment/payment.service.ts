@@ -895,9 +895,21 @@ export class PaymentService {
     }
 
     const isXray = product.mode === "xray_auto" && Boolean(product.trafficBytes && product.durationDays && product.stockLimit && product.inboundIds.length);
+    if (data.method === "WALLET" && totalAmount > 0) {
+      const walletUser = await tx.user.findUniqueOrThrow({ where: { id: data.userId }, select: { balance: true } });
+      if (walletUser.balance < totalAmount) throw new Error("موجودی کیف پول کافی نیست");
+    }
+
     let account: Awaited<ReturnType<typeof tx.productAccount.findFirst>> | null = null;
     const reservedAt = new Date();
     if (isXray) {
+      if (data.method === "WALLET") {
+        const duplicate = await tx.xrayClient.findFirst({
+          where: { userId: data.userId, productId: product.id, status: { in: ["provisioning", "creating", "active"] }, order: { status: { in: ["pending", "panel_creating", "panel_verified", "delivered"] } } },
+          orderBy: { createdAt: "desc" },
+        });
+        if (duplicate) throw new Error("درخواست خرید قبلی شما برای این محصول هنوز در حال پردازش است");
+      }
       if (!product.trafficBytes || !product.durationDays || !product.stockLimit || !product.inboundIds.length) throw new Error("تنظیمات محصول Xray کامل نیست");
       await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "XRAY_DELIVERY_PENDING", metadata: { productId: product.id, method: data.method } });
     } else {
@@ -911,9 +923,6 @@ export class PaymentService {
       await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Reserved", metadata: { accountId: account.id, productId: product.id, method: data.method } });
     }
 
-    if (!isXray && data.method === "WALLET" && totalAmount > 0) {
-      await this.debitWallet(tx, { userId: data.userId, amount: totalAmount, reason: `خرید محصول ${product.title}`, actorId: data.userId, referenceId: `purchase:${data.userId}:${product.id}:${reservedAt.getTime()}` });
-    }
 
     if (couponId && !isXray) {
       const couponLimit = await tx.coupon.findUniqueOrThrow({ where: { id: couponId }, select: { maxUses: true, perUserLimit: true, status: true, deletedAt: true, expiresAt: true } });
@@ -929,7 +938,7 @@ export class PaymentService {
       }
     }
 
-    const order = await tx.order.create({ data: { userId: data.userId, productId: product.id, couponId, originalAmount, totalAmount, finalPaidAmount: totalAmount, discountAmount, status: isXray ? "pending" : "completed" } });
+    const order = await tx.order.create({ data: { userId: data.userId, productId: product.id, couponId, originalAmount, totalAmount, finalPaidAmount: totalAmount, discountAmount, status: "pending" } });
     const purchaseDate = new Date();
     const durationDays = isXray ? (product.durationDays ?? product.duration) : (account!.durationDays ?? product.duration);
     const expiresAt = new Date(purchaseDate.getTime() + durationDays * 86_400_000);
@@ -960,6 +969,10 @@ export class PaymentService {
       if (sold.count !== 1) throw new Error("تحویل اکانت ناموفق بود");
       if (!orderItem) throw new Error("آیتم سفارش تحویلی نامعتبر است");
       if (!orderItem.productAccountId) throw new Error("شناسه اکانت تحویلی نامعتبر است");
+      if (data.method === "WALLET" && totalAmount > 0) {
+        await this.debitWallet(tx, { userId: data.userId, amount: totalAmount, reason: `خرید محصول ${product.title}`, actorId: data.userId, referenceId: `purchase:${order.id}` });
+      }
+      await tx.order.update({ where: { id: order.id }, data: { status: "delivered" } });
       await tx.productAccountHistory.create({ data: { accountId: account!.id, actorId: data.userId, action: "Inventory Sold", fromValue: "reserved", toValue: "sold", metadata: JSON.stringify({ invoiceId: data.invoice?.id, orderId: order.id, orderItemId: orderItem.id, productId: product.id, soldAt, expiresAt, method: data.method }) } });
       await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Sold", metadata: { accountId: account!.id, orderId: order.id } });
     }
@@ -977,10 +990,14 @@ export class PaymentService {
     }
     if (client.status !== "provisioning" && client.status !== "creating") throw new Error("تحویل Xray قبلاً ناموفق شده و نیازمند بررسی مدیر است");
     const product = client.product ?? await prisma.product.findUniqueOrThrow({ where: { id: client.productId ?? "" } });
+    let panelClientCreated = false;
     try {
+      const claimed = await prisma.xrayClient.updateMany({ where: { id: client.id, status: "provisioning" }, data: { status: "creating" } });
+      if (claimed.count !== 1 && client.status !== "creating") throw new Error("درخواست خرید قبلی شما برای این محصول هنوز در حال پردازش است");
       await prisma.order.update({ where: { id: orderId }, data: { status: "panel_creating" } });
       const created = await XrayClientService.createClient({ email: client.clientEmail, trafficBytes: client.trafficBytes, expiresAt: client.expiresAt, telegramId: client.telegramId, inboundIds: client.inboundIds, limitIp: client.limitIp, groupName: client.groupName });
-      const verified = await XrayClientService.verifyPanelClient({ email: client.clientEmail, expectedInboundIds: client.inboundIds });
+      panelClientCreated = true;
+      const verified = await XrayClientService.verifyPanelClient({ email: client.clientEmail, expectedInboundIds: client.inboundIds, requireLinks: true });
       await prisma.order.update({ where: { id: orderId }, data: { status: "panel_verified" } });
       const result = await prisma.$transaction(async (tx) => {
         const freshOrder = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
@@ -1003,11 +1020,21 @@ export class PaymentService {
     } catch (error) {
       const message = sanitizePanelError(error);
       logger.error("XRAY_CLIENT_CREATE_FAILED", { orderId, deliveryId: orderId, userId: client.userId, productId: client.productId, xrayClientId: client.id, step: "panel_verified", status: "failed", error: message });
-      await prisma.xrayClient.update({ where: { id: client.id }, data: { status: "failed", lastError: message } });
+      let cleanupStatus: "failed" | "orphaned_panel_client" = "failed";
+      if (panelClientCreated) {
+        try {
+          await XrayClientService.deleteClient(client.clientEmail);
+          await prisma.auditLog.create({ data: { actorId: client.userId, action: "xray_delivery.panel_client_deleted", metadata: JSON.stringify({ orderId, xrayClientId: client.id, email: client.clientEmail, reason: message }) } });
+        } catch (cleanupError) {
+          cleanupStatus = "orphaned_panel_client";
+          await prisma.auditLog.create({ data: { actorId: client.userId, action: "xray_delivery.orphaned_panel_client", metadata: JSON.stringify({ orderId, deliveryId: orderId, xrayClientId: client.id, email: client.clientEmail, error: message, cleanupError: sanitizePanelError(cleanupError) }) } });
+        }
+      }
+      await prisma.xrayClient.update({ where: { id: client.id }, data: { status: cleanupStatus, lastError: message } });
       await prisma.order.update({ where: { id: orderId }, data: { status: "failed_delivery" } });
       if (invoiceId) await prisma.paymentInvoice.update({ where: { id: invoiceId }, data: { deliveryStatus: "FAILED_DELIVERY", verifiedAt: new Date(), orderId } });
-      await prisma.auditLog.create({ data: { actorId: client.userId, action: "xray_delivery.failed", metadata: JSON.stringify({ orderId, deliveryId: orderId, xrayClientId: client.id, error: message }) } });
-      MonitoringService.record({ type: "XRAY_CLIENT_CREATE_FAILED", section: "Xray Delivery", description: message, userId: client.userId, severity: "critical", suggestedAction: "تحویل سرویس Xray را بررسی و دستی retry کنید. کیف پول تا قبل از verify کسر نمی‌شود.", metadata: { orderId, xrayClientId: client.id } });
+      await prisma.auditLog.create({ data: { actorId: client.userId, action: "xray_delivery.failed", metadata: JSON.stringify({ orderId, deliveryId: orderId, xrayClientId: client.id, error: message, panelClientCreated, cleanupStatus }) } });
+      MonitoringService.record({ type: "XRAY_CLIENT_CREATE_FAILED", section: "Xray Delivery", description: message, userId: client.userId, severity: "critical", suggestedAction: "تحویل سرویس Xray را بررسی و دستی retry کنید. کیف پول تا قبل از verify کسر نمی‌شود و کلاینت پنل حذف/علامت‌گذاری می‌شود.", metadata: { orderId, xrayClientId: client.id, panelClientCreated, cleanupStatus } });
       throw new Error("ساخت اکانت با مشکل مواجه شد. مبلغی از کیف پول شما کسر نشده / سهمیه تست شما مصرف نشده است. لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.");
     }
   }
