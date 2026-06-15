@@ -43,6 +43,10 @@ const PARAM_ALIASES = {
     status: "s",
 };
 const PARAM_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_ALIASES).map(([key, value]) => [value, key]));
+const PARAM_VALUE_ALIASES = {
+    status: { all: "a", active: "ac", provisioning: "p", creating: "c", failed: "f", expired: "e", disabled: "d", missing_on_panel: "m" },
+};
+const PARAM_VALUE_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_VALUE_ALIASES).map(([key, values]) => [key, Object.fromEntries(Object.entries(values).map(([value, alias]) => [alias, value]))]));
 function isValidCallbackData(action) {
     return Buffer.byteLength(action, "utf8") <= 64;
 }
@@ -58,7 +62,10 @@ function actionFor(prefix, ...parts) {
 function callbackFor(view, params = {}) {
     const query = Object.entries(params)
         .filter(([, value]) => value !== undefined && value !== "")
-        .map(([key, value]) => `${encodeURIComponent(PARAM_ALIASES[key] ?? key)}=${encodeURIComponent(String(value))}`)
+        .map(([key, value]) => {
+        const normalizedValue = PARAM_VALUE_ALIASES[key]?.[String(value)] ?? String(value);
+        return `${encodeURIComponent(PARAM_ALIASES[key] ?? key)}=${encodeURIComponent(normalizedValue)}`;
+    })
         .join("&");
     const callback = query ? `nav:${view}?${query}` : `nav:${view}`;
     return ensureCallbackData(callback);
@@ -69,7 +76,9 @@ function parseParams(raw) {
     const params = {};
     for (const part of raw.split("&").filter(Boolean)) {
         const [key, value = ""] = part.split("=");
-        params[PARAM_ALIAS_REVERSE[decodeURIComponent(key)] ?? decodeURIComponent(key)] = decodeURIComponent(value);
+        const fullKey = PARAM_ALIAS_REVERSE[decodeURIComponent(key)] ?? decodeURIComponent(key);
+        const decodedValue = decodeURIComponent(value);
+        params[fullKey] = PARAM_VALUE_ALIAS_REVERSE[fullKey]?.[decodedValue] ?? decodedValue;
     }
     return params;
 }
@@ -218,15 +227,32 @@ async function renderPanel(ctx, state, mode = "push", renderMode = RenderMode.AU
     const keyboard = panelKeyboard(result.keyboard, { back: result.navigation?.back ?? !isHome, home: result.navigation?.home ?? !isHome });
     const extra = { parse_mode: result.parseMode, ...keyboard };
     const fallbackReply = async () => {
-        const sent = await ctx.reply(result.text, extra);
-        ctx.session.navigation.panelMessageId = sent.message_id;
+        try {
+            const sent = await ctx.reply(result.text, extra);
+            ctx.session.navigation.panelMessageId = sent.message_id;
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (!message.includes("BUTTON_DATA_INVALID"))
+                throw error;
+            console.error("BUTTON_DATA_INVALID_REPLY_FALLBACK", { state, error: message });
+            const sent = await ctx.reply("نمایش این بخش با خطای دکمه مواجه شد. لطفاً دوباره تلاش کنید.", panelKeyboard([[{ text: "🏠 خانه", action: callbackFor("home") }]], { back: false, home: false }));
+            ctx.session.navigation.panelMessageId = sent.message_id;
+        }
     };
     const effectiveRenderMode = result.renderMode ?? renderMode;
     const shouldEdit = effectiveRenderMode === RenderMode.EDIT_CURRENT || (effectiveRenderMode === RenderMode.AUTO && Boolean(ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message));
     if (shouldEdit && ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message) {
-        await ctx.editMessageText(result.text, extra).catch(async () => {
+        await ctx.editMessageText(result.text, extra).catch(async (error) => {
+            const message = error instanceof Error ? error.message : String(error);
+            if (message.includes("BUTTON_DATA_INVALID")) {
+                console.error("BUTTON_DATA_INVALID_RENDER_FALLBACK", { state, error: message });
+                result.text = "نمایش این بخش با خطای دکمه مواجه شد. لطفاً دوباره تلاش کنید.";
+            }
             await ctx.editMessageReplyMarkup(keyboard.reply_markup).catch(() => undefined);
-            await fallbackReply();
+            await fallbackReply().catch(async (replyError) => {
+                console.error("PANEL_FALLBACK_REPLY_FAILED", { state, error: replyError instanceof Error ? replyError.message : String(replyError) });
+            });
         });
         return;
     }

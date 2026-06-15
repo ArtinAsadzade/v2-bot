@@ -412,6 +412,7 @@ active: ${detail.category.isActive}`;
             return { done: true, text: "✅ دسته‌بندی به‌روزرسانی شد.", returnTo: { id: "admin.category", params: { categoryId: category.id } } };
         },
     },
+    // Product create group buttons are populated by showXrayGroupPicker via XrayClientService.listGroups().
     product_create: {
         firstStep: "category",
         prompt: "📂 ابتدا دسته‌بندی محصول را انتخاب کنید. فقط دسته‌بندی‌های فعال نمایش داده می‌شوند.",
@@ -464,7 +465,7 @@ active: ${detail.category.isActive}`;
                     return { text: "محدودیت IP معتبر نیست. عددی بزرگ‌تر یا مساوی ۰ وارد کنید:\n۰ یعنی بدون محدودیت" };
                 flow.data.limitIp = limitIp;
                 flow.step = "group";
-                return { text: "👥 لطفاً گروه کلاینت را از دکمه‌های زیر انتخاب کنید.", keyboard: [[{ text: "👥 انتخاب گروه", action: "admin:xray_picker:group:product_create" }]] };
+                return { text: "👥 انتخاب گروه کلاینت\n\nلطفاً گروه کلاینت را از دکمه‌های زیر انتخاب کنید.", keyboard: [[{ text: "👥 انتخاب گروه", action: "admin:xray_picker:group:product_create" }]] };
             }
             if (flow.step !== "confirm")
                 return { text: "لطفاً انتخاب گروه و اینباند را با دکمه‌های فرم انجام دهید." };
