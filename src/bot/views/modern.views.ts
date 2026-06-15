@@ -965,7 +965,7 @@ ${divider}
           { text: "🎁 پاداش دعوت", action: callbackFor("admin.referrals") },
           { text: "📊 گزارش کاربران", action: callbackFor("admin.analytics") },
         ],
-        [{ text: "📣 اطلاع‌رسانی", action: callbackFor("admin.notifications") }],
+        [{ text: "📢 اطلاع رسانی و محتوا", action: callbackFor("admin.content") }],
       ],
     };
   });
