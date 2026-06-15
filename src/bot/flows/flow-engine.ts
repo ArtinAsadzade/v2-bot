@@ -1594,4 +1594,26 @@ export function registerFlowEngine(bot: AppBot) {
     if (name === "product_price") return startFlow(ctx, "product_price", { productId: ctx.match[2] });
     return startFlow(ctx, name);
   });
+  bot.action(/^flow:store_status:(active|inactive)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
+      await ctx.answerCbQuery("دسترسی غیرمجاز");
+      return;
+    }
+
+    const status = ctx.match[1] as "active" | "inactive";
+
+    await AdminService.setStoreStatus(status, String(ctx.from.id));
+
+    ctx.session.flow = undefined;
+
+    await ctx.reply(
+      status === "active"
+        ? "✅ فروشگاه با موفقیت فعال شد.\n\nکاربران اکنون می‌توانند محصولات را مشاهده و خرید کنند."
+        : "⛔ فروشگاه با موفقیت غیرفعال شد.\n\nتا زمان فعال‌سازی مجدد، خرید جدید برای کاربران بسته خواهد بود.",
+    );
+
+    await renderPanel(ctx, { id: "admin.store" }, "replace");
+  });
 }
