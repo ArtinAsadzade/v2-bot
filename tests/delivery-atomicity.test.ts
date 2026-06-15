@@ -22,8 +22,8 @@ test("xray paid purchase debits wallet only after panel verification", () => {
   assert.match(provision, /debitWallet/);
   assert.ok(provision.indexOf("verifyPanelClient") < provision.indexOf("debitWallet"));
   const purchase = payment.match(/static async purchaseProduct[\s\S]*?private static async provisionXrayClient/)?.[0] ?? "";
-  assert.match(purchase, /status: isXray \? "pending" : "completed"/);
-  assert.match(purchase, /!isXray && data\.method === "WALLET"/);
+  assert.match(purchase, /status: "pending"/);
+  assert.match(purchase, /data\.method === "WALLET" && totalAmount > 0/);
   assert.doesNotMatch(purchase.match(/if \(isXray\)[\s\S]*?\} else \{/)?.[0] ?? "", /soldCount:\s*\{\s*increment/);
 });
 

@@ -29,7 +29,7 @@ function formatXrayBytes(value, options = {}) {
     const gb = bytes / (1024 ** 3);
     return `${gb.toLocaleString("fa-IR", { maximumFractionDigits: options.maximumFractionDigits ?? 2 })} GB`;
 }
-function normalizeXrayStatus(status) { return { active: "فعال ✅", creating: "در حال آماده‌سازی ⏳", provisioning: "در حال آماده‌سازی ⏳", failed: "نیازمند بررسی ⚠️", renewal_failed: "نیازمند بررسی ⚠️", expired: "منقضی شده ⛔", disabled: "غیرفعال 🚫", missing_on_panel: "حذف‌شده از پنل", deleted: "حذف‌شده" }[String(status ?? "")] ?? "نامشخص"; }
+function normalizeXrayStatus(status) { return { active: "فعال ✅", creating: "در حال آماده‌سازی ⏳", provisioning: "در حال آماده‌سازی ⏳", failed: "نیازمند بررسی ⚠️", renewal_failed: "نیازمند بررسی ⚠️", expired: "منقضی شده ⛔", disabled: "غیرفعال 🚫", missing_on_panel: "حذف‌شده از پنل", orphaned_panel_client: "ساخته‌شده در پنل / نیازمند بررسی", deleted: "حذف‌شده" }[String(status ?? "")] ?? "نامشخص"; }
 function xrayTrafficSnapshot(traffic, fallbackTotal, fallbackUsed = 0n) {
     const up = BigInt(Math.max(0, Number(traffic?.up ?? 0)));
     const down = BigInt(Math.max(0, Number(traffic?.down ?? 0)));
@@ -136,6 +136,7 @@ class XrayClientService {
         throw error;
     } }
     static getClient(email) { return request(`/panel/api/clients/get/${encodeURIComponent(email)}`); }
+    static async deleteClient(email) { logger_1.logger.info("XRAY_CLIENT_DELETE_REQUEST", { email }); const res = await request(`/panel/api/clients/delete/${encodeURIComponent(email)}`, { method: "POST" }); logger_1.logger.info("XRAY_CLIENT_DELETED", { email }); return res.obj; }
     static links(email) { return request(`/panel/api/clients/links/${encodeURIComponent(email)}`).then((r) => r.obj); }
     static traffic(email) { return request(`/panel/api/clients/traffic/${encodeURIComponent(email)}`).then((r) => r.obj); }
     static subLinks(subId) { return request(`/panel/api/clients/subLinks/${encodeURIComponent(subId)}`).then((r) => r.obj); }
