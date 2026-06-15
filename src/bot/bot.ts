@@ -5,6 +5,7 @@ import { UserService } from "../modules/user/user.service";
 import { notificationService, registerNotificationEvents } from "../services/notification.service";
 import { accessControlMiddleware } from "./middlewares/access-control.middleware";
 import { forcedJoinMiddleware } from "./middlewares/forced-join.middleware";
+import { registerForcedJoinEvents } from "./handlers/forced-join-events";
 import { rateLimitMiddleware } from "./middlewares/rate-limit.middleware";
 import { MonitoringService } from "../services/monitoring.service";
 
@@ -15,6 +16,7 @@ if (!process.env.BOT_TOKEN) {
 export const bot = new Telegraf<AppContext>(process.env.BOT_TOKEN);
 notificationService.setBot(bot);
 registerNotificationEvents();
+registerForcedJoinEvents(bot);
 
 bot.use(
   session({

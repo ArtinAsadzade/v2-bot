@@ -7,6 +7,7 @@ const user_service_1 = require("../modules/user/user.service");
 const notification_service_1 = require("../services/notification.service");
 const access_control_middleware_1 = require("./middlewares/access-control.middleware");
 const forced_join_middleware_1 = require("./middlewares/forced-join.middleware");
+const forced_join_events_1 = require("./handlers/forced-join-events");
 const rate_limit_middleware_1 = require("./middlewares/rate-limit.middleware");
 const monitoring_service_1 = require("../services/monitoring.service");
 if (!process.env.BOT_TOKEN) {
@@ -15,6 +16,7 @@ if (!process.env.BOT_TOKEN) {
 exports.bot = new telegraf_1.Telegraf(process.env.BOT_TOKEN);
 notification_service_1.notificationService.setBot(exports.bot);
 (0, notification_service_1.registerNotificationEvents)();
+(0, forced_join_events_1.registerForcedJoinEvents)(exports.bot);
 exports.bot.use((0, telegraf_1.session)({
     defaultSession: () => ({ selectedCoupons: {}, navigation: { stack: [] } }),
 }));

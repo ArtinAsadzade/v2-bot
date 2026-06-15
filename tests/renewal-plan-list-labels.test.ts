@@ -27,7 +27,7 @@ test("renewal categories query is xray_auto active stock-limited without manual 
 test("renewal start shows current product title and never returns an empty page", () => {
   assert.match(renewalStart, /include: \{ product: true, order: true, user: true \}/);
   assert.match(renewalStart, /const currentProductTitle = client\.product\?\.title \?\? "سرویس Xray"/);
-  assert.match(renewalStart, /ProductService\.listRenewalCategories\(\)/);
+  assert.match(renewalStart, /ProductService\.listRenewalCategories\(client\.id, client\.productId\)/);
   assert.match(renewalStart, /در حال حاضر پلنی برای تمدید موجود نیست/);
   assert.match(renewalStart, /🛒 فروشگاه/);
   assert.match(renewalStart, /🎫 پشتیبانی/);
@@ -37,7 +37,7 @@ test("renewal start shows current product title and never returns an empty page"
 test("renewal category and product buttons preserve context and use clean labels", () => {
   assert.match(renewalStart, /text: `📂 \$\{category\.name\}`/);
   assert.match(renewalStart, /callbackFor\("account\.renew\.products", \{ xrayClientId: client\.id, categoryId: category\.id \}\)/);
-  assert.match(renewalProducts, /ProductService\.listRenewalProductsByCategory\(params\.categoryId\)/);
+  assert.match(renewalProducts, /ProductService\.listRenewalProductsByCategory\(params\.categoryId, client\.id, client\.productId\)/);
   assert.match(renewalProducts, /text: p\.title, action: callbackFor\("account\.renew\.summary", \{ xrayClientId: client\.id, productId: p\.id \}\)/);
   assert.doesNotMatch(renewalProducts, /formatXrayBytes\(p\.trafficBytes\)|money\(p\.price\)|موجودی|روز ·/);
 });
