@@ -23,7 +23,8 @@ test("product creation asks for limitIp, fetches groups, and saves both settings
   assert.match(flow, /👥 انتخاب گروه کلاینت/);
   assert.match(flow, /limitIp: Number\(flow\.data\.limitIp \?\? 0\)/);
   assert.match(flow, /xrayGroupName: groupName/);
-  assert.match(product, /xrayLimitIp: Math\.max\(0, Number\(data\.limitIp \?\? 0\)\)/);
+  assert.match(product, /const limitIp = data\.xrayLimitIp \?\? Math\.max\(0, Number\(data\.limitIp \?\? 0\)\)/);
+  assert.match(product, /xrayLimitIp: limitIp/);
 });
 
 test("client creation and renewal send product IP limit and group to 3x-ui", () => {

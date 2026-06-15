@@ -453,7 +453,7 @@ active: ${detail.category.isActive}`;
             }
             if (flow.step === "stock") {
                 const stock = Number(text.replace(/[,،\s]/g, ""));
-                if (!Number.isInteger(stock) || stock <= 0)
+                if (!Number.isInteger(stock) || stock < 0)
                     return { text: "موجودی معتبر نیست. دوباره وارد کنید:" };
                 flow.data.stockLimit = stock;
                 flow.step = "limitIp";
@@ -475,10 +475,12 @@ active: ${detail.category.isActive}`;
             if (!categoryId)
                 return { text: "⚠️ دسته‌بندی نامعتبر یا حذف‌شده است. دوباره دسته‌بندی را انتخاب کنید.", keyboard: await productCategoryKeyboard() };
             await product_service_1.ProductService.create({
+                mode: "xray_auto",
                 categoryId,
                 title: String(flow.data.title),
                 price: Number(flow.data.price),
                 duration,
+                durationDays: duration,
                 trafficGB: Number(flow.data.trafficGB),
                 stockLimit: Number(flow.data.stockLimit),
                 inboundIds: flow.data.inboundIds,
@@ -518,23 +520,49 @@ group: ${detail.product.xrayGroupName ?? ""}
         },
         async handleText(ctx, text) {
             const flow = ctx.session.flow;
-            const data = parseKeyValueLines(text);
             const productId = String(flow.data.productId);
             const selectedCategoryId = flow.data.categoryId ? String(flow.data.categoryId) : undefined;
+            const field = flow.data.field ? String(flow.data.field) : undefined;
             const detail = await admin_service_1.AdminService.productDetail(productId);
             const isXray = detail.product?.mode === "xray_auto";
-            const product = await admin_service_1.AdminService.updateProduct(productId, {
-                title: data.title ?? data.name ?? data["عنوان"],
-                categoryId: data.categoryId ?? data.category ?? data["دسته"] ?? selectedCategoryId,
-                price: data.price || data["قیمت"] ? parseInteger(data.price ?? data["قیمت"] ?? "0") : undefined,
-                duration: data.duration || (!isXray && data.durationDays) ? parseInteger(data.duration ?? data.durationDays ?? "0") : undefined,
-                trafficGB: data.trafficGB || data["حجم"] ? parseInteger(data.trafficGB ?? data["حجم"] ?? "0") : undefined,
-                durationDays: isXray && data.durationDays ? parseInteger(data.durationDays) : undefined,
-                stockLimit: data.stockLimit || data["موجودی"] ? parseInteger(data.stockLimit ?? data["موجودی"] ?? "0") : undefined,
-                isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
-                xrayLimitIp: isXray && (data.limitIp || data.xrayLimitIp) ? parseInteger(data.limitIp ?? data.xrayLimitIp ?? "0") : undefined,
-                xrayGroupName: isXray && (data.group !== undefined || data.xrayGroupName !== undefined) ? ((data.group ?? data.xrayGroupName)?.trim() || null) : undefined,
-            }, String(ctx.from?.id ?? "admin"));
+            const validFields = new Set(["title", "price", "category", "trafficGB", "durationDays", "stockLimit", "limitIp"]);
+            if (field && !validFields.has(field))
+                return { done: true, text: "⚠️ فیلد ویرایش معتبر نیست.", returnTo: { id: "admin.product", params: { productId } } };
+            const patch = {};
+            if (field) {
+                if (["trafficGB", "durationDays", "stockLimit", "limitIp"].includes(field) && !isXray)
+                    return { done: true, text: "⚠️ این فیلد فقط برای محصولات Xray است.", returnTo: { id: "admin.product", params: { productId } } };
+                if (field === "title")
+                    patch.title = text.trim();
+                if (field === "price")
+                    patch.price = parseInteger(text);
+                if (field === "category")
+                    patch.categoryId = selectedCategoryId || text.trim();
+                if (field === "trafficGB")
+                    patch.trafficGB = parseInteger(text);
+                if (field === "durationDays")
+                    patch.durationDays = parseInteger(text);
+                if (field === "stockLimit")
+                    patch.stockLimit = parseInteger(text);
+                if (field === "limitIp")
+                    patch.xrayLimitIp = parseInteger(text);
+            }
+            else {
+                const data = parseKeyValueLines(text);
+                Object.assign(patch, {
+                    title: data.title ?? data.name ?? data["عنوان"],
+                    categoryId: data.categoryId ?? data.category ?? data["دسته"] ?? selectedCategoryId,
+                    price: data.price || data["قیمت"] ? parseInteger(data.price ?? data["قیمت"] ?? "0") : undefined,
+                    duration: data.duration || (!isXray && data.durationDays) ? parseInteger(data.duration ?? data.durationDays ?? "0") : undefined,
+                    trafficGB: isXray && (data.trafficGB || data["حجم"]) ? parseInteger(data.trafficGB ?? data["حجم"] ?? "0") : undefined,
+                    durationDays: isXray && data.durationDays ? parseInteger(data.durationDays) : undefined,
+                    stockLimit: isXray && (data.stockLimit || data["موجودی"]) ? parseInteger(data.stockLimit ?? data["موجودی"] ?? "0") : undefined,
+                    isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
+                    xrayLimitIp: isXray && (data.limitIp || data.xrayLimitIp) ? parseInteger(data.limitIp ?? data.xrayLimitIp ?? "0") : undefined,
+                    xrayGroupName: isXray && (data.group !== undefined || data.xrayGroupName !== undefined) ? ((data.group ?? data.xrayGroupName)?.trim() || null) : undefined,
+                });
+            }
+            const product = await admin_service_1.AdminService.updateProduct(productId, patch, String(ctx.from?.id ?? "admin"));
             return { done: true, text: "✅ محصول به‌روزرسانی شد.", returnTo: { id: "admin.product", params: { productId: product.id } } };
         },
     },
@@ -1325,7 +1353,7 @@ function registerFlowEngine(bot) {
         if (name === "category_edit")
             return startFlow(ctx, "category_edit", { categoryId: ctx.match[2] });
         if (name === "product_edit")
-            return startFlow(ctx, "product_edit", { productId: ctx.match[2] });
+            return startFlow(ctx, "product_edit", { productId: ctx.match[2], field: ctx.match[3] });
         if (name === "free_test_config")
             return startFlow(ctx, "free_test_config", { field: ctx.match[2] });
         if (name === "account_create")

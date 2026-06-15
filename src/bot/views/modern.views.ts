@@ -233,7 +233,7 @@ ${divider}
   });
 
   registerView("shop.product", async (ctx, params) => {
-    const product = await ProductService.getProduct(params.productId);
+    const product = await ProductService.getActiveProductForUser(params.productId);
     if (!product) return { text: errorMessage("محصول در دسترس نیست", "این محصول در حال حاضر قابل خرید نیست.", "لطفاً محصول دیگری را انتخاب کنید."), keyboard: [] };
     const stock = await ProductService.availableStock(product.id);
     ctx.session.recentlyViewedProductIds = [product.id, ...(ctx.session.recentlyViewedProductIds ?? []).filter((id) => id !== product.id)].slice(
@@ -253,7 +253,7 @@ ${divider}
 
   registerView("shop.checkout", async (ctx, params) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-    const product = await ProductService.getProduct(params.productId);
+    const product = await ProductService.getActiveProductForUser(params.productId);
     if (!product || !user) return { text: "⚠️ اطلاعات خرید کامل نیست. لطفاً دوباره از فروشگاه اقدام کنید.", keyboard: [] };
     const couponCode = ctx.session.selectedCoupons?.[product.id];
     let discountAmount = 0;
@@ -883,8 +883,10 @@ ${inboundSnapshot.length ? inboundSnapshot.map((i) => `• ${i.remark ?? `inboun
 ⚠️ تغییر گروه، اینباند و محدودیت IP فقط روی خریدهای جدید اعمال می‌شود.
 کلاینت‌های قبلی تغییر نمی‌کنند.`,
         keyboard: [
-          [{ text: "✏️ ویرایش محصول", action: `flow:start:product_edit:${detail.product.id}` }, { text: "📊 تغییر حجم", action: `flow:start:product_edit:${detail.product.id}` }],
-          [{ text: "📅 تغییر مدت", action: `flow:start:product_edit:${detail.product.id}` }, { text: "📦 تغییر موجودی", action: `flow:start:product_edit:${detail.product.id}` }],
+          [{ text: "✏️ ویرایش عنوان", action: `flow:start:product_edit:${detail.product.id}:title` }, { text: "💰 تغییر قیمت", action: `flow:start:product_edit:${detail.product.id}:price` }],
+          [{ text: "📂 تغییر دسته", action: `flow:start:product_edit:${detail.product.id}:category` }, { text: "📊 تغییر حجم", action: `flow:start:product_edit:${detail.product.id}:trafficGB` }],
+          [{ text: "📅 تغییر مدت", action: `flow:start:product_edit:${detail.product.id}:durationDays` }, { text: "📦 تغییر موجودی", action: `flow:start:product_edit:${detail.product.id}:stockLimit` }],
+          [{ text: "🌐 تغییر محدودیت IP", action: `flow:start:product_edit:${detail.product.id}:limitIp` }],
           [{ text: "👥 تغییر گروه", action: tokenAction("xpg:l:pe", createCallbackToken(ctx, "xrayPickerProduct", { target: "product_edit", productId: detail.product.id })) }, { text: "🔗 تغییر اینباندها", action: tokenAction("xpi:l:pe", createCallbackToken(ctx, "xrayPickerProduct", { target: "product_edit", productId: detail.product.id })) }],
           [{ text: "🧩 کلاینت‌های ساخته‌شده", action: callbackFor("admin.xrayClients", { productId: detail.product.id }) }],
           [{ text: detail.product.isActive ? "🚫 غیرفعال" : "✅ فعال", action: `admin:product:active:${detail.product.id}:${detail.product.isActive ? "0" : "1"}` }, { text: "🗑 حذف نرم", action: `admin:product:delete:${detail.product.id}` }],
