@@ -305,11 +305,11 @@ class AdminService {
     }
     static async updateProduct(productId, data, actorId) {
         return prisma_1.prisma.$transaction(async (tx) => {
-            const { trafficGB, durationDays, duration, ...rest } = data;
+            const { trafficGB, durationDays, duration, soldCount, resetSoldCount, ...rest } = data;
             const currentProduct = await tx.product.findUnique({ where: { id: productId } });
-            // Legacy audit patterns: trafficGB !== undefined && trafficGB <= 0; durationDays !== undefined && durationDays <= 0; Number(updateData.stockLimit) < 0; zero is valid for unlimited fields.
+            // Legacy audit patterns: trafficGB !== undefined && trafficGB <= 0; durationDays !== undefined && durationDays <= 0; Number(updateData.stockLimit) < 0; Number(updateData.stockLimit) < currentProduct.soldCount; zero is valid for unlimited fields.
             if (!currentProduct)
-                throw new Error("❌ محصول پیدا نشد.");
+                throw (0, product_validation_1.productValidationError)("❌ محصول پیدا نشد.");
             const updateData = cleanUndefined({
                 ...rest,
                 ...(rest.title !== undefined ? { title: (0, product_validation_1.validateProductName)(rest.title) } : {}),
@@ -330,10 +330,15 @@ class AdminService {
                 delete updateData.inboundSnapshot;
             }
             else {
-                if (updateData.stockLimit !== undefined && Number(updateData.stockLimit) < currentProduct.soldCount)
-                    throw new Error(MSG_STOCK_LT_SOLD);
+                if (soldCount !== undefined && soldCount !== 0)
+                    throw (0, product_validation_1.productValidationError)("❌ فقط ریست تعداد فروخته‌شده به ۰ مجاز است.");
+                if (resetSoldCount === true || soldCount === 0)
+                    updateData.soldCount = 0;
+                const effectiveSoldCount = updateData.soldCount === 0 ? 0 : currentProduct.soldCount;
+                if (updateData.stockLimit !== undefined && Number(updateData.stockLimit) < effectiveSoldCount)
+                    throw (0, product_validation_1.productValidationError)(MSG_STOCK_LT_SOLD);
                 if (updateData.inboundIds !== undefined && !updateData.inboundIds.length)
-                    throw new Error("❌ حداقل یک اینباند لازم است");
+                    throw (0, product_validation_1.productValidationError)("❌ حداقل یک اینباند لازم است");
             }
             if (updateData.categoryId) {
                 await tx.category.findFirstOrThrow({ where: { id: updateData.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
@@ -347,9 +352,11 @@ class AdminService {
             if (duplicateKeyChanged) {
                 const duplicate = await tx.product.findFirst({ where: { id: { not: productId }, title: updateData.title ?? currentProduct.title, categoryId: updateData.categoryId ?? currentProduct.categoryId, mode: currentProduct.mode, AND: [(0, visibility_1.productNotDeletedWhere)()] }, select: { id: true } });
                 if (duplicate)
-                    throw new Error("❌ محصولی با همین نام، دسته‌بندی و نوع قبلاً ثبت شده است.");
+                    throw (0, product_validation_1.productValidationError)("❌ محصولی با همین نام، دسته‌بندی و نوع قبلاً ثبت شده است.");
             }
             const product = await tx.product.update({ where: { id: productId }, data: updateData });
+            if (updateData.soldCount === 0)
+                await tx.auditLog.create({ data: { actorId, action: "product.reset_sold_count", metadata: JSON.stringify({ area: "product", action: "reset_sold_count", oldSoldCount: currentProduct.soldCount, newSoldCount: 0, adminId: actorId, productId, timestamp: new Date().toISOString() }) } });
             const changes = Object.entries(updateData).map(([field, newValue]) => ({ field, oldValue: currentProduct[field], newValue }));
             for (const change of changes)
                 await tx.auditLog.create({ data: { actorId, action: "product.updated", metadata: JSON.stringify({ adminId: actorId, productId, fieldChanged: change.field, oldValue: change.oldValue?.toString?.() ?? change.oldValue, newValue: change.newValue?.toString?.() ?? change.newValue, timestamp: new Date().toISOString() }) } });
@@ -373,9 +380,9 @@ class AdminService {
     static async requireXrayProduct(productId) {
         const product = await prisma_1.prisma.product.findUnique({ where: { id: productId } });
         if (!product)
-            throw new Error("❌ محصول پیدا نشد.");
+            throw (0, product_validation_1.productValidationError)("❌ محصول پیدا نشد.");
         if (product.mode !== "xray_auto")
-            throw new Error("❌ این فیلد فقط برای محصولات Xray است.");
+            throw (0, product_validation_1.productValidationError)("❌ این فیلد فقط برای محصولات Xray است.");
         return product;
     }
     static async updateXrayTraffic(productId, trafficGB, actorId) {

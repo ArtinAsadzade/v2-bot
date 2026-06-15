@@ -33,15 +33,19 @@ export class UserService {
         include: { order: true, product: true, productAccount: true, xrayClient: true },
         orderBy: { purchaseDate: "desc" },
         take: 50,
-      }).then((items) => items.filter((item) => calculateAccountDisplayStatus({
-        status: item.productAccount?.status ?? item.xrayClient?.status,
-        expiresAt: item.expiresAt ?? item.productAccount?.expiresAt ?? item.xrayClient?.expiresAt,
-        disabledAt: item.productAccount?.disabledAt,
-        deletedAt: item.productAccount?.deletedAt,
-        productActive: item.product?.isActive,
-        hasRequiredDeliveryData: Boolean(item.xrayClientId || (item.productAccountId && item.productAccount) || item.legacyStatus),
-        legacy: item.legacyStatus === "broken_product_account",
-      }, now) === "active").slice(0, 20)),
+      }).then((items) => items.filter((item) => {
+        const account = item.productAccount as typeof item.productAccount & { expiresAt?: Date | null; disabledAt?: Date | null; deletedAt?: Date | null };
+        const legacyStatus = (item as typeof item & { legacyStatus?: string | null }).legacyStatus;
+        return calculateAccountDisplayStatus({
+          status: account?.status ?? item.xrayClient?.status,
+          expiresAt: item.expiresAt ?? account?.expiresAt ?? item.xrayClient?.expiresAt,
+          disabledAt: account?.disabledAt,
+          deletedAt: account?.deletedAt,
+          productActive: item.product?.isActive,
+          hasRequiredDeliveryData: Boolean(item.xrayClientId || (item.productAccountId && item.productAccount) || legacyStatus),
+          legacy: legacyStatus === "broken_product_account",
+        }, now) === "active";
+      }).slice(0, 20)),
       prisma.orderItem.findMany({
         where: { order: { userId, status: "completed" }, OR: [{ isActive: false }, { expiresAt: { lte: now } }, { productAccount: { is: { status: "expired" } } }, { legacyStatus: { not: null } }] },
         include: { order: true, product: true, productAccount: true, xrayClient: true },

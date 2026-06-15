@@ -18,10 +18,11 @@ const referral_service_1 = require("../../modules/referral/referral.service");
 const broadcast_service_1 = require("../../modules/broadcast/broadcast.service");
 const payment_service_1 = require("../../modules/payment/payment.service");
 const product_guide_service_1 = require("../../modules/system/product-guide.service");
+const product_validation_1 = require("../../modules/product/product.validation");
 const admin_middleware_1 = require("../middlewares/admin.middleware");
 const design_system_1 = require("../keyboards/design-system");
 const money = (value) => `${value.toLocaleString("fa-IR")} تومان`;
-const parseInteger = (value) => Number(value.replace(/[,،\s]/g, ""));
+const parseInteger = (value) => Number((0, product_validation_1.normalizeNumericInput)(value));
 const parseStatus = (value) => {
     if (!value)
         return undefined;
@@ -44,22 +45,35 @@ const parseCouponType = (value) => {
 };
 function parseKeyValueLines(text) {
     const entries = [];
-    const aliases = { url: "apiBaseUrl", baseUrl: "apiBaseUrl", token: "apiToken", اشتراک: "subscriptionBaseUrl", فعال: "enabled", وضعیت: "enabled", name: "title", "عنوان": "title", "قیمت": "price", "مدت": "durationDays", "حجم": "trafficGB", "موجودی": "stockLimit", "دسته": "categoryId" };
-    const allowed = new Set(["apiBaseUrl", "apiToken", "subscriptionBaseUrl", "enabled", "url", "baseUrl", "token", "اشتراک", "فعال", "وضعیت", "title", "name", "categoryId", "category", "price", "duration", "durationDays", "trafficGB", "stockLimit", "active", "عنوان", "قیمت", "مدت", "حجم", "موجودی", "دسته"]);
+    const aliases = {
+        url: "apiBaseUrl", baseUrl: "apiBaseUrl", token: "apiToken", اشتراک: "subscriptionBaseUrl", فعال: "enabled", وضعیت: "enabled",
+        name: "title", عنوان: "title", قیمت: "price", دسته: "categoryId", category: "categoryId",
+        traffic: "trafficGB", volume: "trafficGB", "حجم": "trafficGB",
+        duration: "duration", durationDays: "durationDays", "مدت": "durationDays",
+        stock: "stockLimit", "موجودی": "stockLimit",
+        limitIp: "xrayLimitIp", xrayLimitIp: "xrayLimitIp", ipLimit: "xrayLimitIp", "محدودیت IP": "xrayLimitIp", "محدودیت آیپی": "xrayLimitIp",
+        group: "xrayGroupName", "گروه": "xrayGroupName",
+    };
+    const allowed = new Set(["apiBaseUrl", "apiToken", "subscriptionBaseUrl", "enabled", "url", "baseUrl", "token", "اشتراک", "فعال", "وضعیت", "title", "name", "categoryId", "category", "price", "duration", "durationDays", "trafficGB", "traffic", "volume", "stockLimit", "stock", "active", "عنوان", "قیمت", "مدت", "حجم", "موجودی", "دسته", "limitIp", "xrayLimitIp", "ipLimit", "محدودیت IP", "محدودیت آیپی", "group", "xrayGroupName", "گروه", "soldCount", "resetSoldCount"]);
     for (const rawLine of text.split(/\n+/)) {
         const line = rawLine.trim();
         if (!line)
             continue;
         const index = line.indexOf(":");
         if (index <= 0)
-            throw new Error(`خط نامعتبر است: ${line}\nفرمت صحیح: key: value`);
+            throw (0, product_validation_1.productValidationError)(`خط نامعتبر است: ${line}\nفرمت صحیح: key: value`);
         const key = line.slice(0, index).trim();
         const value = line.slice(index + 1).trim();
         if (!allowed.has(key))
-            throw new Error(`کلید «${key}» پشتیبانی نمی‌شود.`);
+            throw (0, product_validation_1.productValidationError)(`کلید «${key}» پشتیبانی نمی‌شود.`);
         entries.push([aliases[key] ?? key, value]);
     }
     return Object.fromEntries(entries);
+}
+function hasKey(data, key) { return Object.prototype.hasOwnProperty.call(data, key); }
+function parseResetGroup(value) {
+    const normalized = (value ?? "").trim().toLowerCase();
+    return !normalized || ["none", "-", "بدون گروه", "بدون‌گروه"].includes(normalized) ? null : value.trim();
 }
 function parseActive(value) {
     if (!value)
@@ -525,12 +539,13 @@ group: ${detail.product.xrayGroupName ?? ""}
             const field = flow.data.field ? String(flow.data.field) : undefined;
             const detail = await admin_service_1.AdminService.productDetail(productId);
             const isXray = detail.product?.mode === "xray_auto";
-            const validFields = new Set(["title", "price", "category", "trafficGB", "durationDays", "stockLimit", "limitIp"]);
+            // Legacy audit: validFields = new Set(["title", "price", "category", "trafficGB", "durationDays", "stockLimit", "limitIp"]);
+            const validFields = new Set(["title", "price", "category", "trafficGB", "durationDays", "stockLimit", "limitIp", "xrayLimitIp", "group", "xrayGroupName", "soldCount", "resetSoldCount"]);
             if (field && !validFields.has(field))
                 return { done: true, text: "⚠️ فیلد ویرایش معتبر نیست.", returnTo: { id: "admin.product", params: { productId } } };
             const patch = {};
             if (field) {
-                if (["trafficGB", "durationDays", "stockLimit", "limitIp"].includes(field) && !isXray)
+                if (["trafficGB", "durationDays", "stockLimit", "limitIp", "xrayLimitIp", "group", "xrayGroupName", "soldCount", "resetSoldCount"].includes(field) && !isXray)
                     return { done: true, text: "⚠️ این فیلد فقط برای محصولات Xray است.", returnTo: { id: "admin.product", params: { productId } } };
                 if (field === "title")
                     patch.title = text.trim();
@@ -544,8 +559,14 @@ group: ${detail.product.xrayGroupName ?? ""}
                     patch.durationDays = parseInteger(text);
                 if (field === "stockLimit")
                     patch.stockLimit = parseInteger(text);
-                if (field === "limitIp")
+                if (field === "limitIp" || field === "xrayLimitIp")
                     patch.xrayLimitIp = parseInteger(text);
+                if (field === "group" || field === "xrayGroupName")
+                    patch.xrayGroupName = parseResetGroup(text);
+                if (field === "soldCount")
+                    patch.soldCount = parseInteger(text);
+                if (field === "resetSoldCount")
+                    patch.resetSoldCount = parseActive(text) === true;
             }
             else {
                 const data = parseKeyValueLines(text);
@@ -553,13 +574,15 @@ group: ${detail.product.xrayGroupName ?? ""}
                     title: data.title ?? data.name ?? data["عنوان"],
                     categoryId: data.categoryId ?? data.category ?? data["دسته"] ?? selectedCategoryId,
                     price: data.price || data["قیمت"] ? parseInteger(data.price ?? data["قیمت"] ?? "0") : undefined,
-                    duration: data.duration || (!isXray && data.durationDays) ? parseInteger(data.duration ?? data.durationDays ?? "0") : undefined,
-                    trafficGB: isXray && (data.trafficGB || data["حجم"]) ? parseInteger(data.trafficGB ?? data["حجم"] ?? "0") : undefined,
-                    durationDays: isXray && data.durationDays ? parseInteger(data.durationDays) : undefined,
-                    stockLimit: isXray && (data.stockLimit || data["موجودی"]) ? parseInteger(data.stockLimit ?? data["موجودی"] ?? "0") : undefined,
+                    duration: hasKey(data, "duration") || (!isXray && hasKey(data, "durationDays")) ? parseInteger(data.duration ?? data.durationDays ?? "0") : undefined,
+                    trafficGB: isXray && hasKey(data, "trafficGB") ? parseInteger(data.trafficGB) : undefined,
+                    durationDays: isXray && (hasKey(data, "durationDays") || hasKey(data, "duration")) ? parseInteger(data.durationDays ?? data.duration ?? "0") : undefined,
+                    stockLimit: isXray && hasKey(data, "stockLimit") ? parseInteger(data.stockLimit) : undefined,
                     isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
-                    xrayLimitIp: isXray && (data.limitIp || data.xrayLimitIp) ? parseInteger(data.limitIp ?? data.xrayLimitIp ?? "0") : undefined,
-                    xrayGroupName: isXray && (data.group !== undefined || data.xrayGroupName !== undefined) ? ((data.group ?? data.xrayGroupName)?.trim() || null) : undefined,
+                    xrayLimitIp: isXray && hasKey(data, "xrayLimitIp") ? parseInteger(data.xrayLimitIp) : undefined,
+                    xrayGroupName: isXray && hasKey(data, "xrayGroupName") ? parseResetGroup(data.xrayGroupName) : undefined,
+                    soldCount: isXray && hasKey(data, "soldCount") ? parseInteger(data.soldCount) : undefined,
+                    resetSoldCount: isXray && parseActive(data.resetSoldCount) === true ? true : undefined,
                 });
             }
             const product = await admin_service_1.AdminService.updateProduct(productId, patch, String(ctx.from?.id ?? "admin"));
@@ -1180,7 +1203,17 @@ async function handleActiveFlowText(ctx, text) {
     const flow = ctx.session.flow;
     if (!flow)
         return false;
-    const result = await definitions[flow.name].handleText?.(ctx, text);
+    let result;
+    try {
+        result = await definitions[flow.name].handleText?.(ctx, text);
+    }
+    catch (error) {
+        if (flow.name === "product_edit" && (0, product_validation_1.isProductValidationError)(error)) {
+            await ctx.reply(error.message);
+            return true;
+        }
+        throw error;
+    }
     if (!result)
         return false;
     if (result.done) {

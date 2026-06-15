@@ -32,15 +32,19 @@ class UserService {
                 include: { order: true, product: true, productAccount: true, xrayClient: true },
                 orderBy: { purchaseDate: "desc" },
                 take: 50,
-            }).then((items) => items.filter((item) => (0, account_status_service_1.calculateAccountDisplayStatus)({
-                status: item.productAccount?.status ?? item.xrayClient?.status,
-                expiresAt: item.expiresAt ?? item.productAccount?.expiresAt ?? item.xrayClient?.expiresAt,
-                disabledAt: item.productAccount?.disabledAt,
-                deletedAt: item.productAccount?.deletedAt,
-                productActive: item.product?.isActive,
-                hasRequiredDeliveryData: Boolean(item.xrayClientId || (item.productAccountId && item.productAccount) || item.legacyStatus),
-                legacy: item.legacyStatus === "broken_product_account",
-            }, now) === "active").slice(0, 20)),
+            }).then((items) => items.filter((item) => {
+                const account = item.productAccount;
+                const legacyStatus = item.legacyStatus;
+                return (0, account_status_service_1.calculateAccountDisplayStatus)({
+                    status: account?.status ?? item.xrayClient?.status,
+                    expiresAt: item.expiresAt ?? account?.expiresAt ?? item.xrayClient?.expiresAt,
+                    disabledAt: account?.disabledAt,
+                    deletedAt: account?.deletedAt,
+                    productActive: item.product?.isActive,
+                    hasRequiredDeliveryData: Boolean(item.xrayClientId || (item.productAccountId && item.productAccount) || legacyStatus),
+                    legacy: legacyStatus === "broken_product_account",
+                }, now) === "active";
+            }).slice(0, 20)),
             prisma_1.prisma.orderItem.findMany({
                 where: { order: { userId, status: "completed" }, OR: [{ isActive: false }, { expiresAt: { lte: now } }, { productAccount: { is: { status: "expired" } } }, { legacyStatus: { not: null } }] },
                 include: { order: true, product: true, productAccount: true, xrayClient: true },

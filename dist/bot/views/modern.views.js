@@ -845,11 +845,11 @@ ${products.map((product) => `• ${product.title}
 📊 حجم:
 ${(0, xray_service_1.formatXrayBytes)(detail.product.trafficBytes)}
 📅 مدت:
-${(detail.product.durationDays ?? detail.product.duration).toLocaleString("fa-IR")} روز
+${(detail.product.durationDays ?? detail.product.duration) === 0 ? "نامحدود" : `${(detail.product.durationDays ?? detail.product.duration).toLocaleString("fa-IR")} روز`}
 📦 موجودی:
-${detail.available.toLocaleString("fa-IR")} از ${(detail.product.stockLimit ?? 0).toLocaleString("fa-IR")}
+${(detail.product.stockLimit ?? 0) === 0 ? "ناموجود" : `${detail.available.toLocaleString("fa-IR")} از ${(detail.product.stockLimit ?? 0).toLocaleString("fa-IR")}`}
 🌐 محدودیت IP:
-${(detail.product.xrayLimitIp ?? 0).toLocaleString("fa-IR")} (${(detail.product.xrayLimitIp ?? 0) === 0 ? "بدون محدودیت" : "IP"})
+${(detail.product.xrayLimitIp ?? 0) === 0 ? "نامحدود" : `${(detail.product.xrayLimitIp ?? 0).toLocaleString("fa-IR")} IP`}
 👥 گروه:
 ${detail.product.xrayGroupName ?? "بدون گروه"}
 فروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}
@@ -866,7 +866,7 @@ ${inboundSnapshot.length ? inboundSnapshot.map((i) => `• ${i.remark ?? `inboun
                     [{ text: "✏️ ویرایش عنوان", action: `flow:start:product_edit:${detail.product.id}:title` }, { text: "💰 تغییر قیمت", action: `flow:start:product_edit:${detail.product.id}:price` }],
                     [{ text: "📂 تغییر دسته", action: `flow:start:product_edit:${detail.product.id}:category` }, { text: "📊 تغییر حجم", action: `flow:start:product_edit:${detail.product.id}:trafficGB` }],
                     [{ text: "📅 تغییر مدت", action: `flow:start:product_edit:${detail.product.id}:durationDays` }, { text: "📦 تغییر موجودی", action: `flow:start:product_edit:${detail.product.id}:stockLimit` }],
-                    [{ text: "🌐 تغییر محدودیت IP", action: `flow:start:product_edit:${detail.product.id}:limitIp` }],
+                    [{ text: "🌐 تغییر محدودیت IP", action: `flow:start:product_edit:${detail.product.id}:limitIp` }, { text: "♻️ ریست تعداد فروخته‌شده", action: `flow:start:product_edit:${detail.product.id}:soldCount` }],
                     [{ text: "👥 تغییر گروه", action: (0, callback_tokens_1.tokenAction)("xpg:l:pe", (0, callback_tokens_1.createCallbackToken)(ctx, "xrayPickerProduct", { target: "product_edit", productId: detail.product.id })) }, { text: "🔗 تغییر اینباندها", action: (0, callback_tokens_1.tokenAction)("xpi:l:pe", (0, callback_tokens_1.createCallbackToken)(ctx, "xrayPickerProduct", { target: "product_edit", productId: detail.product.id })) }],
                     [{ text: "🧩 کلاینت‌های ساخته‌شده", action: (0, panel_ui_1.callbackFor)("admin.xrayClients", { productId: detail.product.id }) }],
                     [{ text: detail.product.isActive ? "🚫 غیرفعال" : "✅ فعال", action: `admin:product:active:${detail.product.id}:${detail.product.isActive ? "0" : "1"}` }, { text: "🗑 حذف نرم", action: `admin:product:delete:${detail.product.id}` }],

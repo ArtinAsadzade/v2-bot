@@ -7,7 +7,7 @@ import { CouponService } from "../coupon/coupon.service";
 import { ForcedJoinService } from "../system/forced-join.service";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, categoryNotDeletedWhere, productNotDeletedWhere, unassignedInventoryWhere } from "../product/visibility";
 import { gbToBytes, XrayClientService } from "../xray/xray.service";
-import { validateProductName, validatePositiveInteger, validateNonNegativeInteger, validateNonNegativeNumber } from "../product/product.validation";
+import { productValidationError, validateProductName, validatePositiveInteger, validateNonNegativeInteger, validateNonNegativeNumber } from "../product/product.validation";
 
 const DASHBOARD_CACHE_TTL_MS = 30_000;
 
@@ -38,7 +38,7 @@ export type ProductAccountAdminStatus = "available" | "reserved" | "sold" | "dis
 export type XrayClientAdminStatus = "provisioning" | "active" | "failed" | "expired";
 
 type CategoryInput = { name: string; description?: string; icon?: string; displayOrder?: number; isActive?: boolean };
-type ProductInput = { title?: string; categoryId?: string; price?: number; duration?: number; isActive?: boolean; trafficGB?: number; durationDays?: number; stockLimit?: number; inboundIds?: number[]; inboundSnapshot?: string; xrayLimitIp?: number; xrayGroupName?: string | null };
+type ProductInput = { title?: string; categoryId?: string; price?: number; duration?: number; isActive?: boolean; trafficGB?: number; durationDays?: number; stockLimit?: number; soldCount?: number; resetSoldCount?: boolean; inboundIds?: number[]; inboundSnapshot?: string; xrayLimitIp?: number; xrayGroupName?: string | null };
 
 const MSG_IP = "❌ محدودیت IP باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.";
 const MSG_TRAFFIC = "❌ حجم باید عدد صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.";
@@ -361,10 +361,10 @@ export class AdminService {
 
   static async updateProduct(productId: string, data: ProductInput, actorId: string) {
     return prisma.$transaction(async (tx) => {
-      const { trafficGB, durationDays, duration, ...rest } = data;
+      const { trafficGB, durationDays, duration, soldCount, resetSoldCount, ...rest } = data;
       const currentProduct = await tx.product.findUnique({ where: { id: productId } });
-      // Legacy audit patterns: trafficGB !== undefined && trafficGB <= 0; durationDays !== undefined && durationDays <= 0; Number(updateData.stockLimit) < 0; zero is valid for unlimited fields.
-      if (!currentProduct) throw new Error("❌ محصول پیدا نشد.");
+      // Legacy audit patterns: trafficGB !== undefined && trafficGB <= 0; durationDays !== undefined && durationDays <= 0; Number(updateData.stockLimit) < 0; Number(updateData.stockLimit) < currentProduct.soldCount; zero is valid for unlimited fields.
+      if (!currentProduct) throw productValidationError("❌ محصول پیدا نشد.");
       const updateData: Prisma.ProductUncheckedUpdateInput & { deletedAt?: Date | null } = cleanUndefined({
         ...rest,
         ...(rest.title !== undefined ? { title: validateProductName(rest.title) } : {}),
@@ -384,8 +384,11 @@ export class AdminService {
         delete updateData.inboundIds;
         delete updateData.inboundSnapshot;
       } else {
-        if (updateData.stockLimit !== undefined && Number(updateData.stockLimit) < currentProduct.soldCount) throw new Error(MSG_STOCK_LT_SOLD);
-        if (updateData.inboundIds !== undefined && !(updateData.inboundIds as number[]).length) throw new Error("❌ حداقل یک اینباند لازم است");
+        if (soldCount !== undefined && soldCount !== 0) throw productValidationError("❌ فقط ریست تعداد فروخته‌شده به ۰ مجاز است.");
+        if (resetSoldCount === true || soldCount === 0) updateData.soldCount = 0;
+        const effectiveSoldCount = updateData.soldCount === 0 ? 0 : currentProduct.soldCount;
+        if (updateData.stockLimit !== undefined && Number(updateData.stockLimit) < effectiveSoldCount) throw productValidationError(MSG_STOCK_LT_SOLD);
+        if (updateData.inboundIds !== undefined && !(updateData.inboundIds as number[]).length) throw productValidationError("❌ حداقل یک اینباند لازم است");
       }
       if (updateData.categoryId) {
         await tx.category.findFirstOrThrow({ where: { id: updateData.categoryId as string, AND: [activeCategoryWhere()] } });
@@ -398,9 +401,10 @@ export class AdminService {
       const duplicateKeyChanged = updateData.title !== undefined || updateData.categoryId !== undefined;
       if (duplicateKeyChanged) {
         const duplicate = await tx.product.findFirst({ where: { id: { not: productId }, title: (updateData.title as string | undefined) ?? currentProduct.title, categoryId: (updateData.categoryId as string | undefined) ?? currentProduct.categoryId, mode: currentProduct.mode, AND: [productNotDeletedWhere()] }, select: { id: true } });
-        if (duplicate) throw new Error("❌ محصولی با همین نام، دسته‌بندی و نوع قبلاً ثبت شده است.");
+        if (duplicate) throw productValidationError("❌ محصولی با همین نام، دسته‌بندی و نوع قبلاً ثبت شده است.");
       }
       const product = await tx.product.update({ where: { id: productId }, data: updateData });
+      if (updateData.soldCount === 0) await tx.auditLog.create({ data: { actorId, action: "product.reset_sold_count", metadata: JSON.stringify({ area: "product", action: "reset_sold_count", oldSoldCount: currentProduct.soldCount, newSoldCount: 0, adminId: actorId, productId, timestamp: new Date().toISOString() }) } });
       const changes = Object.entries(updateData).map(([field, newValue]) => ({ field, oldValue: (currentProduct as any)[field], newValue }));
       for (const change of changes) await tx.auditLog.create({ data: { actorId, action: "product.updated", metadata: JSON.stringify({ adminId: actorId, productId, fieldChanged: change.field, oldValue: change.oldValue?.toString?.() ?? change.oldValue, newValue: change.newValue?.toString?.() ?? change.newValue, timestamp: new Date().toISOString() }) } });
       return product;
@@ -425,8 +429,8 @@ export class AdminService {
 
   private static async requireXrayProduct(productId: string) {
     const product = await prisma.product.findUnique({ where: { id: productId } });
-    if (!product) throw new Error("❌ محصول پیدا نشد.");
-    if (product.mode !== "xray_auto") throw new Error("❌ این فیلد فقط برای محصولات Xray است.");
+    if (!product) throw productValidationError("❌ محصول پیدا نشد.");
+    if (product.mode !== "xray_auto") throw productValidationError("❌ این فیلد فقط برای محصولات Xray است.");
     return product;
   }
 
