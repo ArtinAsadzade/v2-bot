@@ -14,7 +14,8 @@
     "predev": "npm run prisma:generate",
     "prebuild": "npm run prisma:generate",
     "deploy:pm2": "npm run prisma:generate && npm run build && pm2 restart v2-bot --update-env",
-    "check:panel-views": "node --test -r ts-node/register tests/panel-view-registry.test.ts"
+    "check:panel-views": "node --test -r ts-node/register tests/panel-view-registry.test.ts",
+    "repair:order-items": "ts-node scripts/repair-broken-order-items.ts"
   },
   "keywords": [],
   "author": "",

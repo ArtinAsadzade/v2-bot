@@ -4,6 +4,7 @@ exports.UserService = void 0;
 const prisma_1 = require("../../services/prisma");
 const event_bus_service_1 = require("../../services/event-bus.service");
 const referral_service_1 = require("../referral/referral.service");
+const account_status_service_1 = require("../account/account-status.service");
 class UserService {
     static async findOrCreateUser(ctxOrUser) {
         const tgUser = "id" in ctxOrUser ? ctxOrUser : ctxOrUser.from;
@@ -27,18 +28,21 @@ class UserService {
         const [user, activeAccounts, expiredAccounts, purchasedAccounts, activeFreeAccounts, recentOrders, walletTransactions, referralCount, pendingReferralRewards, freeRewards] = await Promise.all([
             prisma_1.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { balance: true, referralCode: true } }),
             prisma_1.prisma.orderItem.findMany({
-                where: {
-                    order: { userId, status: "completed" },
-                    isActive: true,
-                    OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-                    NOT: { productAccount: { is: { status: { in: ["disabled", "expired"] } } } },
-                },
+                where: { order: { userId, status: "completed" }, isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
                 include: { order: true, product: true, productAccount: true, xrayClient: true },
                 orderBy: { purchaseDate: "desc" },
-                take: 20,
-            }),
+                take: 50,
+            }).then((items) => items.filter((item) => (0, account_status_service_1.calculateAccountDisplayStatus)({
+                status: item.productAccount?.status ?? item.xrayClient?.status,
+                expiresAt: item.expiresAt ?? item.productAccount?.expiresAt ?? item.xrayClient?.expiresAt,
+                disabledAt: item.productAccount?.disabledAt,
+                deletedAt: item.productAccount?.deletedAt,
+                productActive: item.product?.isActive,
+                hasRequiredDeliveryData: Boolean(item.xrayClientId || (item.productAccountId && item.productAccount) || item.legacyStatus),
+                legacy: item.legacyStatus === "broken_product_account",
+            }, now) === "active").slice(0, 20)),
             prisma_1.prisma.orderItem.findMany({
-                where: { order: { userId, status: "completed" }, OR: [{ isActive: false }, { expiresAt: { lte: now } }, { productAccount: { is: { status: "expired" } } }] },
+                where: { order: { userId, status: "completed" }, OR: [{ isActive: false }, { expiresAt: { lte: now } }, { productAccount: { is: { status: "expired" } } }, { legacyStatus: { not: null } }] },
                 include: { order: true, product: true, productAccount: true, xrayClient: true },
                 orderBy: { purchaseDate: "desc" },
                 take: 10,
