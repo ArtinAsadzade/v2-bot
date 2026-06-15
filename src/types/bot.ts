@@ -16,7 +16,6 @@ export type ConversationState =
 export type FlowName =
   | "product_create"
   | "product_edit"
-  | "product_xray_inbounds"
   | "account_create"
   | "account_edit"
   | "coupon_create"
@@ -65,6 +64,7 @@ export interface SessionData {
   flow?: ActiveFlow;
   navigation?: { panelMessageId?: number; stack: ViewState[] };
   quickKeyboardSignature?: string;
+  xrayPicker?: { target: "free_test" | "product_create" | "product_edit"; productId?: string; inboundOptions?: string; selectedIds?: number[]; groups?: string; returnTo?: ViewState };
   freeTestInboundSelection?: { inboundOptions: string; selectedIds: number[] };
 }
 

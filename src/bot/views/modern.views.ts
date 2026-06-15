@@ -384,9 +384,10 @@ ${divider}
     if (!client) return { text: "این سرویس برای تمدید پیدا نشد.", keyboard: [[{ text: "🔙 بازگشت", action: callbackFor("account.details") }]], navigation: { back: false, home: false } };
     const currentProductTitle = client.product?.title ?? "سرویس Xray";
     // Renewal plans are loaded from ProductService with mode: "xray_auto", isActive: true, deletedAt: null, positive traffic/duration, and stockLimit > soldCount.
-    const categories = await ProductService.listRenewalCategories();
-    const rows = categories
-      .map((category) => [{ text: `📂 ${category.name}`.slice(0, 60), action: callbackFor("account.renew.products", { xrayClientId: client.id, categoryId: category.id }) }]);
+    const categories = await ProductService.listRenewalCategories(client.id, client.productId);
+    const rows = categories.length === 1
+      ? categories[0].products.map((product) => [{ text: product.title, action: callbackFor("account.renew.summary", { xrayClientId: client.id, productId: product.id }) }])
+      : categories.map((category) => [{ text: `📂 ${category.name}`.slice(0, 60), action: callbackFor("account.renew.products", { xrayClientId: client.id, categoryId: category.id }) }]);
     if (rows.length === 0) {
       return { text: `🔄 تمدید سرویس
 
@@ -415,7 +416,7 @@ ${client.clientEmail}
     const client = await prisma.xrayClient.findFirst({ where: { id: params.xrayClientId, userId: user.id }, include: { product: true, order: true, user: true } });
     if (!client) return { text: "این سرویس برای تمدید پیدا نشد.", keyboard: [[{ text: "🔙 بازگشت", action: callbackFor("account.details") }]], navigation: { back: false, home: false } };
     const currentProductTitle = client.product?.title ?? "سرویس Xray";
-    const available = await ProductService.listRenewalProductsByCategory(params.categoryId);
+    const available = await ProductService.listRenewalProductsByCategory(params.categoryId, client.id, client.productId);
     if (available.length === 0) {
       return { text: `🔄 تمدید سرویس
 
@@ -877,7 +878,7 @@ ${inboundSnapshot.length ? inboundSnapshot.map((i) => `• ${i.remark ?? `inboun
         keyboard: [
           [{ text: "✏️ ویرایش محصول", action: `flow:start:product_edit:${detail.product.id}` }, { text: "📊 تغییر حجم", action: `flow:start:product_edit:${detail.product.id}` }],
           [{ text: "📅 تغییر مدت", action: `flow:start:product_edit:${detail.product.id}` }, { text: "📦 تغییر موجودی", action: `flow:start:product_edit:${detail.product.id}` }],
-          [{ text: "🔗 تغییر اینباندها", action: `flow:start:product_xray_inbounds:${detail.product.id}` }],
+          [{ text: "👥 تغییر گروه", action: `admin:xray_picker:group:product_edit:${detail.product.id}` }, { text: "🔗 تغییر اینباندها", action: `admin:xray_picker:inbounds:product_edit:${detail.product.id}` }],
           [{ text: "🧩 کلاینت‌های ساخته‌شده", action: callbackFor("admin.xrayClients", { productId: detail.product.id }) }],
           [{ text: detail.product.isActive ? "🚫 غیرفعال" : "✅ فعال", action: `admin:product:active:${detail.product.id}:${detail.product.isActive ? "0" : "1"}` }, { text: "🗑 حذف نرم", action: `admin:product:delete:${detail.product.id}` }],
           [{ text: "🧨 حذف دائمی", action: `admin:product:hard_delete:confirm:${detail.product.id}` }],
@@ -1157,14 +1158,21 @@ ${cfg.durationDays.toLocaleString("fa-IR")} روز
 ${cfg.available.toLocaleString("fa-IR")} از ${cfg.stockLimit.toLocaleString("fa-IR")}
 مصرف‌شده: ${cfg.usedCount.toLocaleString("fa-IR")}
 
+🌐 محدودیت IP:
+${(cfg.limitIp ?? 0).toLocaleString("fa-IR")} (${(cfg.limitIp ?? 0) === 0 ? "بدون محدودیت" : "IP"})
+
+👥 گروه:
+${cfg.groupName ?? "بدون گروه"}
+
 🔗 اینباندهای انتخاب‌شده:
 ${snapshot.map((i: any) => `• ${i.remark ?? i.tag ?? i.id} / ${i.protocol ?? "—"} / ${i.port ?? "—"}`).join("\n") || "انتخاب نشده"}
 
 اینباندهای زنده پنل: ${live.length.toLocaleString("fa-IR")}${cfg.inboundIds.length ? "" : "\n\nبرای فعال‌سازی اکانت تست، از دکمه «🔗 انتخاب اینباندها» حداقل یک اینباند انتخاب کنید."}`,
       keyboard: [
         [{ text: "📊 تغییر حجم", action: "flow:start:free_test_config:trafficGB" }, { text: "📅 تغییر مدت", action: "flow:start:free_test_config:durationDays" }],
-        [{ text: "📦 تغییر موجودی", action: "flow:start:free_test_config:stockLimit" }, { text: "🔗 انتخاب اینباندها", action: "admin:free_test:inbounds" }],
-        [{ text: cfg.enabled ? "🚫 غیرفعال‌سازی" : "✅ فعال‌سازی", action: `admin:free_test:enabled:${cfg.enabled ? "0" : "1"}` }, { text: "🔄 بروزرسانی اینباندها", action: "admin:free_test:inbounds" }],
+        [{ text: "📦 تغییر موجودی", action: "flow:start:free_test_config:stockLimit" }, { text: "🌐 تغییر محدودیت IP", action: "flow:start:free_test_config:limitIp" }],
+        [{ text: "👥 انتخاب گروه", action: "admin:xray_picker:group:free_test" }, { text: "🔗 انتخاب اینباندها", action: "admin:xray_picker:inbounds:free_test" }],
+        [{ text: cfg.enabled ? "🚫 غیرفعال‌سازی" : "✅ فعال‌سازی", action: `admin:free_test:enabled:${cfg.enabled ? "0" : "1"}` }, { text: "🔄 بروزرسانی اینباندها", action: "admin:xray_picker:inbounds:free_test" }],
         [{ text: "🔙 بازگشت", action: callbackFor("admin.dashboard") }],
       ],
     };

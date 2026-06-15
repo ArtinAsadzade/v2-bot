@@ -358,7 +358,9 @@ class FreeAccountService {
     static async updateXrayConfig(data, actorId) {
         const current = await this.getXrayConfig();
         const enabledConfig = await xray_service_1.XrayPanelService.getEnabledConfig();
-        const next = { ...current, ...data, trafficBytes: data.trafficGB !== undefined ? (0, xray_service_1.gbToBytes)(data.trafficGB) : current.trafficBytes, stockLimit: data.stockLimit ?? current.stockLimit, durationDays: data.durationDays ?? current.durationDays, inboundIds: data.inboundIds ?? current.inboundIds };
+        const next = { ...current, ...data, trafficBytes: data.trafficGB !== undefined ? (0, xray_service_1.gbToBytes)(data.trafficGB) : current.trafficBytes, stockLimit: data.stockLimit ?? current.stockLimit, durationDays: data.durationDays ?? current.durationDays, inboundIds: data.inboundIds ?? current.inboundIds, limitIp: data.limitIp ?? current.limitIp };
+        if (data.limitIp !== undefined && (!Number.isInteger(data.limitIp) || data.limitIp < 0))
+            throw new FreeAccountError("INVALID_INPUT", "محدودیت IP معتبر نیست");
         let inboundSnapshot = data.inboundSnapshot ?? current.inboundSnapshot;
         if (data.enabled) {
             const reason = validateFreeTestActivation(next, Boolean(enabledConfig));
@@ -388,6 +390,10 @@ class FreeAccountService {
             patch.stockLimit = data.stockLimit;
         if (data.inboundIds !== undefined)
             patch.inboundIds = data.inboundIds;
+        if (data.limitIp !== undefined)
+            patch.limitIp = data.limitIp;
+        if (data.groupName !== undefined)
+            patch.groupName = data.groupName || null;
         const saved = await prisma_1.prisma.freeTestConfig.update({ where: { id: "singleton" }, data: patch });
         await prisma_1.prisma.auditLog.create({ data: { actorId, action: "free_test_config.update", metadata: JSON.stringify({ fields: Object.keys(patch) }) } });
         return saved;
@@ -426,7 +432,7 @@ class FreeAccountService {
                 if (stock.count !== 1)
                     throw new FreeAccountError("NO_INVENTORY", "موجودی اکانت تست تکمیل شده است");
                 const expiresAt = new Date(now.getTime() + config.durationDays * DAY_MS);
-                const client = await tx.xrayClient.create({ data: { userId, telegramId: user.telegramId, isFreeTest: true, clientEmail: `pending-test-${user.telegramId}-${now.getTime()}`, inboundIds: config.inboundIds, expiresAt, trafficBytes: config.trafficBytes, status: "provisioning" } });
+                const client = await tx.xrayClient.create({ data: { userId, telegramId: user.telegramId, isFreeTest: true, clientEmail: `pending-test-${user.telegramId}-${now.getTime()}`, inboundIds: config.inboundIds, limitIp: config.limitIp ?? 0, groupName: config.groupName, expiresAt, trafficBytes: config.trafficBytes, status: "provisioning" } });
                 const email = `test-tg${user.telegramId}-${client.id.slice(-6)}`;
                 const updated = await tx.xrayClient.update({ where: { id: client.id }, data: { clientEmail: email } });
                 await tx.freeAccountUserLock.upsert({ where: { userId }, create: { userId, lastClaimAt: now, lastAssignmentId: client.id }, update: { lastClaimAt: now, lastAssignmentId: client.id } });
@@ -436,7 +442,7 @@ class FreeAccountService {
             const valid = new Set(live.map((i) => i.id));
             if (reserved.inboundIds.some((id) => !valid.has(id)))
                 throw new Error("اینباندهای اکانت تست در پنل معتبر نیستند");
-            const created = await xray_service_1.XrayClientService.createClient({ email: reserved.clientEmail, trafficBytes: reserved.trafficBytes, expiresAt: reserved.expiresAt, telegramId: reserved.telegramId, inboundIds: reserved.inboundIds });
+            const created = await xray_service_1.XrayClientService.createClient({ email: reserved.clientEmail, trafficBytes: reserved.trafficBytes, expiresAt: reserved.expiresAt, telegramId: reserved.telegramId, inboundIds: reserved.inboundIds, limitIp: reserved.limitIp, groupName: reserved.groupName });
             return prisma_1.prisma.xrayClient.update({ where: { id: reserved.id }, data: { status: "active", clientSubId: created.subId, panelClientId: created.uuid ?? created.id, lastError: null } });
         }
         catch (error) {
