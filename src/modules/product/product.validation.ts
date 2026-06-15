@@ -13,11 +13,22 @@ export function validatePositiveInteger(value: unknown, label: string) {
   return number;
 }
 
-export function validateNonNegativeInteger(value: unknown, label: string) {
+export function validateNonNegativeInteger(value: unknown, label: string, message?: string) {
   const normalized = typeof value === "string" ? value.replace(/[,،\s]/g, "") : value;
   const number = Number(normalized);
-  if (!Number.isInteger(number) || number < 0) throw new Error(`❌ ${label} باید عدد صحیح صفر یا بزرگ‌تر باشد.`);
+  if (!Number.isInteger(number) || number < 0) throw new Error(message ?? `❌ ${label} باید عدد صحیح صفر یا بزرگ‌تر باشد.`);
   return number;
+}
+
+export function validateNonNegativeNumber(value: unknown, message: string) {
+  const normalized = typeof value === "string" ? value.replace(/[,،\s]/g, "") : value;
+  const number = Number(normalized);
+  if (!Number.isFinite(number) || number < 0) throw new Error(message);
+  return number;
+}
+
+export function isValidationError(error: unknown): error is Error {
+  return error instanceof Error && error.message.trim().startsWith("❌");
 }
 
 export function normalizeProductMode(value: unknown): ProductModeInput | undefined {

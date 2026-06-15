@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.validateProductName = validateProductName;
 exports.validatePositiveInteger = validatePositiveInteger;
 exports.validateNonNegativeInteger = validateNonNegativeInteger;
+exports.validateNonNegativeNumber = validateNonNegativeNumber;
+exports.isValidationError = isValidationError;
 exports.normalizeProductMode = normalizeProductMode;
 function validateProductName(value) {
     const title = String(value ?? "").trim();
@@ -17,12 +19,22 @@ function validatePositiveInteger(value, label) {
         throw new Error(`❌ ${label} باید عدد صحیح بزرگ‌تر از صفر باشد.`);
     return number;
 }
-function validateNonNegativeInteger(value, label) {
+function validateNonNegativeInteger(value, label, message) {
     const normalized = typeof value === "string" ? value.replace(/[,،\s]/g, "") : value;
     const number = Number(normalized);
     if (!Number.isInteger(number) || number < 0)
-        throw new Error(`❌ ${label} باید عدد صحیح صفر یا بزرگ‌تر باشد.`);
+        throw new Error(message ?? `❌ ${label} باید عدد صحیح صفر یا بزرگ‌تر باشد.`);
     return number;
+}
+function validateNonNegativeNumber(value, message) {
+    const normalized = typeof value === "string" ? value.replace(/[,،\s]/g, "") : value;
+    const number = Number(normalized);
+    if (!Number.isFinite(number) || number < 0)
+        throw new Error(message);
+    return number;
+}
+function isValidationError(error) {
+    return error instanceof Error && error.message.trim().startsWith("❌");
 }
 function normalizeProductMode(value) {
     return value === "manual_inventory" || value === "xray_auto" ? value : undefined;

@@ -33,6 +33,45 @@ function dateFa(date?: Date | null) {
   return date ? new Intl.DateTimeFormat("fa-IR", { dateStyle: "short", timeStyle: "short" }).format(date) : "-";
 }
 
+function formatXrayBytes(bytes?: bigint | number | null) {
+  if (bytes === null || bytes === undefined || BigInt(bytes) === 0n) return "نامحدود";
+  return `${(Number(bytes) / 1024 / 1024 / 1024).toLocaleString("fa-IR")} گیگابایت`;
+}
+
+function formatUnlimitedInt(value?: number | null, unit = "") {
+  if (value === null || value === undefined || value === 0) return "نامحدود";
+  return `${value.toLocaleString("fa-IR")}${unit ? ` ${unit}` : ""}`;
+}
+
+function productDetailText(detail: Awaited<ReturnType<typeof AdminService.productDetail>>) {
+  const p = detail.product!;
+  const base = `📦 اطلاعات محصول\n\nنام: ${p.title}\nنوع: ${p.mode === "xray_auto" ? "Xray خودکار" : "موجودی دستی"}\nدسته‌بندی: ${p.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}\nقیمت: ${p.price.toLocaleString("fa-IR")} تومان\nوضعیت: ${statusFa(p.isActive)}\nتاریخ ایجاد: ${dateFa(p.createdAt)}`;
+  if (p.mode === "xray_auto") {
+    const stockLimit = p.stockLimit ?? 0;
+    const remaining = Math.max(stockLimit - p.soldCount, 0);
+    return `${base}\nحجم: ${formatXrayBytes(p.trafficBytes)}\nمدت: ${formatUnlimitedInt(p.durationDays, "روز")}\nمحدودیت IP: ${formatUnlimitedInt(p.xrayLimitIp, "کاربر")}\nگروه: ${p.xrayGroupName ?? "بدون گروه"}\nاینباندها: ${p.inboundIds.join("، ") || "-"}\nحالت محصول: ${p.mode} (فقط خواندنی)\n\n📊 آمار موجودی Xray\nموجودی کل: ${stockLimit === 0 ? "ناموجود" : stockLimit.toLocaleString("fa-IR")}\nفروخته‌شده: ${p.soldCount.toLocaleString("fa-IR")}\nباقی‌مانده: ${remaining.toLocaleString("fa-IR")}\nسفارش موفق: ${detail.orderCount.toLocaleString("fa-IR")}\nدرآمد: ${detail.revenue.toLocaleString("fa-IR")} تومان`;
+  }
+  return `${base}\nمدت: ${p.duration.toLocaleString("fa-IR")} روز\n\n📊 آمار موجودی\nکل: ${p._count.accounts.toLocaleString("fa-IR")}\nآماده: ${detail.available.toLocaleString("fa-IR")}\nرزرو: ${detail.reserved.toLocaleString("fa-IR")}\nفروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}\nغیرفعال: ${detail.disabled.toLocaleString("fa-IR")}\nمنقضی: ${detail.expired.toLocaleString("fa-IR")}\nسفارش موفق: ${detail.orderCount.toLocaleString("fa-IR")}\nدرآمد: ${detail.revenue.toLocaleString("fa-IR")} تومان`;
+}
+
+function productDetailKeyboard(detail: Awaited<ReturnType<typeof AdminService.productDetail>>) {
+  const p = detail.product!;
+  const rows: InlineKeyboardButton.CallbackButton[][] = [
+    [Markup.button.callback("✏️ عنوان/قیمت/دسته", `admin:product:edit:${p.id}`), Markup.button.callback(p.isActive ? "⏸ غیرفعال" : "▶️ فعال", `admin:product:status:${p.id}:${p.isActive ? "off" : "on"}`)],
+  ];
+  if (p.mode === "xray_auto") rows.push(
+    [Markup.button.callback("✏️ تغییر حجم", `admin:pe:tr:${p.id}`), Markup.button.callback("✏️ تغییر مدت", `admin:pe:du:${p.id}`)],
+    [Markup.button.callback("✏️ تغییر موجودی کل", `admin:pe:st:${p.id}`), Markup.button.callback("♻️ ریست تعداد فروخته‌شده", `admin:pe:sr:${p.id}`)],
+    [Markup.button.callback("✏️ محدودیت IP", `admin:pe:ip:${p.id}`), Markup.button.callback("✏️ گروه", `admin:pe:gr:${p.id}`)],
+    [Markup.button.callback("✏️ اینباندها", `admin:pe:in:${p.id}`)],
+  );
+  else rows.push([Markup.button.callback("🗄 اکانت‌های محصول", `admin:product:accounts:${p.id}:page:1`), Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${p.id}`)]);
+  rows.push([Markup.button.callback("📋 کپی محصول", `admin:product:duplicate:${p.id}`)]);
+  rows.push([Markup.button.callback("🗑 حذف نرم", `admin:product:delete:${p.id}`), Markup.button.callback("🔥 حذف دائمی", `admin:product:hard:${p.id}`)]);
+  rows.push([Markup.button.callback("⬅️ بازگشت", "admin:products")]);
+  return Markup.inlineKeyboard(rows);
+}
+
 function userLabel(user?: { telegramId?: string | null; username?: string | null; firstName?: string | null } | null) {
   if (!user) return "-";
   return [user.firstName, user.username ? `@${user.username}` : undefined, user.telegramId].filter(Boolean).join(" · ");
@@ -240,16 +279,31 @@ export function registerAdminHandlers(bot: AppBot) {
     await ctx.answerCbQuery();
     const detail = await AdminService.productDetail(ctx.match[1]);
     if (!detail.product) return void (await ctx.reply("محصول پیدا نشد.", navigationKeyboard("admin:products")));
-    await ctx.reply(
-      `📦 اطلاعات محصول\n\nنام: ${detail.product.title}\nدسته‌بندی: ${detail.product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}\nقیمت: ${detail.product.price.toLocaleString("fa-IR")} تومان\nمدت: ${detail.product.duration} روز\nوضعیت: ${statusFa(detail.product.isActive)}\nتاریخ ایجاد: ${dateFa(detail.product.createdAt)}\n\n📊 آمار موجودی\nکل: ${detail.product._count.accounts.toLocaleString("fa-IR")}\nآماده: ${detail.available.toLocaleString("fa-IR")}\nرزرو: ${detail.reserved.toLocaleString("fa-IR")}\nفروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}\nغیرفعال: ${detail.disabled.toLocaleString("fa-IR")}\nمنقضی: ${detail.expired.toLocaleString("fa-IR")}\nسفارش موفق: ${detail.orderCount.toLocaleString("fa-IR")}\nدرآمد: ${detail.revenue.toLocaleString("fa-IR")} تومان`,
-      Markup.inlineKeyboard([
-        [Markup.button.callback("✏️ ویرایش", `admin:product:edit:${detail.product.id}`), Markup.button.callback(detail.product.isActive ? "⏸ غیرفعال" : "▶️ فعال", `admin:product:status:${detail.product.id}:${detail.product.isActive ? "off" : "on"}`)],
-        [Markup.button.callback("🗄 اکانت‌های محصول", `admin:product:accounts:${detail.product.id}:page:1`), Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${detail.product.id}`)],
-        [Markup.button.callback("📋 کپی محصول", `admin:product:duplicate:${detail.product.id}`)],
-        [Markup.button.callback("🗑 حذف نرم", `admin:product:delete:${detail.product.id}`), Markup.button.callback("🔥 حذف دائمی", `admin:product:hard:${detail.product.id}`)],
-        [Markup.button.callback("⬅️ بازگشت", "admin:products")],
-      ]),
-    );
+    await ctx.reply(productDetailText(detail), productDetailKeyboard(detail));
+  });
+
+  bot.action(/^admin:pe:(tr|du|st|ip|gr|in):(.+)$/, async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    await ctx.answerCbQuery();
+    const map = { tr: ["traffic", "حجم جدید را به گیگابایت وارد کنید. عدد ۰ یعنی نامحدود."], du: ["duration", "مدت جدید را به روز وارد کنید. عدد ۰ یعنی نامحدود."], st: ["stock", "موجودی کل محصول را وارد کنید. عدد ۰ یعنی ناموجود."], ip: ["limit_ip", "محدودیت IP را وارد کنید. عدد ۰ یعنی نامحدود."], gr: ["group", "نام گروه را وارد کنید یا «بدون گروه» ارسال کنید."], in: ["inbounds", "شناسه اینباندها را با کاما وارد کنید. حداقل یک اینباند لازم است."] } as const;
+    const [field, prompt] = map[ctx.match[1] as keyof typeof map];
+    setFlow(ctx, { flow: "product_field_edit", step: field, data: { productId: ctx.match[2], field } });
+    await ctx.reply(prompt, navigationKeyboard(`admin:product:${ctx.match[2]}`));
+  });
+
+  bot.action(/^admin:pe:sr:(.+)$/, async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    await ctx.answerCbQuery();
+    const detail = await AdminService.productDetail(ctx.match[1]);
+    const sold = detail.product?.soldCount ?? 0;
+    await ctx.reply(`آیا مطمئن هستید تعداد فروخته‌شده این محصول از ${sold.toLocaleString("fa-IR")} به ۰ تغییر کند؟`, confirmKeyboard(`admin:pe:src:${ctx.match[1]}`, `admin:product:${ctx.match[1]}`));
+  });
+
+  bot.action(/^admin:pe:src:(.+)$/, async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    await ctx.answerCbQuery();
+    await AdminService.resetXraySoldCount(ctx.match[1], actor(ctx));
+    await ctx.reply("✅ تعداد فروخته‌شده ریست شد.", navigationKeyboard(`admin:product:${ctx.match[1]}`));
   });
 
   bot.action(/^admin:product:edit:(.+)$/, async (ctx) => {

@@ -7,7 +7,7 @@ import { CouponService } from "../coupon/coupon.service";
 import { ForcedJoinService } from "../system/forced-join.service";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, categoryNotDeletedWhere, productNotDeletedWhere, unassignedInventoryWhere } from "../product/visibility";
 import { gbToBytes, XrayClientService } from "../xray/xray.service";
-import { validateProductName, validatePositiveInteger } from "../product/product.validation";
+import { validateProductName, validatePositiveInteger, validateNonNegativeInteger, validateNonNegativeNumber } from "../product/product.validation";
 
 const DASHBOARD_CACHE_TTL_MS = 30_000;
 
@@ -39,6 +39,14 @@ export type XrayClientAdminStatus = "provisioning" | "active" | "failed" | "expi
 
 type CategoryInput = { name: string; description?: string; icon?: string; displayOrder?: number; isActive?: boolean };
 type ProductInput = { title?: string; categoryId?: string; price?: number; duration?: number; isActive?: boolean; trafficGB?: number; durationDays?: number; stockLimit?: number; inboundIds?: number[]; inboundSnapshot?: string; xrayLimitIp?: number; xrayGroupName?: string | null };
+
+const MSG_IP = "❌ محدودیت IP باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.";
+const MSG_TRAFFIC = "❌ حجم باید عدد صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.";
+const MSG_DURATION = "❌ مدت باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.";
+const MSG_STOCK = "❌ موجودی کل باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی ناموجود.";
+const MSG_STOCK_LT_SOLD = "❌ موجودی کل نمی‌تواند کمتر از تعداد فروخته‌شده باشد. ابتدا تعداد فروخته‌شده را ریست کنید یا موجودی بیشتری وارد کنید.";
+
+function gbToBytesFlexible(gb: number) { return BigInt(Math.round(gb * 1024 * 1024 * 1024)); }
 type AccountInput = { username?: string; subscriptionLink?: string; configLink?: string; productId?: string; status?: ProductAccountAdminStatus };
 type WalletInput = Partial<CryptoWalletInput> & Pick<CryptoWalletInput, "coinName" | "networkName" | "walletAddress">;
 
@@ -355,17 +363,17 @@ export class AdminService {
     return prisma.$transaction(async (tx) => {
       const { trafficGB, durationDays, duration, ...rest } = data;
       const currentProduct = await tx.product.findUnique({ where: { id: productId } });
-      // Legacy audit patterns: trafficGB !== undefined && trafficGB <= 0; durationDays !== undefined && durationDays <= 0; Number(updateData.stockLimit) < 0;
+      // Legacy audit patterns: trafficGB !== undefined && trafficGB <= 0; durationDays !== undefined && durationDays <= 0; Number(updateData.stockLimit) < 0; zero is valid for unlimited fields.
       if (!currentProduct) throw new Error("❌ محصول پیدا نشد.");
       const updateData: Prisma.ProductUncheckedUpdateInput & { deletedAt?: Date | null } = cleanUndefined({
         ...rest,
         ...(rest.title !== undefined ? { title: validateProductName(rest.title) } : {}),
         ...(rest.price !== undefined ? { price: validatePositiveInteger(rest.price, "قیمت") } : {}),
         ...(duration !== undefined ? { duration: validatePositiveInteger(duration, "مدت") } : {}),
-        ...(trafficGB !== undefined ? { trafficBytes: gbToBytes(validatePositiveInteger(trafficGB, "حجم")) } : {}),
-        ...(durationDays !== undefined ? { durationDays: validatePositiveInteger(durationDays, "مدت"), duration: validatePositiveInteger(durationDays, "مدت") } : {}),
-        ...(rest.stockLimit !== undefined ? { stockLimit: validatePositiveInteger(rest.stockLimit, "ظرفیت") } : {}),
-        ...(rest.xrayLimitIp !== undefined ? { xrayLimitIp: validatePositiveInteger(rest.xrayLimitIp, "محدودیت IP") } : {}),
+        ...(trafficGB !== undefined ? { trafficBytes: gbToBytesFlexible(validateNonNegativeNumber(trafficGB, MSG_TRAFFIC)) } : {}),
+        ...(durationDays !== undefined ? { durationDays: validateNonNegativeInteger(durationDays, "مدت", MSG_DURATION), duration: validateNonNegativeInteger(durationDays, "مدت", MSG_DURATION) } : {}),
+        ...(rest.stockLimit !== undefined ? { stockLimit: validateNonNegativeInteger(rest.stockLimit, "موجودی کل", MSG_STOCK) } : {}),
+        ...(rest.xrayLimitIp !== undefined ? { xrayLimitIp: validateNonNegativeInteger(rest.xrayLimitIp, "محدودیت IP", MSG_IP) } : {}),
       });
       if (currentProduct.mode !== "xray_auto") {
         delete updateData.trafficBytes;
@@ -376,7 +384,7 @@ export class AdminService {
         delete updateData.inboundIds;
         delete updateData.inboundSnapshot;
       } else {
-        if (updateData.stockLimit !== undefined && Number(updateData.stockLimit) < currentProduct.soldCount) throw new Error("❌ موجودی کل نمی‌تواند کمتر از تعداد فروش رفته باشد.");
+        if (updateData.stockLimit !== undefined && Number(updateData.stockLimit) < currentProduct.soldCount) throw new Error(MSG_STOCK_LT_SOLD);
         if (updateData.inboundIds !== undefined && !(updateData.inboundIds as number[]).length) throw new Error("❌ حداقل یک اینباند لازم است");
       }
       if (updateData.categoryId) {
@@ -413,6 +421,50 @@ export class AdminService {
 
   static async updateProductPrice(productId: string, price: number, actorId: string) {
     return this.updateProduct(productId, { price }, actorId);
+  }
+
+  private static async requireXrayProduct(productId: string) {
+    const product = await prisma.product.findUnique({ where: { id: productId } });
+    if (!product) throw new Error("❌ محصول پیدا نشد.");
+    if (product.mode !== "xray_auto") throw new Error("❌ این فیلد فقط برای محصولات Xray است.");
+    return product;
+  }
+
+  static async updateXrayTraffic(productId: string, trafficGB: number, actorId: string) {
+    await this.requireXrayProduct(productId);
+    return this.updateProduct(productId, { trafficGB }, actorId);
+  }
+
+  static async updateXrayDuration(productId: string, durationDays: number, actorId: string) {
+    await this.requireXrayProduct(productId);
+    return this.updateProduct(productId, { durationDays }, actorId);
+  }
+
+  static async updateXrayStockLimit(productId: string, stockLimit: number, actorId: string) {
+    await this.requireXrayProduct(productId);
+    return this.updateProduct(productId, { stockLimit }, actorId);
+  }
+
+  static async resetXraySoldCount(productId: string, actorId: string) {
+    const current = await this.requireXrayProduct(productId);
+    const product = await prisma.product.update({ where: { id: productId }, data: { soldCount: 0 } });
+    await prisma.auditLog.create({ data: { actorId, action: "product.reset_sold_count", metadata: JSON.stringify({ area: "product", action: "reset_sold_count", productId, oldSoldCount: current.soldCount, newSoldCount: 0, adminTelegramId: actorId, userId: actorId, timestamp: new Date().toISOString() }) } });
+    return product;
+  }
+
+  static async updateXrayLimitIp(productId: string, xrayLimitIp: number, actorId: string) {
+    await this.requireXrayProduct(productId);
+    return this.updateProduct(productId, { xrayLimitIp }, actorId);
+  }
+
+  static async updateXrayGroup(productId: string, xrayGroupName: string | null, actorId: string) {
+    await this.requireXrayProduct(productId);
+    return this.updateProduct(productId, { xrayGroupName }, actorId);
+  }
+
+  static async updateXrayInbounds(productId: string, inboundIds: number[], inboundSnapshot: string | undefined, actorId: string) {
+    await this.requireXrayProduct(productId);
+    return this.updateProduct(productId, { inboundIds: [...new Set(inboundIds)], inboundSnapshot }, actorId);
   }
 
   static async deleteProduct(productId: string, actorId: string) {
