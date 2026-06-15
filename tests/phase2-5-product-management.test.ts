@@ -23,7 +23,7 @@ test("stock limit zero is allowed but below soldCount is rejected", () => {
   assert.match(adminService, /MSG_STOCK = "❌ موجودی کل باید عدد صحیح صفر یا بزرگ‌تر باشد\. عدد ۰ یعنی ناموجود\."/);
   assert.match(adminService, /validateNonNegativeInteger\(rest\.stockLimit/);
   assert.match(adminService, /MSG_STOCK_LT_SOLD = "❌ موجودی کل نمی‌تواند کمتر از تعداد فروخته‌شده باشد/);
-  assert.match(adminService, /Number\(updateData\.stockLimit\) < currentProduct\.soldCount/);
+  assert.match(adminService, /Number\(updateData\.stockLimit\) < effectiveSoldCount/);
   assert.match(adminService, /resetXraySoldCount[\s\S]*soldCount: 0/);
 });
 
@@ -31,7 +31,7 @@ test("field-specific xray update methods update only intended fields", () => {
   for (const method of ["updateXrayTraffic", "updateXrayDuration", "updateXrayStockLimit", "resetXraySoldCount", "updateXrayLimitIp", "updateXrayGroup", "updateXrayInbounds"]) {
     assert.match(adminService, new RegExp(`static async ${method}\\(`));
   }
-  assert.match(adminService, /if \(product\.mode !== "xray_auto"\) throw new Error\("❌ این فیلد فقط برای محصولات Xray است\."\)/);
+  assert.match(adminService, /if \(product\.mode !== "xray_auto"\) throw productValidationError\("❌ این فیلد فقط برای محصولات Xray است\."\)/);
   assert.match(adminService, /updateProduct\(productId, \{ trafficGB \}/);
   assert.match(adminService, /updateProduct\(productId, \{ durationDays \}/);
   assert.match(adminService, /updateProduct\(productId, \{ stockLimit \}/);
