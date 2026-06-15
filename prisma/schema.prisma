@@ -64,6 +64,13 @@ enum XrayClientStatus {
 }
 
 enum OrderStatus {
+  pending
+  reserving
+  panel_creating
+  panel_verified
+  delivered
+  refund_required
+  refunded
   completed
   cancelled
   failed
@@ -83,6 +90,7 @@ enum FreeConfigRewardStatus {
 
 enum FreeAccountStatus {
   available
+  reserved
   assigned
   expired
 }
@@ -502,6 +510,7 @@ model ProductAccount {
   status           ProductAccountStatus @default(available)
   reservedBy       String?              @db.ObjectId
   reservedAt       DateTime?
+  reservationExpiresAt DateTime?
   soldTo           String?              @db.ObjectId
   soldAt           DateTime?
   assignedTo       String?              @db.ObjectId
@@ -518,6 +527,7 @@ model ProductAccount {
 
   @@index([productId, status])
   @@index([reservedBy])
+  @@index([status, reservationExpiresAt])
   @@index([soldTo])
   @@index([assignedTo])
   @@index([status, expiresAt])
@@ -707,6 +717,9 @@ model FreeAccount {
   configLink       String
   durationDays     Int
   status           FreeAccountStatus @default(available)
+  reservedBy       String?           @db.ObjectId
+  reservedAt       DateTime?
+  reservationExpiresAt DateTime?
   assignedTo       String?           @db.ObjectId
   assignedAt       DateTime?
   createdAt        DateTime          @default(now())
@@ -715,6 +728,8 @@ model FreeAccount {
   assignment FreeAccountAssignment?
 
   @@index([status, createdAt])
+  @@index([status, reservationExpiresAt])
+  @@index([reservedBy])
   @@index([assignedTo, assignedAt])
 }
 
