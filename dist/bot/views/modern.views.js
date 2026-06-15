@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerModernViews = registerModernViews;
 const panel_ui_1 = require("../navigation/panel-ui");
+const callback_tokens_1 = require("../navigation/callback-tokens");
 const admin_middleware_1 = require("../middlewares/admin.middleware");
 const user_service_1 = require("../../modules/user/user.service");
 const product_service_1 = require("../../modules/product/product.service");
@@ -390,7 +391,7 @@ ${divider}
         // Renewal plans are loaded from ProductService with mode: "xray_auto", isActive: true, deletedAt: null, positive traffic/duration, and stockLimit > soldCount.
         const categories = await product_service_1.ProductService.listRenewalCategories(client.id, client.productId);
         const rows = categories.length === 1
-            ? categories[0].products.map((product) => [{ text: product.title, action: (0, panel_ui_1.callbackFor)("account.renew.summary", { xrayClientId: client.id, productId: product.id }) }])
+            ? categories[0].products.map((product) => [{ text: product.title, action: (0, callback_tokens_1.tokenAction)("xr:r:s", (0, callback_tokens_1.createCallbackToken)(ctx, "renewal", { xrayClientId: client.id, productId: product.id })) }])
             : categories.map((category) => [{ text: `📂 ${category.name}`.slice(0, 60), action: (0, panel_ui_1.callbackFor)("account.renew.products", { xrayClientId: client.id, categoryId: category.id }) }]);
         if (rows.length === 0) {
             return { text: `🔄 تمدید سرویس
@@ -441,7 +442,7 @@ ${currentProductTitle}
 👤 شناسه:
 ${client.clientEmail}
 
-لطفاً پلن تمدید را انتخاب کنید:`, keyboard: [...available.map((p) => [{ text: p.title, action: (0, panel_ui_1.callbackFor)("account.renew.summary", { xrayClientId: client.id, productId: p.id }) }]), [{ text: "🔙 بازگشت", action: (0, panel_ui_1.callbackFor)("account.renew", { xrayClientId: client.id }) }]], navigation: { back: false, home: false } };
+لطفاً پلن تمدید را انتخاب کنید:`, keyboard: [...available.map((p) => [{ text: p.title, action: (0, callback_tokens_1.tokenAction)("xr:r:s", (0, callback_tokens_1.createCallbackToken)(ctx, "renewal", { xrayClientId: client.id, productId: p.id })) }]), [{ text: "🔙 بازگشت", action: (0, panel_ui_1.callbackFor)("account.renew", { xrayClientId: client.id }) }]], navigation: { back: false, home: false } };
     });
     (0, panel_ui_1.registerView)("account.renew.summary", async (ctx, params) => {
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
@@ -489,7 +490,7 @@ ${(0, xray_service_1.formatXrayBytes)(newRemainingBytes)}
 ${quote.newExpiry.toLocaleDateString("fa-IR")}
 
 💰 مبلغ:
-${money(quote.product.price)}${quote.liveOk ? "" : "\n\n⚠️ اطلاعات لحظه‌ای پنل در دسترس نبود؛ محاسبه با داده محلی انجام شد."}`, keyboard: [[{ text: "💳 پرداخت با کیف پول", action: `xray:renew:wallet:${quote.client.id}:${quote.product.id}` }, { text: "⚡ پرداخت آنی", action: `xray:renew:instant:${quote.client.id}:${quote.product.id}` }], [{ text: "🔙 بازگشت", action: (0, panel_ui_1.callbackFor)("account.renew.products", { xrayClientId: quote.client.id, categoryId: quote.product.categoryId }) }]], navigation: { back: false, home: false } };
+${money(quote.product.price)}${quote.liveOk ? "" : "\n\n⚠️ اطلاعات لحظه‌ای پنل در دسترس نبود؛ محاسبه با داده محلی انجام شد."}`, keyboard: [[{ text: "💳 پرداخت با کیف پول", action: (0, callback_tokens_1.tokenAction)("xr:r:w", (0, callback_tokens_1.createCallbackToken)(ctx, "renewal", { xrayClientId: quote.client.id, productId: quote.product.id })) }, { text: "⚡ پرداخت آنی", action: (0, callback_tokens_1.tokenAction)("xr:r:i", (0, callback_tokens_1.createCallbackToken)(ctx, "renewal", { xrayClientId: quote.client.id, productId: quote.product.id })) }], [{ text: "🔙 بازگشت", action: (0, panel_ui_1.callbackFor)("account.renew.products", { xrayClientId: quote.client.id, categoryId: quote.product.categoryId }) }]], navigation: { back: false, home: false } };
     });
     (0, panel_ui_1.registerView)("account.history", async (ctx) => {
         const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
@@ -826,7 +827,7 @@ ${products.map((product) => `• ${product.title}
             keyboard,
         };
     });
-    (0, panel_ui_1.registerView)("admin.product", async (_ctx, params) => {
+    (0, panel_ui_1.registerView)("admin.product", async (ctx, params) => {
         const detail = await admin_service_1.AdminService.productDetail(params.productId);
         if (!detail.product)
             return { text: "⚠️ محصول پیدا نشد.", keyboard: [] };
@@ -864,7 +865,7 @@ ${inboundSnapshot.length ? inboundSnapshot.map((i) => `• ${i.remark ?? `inboun
                 keyboard: [
                     [{ text: "✏️ ویرایش محصول", action: `flow:start:product_edit:${detail.product.id}` }, { text: "📊 تغییر حجم", action: `flow:start:product_edit:${detail.product.id}` }],
                     [{ text: "📅 تغییر مدت", action: `flow:start:product_edit:${detail.product.id}` }, { text: "📦 تغییر موجودی", action: `flow:start:product_edit:${detail.product.id}` }],
-                    [{ text: "👥 تغییر گروه", action: `admin:xray_picker:group:product_edit:${detail.product.id}` }, { text: "🔗 تغییر اینباندها", action: `admin:xray_picker:inbounds:product_edit:${detail.product.id}` }],
+                    [{ text: "👥 تغییر گروه", action: (0, callback_tokens_1.tokenAction)("xpg:l:pe", (0, callback_tokens_1.createCallbackToken)(ctx, "xrayPickerProduct", { target: "product_edit", productId: detail.product.id })) }, { text: "🔗 تغییر اینباندها", action: (0, callback_tokens_1.tokenAction)("xpi:l:pe", (0, callback_tokens_1.createCallbackToken)(ctx, "xrayPickerProduct", { target: "product_edit", productId: detail.product.id })) }],
                     [{ text: "🧩 کلاینت‌های ساخته‌شده", action: (0, panel_ui_1.callbackFor)("admin.xrayClients", { productId: detail.product.id }) }],
                     [{ text: detail.product.isActive ? "🚫 غیرفعال" : "✅ فعال", action: `admin:product:active:${detail.product.id}:${detail.product.isActive ? "0" : "1"}` }, { text: "🗑 حذف نرم", action: `admin:product:delete:${detail.product.id}` }],
                     [{ text: "🧨 حذف دائمی", action: `admin:product:hard_delete:confirm:${detail.product.id}` }],

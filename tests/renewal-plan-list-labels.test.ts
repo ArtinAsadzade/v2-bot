@@ -38,7 +38,7 @@ test("renewal category and product buttons preserve context and use clean labels
   assert.match(renewalStart, /text: `📂 \$\{category\.name\}`/);
   assert.match(renewalStart, /callbackFor\("account\.renew\.products", \{ xrayClientId: client\.id, categoryId: category\.id \}\)/);
   assert.match(renewalProducts, /ProductService\.listRenewalProductsByCategory\(params\.categoryId, client\.id, client\.productId\)/);
-  assert.match(renewalProducts, /text: p\.title, action: callbackFor\("account\.renew\.summary", \{ xrayClientId: client\.id, productId: p\.id \}\)/);
+  assert.match(renewalProducts, /text: p\.title, action: tokenAction\("xr:r:s", createCallbackToken\(ctx, "renewal", \{ xrayClientId: client\.id, productId: p\.id \}\)\)/);
   assert.doesNotMatch(renewalProducts, /formatXrayBytes\(p\.trafficBytes\)|money\(p\.price\)|موجودی|روز ·/);
 });
 

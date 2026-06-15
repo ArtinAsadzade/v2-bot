@@ -52,6 +52,15 @@ export interface ActiveFlow {
   returnTo?: ViewState;
 }
 
+export type CallbackTokenPayloadMap = {
+  renewal: { xrayClientId: string; productId: string };
+  xrayGroupSelect: { target: "free_test" | "product_create" | "product_edit"; selected: string | null; productId?: string };
+  xrayPickerProduct: { target: "product_edit"; productId: string };
+};
+export type CallbackTokenType = keyof CallbackTokenPayloadMap;
+export type CallbackTokenPayload<T extends CallbackTokenType = CallbackTokenType> = CallbackTokenPayloadMap[T];
+export type CallbackTokenEntry<T extends CallbackTokenType = CallbackTokenType> = { type: T; payload: CallbackTokenPayload<T>; createdAt: number };
+
 export interface SessionData {
   state?: ConversationState;
   selectedCoupons?: Record<string, string>;
@@ -66,6 +75,7 @@ export interface SessionData {
   quickKeyboardSignature?: string;
   xrayPicker?: { target: "free_test" | "product_create" | "product_edit"; productId?: string; inboundOptions?: string; selectedIds?: number[]; groups?: string; returnTo?: ViewState };
   freeTestInboundSelection?: { inboundOptions: string; selectedIds: number[] };
+  callbackTokens?: Record<string, CallbackTokenEntry>;
 }
 
 export interface AppContext extends Context {

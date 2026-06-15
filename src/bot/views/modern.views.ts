@@ -1,4 +1,5 @@
 import { registerView, callbackFor, actionFor, type UiKeyboard } from "../navigation/panel-ui";
+import { createCallbackToken, tokenAction } from "../navigation/callback-tokens";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 import { UserService } from "../../modules/user/user.service";
 import { ProductService } from "../../modules/product/product.service";
@@ -392,7 +393,7 @@ ${divider}
     // Renewal plans are loaded from ProductService with mode: "xray_auto", isActive: true, deletedAt: null, positive traffic/duration, and stockLimit > soldCount.
     const categories = await ProductService.listRenewalCategories(client.id, client.productId);
     const rows = categories.length === 1
-      ? categories[0].products.map((product) => [{ text: product.title, action: callbackFor("account.renew.summary", { xrayClientId: client.id, productId: product.id }) }])
+      ? categories[0].products.map((product) => [{ text: product.title, action: tokenAction("xr:r:s", createCallbackToken(ctx, "renewal", { xrayClientId: client.id, productId: product.id })) }])
       : categories.map((category) => [{ text: `📂 ${category.name}`.slice(0, 60), action: callbackFor("account.renew.products", { xrayClientId: client.id, categoryId: category.id }) }]);
     if (rows.length === 0) {
       return { text: `🔄 تمدید سرویس
@@ -442,7 +443,7 @@ ${currentProductTitle}
 👤 شناسه:
 ${client.clientEmail}
 
-لطفاً پلن تمدید را انتخاب کنید:`, keyboard: [...available.map((p) => [{ text: p.title, action: callbackFor("account.renew.summary", { xrayClientId: client.id, productId: p.id }) }]), [{ text: "🔙 بازگشت", action: callbackFor("account.renew", { xrayClientId: client.id }) }]], navigation: { back: false, home: false } };
+لطفاً پلن تمدید را انتخاب کنید:`, keyboard: [...available.map((p) => [{ text: p.title, action: tokenAction("xr:r:s", createCallbackToken(ctx, "renewal", { xrayClientId: client.id, productId: p.id })) }]), [{ text: "🔙 بازگشت", action: callbackFor("account.renew", { xrayClientId: client.id }) }]], navigation: { back: false, home: false } };
   });
 
   registerView("account.renew.summary", async (ctx, params) => {
@@ -490,7 +491,7 @@ ${formatXrayBytes(newRemainingBytes)}
 ${quote.newExpiry.toLocaleDateString("fa-IR")}
 
 💰 مبلغ:
-${money(quote.product.price)}${quote.liveOk ? "" : "\n\n⚠️ اطلاعات لحظه‌ای پنل در دسترس نبود؛ محاسبه با داده محلی انجام شد."}`, keyboard: [[{ text: "💳 پرداخت با کیف پول", action: `xray:renew:wallet:${quote.client.id}:${quote.product.id}` }, { text: "⚡ پرداخت آنی", action: `xray:renew:instant:${quote.client.id}:${quote.product.id}` }], [{ text: "🔙 بازگشت", action: callbackFor("account.renew.products", { xrayClientId: quote.client.id, categoryId: quote.product.categoryId }) }]], navigation: { back: false, home: false } };
+${money(quote.product.price)}${quote.liveOk ? "" : "\n\n⚠️ اطلاعات لحظه‌ای پنل در دسترس نبود؛ محاسبه با داده محلی انجام شد."}`, keyboard: [[{ text: "💳 پرداخت با کیف پول", action: tokenAction("xr:r:w", createCallbackToken(ctx, "renewal", { xrayClientId: quote.client.id, productId: quote.product.id })) }, { text: "⚡ پرداخت آنی", action: tokenAction("xr:r:i", createCallbackToken(ctx, "renewal", { xrayClientId: quote.client.id, productId: quote.product.id })) }], [{ text: "🔙 بازگشت", action: callbackFor("account.renew.products", { xrayClientId: quote.client.id, categoryId: quote.product.categoryId }) }]], navigation: { back: false, home: false } };
   });
 
   registerView("account.history", async (ctx) => {
@@ -847,7 +848,7 @@ ${products.map((product) => `• ${product.title}
     };
   });
 
-  registerView("admin.product", async (_ctx, params) => {
+  registerView("admin.product", async (ctx, params) => {
     const detail = await AdminService.productDetail(params.productId);
     if (!detail.product) return { text: "⚠️ محصول پیدا نشد.", keyboard: [] };
     const isXray = detail.product.mode === "xray_auto";
@@ -884,7 +885,7 @@ ${inboundSnapshot.length ? inboundSnapshot.map((i) => `• ${i.remark ?? `inboun
         keyboard: [
           [{ text: "✏️ ویرایش محصول", action: `flow:start:product_edit:${detail.product.id}` }, { text: "📊 تغییر حجم", action: `flow:start:product_edit:${detail.product.id}` }],
           [{ text: "📅 تغییر مدت", action: `flow:start:product_edit:${detail.product.id}` }, { text: "📦 تغییر موجودی", action: `flow:start:product_edit:${detail.product.id}` }],
-          [{ text: "👥 تغییر گروه", action: `admin:xray_picker:group:product_edit:${detail.product.id}` }, { text: "🔗 تغییر اینباندها", action: `admin:xray_picker:inbounds:product_edit:${detail.product.id}` }],
+          [{ text: "👥 تغییر گروه", action: tokenAction("xpg:l:pe", createCallbackToken(ctx, "xrayPickerProduct", { target: "product_edit", productId: detail.product.id })) }, { text: "🔗 تغییر اینباندها", action: tokenAction("xpi:l:pe", createCallbackToken(ctx, "xrayPickerProduct", { target: "product_edit", productId: detail.product.id })) }],
           [{ text: "🧩 کلاینت‌های ساخته‌شده", action: callbackFor("admin.xrayClients", { productId: detail.product.id }) }],
           [{ text: detail.product.isActive ? "🚫 غیرفعال" : "✅ فعال", action: `admin:product:active:${detail.product.id}:${detail.product.isActive ? "0" : "1"}` }, { text: "🗑 حذف نرم", action: `admin:product:delete:${detail.product.id}` }],
           [{ text: "🧨 حذف دائمی", action: `admin:product:hard_delete:confirm:${detail.product.id}` }],
