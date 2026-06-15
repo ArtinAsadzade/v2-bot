@@ -37,7 +37,7 @@ export type ProductAccountAdminStatus = "available" | "reserved" | "sold" | "dis
 export type XrayClientAdminStatus = "provisioning" | "active" | "failed" | "expired";
 
 type CategoryInput = { name: string; description?: string; icon?: string; displayOrder?: number; isActive?: boolean };
-type ProductInput = { title?: string; categoryId?: string; price?: number; duration?: number; isActive?: boolean; trafficGB?: number; durationDays?: number; stockLimit?: number; inboundIds?: number[]; inboundSnapshot?: string };
+type ProductInput = { title?: string; categoryId?: string; price?: number; duration?: number; isActive?: boolean; trafficGB?: number; durationDays?: number; stockLimit?: number; inboundIds?: number[]; inboundSnapshot?: string; xrayLimitIp?: number; xrayGroupName?: string | null };
 type AccountInput = { username?: string; subscriptionLink?: string; configLink?: string; productId?: string; status?: ProductAccountAdminStatus };
 type WalletInput = Partial<CryptoWalletInput> & Pick<CryptoWalletInput, "coinName" | "networkName" | "walletAddress">;
 

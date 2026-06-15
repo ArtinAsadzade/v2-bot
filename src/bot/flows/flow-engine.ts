@@ -471,12 +471,30 @@ active: ${detail.category.isActive}`;
         } catch (error) { return { text: `⚠️ دریافت لیست اینباند ناموفق بود.\n${error instanceof Error ? error.message : "خطای نامشخص"}\n\nلطفاً تنظیمات پنل را بررسی کنید.`, returnTo: { id: "admin.xraySettings" } }; }
         return { text: `شناسه اینباندها را با کاما وارد کنید (حداقل یکی):\n\n${list}`, nextStep: "inbounds" };
       }
-      const inboundIds = text.split(/[,،\s]+/).map(Number).filter((n) => Number.isInteger(n) && n > 0);
-      if (!inboundIds.length) return { text: "حداقل یک inbound ID معتبر وارد کنید:" };
-      const inboundOptions = JSON.parse(String(flow.data.inboundOptions ?? "[]")) as Awaited<ReturnType<typeof XrayClientService.listInbounds>>;
-      const validIds = new Set(inboundOptions.map((inbound) => inbound.id));
-      const invalidIds = inboundIds.filter((id) => !validIds.has(id));
-      if (invalidIds.length) return { text: `شناسه‌های اینباند نامعتبر هستند: ${invalidIds.join(", ")}\nلطفاً فقط از لیست زنده پنل انتخاب کنید.` };
+      if (flow.step === "inbounds") {
+        const inboundIds = text.split(/[,،\s]+/).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+        if (!inboundIds.length) return { text: "حداقل یک inbound ID معتبر وارد کنید:" };
+        const inboundOptions = JSON.parse(String(flow.data.inboundOptions ?? "[]")) as Awaited<ReturnType<typeof XrayClientService.listInbounds>>;
+        const validIds = new Set(inboundOptions.map((inbound) => inbound.id));
+        const invalidIds = inboundIds.filter((id) => !validIds.has(id));
+        if (invalidIds.length) return { text: `شناسه‌های اینباند نامعتبر هستند: ${invalidIds.join(", ")}\nلطفاً فقط از لیست زنده پنل انتخاب کنید.` };
+        (flow.data as any).inboundIds = inboundIds;
+        (flow.data as any).inboundSnapshot = xrayInboundSnapshot(inboundOptions, inboundIds);
+        flow.step = "limitIp";
+        return { text: "🌐 محدودیت IP را وارد کنید\n\nمثال:\n0 = نامحدود\n1 = فقط یک IP\n2 = دو IP همزمان\n\n۰ یعنی بدون محدودیت", nextStep: "limitIp" };
+      }
+      if (flow.step === "limitIp") {
+        const limitIp = Number(text.replace(/[,،\s]/g, ""));
+        if (!Number.isInteger(limitIp) || limitIp < 0) return { text: "محدودیت IP معتبر نیست. عددی بزرگ‌تر یا مساوی ۰ وارد کنید:\n۰ یعنی بدون محدودیت" };
+        flow.data.limitIp = limitIp;
+        flow.step = "group";
+        const groups = await XrayClientService.listGroups().catch(() => []);
+        flow.data.xrayGroups = JSON.stringify(groups);
+        return { text: `👥 انتخاب گروه کلاینت\n\n${groups.length ? groups.map((g) => `• ${g.name} (${g.clientCount ?? 0})`).join("\n") : "گروهی در پنل تعریف نشده است.\nمی‌توانید محصول را بدون گروه ذخیره کنید."}\n\nنام گروه را وارد کنید یا برای بدون گروه عدد 0 را بفرستید.`, nextStep: "group" };
+      }
+      const groups = JSON.parse(String(flow.data.xrayGroups ?? "[]")) as Awaited<ReturnType<typeof XrayClientService.listGroups>>;
+      const groupName = text.trim() === "0" || text.trim() === "بدون گروه" ? null : text.trim();
+      if (groupName && groups.length && !groups.some((g) => g.name === groupName)) return { text: "نام گروه معتبر نیست. یکی از گروه‌های لیست را وارد کنید یا 0 را برای بدون گروه بفرستید." };
       const duration = Number(flow.data.duration);
       const categoryId = String(flow.data.categoryId ?? "");
       if (!categoryId) return { text: "⚠️ دسته‌بندی نامعتبر یا حذف‌شده است. دوباره دسته‌بندی را انتخاب کنید.", keyboard: await productCategoryKeyboard() };
@@ -487,8 +505,10 @@ active: ${detail.category.isActive}`;
         duration,
         trafficGB: Number(flow.data.trafficGB),
         stockLimit: Number(flow.data.stockLimit),
-        inboundIds,
-        inboundSnapshot: xrayInboundSnapshot(inboundOptions, inboundIds),
+        inboundIds: (flow.data as any).inboundIds as number[],
+        inboundSnapshot: String((flow.data as any).inboundSnapshot),
+        limitIp: Number(flow.data.limitIp ?? 0),
+        xrayGroupName: groupName,
       });
       return { done: true, text: "✅ محصول Xray با موجودی خودکار ثبت شد.", returnTo: { id: "admin.products" } };
     },
@@ -512,6 +532,8 @@ active: ${detail.product.isActive}
 ${detail.product.mode === "xray_auto" ? `trafficGB: ${detail.product.trafficBytes ? Number(detail.product.trafficBytes) / 1_073_741_824 : ""}
 durationDays: ${detail.product.durationDays ?? detail.product.duration}
 stockLimit: ${detail.product.stockLimit ?? ""}
+limitIp: ${detail.product.xrayLimitIp ?? 0}
+group: ${detail.product.xrayGroupName ?? ""}
 
 نکته: تغییر حجم/مدت/اینباند فقط روی خریدهای بعدی اعمال می‌شود و سرویس‌های قبلی را تغییر نمی‌دهد.` : ""}
 
@@ -535,6 +557,8 @@ stockLimit: ${detail.product.stockLimit ?? ""}
           durationDays: isXray && data.durationDays ? parseInteger(data.durationDays) : undefined,
           stockLimit: data.stockLimit || data["موجودی"] ? parseInteger(data.stockLimit ?? data["موجودی"] ?? "0") : undefined,
           isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
+          xrayLimitIp: isXray && (data.limitIp || data.xrayLimitIp) ? parseInteger(data.limitIp ?? data.xrayLimitIp ?? "0") : undefined,
+          xrayGroupName: isXray && (data.group !== undefined || data.xrayGroupName !== undefined) ? ((data.group ?? data.xrayGroupName)?.trim() || null) : undefined,
         },
         String(ctx.from?.id ?? "admin"),
       );

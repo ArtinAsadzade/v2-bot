@@ -470,6 +470,8 @@ model Product {
   soldCount         Int         @default(0)
   inboundIds        Int[]
   inboundSnapshot   String?
+  xrayLimitIp      Int         @default(0)
+  xrayGroupName    String?
   xrayPanelConfigId String?     @db.ObjectId
   isActive          Boolean     @default(true)
   deletedAt         DateTime?
@@ -608,6 +610,8 @@ model XrayClient {
   clientSubId   String?
   panelClientId String?
   inboundIds    Int[]
+  limitIp       Int      @default(0)
+  groupName     String?
   expiresAt     DateTime
   trafficBytes  BigInt
   usedBytes     BigInt           @default(0)

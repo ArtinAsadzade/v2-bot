@@ -112,9 +112,18 @@ class XrayPanelService {
 exports.XrayPanelService = XrayPanelService;
 class XrayClientService {
     static async listInbounds(config) { const res = await request("/panel/api/inbounds/options", {}, config); const inbounds = (res.obj ?? []).filter((inbound) => inbound.enabled !== false && inbound.enable !== false); logger_1.logger.info("XRAY_INBOUNDS_FETCHED", { count: inbounds.length }); return inbounds; }
-    static async createClient(input) { logger_1.logger.info("XRAY_CLIENT_CREATE_REQUEST", { email: input.email, inboundIds: input.inboundIds }); const res = await request("/panel/api/clients/add", { method: "POST", body: JSON.stringify({ client: { email: input.email, totalGB: Number(input.trafficBytes), expiryTime: input.expiresAt.getTime(), tgId: Number(input.telegramId), limitIp: 0, enable: true }, inboundIds: input.inboundIds }) }); logger_1.logger.info("XRAY_CLIENT_CREATED", { email: input.email }); return res.obj ?? {}; }
+    static async listGroups(config) { const res = await request("/panel/api/clients/groups", {}, config); const groups = (res.obj ?? []).filter((group) => typeof group.name === "string" && group.name.trim()).map((group) => ({ ...group, name: group.name.trim() })); logger_1.logger.info("XRAY_GROUPS_FETCHED", { count: groups.length }); return groups; }
+    static async createClient(input) { logger_1.logger.info("XRAY_CLIENT_CREATE_REQUEST", { email: input.email, inboundIds: input.inboundIds, limitIp: input.limitIp ?? 0, groupName: input.groupName }); const client = { email: input.email, totalGB: Number(input.trafficBytes), expiryTime: input.expiresAt.getTime(), tgId: Number(input.telegramId), limitIp: Math.max(0, Number(input.limitIp ?? 0)), enable: true }; if (input.groupName)
+        client.group = input.groupName; const res = await request("/panel/api/clients/add", { method: "POST", body: JSON.stringify({ client, inboundIds: input.inboundIds }) }); logger_1.logger.info("XRAY_CLIENT_CREATED", { email: input.email }); return res.obj ?? {}; }
     static async updateClient(email, input) { logger_1.logger.info("XRAY_CLIENT_RENEW_REQUEST", { email }); try {
-        const res = await request(`/panel/api/clients/update/${encodeURIComponent(email)}`, { method: "POST", body: JSON.stringify({ email, totalGB: Number(input.totalBytes), expiryTime: input.expiresAt.getTime(), tgId: Number(input.telegramId), enable: true }) });
+        const existing = await this.getClient(email).catch(() => null);
+        const existingClient = existing?.obj?.client ?? existing?.obj ?? {};
+        const limitIp = input.limitIp ?? existingClient.limitIp ?? 0;
+        const groupName = input.groupName ?? existingClient.group ?? undefined;
+        const body = { email, totalGB: Number(input.totalBytes), expiryTime: input.expiresAt.getTime(), tgId: Number(input.telegramId), limitIp: Math.max(0, Number(limitIp ?? 0)), enable: true };
+        if (groupName)
+            body.group = groupName;
+        const res = await request(`/panel/api/clients/update/${encodeURIComponent(email)}`, { method: "POST", body: JSON.stringify(body) });
         logger_1.logger.info("XRAY_CLIENT_RENEW_SUCCESS", { email });
         return res.obj;
     }
