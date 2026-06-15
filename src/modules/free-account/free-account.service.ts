@@ -10,6 +10,7 @@ const DAY_MS = 86_400_000;
 
 export const FREE_ACCOUNT_STATUS_LABELS = {
   available: "آماده تخصیص",
+  reserved: "رزروشده",
   assigned: "فعال",
   expired: "منقضی و غیرفعال",
 } as const;
@@ -21,7 +22,7 @@ type FreeAccountInput = {
   durationDays: number;
 };
 
-type FreeAccountStatus = "available" | "assigned" | "expired";
+type FreeAccountStatus = "available" | "reserved" | "assigned" | "expired";
 
 export class FreeAccountError extends Error {
   constructor(
@@ -122,7 +123,7 @@ export function validateFreeTestInboundSelection(inbounds: XrayInboundOption[], 
   return { inboundIds: uniqueIds, inboundSnapshot: xrayInboundSnapshot(inbounds, uniqueIds) };
 }
 
-const availableInventoryWhere = { status: "available" as const, assignedTo: null, assignment: { is: null } };
+const availableInventoryWhere = { status: "available" as const, assignedTo: null, reservedBy: null, assignment: { is: null } };
 
 export class FreeAccountService {
   static cooldownDays() {
@@ -390,7 +391,7 @@ export class FreeAccountService {
     const config = await this.getXrayConfig();
     const [user, last, active] = await Promise.all([
       prisma.user.findUnique({ where: { id: userId }, select: { isBanned: true } }),
-      prisma.xrayClient.findFirst({ where: { userId, isFreeTest: true }, orderBy: { createdAt: "desc" } }),
+      prisma.xrayClient.findFirst({ where: { userId, isFreeTest: true, status: { in: ["active", "provisioning", "creating"] } }, orderBy: { createdAt: "desc" } }),
       prisma.xrayClient.findFirst({ where: { userId, isFreeTest: true, status: { in: ["active", "provisioning", "creating"] }, expiresAt: { gt: now } }, orderBy: { createdAt: "desc" } }),
     ]);
     const lastClaimAt = last?.createdAt;
@@ -410,27 +411,34 @@ export class FreeAccountService {
         const config = await tx.freeTestConfig.findUnique({ where: { id: "singleton" } });
         if (!config?.enabled) throw new FreeAccountError("NO_INVENTORY", "اکانت تست فعال نیست");
         if (!config.inboundIds.length || config.trafficBytes <= 0n || config.durationDays <= 0 || config.stockLimit <= 0) throw new FreeAccountError("INVALID_INPUT", "تنظیمات اکانت تست کامل نیست");
-        const last = await tx.xrayClient.findFirst({ where: { userId, isFreeTest: true }, orderBy: { createdAt: "desc" } });
+        const last = await tx.xrayClient.findFirst({ where: { userId, isFreeTest: true, status: { in: ["active", "provisioning", "creating"] } }, orderBy: { createdAt: "desc" } });
         if (last && last.createdAt > cutoff) throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", { lastClaimAt: last.createdAt, nextAvailableAt: new Date(last.createdAt.getTime() + COOLDOWN_DAYS * DAY_MS) });
-        const stock = await tx.freeTestConfig.updateMany({ where: { id: "singleton", enabled: true, usedCount: { lt: config.stockLimit } }, data: { usedCount: { increment: 1 } } });
-        if (stock.count !== 1) throw new FreeAccountError("NO_INVENTORY", "موجودی اکانت تست تکمیل شده است");
+        if (config.usedCount >= config.stockLimit) throw new FreeAccountError("NO_INVENTORY", "موجودی اکانت تست تکمیل شده است");
         const expiresAt = new Date(now.getTime() + config.durationDays * DAY_MS);
         const client = await tx.xrayClient.create({ data: { userId, telegramId: user.telegramId, isFreeTest: true, clientEmail: `pending-test-${user.telegramId}-${now.getTime()}`, inboundIds: config.inboundIds, limitIp: config.limitIp ?? 0, groupName: config.groupName, expiresAt, trafficBytes: config.trafficBytes, status: "provisioning" } });
         const email = `test-tg${user.telegramId}-${client.id.slice(-6)}`;
-        const updated = await tx.xrayClient.update({ where: { id: client.id }, data: { clientEmail: email } });
-        await tx.freeAccountUserLock.upsert({ where: { userId }, create: { userId, lastClaimAt: now, lastAssignmentId: client.id }, update: { lastClaimAt: now, lastAssignmentId: client.id } });
-        return updated;
+        return tx.xrayClient.update({ where: { id: client.id }, data: { clientEmail: email } });
       });
       const live = await XrayClientService.listInbounds();
       const valid = new Set(live.map((i) => i.id));
       if (reserved.inboundIds.some((id: number) => !valid.has(id))) throw new Error("اینباندهای اکانت تست در پنل معتبر نیستند");
       const created = await XrayClientService.createClient({ email: reserved.clientEmail, trafficBytes: reserved.trafficBytes, expiresAt: reserved.expiresAt, telegramId: reserved.telegramId, inboundIds: reserved.inboundIds, limitIp: reserved.limitIp, groupName: reserved.groupName });
-      return prisma.xrayClient.update({ where: { id: reserved.id }, data: { status: "active", clientSubId: created.subId, panelClientId: created.uuid ?? created.id, lastError: null } });
+      const verified = await XrayClientService.verifyPanelClient({ email: reserved.clientEmail, expectedInboundIds: reserved.inboundIds });
+      const delivered = await prisma.$transaction(async (tx) => {
+        const stock = await tx.freeTestConfig.updateMany({ where: { id: "singleton", enabled: true, usedCount: { lt: (await tx.freeTestConfig.findUniqueOrThrow({ where: { id: "singleton" } })).stockLimit } }, data: { usedCount: { increment: 1 } } });
+        if (stock.count !== 1) throw new FreeAccountError("NO_INVENTORY", "موجودی اکانت تست تکمیل شده است");
+        const updated = await tx.xrayClient.update({ where: { id: reserved.id }, data: { status: "active", clientSubId: verified.subId ?? created.subId, panelClientId: verified.panelClientId ?? created.uuid ?? created.id, lastError: null } });
+        await tx.freeAccountUserLock.upsert({ where: { userId }, create: { userId, lastClaimAt: now, lastAssignmentId: reserved.id }, update: { lastClaimAt: now, lastAssignmentId: reserved.id } });
+        await tx.auditLog.create({ data: { actorId: userId, action: "free_xray.delivered", metadata: JSON.stringify({ xrayClientId: reserved.id, deliveryId: reserved.id, panelClientId: verified.panelClientId }) } });
+        return updated;
+      });
+      return delivered;
     } catch (error) {
       if (reserved?.id) {
         const message = error instanceof Error ? error.message : String(error);
         await prisma.xrayClient.update({ where: { id: reserved.id }, data: { status: "failed", lastError: message } });
-        MonitoringService.record({ type: "PAYMENT_DELIVERY_FAILED", section: "Free Test", description: message, userId, severity: "critical", suggestedAction: "اکانت تست رزروشده را در پنل بررسی و دستی بسازید.", metadata: { xrayClientId: reserved.id } });
+        await prisma.auditLog.create({ data: { actorId: userId, action: "free_xray.failed", metadata: JSON.stringify({ xrayClientId: reserved.id, deliveryId: reserved.id, error: message }) } });
+        MonitoringService.record({ type: "PAYMENT_DELIVERY_FAILED", section: "Free Test", description: message, userId, severity: "critical", suggestedAction: "اکانت تست در پنل ساخته/verify نشده؛ سهمیه ماهانه مصرف نشده است.", metadata: { xrayClientId: reserved.id } });
       }
       throw error;
     }

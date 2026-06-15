@@ -871,17 +871,12 @@ class PaymentService {
         if (isXray) {
             if (!product.trafficBytes || !product.durationDays || !product.stockLimit || !product.inboundIds.length)
                 throw new Error("تنظیمات محصول Xray کامل نیست");
-            const reserved = await tx.product.updateMany({ where: { id: product.id, mode: "xray_auto", soldCount: { lt: product.stockLimit } }, data: { soldCount: { increment: 1 } } });
-            if (reserved.count !== 1) {
-                monitoring_service_1.MonitoringService.record({ type: "XRAY_STOCK_RESERVATION_FAILED", section: "Xray Stock", description: "Xray stock reservation failed", userId: data.userId, severity: "warning", suggestedAction: "موجودی محصول Xray و soldCount را بررسی کنید.", metadata: { productId: product.id } });
-                throw new Error("موجودی این محصول تمام شده است");
-            }
-            await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "XRAY_STOCK_RESERVED", metadata: { productId: product.id, method: data.method } });
+            await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "XRAY_DELIVERY_PENDING", metadata: { productId: product.id, method: data.method } });
         }
         else {
             const candidates = await tx.productAccount.findMany({ where: { AND: [(0, visibility_1.availableInventoryWhere)(product.id), (0, visibility_1.unassignedInventoryWhere)()] }, orderBy: { createdAt: "asc" }, take: 10 });
             for (const candidate of candidates) {
-                const reserved = await tx.productAccount.updateMany({ where: { id: candidate.id, productId: product.id, status: "available", soldTo: null, soldAt: null, assignedTo: null, assignedAt: null }, data: { status: "reserved", reservedBy: data.userId, reservedAt } });
+                const reserved = await tx.productAccount.updateMany({ where: { id: candidate.id, productId: product.id, status: "available", soldTo: null, soldAt: null, assignedTo: null, assignedAt: null }, data: { status: "reserved", reservedBy: data.userId, reservedAt, reservationExpiresAt: new Date(reservedAt.getTime() + 15 * 60000) } });
                 if (reserved.count === 1) {
                     account = candidate;
                     break;
@@ -892,10 +887,10 @@ class PaymentService {
             await tx.productAccountHistory.create({ data: { accountId: account.id, actorId: data.userId, action: "Inventory Reserved", fromValue: "available", toValue: "reserved", metadata: JSON.stringify({ invoiceId: data.invoice?.id, productId: product.id, reservedAt, method: data.method }) } });
             await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Reserved", metadata: { accountId: account.id, productId: product.id, method: data.method } });
         }
-        if (data.method === "WALLET" && totalAmount > 0) {
+        if (!isXray && data.method === "WALLET" && totalAmount > 0) {
             await this.debitWallet(tx, { userId: data.userId, amount: totalAmount, reason: `خرید محصول ${product.title}`, actorId: data.userId, referenceId: `purchase:${data.userId}:${product.id}:${reservedAt.getTime()}` });
         }
-        if (couponId) {
+        if (couponId && !isXray) {
             const couponLimit = await tx.coupon.findUniqueOrThrow({ where: { id: couponId }, select: { maxUses: true, perUserLimit: true, status: true, deletedAt: true, expiresAt: true } });
             const usageCount = await tx.couponUsage.count({ where: { couponId, userId: data.userId } });
             if (usageCount >= couponLimit.perUserLimit) {
@@ -908,7 +903,7 @@ class PaymentService {
                 throw new Error("کد تخفیف دیگر قابل استفاده نیست");
             }
         }
-        const order = await tx.order.create({ data: { userId: data.userId, productId: product.id, couponId, originalAmount, totalAmount, finalPaidAmount: totalAmount, discountAmount, status: "completed" } });
+        const order = await tx.order.create({ data: { userId: data.userId, productId: product.id, couponId, originalAmount, totalAmount, finalPaidAmount: totalAmount, discountAmount, status: isXray ? "pending" : "completed" } });
         const purchaseDate = new Date();
         const durationDays = isXray ? (product.durationDays ?? product.duration) : (account.durationDays ?? product.duration);
         const expiresAt = new Date(purchaseDate.getTime() + durationDays * 86400000);
@@ -922,12 +917,12 @@ class PaymentService {
                 update: {},
                 create: { userId: data.userId, telegramId: user.telegramId, productId: product.id, orderId: order.id, clientEmail: email, inboundIds: product.inboundIds, limitIp: product.xrayLimitIp ?? 0, groupName: product.xrayGroupName, expiresAt, trafficBytes: product.trafficBytes, status: "provisioning" },
             });
-            orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, xrayClientId: xrayClient.id, deliveredUsername: email, deliveredSubscriptionLink: null, deliveredConfigLink: null, deliveredConfig: "XRAY_LIVE_LINKS", purchaseDate, expiresAt, isActive: false } });
+            orderItem = null;
         }
         else {
             orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, productAccountId: account.id, deliveredUsername: account.username, deliveredPassword: account.password, deliveredSubscriptionLink: account.subscriptionLink, deliveredConfigLink: account.configLink, deliveredConfig: account.configLink || account.config, purchaseDate, expiresAt, isActive: true } });
         }
-        if (couponId) {
+        if (couponId && !isXray) {
             const usageSlot = await tx.couponUsage.count({ where: { couponId, userId: data.userId } });
             await tx.couponUsage.create({ data: { couponId, userId: data.userId, orderId: order.id, usageSlot } });
             await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "COUPON_USAGE_RECORDED", metadata: { couponId, orderId: order.id, usageSlot, originalAmount, discountAmount, finalAmount: totalAmount } });
@@ -937,6 +932,8 @@ class PaymentService {
             const sold = await tx.productAccount.updateMany({ where: { id: account.id, productId: product.id, status: "reserved", reservedBy: data.userId, AND: [(0, visibility_1.unassignedInventoryWhere)()] }, data: { status: "sold", soldTo: data.userId, soldAt, assignedTo: data.userId, assignedAt: soldAt, expiresAt, reservedBy: null, reservedAt: null } });
             if (sold.count !== 1)
                 throw new Error("تحویل اکانت ناموفق بود");
+            if (!orderItem)
+                throw new Error("آیتم سفارش تحویلی نامعتبر است");
             if (!orderItem.productAccountId)
                 throw new Error("شناسه اکانت تحویلی نامعتبر است");
             await tx.productAccountHistory.create({ data: { accountId: account.id, actorId: data.userId, action: "Inventory Sold", fromValue: "reserved", toValue: "sold", metadata: JSON.stringify({ invoiceId: data.invoice?.id, orderId: order.id, orderItemId: orderItem.id, productId: product.id, soldAt, expiresAt, method: data.method }) } });
@@ -947,36 +944,54 @@ class PaymentService {
         return { order, product, account: deliveredAccount, orderItem, xrayClient, totalAmount, originalAmount, discountAmount, couponId, couponCode: data.couponCode, expiresAt };
     }
     static async provisionXrayClient(orderId, invoiceId) {
-        const client = await prisma_1.prisma.xrayClient.findFirstOrThrow({ where: { orderId }, include: { order: true } });
+        const client = await prisma_1.prisma.xrayClient.findFirstOrThrow({ where: { orderId }, include: { order: true, product: true } });
         if (client.status === "active") {
             const orderItem = await prisma_1.prisma.orderItem.findFirst({ where: { xrayClientId: client.id } });
-            const product = await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: client.productId ?? "" } });
+            const product = client.product ?? await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: client.productId ?? "" } });
             return { order: client.order, product, account: { id: client.id, username: client.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem, xrayClient: client, totalAmount: client.order?.totalAmount ?? 0, originalAmount: client.order?.originalAmount ?? 0, discountAmount: client.order?.discountAmount ?? 0, couponId: client.order?.couponId ?? null, couponCode: undefined, expiresAt: client.expiresAt };
         }
         if (client.status !== "provisioning" && client.status !== "creating")
             throw new Error("تحویل Xray قبلاً ناموفق شده و نیازمند بررسی مدیر است");
+        const product = client.product ?? await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: client.productId ?? "" } });
         try {
+            await prisma_1.prisma.order.update({ where: { id: orderId }, data: { status: "panel_creating" } });
             const created = await xray_service_1.XrayClientService.createClient({ email: client.clientEmail, trafficBytes: client.trafficBytes, expiresAt: client.expiresAt, telegramId: client.telegramId, inboundIds: client.inboundIds, limitIp: client.limitIp, groupName: client.groupName });
-            const updated = await prisma_1.prisma.xrayClient.update({ where: { id: client.id }, data: { status: "active", clientSubId: created.subId, panelClientId: created.uuid ?? created.id, lastError: null } });
-            const orderItem = await prisma_1.prisma.orderItem.updateMany({ where: { xrayClientId: client.id }, data: { isActive: true } });
-            await prisma_1.prisma.order.update({ where: { id: orderId }, data: { status: "completed" } });
-            if (invoiceId)
-                await prisma_1.prisma.paymentInvoice.update({ where: { id: invoiceId }, data: { deliveryStatus: "COMPLETED", status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), orderId } });
-            await audit(prisma_1.prisma, { userId: client.userId, invoiceId, action: "XRAY_PRODUCT_DELIVERED", metadata: { orderId, xrayClientId: client.id } });
-            const product = await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: client.productId ?? "" } });
-            const order = await prisma_1.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
-            const item = await prisma_1.prisma.orderItem.findFirst({ where: { xrayClientId: client.id } });
-            return { order, product, account: { id: updated.id, username: updated.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem: item, xrayClient: updated, totalAmount: order.totalAmount, originalAmount: order.originalAmount, discountAmount: order.discountAmount, couponId: order.couponId, couponCode: undefined, expiresAt: updated.expiresAt };
+            const verified = await xray_service_1.XrayClientService.verifyPanelClient({ email: client.clientEmail, expectedInboundIds: client.inboundIds });
+            await prisma_1.prisma.order.update({ where: { id: orderId }, data: { status: "panel_verified" } });
+            const result = await prisma_1.prisma.$transaction(async (tx) => {
+                const freshOrder = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
+                const sold = await tx.product.updateMany({ where: { id: product.id, mode: "xray_auto", soldCount: { lt: product.stockLimit ?? 0 } }, data: { soldCount: { increment: 1 } } });
+                if (sold.count !== 1)
+                    throw new Error("موجودی این محصول تمام شده است");
+                if (!invoiceId && freshOrder.totalAmount > 0)
+                    await this.debitWallet(tx, { userId: client.userId, amount: freshOrder.totalAmount, reason: `خرید محصول ${product.title}`, actorId: client.userId, referenceId: `purchase:${orderId}` });
+                let item = await tx.orderItem.findFirst({ where: { xrayClientId: client.id } });
+                if (!item)
+                    item = await tx.orderItem.create({ data: { orderId, productId: product.id, xrayClientId: client.id, deliveredUsername: client.clientEmail, deliveredSubscriptionLink: null, deliveredConfigLink: null, deliveredConfig: "XRAY_LIVE_LINKS", purchaseDate: new Date(), expiresAt: client.expiresAt, isActive: true } });
+                if (freshOrder.couponId) {
+                    const used = await tx.couponUsage.count({ where: { couponId: freshOrder.couponId, userId: client.userId } });
+                    if (used === 0)
+                        await tx.couponUsage.create({ data: { couponId: freshOrder.couponId, userId: client.userId, orderId, usageSlot: 0 } });
+                }
+                const updatedClient = await tx.xrayClient.update({ where: { id: client.id }, data: { status: "active", clientSubId: verified.subId ?? created.subId, panelClientId: verified.panelClientId ?? created.uuid ?? created.id, lastError: null } });
+                const completedOrder = await tx.order.update({ where: { id: orderId }, data: { status: "delivered" } });
+                if (invoiceId)
+                    await tx.paymentInvoice.update({ where: { id: invoiceId }, data: { deliveryStatus: "COMPLETED", status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), orderId } });
+                await audit(tx, { userId: client.userId, invoiceId, action: "XRAY_PRODUCT_DELIVERED", metadata: { orderId, xrayClientId: client.id, deliveryId: orderId, panelClientId: verified.panelClientId, step: "delivered", status: "success" } });
+                return { order: completedOrder, orderItem: item, xrayClient: updatedClient };
+            });
+            return { order: result.order, product, account: { id: result.xrayClient.id, username: result.xrayClient.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem: result.orderItem, xrayClient: result.xrayClient, totalAmount: result.order.totalAmount, originalAmount: result.order.originalAmount, discountAmount: result.order.discountAmount, couponId: result.order.couponId, couponCode: undefined, expiresAt: result.xrayClient.expiresAt };
         }
         catch (error) {
             const message = (0, xray_service_1.sanitizePanelError)(error);
-            logger_1.logger.error("XRAY_CLIENT_CREATE_FAILED", { orderId, error: message });
+            logger_1.logger.error("XRAY_CLIENT_CREATE_FAILED", { orderId, deliveryId: orderId, userId: client.userId, productId: client.productId, xrayClientId: client.id, step: "panel_verified", status: "failed", error: message });
             await prisma_1.prisma.xrayClient.update({ where: { id: client.id }, data: { status: "failed", lastError: message } });
             await prisma_1.prisma.order.update({ where: { id: orderId }, data: { status: "failed_delivery" } });
             if (invoiceId)
                 await prisma_1.prisma.paymentInvoice.update({ where: { id: invoiceId }, data: { deliveryStatus: "FAILED_DELIVERY", verifiedAt: new Date(), orderId } });
-            monitoring_service_1.MonitoringService.record({ type: "XRAY_CLIENT_CREATE_FAILED", section: "Xray Delivery", description: message, userId: client.userId, severity: "critical", suggestedAction: "تحویل سرویس Xray را بررسی و دستی retry کنید. موجودی تا رفع خطا مصرف‌شده باقی می‌ماند.", metadata: { orderId, xrayClientId: client.id } });
-            throw new Error("پرداخت/سفارش ثبت شد اما تحویل Xray نیازمند بررسی مدیر است.");
+            await prisma_1.prisma.auditLog.create({ data: { actorId: client.userId, action: "xray_delivery.failed", metadata: JSON.stringify({ orderId, deliveryId: orderId, xrayClientId: client.id, error: message }) } });
+            monitoring_service_1.MonitoringService.record({ type: "XRAY_CLIENT_CREATE_FAILED", section: "Xray Delivery", description: message, userId: client.userId, severity: "critical", suggestedAction: "تحویل سرویس Xray را بررسی و دستی retry کنید. کیف پول تا قبل از verify کسر نمی‌شود.", metadata: { orderId, xrayClientId: client.id } });
+            throw new Error("ساخت اکانت با مشکل مواجه شد. مبلغی از کیف پول شما کسر نشده / سهمیه تست شما مصرف نشده است. لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.");
         }
     }
     static async purchaseProductWithWallet(userId, productId, couponCode) {
