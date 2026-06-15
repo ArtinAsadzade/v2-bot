@@ -43,7 +43,7 @@ test("renewal start loads selected XrayClient and lists active xray_auto categor
 
 test("renewal product list and summary use selected client/product context", () => {
   assert.match(modernViewsSource, /registerView\("account\.renew\.products"/);
-  assert.match(modernViewsSource, /callbackFor\("account\.renew\.summary", \{ xrayClientId: client\.id, productId: p\.id \}\)/);
+  assert.match(modernViewsSource, /tokenAction\("xr:r:s", createCallbackToken\(ctx, "renewal", \{ xrayClientId: client\.id, productId: p\.id \}\)\)/);
   assert.match(modernViewsSource, /🔄 خلاصه تمدید/);
   assert.match(modernViewsSource, /حجم کل جدید/);
   assert.match(modernViewsSource, /باقی‌مانده جدید/);
@@ -60,8 +60,10 @@ test("renewal calculation and fulfillment update existing Xray client idempotent
 });
 
 test("wallet and direct renewal payment routes are wired", () => {
+  assert.match(modernHandlersSource, /xr:r:w/);
   assert.match(modernHandlersSource, /xray:renew:wallet/);
   assert.match(modernHandlersSource, /PaymentInvoiceService\.renewXrayWithWallet/);
+  assert.match(modernHandlersSource, /xr:r:i/);
   assert.match(modernHandlersSource, /xray:renew:instant/);
   assert.match(modernHandlersSource, /PaymentInvoiceService\.createXrayRenewalInvoice/);
   assert.match(paymentSource, /type: "XRAY_RENEWAL"/);

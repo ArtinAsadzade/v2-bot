@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerModernHandlers = registerModernHandlers;
 const modern_views_1 = require("../views/modern.views");
 const panel_ui_1 = require("../navigation/panel-ui");
+const callback_tokens_1 = require("../navigation/callback-tokens");
 const flow_engine_1 = require("../flows/flow-engine");
 const user_service_1 = require("../../modules/user/user.service");
 const referral_service_1 = require("../../modules/referral/referral.service");
@@ -292,8 +293,7 @@ function registerModernHandlers(bot) {
             await ctx.reply(`⚠️ دریافت کانفیگ‌ها ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
         }
     });
-    bot.action(/^xray:renew:wallet:([^:]+):([^:]+)$/, async (ctx) => {
-        await ctx.answerCbQuery();
+    async function renewWithWallet(ctx, xrayClientId, productId) {
         if (!ctx.from)
             return;
         const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
@@ -301,27 +301,55 @@ function registerModernHandlers(bot) {
             return;
         try {
             await ctx.editMessageText("⏳ در حال تمدید سرویس از کیف پول...", { reply_markup: { inline_keyboard: [] } });
-            const renewal = await payment_service_1.PaymentInvoiceService.renewXrayWithWallet(user.id, ctx.match[1], ctx.match[2]);
-            await ctx.reply(`✅ سرویس با موفقیت تمدید شد.\n\nاعتبار جدید: ${renewal.newExpiry.toLocaleDateString("fa-IR")}`, { reply_markup: { inline_keyboard: [[{ text: "🧩 مشاهده سرویس", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: ctx.match[1] }) }]] } });
+            const renewal = await payment_service_1.PaymentInvoiceService.renewXrayWithWallet(user.id, xrayClientId, productId);
+            await ctx.reply(`✅ سرویس با موفقیت تمدید شد.\n\nاعتبار جدید: ${renewal.newExpiry.toLocaleDateString("fa-IR")}`, { reply_markup: { inline_keyboard: [[{ text: "🧩 مشاهده سرویس", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId }) }]] } });
         }
         catch (error) {
             await ctx.reply(`⚠️ تمدید ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
         }
-    });
-    bot.action(/^xray:renew:instant:([^:]+):([^:]+)$/, async (ctx) => {
-        await ctx.answerCbQuery();
+    }
+    async function renewWithInstantInvoice(ctx, xrayClientId, productId) {
         if (!ctx.from)
             return;
         const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
         if (!user)
             return;
         try {
-            const invoice = await payment_service_1.PaymentInvoiceService.createXrayRenewalInvoice(user.id, ctx.match[1], ctx.match[2]);
-            await ctx.reply(`🧾 فاکتور تمدید آماده شد\n\n💰 مبلغ: ${invoice.amount.toLocaleString("fa-IR")} تومان\n\nبرای پرداخت روی دکمه زیر بزنید.`, { reply_markup: { inline_keyboard: [[{ text: "⚡ پرداخت", url: invoice.paymentLink ?? "" }], [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: ctx.match[1] }) }]] } });
+            const invoice = await payment_service_1.PaymentInvoiceService.createXrayRenewalInvoice(user.id, xrayClientId, productId);
+            await ctx.reply(`🧾 فاکتور تمدید آماده شد\n\n💰 مبلغ: ${invoice.amount.toLocaleString("fa-IR")} تومان\n\nبرای پرداخت روی دکمه زیر بزنید.`, { reply_markup: { inline_keyboard: [[{ text: "⚡ پرداخت", url: invoice.paymentLink ?? "" }], [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId }) }]] } });
         }
         catch (error) {
             await ctx.reply(`⚠️ ایجاد فاکتور تمدید ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
         }
+    }
+    bot.action(/^xr:r:s:([^:]+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        const payload = (0, callback_tokens_1.resolveCallbackToken)(ctx, "renewal", ctx.match[1]);
+        if (!payload)
+            return void await ctx.reply("⚠️ این دکمه منقضی شده است. لطفاً لیست تمدید را دوباره باز کنید.");
+        return (0, panel_ui_1.renderPanel)(ctx, { id: "account.renew.summary", params: payload }, "push", panel_ui_1.RenderMode.EDIT_CURRENT);
+    });
+    bot.action(/^xr:r:w:([^:]+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        const payload = (0, callback_tokens_1.resolveCallbackToken)(ctx, "renewal", ctx.match[1]);
+        if (!payload)
+            return void await ctx.reply("⚠️ این دکمه منقضی شده است. لطفاً خلاصه تمدید را دوباره باز کنید.");
+        return renewWithWallet(ctx, payload.xrayClientId, payload.productId);
+    });
+    bot.action(/^xr:r:i:([^:]+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        const payload = (0, callback_tokens_1.resolveCallbackToken)(ctx, "renewal", ctx.match[1]);
+        if (!payload)
+            return void await ctx.reply("⚠️ این دکمه منقضی شده است. لطفاً خلاصه تمدید را دوباره باز کنید.");
+        return renewWithInstantInvoice(ctx, payload.xrayClientId, payload.productId);
+    });
+    bot.action(/^xray:renew:wallet:([^:]+):([^:]+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        return renewWithWallet(ctx, ctx.match[1], ctx.match[2]);
+    });
+    bot.action(/^xray:renew:instant:([^:]+):([^:]+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        return renewWithInstantInvoice(ctx, ctx.match[1], ctx.match[2]);
     });
     async function showExpiredCheckoutRecovery(ctx) {
         await ctx.reply("این پیش‌فاکتور منقضی شده است.\nلطفاً محصول را دوباره انتخاب کنید.", { reply_markup: { inline_keyboard: [[{ text: "🛒 بازگشت به فروشگاه", callback_data: (0, panel_ui_1.callbackFor)("shop.categories") }, { text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
@@ -407,10 +435,26 @@ function registerModernHandlers(bot) {
     const pickerTargetAlias = { free_test: "f", product_create: "pc", product_edit: "pe" };
     const pickerTargetFromAlias = { f: "free_test", pc: "product_create", pe: "product_edit" };
     const pickerAlias = (target) => pickerTargetAlias[target];
-    function xrayInboundPickerKeyboard(target, inbounds, selectedIds, productId) {
+    function resolvePickerProductId(ctx, productOrToken) {
+        if (!productOrToken)
+            return undefined;
+        return (0, callback_tokens_1.resolveCallbackToken)(ctx, "xrayPickerProduct", productOrToken)?.productId ?? productOrToken;
+    }
+    function isExpiredPickerToken(ctx, targetAlias, productOrToken) {
+        if (targetAlias !== "pe" || !productOrToken)
+            return false;
+        if (/^[a-f\d]{24}$/i.test(productOrToken))
+            return false;
+        return !(0, callback_tokens_1.resolveCallbackToken)(ctx, "xrayPickerProduct", productOrToken);
+    }
+    async function replyExpiredPickerToken(ctx) {
+        await ctx.reply("⚠️ این دکمه منقضی شده است. لطفاً صفحه محصول را دوباره باز کنید و لیست را بروزرسانی کنید.");
+    }
+    function xrayInboundPickerKeyboard(ctxForKeyboard, target, inbounds, selectedIds, productId) {
         const selected = new Set(selectedIds);
         const targetAlias = pickerAlias(target);
-        const suffix = productId ? `:${productId}` : "";
+        const token = target === "product_edit" && productId ? (0, callback_tokens_1.createCallbackToken)(ctxForKeyboard, "xrayPickerProduct", { target: "product_edit", productId }) : undefined;
+        const suffix = productId ? `:${token ?? productId}` : "";
         const rows = inbounds.map((inbound) => [{ text: `${selected.has(inbound.id) ? "☑" : "☐"} ${inbound.remark ?? inbound.tag ?? `inbound-${inbound.id}`} | ${inbound.protocol ?? "—"} · port ${inbound.port ?? "—"}`, callback_data: `xpi:t:${targetAlias}:${inbound.id}${suffix}` }]);
         rows.push([{ text: "✅ ذخیره اینباندها", callback_data: `xpi:s:${targetAlias}${suffix}` }]);
         rows.push([{ text: "🔄 بروزرسانی لیست", callback_data: `xpi:l:${targetAlias}${suffix}` }, { text: "🔙 بازگشت", callback_data: target === "free_test" ? (0, panel_ui_1.callbackFor)("admin.freeAccounts") : productId ? (0, panel_ui_1.callbackFor)("admin.product", { productId }) : (0, panel_ui_1.callbackFor)("admin.products") }]);
@@ -429,14 +473,19 @@ function registerModernHandlers(bot) {
         ctx.session.xrayPicker = { target, productId, inboundOptions: JSON.stringify(inbounds), selectedIds };
         const selected = new Set(selectedIds);
         const title = target === "free_test" ? "اکانت تست" : target === "product_edit" ? "محصول" : "محصول جدید";
-        await ctx.reply(`🔗 انتخاب اینباندهای ${title}\n\n${target === "product_edit" ? "⚠️ تغییر اینباندها فقط روی خریدهای جدید اعمال می‌شود.\n\n" : ""}${inbounds.map((i) => `${selected.has(i.id) ? "☑" : "☐"} ${i.remark ?? i.tag ?? `inbound-${i.id}`}\n${i.protocol ?? "—"} · port ${i.port ?? "—"}`).join("\n\n") || "⚠️ هیچ اینباند زنده‌ای از پنل دریافت نشد."}`, { reply_markup: xrayInboundPickerKeyboard(target, inbounds, selectedIds, productId) });
+        await ctx.reply(`🔗 انتخاب اینباندهای ${title}\n\n${target === "product_edit" ? "⚠️ تغییر اینباندها فقط روی خریدهای جدید اعمال می‌شود.\n\n" : ""}${inbounds.map((i) => `${selected.has(i.id) ? "☑" : "☐"} ${i.remark ?? i.tag ?? `inbound-${i.id}`}\n${i.protocol ?? "—"} · port ${i.port ?? "—"}`).join("\n\n") || "⚠️ هیچ اینباند زنده‌ای از پنل دریافت نشد."}`, { reply_markup: xrayInboundPickerKeyboard(ctx, target, inbounds, selectedIds, productId) });
     }
     async function showXrayGroupPicker(ctx, target, productId) {
         const groups = await xray_service_1.XrayClientService.listGroups();
         ctx.session.xrayPicker = { target, productId, groups: JSON.stringify(groups) };
-        const suffix = productId ? `:${productId}` : "";
         const targetAlias = pickerAlias(target);
-        const rows = [[{ text: "بدون گروه", callback_data: `xpg:s:${targetAlias}:n${suffix}` }], ...groups.map((g, index) => [{ text: `${g.name} (${g.clientCount ?? 0})`, callback_data: `xpg:s:${targetAlias}:${index}${suffix}` }]), [{ text: "🔄 بروزرسانی گروه‌ها", callback_data: `xpg:l:${targetAlias}${suffix}` }, { text: "🔙 بازگشت", callback_data: target === "free_test" ? (0, panel_ui_1.callbackFor)("admin.freeAccounts") : productId ? (0, panel_ui_1.callbackFor)("admin.product", { productId }) : (0, panel_ui_1.callbackFor)("admin.products") }]];
+        const refreshToken = target === "product_edit" && productId ? (0, callback_tokens_1.createCallbackToken)(ctx, "xrayPickerProduct", { target: "product_edit", productId }) : undefined;
+        const refreshSuffix = productId ? `:${refreshToken ?? productId}` : "";
+        const noneToken = (0, callback_tokens_1.createCallbackToken)(ctx, "xrayGroupSelect", { target, selected: null, productId });
+        const rows = [[{ text: "بدون گروه", callback_data: (0, callback_tokens_1.tokenAction)("xpg:s", noneToken) }], ...groups.map((g) => {
+                const selectToken = (0, callback_tokens_1.createCallbackToken)(ctx, "xrayGroupSelect", { target, selected: g.name, productId });
+                return [{ text: `${g.name} (${g.clientCount ?? 0})`, callback_data: (0, callback_tokens_1.tokenAction)("xpg:s", selectToken) }];
+            }), [{ text: "🔄 بروزرسانی گروه‌ها", callback_data: `xpg:l:${targetAlias}${refreshSuffix}` }, { text: "🔙 بازگشت", callback_data: target === "free_test" ? (0, panel_ui_1.callbackFor)("admin.freeAccounts") : productId ? (0, panel_ui_1.callbackFor)("admin.product", { productId }) : (0, panel_ui_1.callbackFor)("admin.products") }]];
         await ctx.reply(`👥 انتخاب گروه کلاینت\n\n${target === "product_edit" ? "⚠️ تغییر گروه فقط روی خریدهای جدید اعمال می‌شود.\n\n" : ""}${groups.length ? groups.map((g) => `• ${g.name} (${g.clientCount ?? 0})`).join("\n") : "گروهی در پنل تعریف نشده است.\nمی‌توانید «بدون گروه» را انتخاب کنید."}`, { reply_markup: { inline_keyboard: rows } });
     }
     async function completeProductCreateFromPicker(ctx) {
@@ -453,7 +502,9 @@ function registerModernHandlers(bot) {
         await ctx.answerCbQuery();
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
             return;
-        await showXrayGroupPicker(ctx, pickerTargetFromAlias[ctx.match[1]], ctx.match[2]);
+        if (isExpiredPickerToken(ctx, ctx.match[1], ctx.match[2]))
+            return replyExpiredPickerToken(ctx);
+        await showXrayGroupPicker(ctx, pickerTargetFromAlias[ctx.match[1]], resolvePickerProductId(ctx, ctx.match[2]));
     });
     bot.action(/^admin:xray_picker:group:(free_test|product_create|product_edit)(?::([^:]+))?$/, async (ctx) => {
         await ctx.answerCbQuery();
@@ -480,6 +531,13 @@ function registerModernHandlers(bot) {
         ctx.session.flow.step = "inbounds";
         await showXrayInboundPicker(ctx, "product_create");
     }
+    bot.action(/^xpg:s:([^:]+)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        const payload = (0, callback_tokens_1.resolveCallbackToken)(ctx, "xrayGroupSelect", ctx.match[1]);
+        if (!payload)
+            return void await ctx.reply("⚠️ این دکمه منقضی شده است. لطفاً لیست گروه‌ها را بروزرسانی کنید.");
+        return saveXrayGroupSelection(ctx, payload.target, payload.selected, payload.productId);
+    });
     bot.action(/^xpg:s:(f|pc|pe):(n|\d+)(?::([^:]+))?$/, async (ctx) => {
         await ctx.answerCbQuery();
         const target = pickerTargetFromAlias[ctx.match[1]];
@@ -487,7 +545,7 @@ function registerModernHandlers(bot) {
         const selected = ctx.match[2] === "n" ? null : groups[Number(ctx.match[2])]?.name;
         if (ctx.match[2] !== "n" && !selected)
             return void await ctx.reply("⚠️ گروه انتخابی پیدا نشد. لیست را بروزرسانی کنید.");
-        return saveXrayGroupSelection(ctx, target, selected, ctx.match[3]);
+        return saveXrayGroupSelection(ctx, target, selected, resolvePickerProductId(ctx, ctx.match[3]));
     });
     bot.action(/^admin:xray_picker:group:select:(free_test|product_create|product_edit):([^:]+)(?::([^:]+))?$/, async (ctx) => {
         await ctx.answerCbQuery();
@@ -498,7 +556,9 @@ function registerModernHandlers(bot) {
         await ctx.answerCbQuery();
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
             return;
-        await showXrayInboundPicker(ctx, pickerTargetFromAlias[ctx.match[1]], ctx.match[2]);
+        if (isExpiredPickerToken(ctx, ctx.match[1], ctx.match[2]))
+            return replyExpiredPickerToken(ctx);
+        await showXrayInboundPicker(ctx, pickerTargetFromAlias[ctx.match[1]], resolvePickerProductId(ctx, ctx.match[2]));
     });
     bot.action(/^admin:xray_picker:inbounds:(free_test|product_create|product_edit)(?::([^:]+))?$/, async (ctx) => {
         await ctx.answerCbQuery();
@@ -513,13 +573,15 @@ function registerModernHandlers(bot) {
         const state = ctx.session.xrayPicker;
         const id = Number(ctx.match[2]);
         const target = pickerTargetFromAlias[ctx.match[1]];
+        if (isExpiredPickerToken(ctx, ctx.match[1], ctx.match[3]))
+            return replyExpiredPickerToken(ctx);
         if (!state?.inboundOptions)
-            return showXrayInboundPicker(ctx, target, ctx.match[3]);
+            return showXrayInboundPicker(ctx, target, resolvePickerProductId(ctx, ctx.match[3]));
         const inbounds = JSON.parse(state.inboundOptions);
         if (!inbounds.some((inbound) => inbound.id === id))
             return void await ctx.reply("⚠️ اینباند انتخابی در لیست زنده وجود ندارد.");
         state.selectedIds = (state.selectedIds ?? []).includes(id) ? (state.selectedIds ?? []).filter((item) => item !== id) : [...(state.selectedIds ?? []), id];
-        await ctx.editMessageReplyMarkup(xrayInboundPickerKeyboard(target, inbounds, state.selectedIds, ctx.match[3])).catch(() => undefined);
+        await ctx.editMessageReplyMarkup(xrayInboundPickerKeyboard(ctx, target, inbounds, state.selectedIds, resolvePickerProductId(ctx, ctx.match[3]))).catch(() => undefined);
     });
     bot.action(/^admin:xray_picker:inbound:toggle:(free_test|product_create|product_edit):(\d+)(?::([^:]+))?$/, async (ctx) => {
         await ctx.answerCbQuery();
@@ -533,14 +595,16 @@ function registerModernHandlers(bot) {
         if (!inbounds.some((inbound) => inbound.id === id))
             return void await ctx.reply("⚠️ اینباند انتخابی در لیست زنده وجود ندارد.");
         state.selectedIds = (state.selectedIds ?? []).includes(id) ? (state.selectedIds ?? []).filter((item) => item !== id) : [...(state.selectedIds ?? []), id];
-        await ctx.editMessageReplyMarkup(xrayInboundPickerKeyboard(ctx.match[1], inbounds, state.selectedIds, ctx.match[3])).catch(() => undefined);
+        await ctx.editMessageReplyMarkup(xrayInboundPickerKeyboard(ctx, ctx.match[1], inbounds, state.selectedIds, ctx.match[3])).catch(() => undefined);
     });
     bot.action(/^xpi:s:(f|pc|pe)(?::([^:]+))?$/, async (ctx) => {
         await ctx.answerCbQuery();
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
             return;
         const target = pickerTargetFromAlias[ctx.match[1]];
-        const productId = ctx.match[2];
+        if (isExpiredPickerToken(ctx, ctx.match[1], ctx.match[2]))
+            return replyExpiredPickerToken(ctx);
+        const productId = resolvePickerProductId(ctx, ctx.match[2]);
         const state = ctx.session.xrayPicker;
         if (!state?.selectedIds?.length)
             return void await ctx.reply("⚠️ حداقل یک اینباند لازم است");
