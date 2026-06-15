@@ -1083,7 +1083,7 @@ status: ${detail.wallet.status}`;
 🟢 فعال: کاربران می‌توانند محصولات را ببینند و خرید انجام دهند.
 🔴 غیرفعال: فروشگاه بسته می‌شود و خرید جدید انجام نمی‌شود.`,
 
-    initialKeyboard: [
+    initialKeyboard: () => [
       [
         { text: "🟢 فعال کردن فروشگاه", action: "flow:store_status:active" },
         { text: "🔴 غیرفعال کردن فروشگاه", action: "flow:store_status:inactive" },
@@ -1099,10 +1099,7 @@ status: ${detail.wallet.status}`;
 
       return {
         done: true,
-        text:
-          status === "active"
-            ? "✅ فروشگاه با موفقیت فعال شد.\n\nکاربران اکنون می‌توانند محصولات را مشاهده و خرید کنند."
-            : "⛔ فروشگاه با موفقیت غیرفعال شد.\n\nتا زمان فعال‌سازی مجدد، خرید جدید برای کاربران بسته خواهد بود.",
+        text: status === "active" ? "✅ فروشگاه با موفقیت فعال شد." : "⛔ فروشگاه با موفقیت غیرفعال شد.",
         returnTo: { id: "admin.store" },
       };
     },
