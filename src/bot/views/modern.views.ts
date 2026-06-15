@@ -909,6 +909,7 @@ ${divider}
           { text: "🆓 اکانت تست", action: callbackFor("admin.freeAccounts") },
         ],
         [{ text: "📘 راهنمای محصولات", action: callbackFor("admin.productGuides") }],
+        [{ text: "🏪 وضعیت فروشگاه", action: "flow:start:store_status" }],
         [{ text: "🏠 منوی کاربر", action: callbackFor("home") }],
       ],
     };
