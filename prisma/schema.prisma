@@ -596,7 +596,7 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productId])
-  @@unique([productAccountId])
+  @@index([productAccountId])
   @@index([xrayClientId])
   @@index([expiresAt, isActive])
 }
