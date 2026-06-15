@@ -1075,11 +1075,36 @@ status: ${detail.wallet.status}`;
   },
   store_status: {
     firstStep: "status",
-    prompt: "وضعیت فروشگاه را وارد کنید (فعال / غیرفعال):",
+
+    prompt: `🏪 مدیریت وضعیت فروشگاه
+
+وضعیت موردنظر فروشگاه را انتخاب کنید:
+
+🟢 فعال: کاربران می‌توانند محصولات را ببینند و خرید انجام دهند.
+🔴 غیرفعال: فروشگاه بسته می‌شود و خرید جدید انجام نمی‌شود.`,
+
+    initialKeyboard: [
+      [
+        { text: "🟢 فعال کردن فروشگاه", action: "flow:store_status:active" },
+        { text: "🔴 غیرفعال کردن فروشگاه", action: "flow:store_status:inactive" },
+      ],
+    ],
+
     async handleText(ctx, text) {
-      const status = text.includes("غیر") || text.toLowerCase() === "inactive" ? "inactive" : "active";
+      const normalized = text.trim().toLowerCase();
+
+      const status = normalized.includes("غیر") || normalized === "inactive" || normalized === "off" || normalized === "0" ? "inactive" : "active";
+
       await AdminService.setStoreStatus(status, String(ctx.from?.id ?? "admin"));
-      return { done: true, text: "✅ وضعیت فروشگاه ذخیره شد.", returnTo: { id: "admin.store" } };
+
+      return {
+        done: true,
+        text:
+          status === "active"
+            ? "✅ فروشگاه با موفقیت فعال شد.\n\nکاربران اکنون می‌توانند محصولات را مشاهده و خرید کنند."
+            : "⛔ فروشگاه با موفقیت غیرفعال شد.\n\nتا زمان فعال‌سازی مجدد، خرید جدید برای کاربران بسته خواهد بود.",
+        returnTo: { id: "admin.store" },
+      };
     },
   },
   forced_join_create: {
