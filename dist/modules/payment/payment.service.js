@@ -799,9 +799,9 @@ class PaymentService {
         if (renewal.status === "active")
             return renewal;
         try {
-            await xray_service_1.XrayClientService.updateClient(renewal.xrayClient.clientEmail, { totalBytes: renewal.newTotalBytes, expiresAt: renewal.newExpiry, telegramId: renewal.xrayClient.telegramId });
+            await xray_service_1.XrayClientService.updateClient(renewal.xrayClient.clientEmail, { totalBytes: renewal.newTotalBytes, expiresAt: renewal.newExpiry, telegramId: renewal.xrayClient.telegramId, limitIp: renewal.xrayClient.limitIp ?? renewal.renewalProduct.xrayLimitIp ?? 0, groupName: renewal.xrayClient.groupName ?? renewal.renewalProduct.xrayGroupName });
             const [, updatedRenewal] = await prisma_1.prisma.$transaction([
-                prisma_1.prisma.xrayClient.update({ where: { id: renewal.xrayClientId }, data: { trafficBytes: renewal.newTotalBytes, expiresAt: renewal.newExpiry, status: "active", lastError: null } }),
+                prisma_1.prisma.xrayClient.update({ where: { id: renewal.xrayClientId }, data: { trafficBytes: renewal.newTotalBytes, expiresAt: renewal.newExpiry, limitIp: renewal.xrayClient.limitIp ?? renewal.renewalProduct.xrayLimitIp ?? 0, groupName: renewal.xrayClient.groupName ?? renewal.renewalProduct.xrayGroupName, status: "active", lastError: null } }),
                 prisma_1.prisma.xrayRenewal.update({ where: { id: renewal.id }, data: { status: "active", lastError: null, invoiceId: invoiceId ?? renewal.invoiceId } }),
             ]);
             return prisma_1.prisma.xrayRenewal.findUniqueOrThrow({ where: { id: updatedRenewal.id }, include: { xrayClient: true, renewalProduct: true } });
@@ -916,7 +916,7 @@ class PaymentService {
             xrayClient = await tx.xrayClient.upsert({
                 where: { clientEmail: email },
                 update: {},
-                create: { userId: data.userId, telegramId: user.telegramId, productId: product.id, orderId: order.id, clientEmail: email, inboundIds: product.inboundIds, expiresAt, trafficBytes: product.trafficBytes, status: "provisioning" },
+                create: { userId: data.userId, telegramId: user.telegramId, productId: product.id, orderId: order.id, clientEmail: email, inboundIds: product.inboundIds, limitIp: product.xrayLimitIp ?? 0, groupName: product.xrayGroupName, expiresAt, trafficBytes: product.trafficBytes, status: "provisioning" },
             });
             orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, xrayClientId: xrayClient.id, deliveredUsername: email, deliveredSubscriptionLink: null, deliveredConfigLink: null, deliveredConfig: "XRAY_LIVE_LINKS", purchaseDate, expiresAt, isActive: false } });
         }
@@ -950,7 +950,7 @@ class PaymentService {
         if (client.status !== "provisioning" && client.status !== "creating")
             throw new Error("تحویل Xray قبلاً ناموفق شده و نیازمند بررسی مدیر است");
         try {
-            const created = await xray_service_1.XrayClientService.createClient({ email: client.clientEmail, trafficBytes: client.trafficBytes, expiresAt: client.expiresAt, telegramId: client.telegramId, inboundIds: client.inboundIds });
+            const created = await xray_service_1.XrayClientService.createClient({ email: client.clientEmail, trafficBytes: client.trafficBytes, expiresAt: client.expiresAt, telegramId: client.telegramId, inboundIds: client.inboundIds, limitIp: client.limitIp, groupName: client.groupName });
             const updated = await prisma_1.prisma.xrayClient.update({ where: { id: client.id }, data: { status: "active", clientSubId: created.subId, panelClientId: created.uuid ?? created.id, lastError: null } });
             const orderItem = await prisma_1.prisma.orderItem.updateMany({ where: { xrayClientId: client.id }, data: { isActive: true } });
             await prisma_1.prisma.order.update({ where: { id: orderId }, data: { status: "completed" } });

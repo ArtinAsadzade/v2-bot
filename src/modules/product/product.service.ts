@@ -93,13 +93,13 @@ export class ProductService {
     return prisma.product.findUnique({ where: { id: productId }, include: { category: true } });
   }
 
-  static async create(data: { categoryId?: string; categoryName?: string; title: string; price: number; duration: number; trafficGB?: number; stockLimit?: number; inboundIds?: number[]; inboundSnapshot?: string }) {
+  static async create(data: { categoryId?: string; categoryName?: string; title: string; price: number; duration: number; trafficGB?: number; stockLimit?: number; inboundIds?: number[]; inboundSnapshot?: string; limitIp?: number; xrayGroupName?: string | null }) {
     const category = data.categoryId
       ? await prisma.category.findFirstOrThrow({ where: { id: data.categoryId, AND: [activeCategoryWhere()] } })
       : await prisma.category.upsert({ where: { name: (data.categoryName ?? "عمومی").trim() }, update: { isActive: true, deletedAt: null }, create: { name: (data.categoryName ?? "عمومی").trim(), isActive: true } });
 
     const inboundIds = data.inboundIds ?? [];
-    return prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: data.duration, durationDays: inboundIds.length ? data.duration : undefined, mode: inboundIds.length ? "xray_auto" : "manual_inventory", trafficBytes: inboundIds.length && data.trafficGB ? gbToBytes(data.trafficGB) : undefined, stockLimit: inboundIds.length ? data.stockLimit : undefined, soldCount: 0, inboundIds, inboundSnapshot: data.inboundSnapshot } });
+    return prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: data.duration, durationDays: inboundIds.length ? data.duration : undefined, mode: inboundIds.length ? "xray_auto" : "manual_inventory", trafficBytes: inboundIds.length && data.trafficGB ? gbToBytes(data.trafficGB) : undefined, stockLimit: inboundIds.length ? data.stockLimit : undefined, soldCount: 0, inboundIds, inboundSnapshot: data.inboundSnapshot, xrayLimitIp: Math.max(0, Number(data.limitIp ?? 0)), xrayGroupName: data.xrayGroupName || null } });
   }
 
   static async addAccount(productId: string, data: { username: string; subscriptionLink: string; configLink: string; durationDays?: number }) {
