@@ -105,7 +105,7 @@ function isUniqueConstraint(error: unknown) {
 }
 
 
-export function validateFreeTestActivation(config: { trafficBytes: bigint | number; durationDays: number; stockLimit: number; inboundIds: number[] }, panelEnabled: boolean) {
+export function validateFreeTestActivation(config: { trafficBytes: bigint | number; durationDays: number; stockLimit: number; inboundIds: number[]; limitIp?: number | null }, panelEnabled: boolean) {
   if (!panelEnabled) return "اتصال پنل Xray برقرار نیست.";
   if (BigInt(config.trafficBytes) <= 0n) return "حجم تست باید بیشتر از صفر باشد.";
   if (config.durationDays <= 0) return "مدت اکانت تست باید بیشتر از صفر باشد.";
@@ -352,10 +352,11 @@ export class FreeAccountService {
     return { ...config, available: Math.max(config.stockLimit - config.usedCount, 0) };
   }
 
-  static async updateXrayConfig(data: { enabled?: boolean; trafficGB?: number; durationDays?: number; stockLimit?: number; inboundIds?: number[]; inboundSnapshot?: string }, actorId: string) {
+  static async updateXrayConfig(data: { enabled?: boolean; trafficGB?: number; durationDays?: number; stockLimit?: number; inboundIds?: number[]; inboundSnapshot?: string; limitIp?: number; groupName?: string | null }, actorId: string) {
     const current = await this.getXrayConfig();
     const enabledConfig = await XrayPanelService.getEnabledConfig();
-    const next = { ...current, ...data, trafficBytes: data.trafficGB !== undefined ? gbToBytes(data.trafficGB) : current.trafficBytes, stockLimit: data.stockLimit ?? current.stockLimit, durationDays: data.durationDays ?? current.durationDays, inboundIds: data.inboundIds ?? current.inboundIds };
+    const next = { ...current, ...data, trafficBytes: data.trafficGB !== undefined ? gbToBytes(data.trafficGB) : current.trafficBytes, stockLimit: data.stockLimit ?? current.stockLimit, durationDays: data.durationDays ?? current.durationDays, inboundIds: data.inboundIds ?? current.inboundIds, limitIp: data.limitIp ?? current.limitIp };
+    if (data.limitIp !== undefined && (!Number.isInteger(data.limitIp) || data.limitIp < 0)) throw new FreeAccountError("INVALID_INPUT", "محدودیت IP معتبر نیست");
     let inboundSnapshot = data.inboundSnapshot ?? current.inboundSnapshot;
     if (data.enabled) {
       const reason = validateFreeTestActivation(next, Boolean(enabledConfig));
@@ -377,6 +378,8 @@ export class FreeAccountService {
     if (data.durationDays !== undefined) patch.durationDays = data.durationDays;
     if (data.stockLimit !== undefined) patch.stockLimit = data.stockLimit;
     if (data.inboundIds !== undefined) patch.inboundIds = data.inboundIds;
+    if (data.limitIp !== undefined) patch.limitIp = data.limitIp;
+    if (data.groupName !== undefined) patch.groupName = data.groupName || null;
     const saved = await prisma.freeTestConfig.update({ where: { id: "singleton" }, data: patch });
     await prisma.auditLog.create({ data: { actorId, action: "free_test_config.update", metadata: JSON.stringify({ fields: Object.keys(patch) }) } });
     return saved;
@@ -412,7 +415,7 @@ export class FreeAccountService {
         const stock = await tx.freeTestConfig.updateMany({ where: { id: "singleton", enabled: true, usedCount: { lt: config.stockLimit } }, data: { usedCount: { increment: 1 } } });
         if (stock.count !== 1) throw new FreeAccountError("NO_INVENTORY", "موجودی اکانت تست تکمیل شده است");
         const expiresAt = new Date(now.getTime() + config.durationDays * DAY_MS);
-        const client = await tx.xrayClient.create({ data: { userId, telegramId: user.telegramId, isFreeTest: true, clientEmail: `pending-test-${user.telegramId}-${now.getTime()}`, inboundIds: config.inboundIds, expiresAt, trafficBytes: config.trafficBytes, status: "provisioning" } });
+        const client = await tx.xrayClient.create({ data: { userId, telegramId: user.telegramId, isFreeTest: true, clientEmail: `pending-test-${user.telegramId}-${now.getTime()}`, inboundIds: config.inboundIds, limitIp: config.limitIp ?? 0, groupName: config.groupName, expiresAt, trafficBytes: config.trafficBytes, status: "provisioning" } });
         const email = `test-tg${user.telegramId}-${client.id.slice(-6)}`;
         const updated = await tx.xrayClient.update({ where: { id: client.id }, data: { clientEmail: email } });
         await tx.freeAccountUserLock.upsert({ where: { userId }, create: { userId, lastClaimAt: now, lastAssignmentId: client.id }, update: { lastClaimAt: now, lastAssignmentId: client.id } });
@@ -421,7 +424,7 @@ export class FreeAccountService {
       const live = await XrayClientService.listInbounds();
       const valid = new Set(live.map((i) => i.id));
       if (reserved.inboundIds.some((id: number) => !valid.has(id))) throw new Error("اینباندهای اکانت تست در پنل معتبر نیستند");
-      const created = await XrayClientService.createClient({ email: reserved.clientEmail, trafficBytes: reserved.trafficBytes, expiresAt: reserved.expiresAt, telegramId: reserved.telegramId, inboundIds: reserved.inboundIds });
+      const created = await XrayClientService.createClient({ email: reserved.clientEmail, trafficBytes: reserved.trafficBytes, expiresAt: reserved.expiresAt, telegramId: reserved.telegramId, inboundIds: reserved.inboundIds, limitIp: reserved.limitIp, groupName: reserved.groupName });
       return prisma.xrayClient.update({ where: { id: reserved.id }, data: { status: "active", clientSubId: created.subId, panelClientId: created.uuid ?? created.id, lastError: null } });
     } catch (error) {
       if (reserved?.id) {

@@ -4,6 +4,7 @@ exports.ProductService = void 0;
 const prisma_1 = require("../../services/prisma");
 const visibility_1 = require("./visibility");
 const xray_service_1 = require("../xray/xray.service");
+const logger_1 = require("../../services/logger");
 class ProductService {
     static isXrayInStock(product) {
         return product.mode === "xray_auto"
@@ -24,7 +25,14 @@ class ProductService {
             category: { is: (0, visibility_1.activeCategoryWhere)() },
         };
     }
-    static async listRenewalCategories() {
+    static async listRenewalCategories(currentClientId, currentClientProductId) {
+        logger_1.logger.info("XRAY_RENEWAL_QUERY_STARTED", { currentClientId, currentClientProductId });
+        const [totalXrayProducts, activeXrayProducts, stockCandidates] = await Promise.all([
+            prisma_1.prisma.product.count({ where: { mode: "xray_auto", deletedAt: null } }),
+            prisma_1.prisma.product.count({ where: { mode: "xray_auto", isActive: true, deletedAt: null, trafficBytes: { gt: 0n }, durationDays: { gt: 0 } } }),
+            prisma_1.prisma.product.findMany({ where: this.renewalProductWhere(), select: { mode: true, stockLimit: true, soldCount: true, trafficBytes: true, durationDays: true } }),
+        ]);
+        const inStockXrayProducts = stockCandidates.filter((product) => this.isXrayInStock(product)).length;
         const categories = await prisma_1.prisma.category.findMany({
             where: {
                 AND: [
@@ -35,16 +43,28 @@ class ProductService {
             include: { products: { where: this.renewalProductWhere(), orderBy: { title: "asc" } } },
             orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
         });
-        return categories
+        const result = categories
             .map((category) => ({ ...category, products: category.products.filter((product) => this.isXrayInStock(product)) }))
             .filter((category) => category.products.length > 0);
+        logger_1.logger.info("XRAY_RENEWAL_PRODUCTS_FOUND", { totalXrayProducts, activeXrayProducts, inStockXrayProducts });
+        logger_1.logger.info("XRAY_RENEWAL_PRODUCTS_FILTERED_OUT", { filteredOut: Math.max(activeXrayProducts - inStockXrayProducts, 0), reason: "stockLimit <= soldCount or invalid stock/traffic/duration/category" });
+        logger_1.logger.info("XRAY_RENEWAL_CATEGORIES_FOUND", { categoriesFound: result.length });
+        if (!result.length)
+            logger_1.logger.warn("XRAY_RENEWAL_EMPTY_RESULT", { totalXrayProducts, activeXrayProducts, inStockXrayProducts, categoriesFound: result.length, currentClientId, currentClientProductId });
+        return result;
     }
-    static async listRenewalProductsByCategory(categoryId) {
+    static async listRenewalProductsByCategory(categoryId, currentClientId, currentClientProductId) {
+        logger_1.logger.info("XRAY_RENEWAL_QUERY_STARTED", { categoryId, currentClientId, currentClientProductId });
         const products = await prisma_1.prisma.product.findMany({
             where: this.renewalProductWhere(categoryId),
             orderBy: [{ price: "asc" }, { title: "asc" }],
         });
-        return products.filter((product) => this.isXrayInStock(product)).map((product) => ({ ...product, availableStock: Math.max((product.stockLimit ?? 0) - product.soldCount, 0) }));
+        const available = products.filter((product) => this.isXrayInStock(product));
+        logger_1.logger.info("XRAY_RENEWAL_PRODUCTS_FOUND", { categoryId, found: products.length, available: available.length });
+        logger_1.logger.info("XRAY_RENEWAL_PRODUCTS_FILTERED_OUT", { categoryId, filteredOut: Math.max(products.length - available.length, 0), reason: "stockLimit <= soldCount or invalid stock/traffic/duration" });
+        if (!available.length)
+            logger_1.logger.warn("XRAY_RENEWAL_EMPTY_RESULT", { categoryId, productsFound: products.length, currentClientId, currentClientProductId });
+        return available.map((product) => ({ ...product, availableStock: Math.max((product.stockLimit ?? 0) - product.soldCount, 0) }));
     }
     static async getCategories() {
         const categories = await prisma_1.prisma.category.findMany({

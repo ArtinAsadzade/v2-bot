@@ -1,6 +1,7 @@
 import { prisma } from "../../services/prisma";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, categoryNotDeletedWhere } from "./visibility";
 import { gbToBytes } from "../xray/xray.service";
+import { logger } from "../../services/logger";
 
 export class ProductService {
   private static isXrayInStock(product: { mode: string; stockLimit: number | null; soldCount: number; trafficBytes?: bigint | null; durationDays?: number | null }) {
@@ -24,7 +25,14 @@ export class ProductService {
     };
   }
 
-  static async listRenewalCategories() {
+  static async listRenewalCategories(currentClientId?: string, currentClientProductId?: string | null) {
+    logger.info("XRAY_RENEWAL_QUERY_STARTED", { currentClientId, currentClientProductId });
+    const [totalXrayProducts, activeXrayProducts, stockCandidates] = await Promise.all([
+      prisma.product.count({ where: { mode: "xray_auto", deletedAt: null } }),
+      prisma.product.count({ where: { mode: "xray_auto", isActive: true, deletedAt: null, trafficBytes: { gt: 0n }, durationDays: { gt: 0 } } }),
+      prisma.product.findMany({ where: this.renewalProductWhere(), select: { mode: true, stockLimit: true, soldCount: true, trafficBytes: true, durationDays: true } }),
+    ]);
+    const inStockXrayProducts = stockCandidates.filter((product) => this.isXrayInStock(product)).length;
     const categories = await prisma.category.findMany({
       where: {
         AND: [
@@ -35,17 +43,27 @@ export class ProductService {
       include: { products: { where: this.renewalProductWhere(), orderBy: { title: "asc" } } },
       orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
     });
-    return categories
+    const result = categories
       .map((category) => ({ ...category, products: category.products.filter((product) => this.isXrayInStock(product)) }))
       .filter((category) => category.products.length > 0);
+    logger.info("XRAY_RENEWAL_PRODUCTS_FOUND", { totalXrayProducts, activeXrayProducts, inStockXrayProducts });
+    logger.info("XRAY_RENEWAL_PRODUCTS_FILTERED_OUT", { filteredOut: Math.max(activeXrayProducts - inStockXrayProducts, 0), reason: "stockLimit <= soldCount or invalid stock/traffic/duration/category" });
+    logger.info("XRAY_RENEWAL_CATEGORIES_FOUND", { categoriesFound: result.length });
+    if (!result.length) logger.warn("XRAY_RENEWAL_EMPTY_RESULT", { totalXrayProducts, activeXrayProducts, inStockXrayProducts, categoriesFound: result.length, currentClientId, currentClientProductId });
+    return result;
   }
 
-  static async listRenewalProductsByCategory(categoryId: string) {
+  static async listRenewalProductsByCategory(categoryId: string, currentClientId?: string, currentClientProductId?: string | null) {
+    logger.info("XRAY_RENEWAL_QUERY_STARTED", { categoryId, currentClientId, currentClientProductId });
     const products = await prisma.product.findMany({
       where: this.renewalProductWhere(categoryId),
       orderBy: [{ price: "asc" }, { title: "asc" }],
     });
-    return products.filter((product) => this.isXrayInStock(product)).map((product) => ({ ...product, availableStock: Math.max((product.stockLimit ?? 0) - product.soldCount, 0) }));
+    const available = products.filter((product) => this.isXrayInStock(product));
+    logger.info("XRAY_RENEWAL_PRODUCTS_FOUND", { categoryId, found: products.length, available: available.length });
+    logger.info("XRAY_RENEWAL_PRODUCTS_FILTERED_OUT", { categoryId, filteredOut: Math.max(products.length - available.length, 0), reason: "stockLimit <= soldCount or invalid stock/traffic/duration" });
+    if (!available.length) logger.warn("XRAY_RENEWAL_EMPTY_RESULT", { categoryId, productsFound: products.length, currentClientId, currentClientProductId });
+    return available.map((product) => ({ ...product, availableStock: Math.max((product.stockLimit ?? 0) - product.soldCount, 0) }));
   }
 
   static async getCategories() {

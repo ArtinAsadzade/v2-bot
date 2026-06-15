@@ -455,32 +455,6 @@ active: ${detail.category.isActive}`;
                 if (!Number.isInteger(stock) || stock <= 0)
                     return { text: "موجودی معتبر نیست. دوباره وارد کنید:" };
                 flow.data.stockLimit = stock;
-                flow.step = "inbounds";
-                let list = "";
-                try {
-                    const config = await xray_service_1.XrayPanelService.getEnabledConfig();
-                    if (!config)
-                        return { text: "⚠️ اتصال پنل Xray فعال نیست. ابتدا از تنظیمات پنل Xray، اتصال را فعال و تست کنید.", returnTo: { id: "admin.xraySettings" } };
-                    const inbounds = await xray_service_1.XrayClientService.listInbounds();
-                    flow.data.inboundOptions = JSON.stringify(inbounds);
-                    list = inbounds.map((i) => `${i.id}: ${i.remark ?? i.tag ?? `inbound-${i.id}`} | ${i.protocol ?? "—"} | ${i.port ?? "—"}`).join("\n");
-                }
-                catch (error) {
-                    return { text: `⚠️ دریافت لیست اینباند ناموفق بود.\n${error instanceof Error ? error.message : "خطای نامشخص"}\n\nلطفاً تنظیمات پنل را بررسی کنید.`, returnTo: { id: "admin.xraySettings" } };
-                }
-                return { text: `شناسه اینباندها را با کاما وارد کنید (حداقل یکی):\n\n${list}`, nextStep: "inbounds" };
-            }
-            if (flow.step === "inbounds") {
-                const inboundIds = text.split(/[,،\s]+/).map(Number).filter((n) => Number.isInteger(n) && n > 0);
-                if (!inboundIds.length)
-                    return { text: "حداقل یک inbound ID معتبر وارد کنید:" };
-                const inboundOptions = JSON.parse(String(flow.data.inboundOptions ?? "[]"));
-                const validIds = new Set(inboundOptions.map((inbound) => inbound.id));
-                const invalidIds = inboundIds.filter((id) => !validIds.has(id));
-                if (invalidIds.length)
-                    return { text: `شناسه‌های اینباند نامعتبر هستند: ${invalidIds.join(", ")}\nلطفاً فقط از لیست زنده پنل انتخاب کنید.` };
-                flow.data.inboundIds = inboundIds;
-                flow.data.inboundSnapshot = (0, xray_service_1.xrayInboundSnapshot)(inboundOptions, inboundIds);
                 flow.step = "limitIp";
                 return { text: "🌐 محدودیت IP را وارد کنید\n\nمثال:\n0 = نامحدود\n1 = فقط یک IP\n2 = دو IP همزمان\n\n۰ یعنی بدون محدودیت", nextStep: "limitIp" };
             }
@@ -490,14 +464,11 @@ active: ${detail.category.isActive}`;
                     return { text: "محدودیت IP معتبر نیست. عددی بزرگ‌تر یا مساوی ۰ وارد کنید:\n۰ یعنی بدون محدودیت" };
                 flow.data.limitIp = limitIp;
                 flow.step = "group";
-                const groups = await xray_service_1.XrayClientService.listGroups().catch(() => []);
-                flow.data.xrayGroups = JSON.stringify(groups);
-                return { text: `👥 انتخاب گروه کلاینت\n\n${groups.length ? groups.map((g) => `• ${g.name} (${g.clientCount ?? 0})`).join("\n") : "گروهی در پنل تعریف نشده است.\nمی‌توانید محصول را بدون گروه ذخیره کنید."}\n\nنام گروه را وارد کنید یا برای بدون گروه عدد 0 را بفرستید.`, nextStep: "group" };
+                return { text: "👥 لطفاً گروه کلاینت را از دکمه‌های زیر انتخاب کنید.", keyboard: [[{ text: "👥 انتخاب گروه", action: "admin:xray_picker:group:product_create" }]] };
             }
-            const groups = JSON.parse(String(flow.data.xrayGroups ?? "[]"));
-            const groupName = text.trim() === "0" || text.trim() === "بدون گروه" ? null : text.trim();
-            if (groupName && groups.length && !groups.some((g) => g.name === groupName))
-                return { text: "نام گروه معتبر نیست. یکی از گروه‌های لیست را وارد کنید یا 0 را برای بدون گروه بفرستید." };
+            if (flow.step !== "confirm")
+                return { text: "لطفاً انتخاب گروه و اینباند را با دکمه‌های فرم انجام دهید." };
+            const groupName = flow.data.xrayGroupName ? String(flow.data.xrayGroupName) : null;
             const duration = Number(flow.data.duration);
             const categoryId = String(flow.data.categoryId ?? "");
             if (!categoryId)
@@ -576,54 +547,20 @@ group: ${detail.product.xrayGroupName ?? ""}
                 return "📅 مدت اکانت تست را به روز وارد کنید:";
             if (field === "stockLimit")
                 return "📦 موجودی کل اکانت تست را وارد کنید:";
+            if (field === "limitIp")
+                return "🌐 محدودیت IP اکانت تست را وارد کنید:\n0 = نامحدود";
             return "⚠️ فیلد تنظیمات معتبر نیست.";
         },
         async handleText(ctx, text) {
             const field = String(ctx.session.flow?.data.field ?? "");
             const value = parseInteger(text);
-            if (!Number.isInteger(value) || value <= 0)
-                return { text: "یک عدد مثبت وارد کنید:" };
-            const patch = field === "trafficGB" ? { trafficGB: value } : field === "durationDays" ? { durationDays: value } : field === "stockLimit" ? { stockLimit: value } : undefined;
+            if (!Number.isInteger(value) || (field === "limitIp" ? value < 0 : value <= 0))
+                return { text: field === "limitIp" ? "عدد صفر یا بزرگ‌تر وارد کنید:" : "یک عدد مثبت وارد کنید:" };
+            const patch = field === "trafficGB" ? { trafficGB: value } : field === "durationDays" ? { durationDays: value } : field === "stockLimit" ? { stockLimit: value } : field === "limitIp" ? { limitIp: value } : undefined;
             if (!patch)
                 return { done: true, text: "⚠️ فیلد تنظیمات معتبر نیست.", returnTo: { id: "admin.freeAccounts" } };
             await free_account_service_1.FreeAccountService.updateXrayConfig(patch, String(ctx.from?.id ?? "admin"));
             return { done: true, text: "✅ تنظیمات اکانت تست ذخیره شد.", returnTo: { id: "admin.freeAccounts" } };
-        },
-    },
-    product_xray_inbounds: {
-        firstStep: "inbounds",
-        prompt: async (ctx) => {
-            const productId = String(ctx.session.flow?.data.productId ?? "");
-            const detail = productId ? await admin_service_1.AdminService.productDetail(productId) : undefined;
-            if (!detail?.product || detail.product.mode !== "xray_auto")
-                return "⚠️ محصول Xray پیدا نشد.";
-            const inbounds = await xray_service_1.XrayClientService.listInbounds();
-            ctx.session.flow.data.inboundOptions = JSON.stringify(inbounds);
-            const selected = new Set(detail.product.inboundIds);
-            return `🔗 تغییر اینباندهای محصول ${detail.product.title}
-
-اینباندهای فعلی: ${detail.product.inboundIds.join(", ") || "—"}
-
-⚠️ تغییر اینباندها فقط روی خریدهای جدید اعمال می‌شود.
-کلاینت‌های قبلی تغییر نمی‌کنند.
-
-شناسه اینباندهای جدید را با کاما وارد کنید (حداقل یکی):
-
-${inbounds.map((i) => `${selected.has(i.id) ? "✅" : "▫️"} ${i.id}: ${i.remark ?? i.tag ?? `inbound-${i.id}`} / ${i.protocol ?? "—"} / ${i.port ?? "—"}`).join("\n")}`;
-        },
-        async handleText(ctx, text) {
-            const flow = ctx.session.flow;
-            const productId = String(flow.data.productId);
-            const inboundIds = [...new Set(text.split(/[,،\s]+/).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
-            if (!inboundIds.length)
-                return { text: "حداقل یک inbound ID معتبر وارد کنید:" };
-            const inboundOptions = JSON.parse(String(flow.data.inboundOptions ?? "[]"));
-            const validIds = new Set(inboundOptions.map((inbound) => inbound.id));
-            const invalidIds = inboundIds.filter((id) => !validIds.has(id));
-            if (invalidIds.length)
-                return { text: `شناسه‌های اینباند نامعتبر هستند: ${invalidIds.join(", ")}\nلطفاً فقط از لیست زنده پنل انتخاب کنید.` };
-            await admin_service_1.AdminService.updateProduct(productId, { inboundIds, inboundSnapshot: (0, xray_service_1.xrayInboundSnapshot)(inboundOptions, inboundIds) }, String(ctx.from?.id ?? "admin"));
-            return { done: true, text: "✅ اینباندهای محصول برای خریدهای بعدی به‌روزرسانی شد.", returnTo: { id: "admin.product", params: { productId } } };
         },
     },
     account_create: {
@@ -1341,7 +1278,6 @@ function registerFlowEngine(bot) {
         const adminOnlyFlows = [
             "product_create",
             "product_edit",
-            "product_xray_inbounds",
             "account_create",
             "account_edit",
             "coupon_create",
@@ -1389,8 +1325,6 @@ function registerFlowEngine(bot) {
             return startFlow(ctx, "category_edit", { categoryId: ctx.match[2] });
         if (name === "product_edit")
             return startFlow(ctx, "product_edit", { productId: ctx.match[2] });
-        if (name === "product_xray_inbounds")
-            return startFlow(ctx, "product_xray_inbounds", { productId: ctx.match[2] });
         if (name === "free_test_config")
             return startFlow(ctx, "free_test_config", { field: ctx.match[2] });
         if (name === "account_create")
