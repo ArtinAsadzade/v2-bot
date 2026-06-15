@@ -33,19 +33,77 @@ const parseCouponType = (value?: string) => {
   return undefined;
 };
 
-
 export function parseKeyValueLines(text: string): Record<string, string> {
   const entries: [string, string][] = [];
   const aliases: Record<string, string> = {
-    url: "apiBaseUrl", baseUrl: "apiBaseUrl", token: "apiToken", اشتراک: "subscriptionBaseUrl", فعال: "enabled", وضعیت: "enabled",
-    name: "title", عنوان: "title", قیمت: "price", دسته: "categoryId", category: "categoryId",
-    traffic: "trafficGB", volume: "trafficGB", "حجم": "trafficGB",
-    duration: "duration", durationDays: "durationDays", "مدت": "durationDays",
-    stock: "stockLimit", "موجودی": "stockLimit",
-    limitIp: "xrayLimitIp", xrayLimitIp: "xrayLimitIp", ipLimit: "xrayLimitIp", "محدودیت IP": "xrayLimitIp", "محدودیت آیپی": "xrayLimitIp",
-    group: "xrayGroupName", "گروه": "xrayGroupName",
+    url: "apiBaseUrl",
+    baseUrl: "apiBaseUrl",
+    token: "apiToken",
+    اشتراک: "subscriptionBaseUrl",
+    فعال: "enabled",
+    وضعیت: "enabled",
+    name: "title",
+    عنوان: "title",
+    قیمت: "price",
+    دسته: "categoryId",
+    category: "categoryId",
+    traffic: "trafficGB",
+    volume: "trafficGB",
+    حجم: "trafficGB",
+    duration: "duration",
+    durationDays: "durationDays",
+    مدت: "durationDays",
+    stock: "stockLimit",
+    موجودی: "stockLimit",
+    limitIp: "xrayLimitIp",
+    xrayLimitIp: "xrayLimitIp",
+    ipLimit: "xrayLimitIp",
+    "محدودیت IP": "xrayLimitIp",
+    "محدودیت آیپی": "xrayLimitIp",
+    group: "xrayGroupName",
+    گروه: "xrayGroupName",
   };
-  const allowed = new Set(["apiBaseUrl", "apiToken", "subscriptionBaseUrl", "enabled", "url", "baseUrl", "token", "اشتراک", "فعال", "وضعیت", "title", "name", "categoryId", "category", "price", "duration", "durationDays", "trafficGB", "traffic", "volume", "stockLimit", "stock", "active", "عنوان", "قیمت", "مدت", "حجم", "موجودی", "دسته", "limitIp", "xrayLimitIp", "ipLimit", "محدودیت IP", "محدودیت آیپی", "group", "xrayGroupName", "گروه", "soldCount", "resetSoldCount"]);
+  const allowed = new Set([
+    "apiBaseUrl",
+    "apiToken",
+    "subscriptionBaseUrl",
+    "enabled",
+    "url",
+    "baseUrl",
+    "token",
+    "اشتراک",
+    "فعال",
+    "وضعیت",
+    "title",
+    "name",
+    "categoryId",
+    "category",
+    "price",
+    "duration",
+    "durationDays",
+    "trafficGB",
+    "traffic",
+    "volume",
+    "stockLimit",
+    "stock",
+    "active",
+    "عنوان",
+    "قیمت",
+    "مدت",
+    "حجم",
+    "موجودی",
+    "دسته",
+    "limitIp",
+    "xrayLimitIp",
+    "ipLimit",
+    "محدودیت IP",
+    "محدودیت آیپی",
+    "group",
+    "xrayGroupName",
+    "گروه",
+    "soldCount",
+    "resetSoldCount",
+  ]);
   for (const rawLine of text.split(/\n+/)) {
     const line = rawLine.trim();
     if (!line) continue;
@@ -59,12 +117,13 @@ export function parseKeyValueLines(text: string): Record<string, string> {
   return Object.fromEntries(entries);
 }
 
-function hasKey(data: Record<string, string>, key: string) { return Object.prototype.hasOwnProperty.call(data, key); }
+function hasKey(data: Record<string, string>, key: string) {
+  return Object.prototype.hasOwnProperty.call(data, key);
+}
 function parseResetGroup(value: string | undefined) {
   const normalized = (value ?? "").trim().toLowerCase();
   return !normalized || ["none", "-", "بدون گروه", "بدون‌گروه"].includes(normalized) ? null : value!.trim();
 }
-
 
 function parseActive(value?: string): boolean | undefined {
   if (!value) return undefined;
@@ -77,9 +136,8 @@ function parseActive(value?: string): boolean | undefined {
 function parseProductAccountStatus(value?: string): ProductAccountAdminStatus | undefined {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) return undefined;
-  return ["available", "reserved", "sold", "disabled", "expired"].includes(normalized) ? normalized as ProductAccountAdminStatus : undefined;
+  return ["available", "reserved", "sold", "disabled", "expired"].includes(normalized) ? (normalized as ProductAccountAdminStatus) : undefined;
 }
-
 
 type FlowStepResult = { done?: boolean; text: string; nextStep?: string; returnTo?: ViewState; keyboard?: UiKeyboard };
 type FlowDefinition = {
@@ -114,7 +172,6 @@ function requireUser(ctx: AppContext) {
   });
 }
 
-
 function paymentFlowReplyKeyboard() {
   return MainMenuKeyboard().reply_markup;
 }
@@ -129,20 +186,24 @@ function paymentGatewaySavedMessage(field: keyof PaymentGatewayInput, config: Aw
   return "✅ تنظیمات ذخیره شد";
 }
 
-
 async function completePaymentGatewaySetup(ctx: AppContext) {
   const data = ctx.session.flow?.data ?? {};
-  const saved = await PaymentGatewayService.saveConfig({
-    apiBaseUrl: String(data.apiBaseUrl ?? ""),
-    apiKey: String(data.apiKey ?? ""),
-    callbackUrl: String(data.callbackUrl ?? ""),
-    gatewayName: String(data.gatewayName ?? ""),
-  }, String(ctx.from?.id ?? "admin"));
+  const saved = await PaymentGatewayService.saveConfig(
+    {
+      apiBaseUrl: String(data.apiBaseUrl ?? ""),
+      apiKey: String(data.apiKey ?? ""),
+      callbackUrl: String(data.callbackUrl ?? ""),
+      gatewayName: String(data.gatewayName ?? ""),
+    },
+    String(ctx.from?.id ?? "admin"),
+  );
   PaymentGatewayService.validateConfig({ ...saved, enabled: true });
   const result = await PaymentGatewayService.testConnection(String(ctx.from?.id ?? "admin"));
   if (result.ok) await PaymentGatewayService.updateConfigField("enabled", true, String(ctx.from?.id ?? "admin"));
   ctx.session.flow = undefined;
-  await ctx.reply(`✅ تنظیمات با موفقیت ذخیره شد\n\n${result.ok ? "📡 تست اتصال موفق بود" : `📡 تست اتصال ناموفق بود\n${result.error}`}\n\n${result.ok ? "درگاه آماده استفاده است." : "لطفاً اطلاعات درگاه را بررسی کنید."}`);
+  await ctx.reply(
+    `✅ تنظیمات با موفقیت ذخیره شد\n\n${result.ok ? "📡 تست اتصال موفق بود" : `📡 تست اتصال ناموفق بود\n${result.error}`}\n\n${result.ok ? "درگاه آماده استفاده است." : "لطفاً اطلاعات درگاه را بررسی کنید."}`,
+  );
   await renderPanel(ctx, { id: "admin.paymentGateway" }, "replace");
 }
 
@@ -151,7 +212,9 @@ async function completeBroadcast(ctx: AppContext) {
   const target = String(flow?.data.target ?? "");
   const message = String(flow?.data.message ?? "").trim();
   if (!BroadcastService.isTarget(target)) return "⚠️ گروه دریافت‌کنندگان معتبر نیست.";
-  const stats = await BroadcastService.send(target, message, String(ctx.from?.id ?? "admin"), (telegramId, text) => ctx.telegram.sendMessage(Number(telegramId), text));
+  const stats = await BroadcastService.send(target, message, String(ctx.from?.id ?? "admin"), (telegramId, text) =>
+    ctx.telegram.sendMessage(Number(telegramId), text),
+  );
   return `✅ اطلاع‌رسانی پایان یافت
 
 گروه: ${stats.targetLabel}
@@ -165,11 +228,13 @@ const definitions: Record<FlowName, FlowDefinition> = {
     firstStep: "amount",
     prompt: async () => {
       const setting = await FinancialSettingsService.get();
-      return `💰 شارژ کیف پول با پرداخت آنی
+      return `💳 شارژ کیف پول
 
-حداقل شارژ: ${money(setting.minimumTopupAmount)}
+حداقل مبلغ قابل شارژ: ${money(setting.minimumTopupAmount)}
 
-مبلغ را فقط به تومان وارد کنید. پس از پرداخت موفق، callback رسمی درگاه تأیید پرداخت محسوب می‌شود و کیف پول شما خودکار شارژ خواهد شد.`;
+لطفاً مبلغ موردنظر را به تومان وارد کنید.
+
+پس از تکمیل موفق پرداخت، تأییدیه رسمی درگاه پرداخت به‌صورت خودکار دریافت شده و مبلغ بلافاصله به کیف پول شما افزوده خواهد شد.`;
     },
     async handleText(ctx, text) {
       const user = await requireUser(ctx);
@@ -478,20 +543,28 @@ active: ${detail.category.isActive}`;
         if (!Number.isInteger(stock) || stock < 0) return { text: "موجودی معتبر نیست. دوباره وارد کنید:" };
         flow.data.stockLimit = stock;
         flow.step = "limitIp";
-        return { text: "🌐 محدودیت IP را وارد کنید\n\nمثال:\n0 = نامحدود\n1 = فقط یک IP\n2 = دو IP همزمان\n\n۰ یعنی بدون محدودیت", nextStep: "limitIp" };
+        return {
+          text: "🌐 محدودیت IP را وارد کنید\n\nمثال:\n0 = نامحدود\n1 = فقط یک IP\n2 = دو IP همزمان\n\n۰ یعنی بدون محدودیت",
+          nextStep: "limitIp",
+        };
       }
       if (flow.step === "limitIp") {
         const limitIp = Number(text.replace(/[,،\s]/g, ""));
-        if (!Number.isInteger(limitIp) || limitIp < 0) return { text: "محدودیت IP معتبر نیست. عددی بزرگ‌تر یا مساوی ۰ وارد کنید:\n۰ یعنی بدون محدودیت" };
+        if (!Number.isInteger(limitIp) || limitIp < 0)
+          return { text: "محدودیت IP معتبر نیست. عددی بزرگ‌تر یا مساوی ۰ وارد کنید:\n۰ یعنی بدون محدودیت" };
         flow.data.limitIp = limitIp;
         flow.step = "group";
-        return { text: "👥 انتخاب گروه کلاینت\n\nلطفاً گروه کلاینت را از دکمه‌های زیر انتخاب کنید.", keyboard: [[{ text: "👥 انتخاب گروه", action: "admin:xray_picker:group:product_create" }]] };
+        return {
+          text: "👥 انتخاب گروه کلاینت\n\nلطفاً گروه کلاینت را از دکمه‌های زیر انتخاب کنید.",
+          keyboard: [[{ text: "👥 انتخاب گروه", action: "admin:xray_picker:group:product_create" }]],
+        };
       }
       if (flow.step !== "confirm") return { text: "لطفاً انتخاب گروه و اینباند را با دکمه‌های فرم انجام دهید." };
       const groupName = flow.data.xrayGroupName ? String(flow.data.xrayGroupName) : null;
       const duration = Number(flow.data.duration);
       const categoryId = String(flow.data.categoryId ?? "");
-      if (!categoryId) return { text: "⚠️ دسته‌بندی نامعتبر یا حذف‌شده است. دوباره دسته‌بندی را انتخاب کنید.", keyboard: await productCategoryKeyboard() };
+      if (!categoryId)
+        return { text: "⚠️ دسته‌بندی نامعتبر یا حذف‌شده است. دوباره دسته‌بندی را انتخاب کنید.", keyboard: await productCategoryKeyboard() };
       await ProductService.create({
         mode: "xray_auto",
         categoryId,
@@ -525,13 +598,17 @@ categoryId: ${detail.product.categoryId}
 price: ${detail.product.price}
 duration: ${detail.product.duration}
 active: ${detail.product.isActive}
-${detail.product.mode === "xray_auto" ? `trafficGB: ${detail.product.trafficBytes ? Number(detail.product.trafficBytes) / 1_073_741_824 : ""}
+${
+  detail.product.mode === "xray_auto"
+    ? `trafficGB: ${detail.product.trafficBytes ? Number(detail.product.trafficBytes) / 1_073_741_824 : ""}
 durationDays: ${detail.product.durationDays ?? detail.product.duration}
 stockLimit: ${detail.product.stockLimit ?? ""}
 limitIp: ${detail.product.xrayLimitIp ?? 0}
 group: ${detail.product.xrayGroupName ?? ""}
 
-نکته: تغییر حجم/مدت/اینباند فقط روی خریدهای بعدی اعمال می‌شود و سرویس‌های قبلی را تغییر نمی‌دهد.` : ""}
+نکته: تغییر حجم/مدت/اینباند فقط روی خریدهای بعدی اعمال می‌شود و سرویس‌های قبلی را تغییر نمی‌دهد.`
+    : ""
+}
 
 برای تغییر دسته‌بندی می‌توانید یکی از دکمه‌های دسته‌بندی فعال را انتخاب کنید.`;
     },
@@ -543,11 +620,31 @@ group: ${detail.product.xrayGroupName ?? ""}
       const detail = await AdminService.productDetail(productId);
       const isXray = detail.product?.mode === "xray_auto";
       // Legacy audit: validFields = new Set(["title", "price", "category", "trafficGB", "durationDays", "stockLimit", "limitIp"]);
-      const validFields = new Set(["title", "price", "category", "trafficGB", "durationDays", "stockLimit", "limitIp", "xrayLimitIp", "group", "xrayGroupName", "soldCount", "resetSoldCount"]);
-      if (field && !validFields.has(field)) return { done: true, text: "⚠️ فیلد ویرایش معتبر نیست.", returnTo: { id: "admin.product", params: { productId } } };
+      const validFields = new Set([
+        "title",
+        "price",
+        "category",
+        "trafficGB",
+        "durationDays",
+        "stockLimit",
+        "limitIp",
+        "xrayLimitIp",
+        "group",
+        "xrayGroupName",
+        "soldCount",
+        "resetSoldCount",
+      ]);
+      if (field && !validFields.has(field))
+        return { done: true, text: "⚠️ فیلد ویرایش معتبر نیست.", returnTo: { id: "admin.product", params: { productId } } };
       const patch: any = {};
       if (field) {
-        if (["trafficGB", "durationDays", "stockLimit", "limitIp", "xrayLimitIp", "group", "xrayGroupName", "soldCount", "resetSoldCount"].includes(field) && !isXray) return { done: true, text: "⚠️ این فیلد فقط برای محصولات Xray است.", returnTo: { id: "admin.product", params: { productId } } };
+        if (
+          ["trafficGB", "durationDays", "stockLimit", "limitIp", "xrayLimitIp", "group", "xrayGroupName", "soldCount", "resetSoldCount"].includes(
+            field,
+          ) &&
+          !isXray
+        )
+          return { done: true, text: "⚠️ این فیلد فقط برای محصولات Xray است.", returnTo: { id: "admin.product", params: { productId } } };
         if (field === "title") patch.title = text.trim();
         if (field === "price") patch.price = parseInteger(text);
         if (field === "category") patch.categoryId = selectedCategoryId || text.trim();
@@ -564,9 +661,15 @@ group: ${detail.product.xrayGroupName ?? ""}
           title: data.title ?? data.name ?? data["عنوان"],
           categoryId: data.categoryId ?? data.category ?? data["دسته"] ?? selectedCategoryId,
           price: data.price || data["قیمت"] ? parseInteger(data.price ?? data["قیمت"] ?? "0") : undefined,
-          duration: hasKey(data, "duration") || (!isXray && hasKey(data, "durationDays")) ? parseInteger(data.duration ?? data.durationDays ?? "0") : undefined,
+          duration:
+            hasKey(data, "duration") || (!isXray && hasKey(data, "durationDays"))
+              ? parseInteger(data.duration ?? data.durationDays ?? "0")
+              : undefined,
           trafficGB: isXray && hasKey(data, "trafficGB") ? parseInteger(data.trafficGB) : undefined,
-          durationDays: isXray && (hasKey(data, "durationDays") || hasKey(data, "duration")) ? parseInteger(data.durationDays ?? data.duration ?? "0") : undefined,
+          durationDays:
+            isXray && (hasKey(data, "durationDays") || hasKey(data, "duration"))
+              ? parseInteger(data.durationDays ?? data.duration ?? "0")
+              : undefined,
           stockLimit: isXray && hasKey(data, "stockLimit") ? parseInteger(data.stockLimit) : undefined,
           isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
           xrayLimitIp: isXray && hasKey(data, "xrayLimitIp") ? parseInteger(data.xrayLimitIp) : undefined,
@@ -593,8 +696,18 @@ group: ${detail.product.xrayGroupName ?? ""}
     async handleText(ctx, text) {
       const field = String(ctx.session.flow?.data.field ?? "");
       const value = parseInteger(text);
-      if (!Number.isInteger(value) || (field === "limitIp" ? value < 0 : value <= 0)) return { text: field === "limitIp" ? "عدد صفر یا بزرگ‌تر وارد کنید:" : "یک عدد مثبت وارد کنید:" };
-      const patch = field === "trafficGB" ? { trafficGB: value } : field === "durationDays" ? { durationDays: value } : field === "stockLimit" ? { stockLimit: value } : field === "limitIp" ? { limitIp: value } : undefined;
+      if (!Number.isInteger(value) || (field === "limitIp" ? value < 0 : value <= 0))
+        return { text: field === "limitIp" ? "عدد صفر یا بزرگ‌تر وارد کنید:" : "یک عدد مثبت وارد کنید:" };
+      const patch =
+        field === "trafficGB"
+          ? { trafficGB: value }
+          : field === "durationDays"
+            ? { durationDays: value }
+            : field === "stockLimit"
+              ? { stockLimit: value }
+              : field === "limitIp"
+                ? { limitIp: value }
+                : undefined;
       if (!patch) return { done: true, text: "⚠️ فیلد تنظیمات معتبر نیست.", returnTo: { id: "admin.freeAccounts" } };
       await FreeAccountService.updateXrayConfig(patch, String(ctx.from?.id ?? "admin"));
       return { done: true, text: "✅ تنظیمات اکانت تست ذخیره شد.", returnTo: { id: "admin.freeAccounts" } };
@@ -835,7 +948,13 @@ status: ${coupon.status} (active/inactive)`;
         value: data.value ? parseInteger(data.value) : data["مقدار"] ? parseInteger(data["مقدار"]) : undefined,
         maxUses: data.maxUses ? parseInteger(data.maxUses) : data["حداکثر"] ? parseInteger(data["حداکثر"]) : undefined,
         perUserLimit: data.perUserLimit ? parseInteger(data.perUserLimit) : data["هر کاربر"] ? parseInteger(data["هر کاربر"]) : undefined,
-        minimumPurchaseAmount: data.minimumPurchaseAmount ? parseInteger(data.minimumPurchaseAmount) : data.minimum ? parseInteger(data.minimum) : data["حداقل خرید"] ? parseInteger(data["حداقل خرید"]) : undefined,
+        minimumPurchaseAmount: data.minimumPurchaseAmount
+          ? parseInteger(data.minimumPurchaseAmount)
+          : data.minimum
+            ? parseInteger(data.minimum)
+            : data["حداقل خرید"]
+              ? parseInteger(data["حداقل خرید"])
+              : undefined,
         expiresAt: expiresInDays ? new Date(Date.now() + expiresInDays * 86_400_000) : undefined,
         status: parseStatus(data.status ?? data["وضعیت"]),
       };
@@ -914,7 +1033,10 @@ status: ${detail.wallet.status}`;
           networkName: data.networkName ?? data.network ?? data["شبکه"],
           displayName: data.displayName ?? data.display ?? data["نام نمایشی"],
           walletAddress: data.walletAddress ?? data.address ?? data["آدرس"],
-          displayOrder: data.displayOrder || data.order || data.sort || data["ترتیب"] ? parseInteger(data.displayOrder ?? data.order ?? data.sort ?? data["ترتیب"] ?? "0") : undefined,
+          displayOrder:
+            data.displayOrder || data.order || data.sort || data["ترتیب"]
+              ? parseInteger(data.displayOrder ?? data.order ?? data.sort ?? data["ترتیب"] ?? "0")
+              : undefined,
           status: parseStatus(data.status ?? data.active ?? data["وضعیت"]),
         },
         String(ctx.from?.id ?? "admin"),
@@ -977,33 +1099,70 @@ status: ${detail.wallet.status}`;
       }
       try {
         await AdminService.saveForcedJoinChannel(
-          { chatId: String(flow.data.chatId), title: String(flow.data.title), inviteLink: text.trim() === "-" ? undefined : text.trim(), status: "active" },
+          {
+            chatId: String(flow.data.chatId),
+            title: String(flow.data.title),
+            inviteLink: text.trim() === "-" ? undefined : text.trim(),
+            status: "active",
+          },
           String(ctx.from?.id ?? "admin"),
         );
       } catch (error) {
-        return { text: error instanceof Error ? `⚠️ ${error.message}
+        return {
+          text:
+            error instanceof Error
+              ? `⚠️ ${error.message}
 
-لینک عضویت معتبر را وارد کنید:` : "⚠️ ذخیره کانال ناموفق بود. لینک عضویت را دوباره وارد کنید:" };
+لینک عضویت معتبر را وارد کنید:`
+              : "⚠️ ذخیره کانال ناموفق بود. لینک عضویت را دوباره وارد کنید:",
+        };
       }
       return { done: true, text: "✅ کانال عضویت اجباری ذخیره شد.", returnTo: { id: "admin.forcedJoin" } };
     },
   },
-
 
   product_guide_create: {
     firstStep: "title",
     prompt: "📘 عنوان بخش راهنما را وارد کنید:\n\nمثال: سرویس‌ها چطور کار می‌کنند؟",
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
-      if (flow.step === "title") { flow.data.title = text.trim(); flow.step = "shortDescription"; return { text: "توضیح کوتاه این کارت را وارد کنید:", nextStep: "shortDescription" }; }
-      if (flow.step === "shortDescription") { flow.data.shortDescription = text.trim(); flow.step = "body"; return { text: "متن اصلی کوتاه و تمیز را وارد کنید:", nextStep: "body" }; }
-      if (flow.step === "body") { flow.data.body = text.trim(); flow.step = "icon"; return { text: "آیکن را وارد کنید (مثلاً 📘 یا 🔹):", nextStep: "icon" }; }
-      if (flow.step === "icon") { flow.data.icon = text.trim() || "📘"; flow.step = "displayOrder"; return { text: "ترتیب نمایش را به عدد وارد کنید:", nextStep: "displayOrder" }; }
+      if (flow.step === "title") {
+        flow.data.title = text.trim();
+        flow.step = "shortDescription";
+        return { text: "توضیح کوتاه این کارت را وارد کنید:", nextStep: "shortDescription" };
+      }
+      if (flow.step === "shortDescription") {
+        flow.data.shortDescription = text.trim();
+        flow.step = "body";
+        return { text: "متن اصلی کوتاه و تمیز را وارد کنید:", nextStep: "body" };
+      }
+      if (flow.step === "body") {
+        flow.data.body = text.trim();
+        flow.step = "icon";
+        return { text: "آیکن را وارد کنید (مثلاً 📘 یا 🔹):", nextStep: "icon" };
+      }
+      if (flow.step === "icon") {
+        flow.data.icon = text.trim() || "📘";
+        flow.step = "displayOrder";
+        return { text: "ترتیب نمایش را به عدد وارد کنید:", nextStep: "displayOrder" };
+      }
       const order = parseInteger(text);
       try {
-        await ProductGuideService.save({ title: String(flow.data.title), shortDescription: String(flow.data.shortDescription), body: String(flow.data.body), icon: String(flow.data.icon ?? "📘"), displayOrder: Number.isFinite(order) ? order : 0, isActive: true }, String(ctx.from?.id ?? "admin"));
+        await ProductGuideService.save(
+          {
+            title: String(flow.data.title),
+            shortDescription: String(flow.data.shortDescription),
+            body: String(flow.data.body),
+            icon: String(flow.data.icon ?? "📘"),
+            displayOrder: Number.isFinite(order) ? order : 0,
+            isActive: true,
+          },
+          String(ctx.from?.id ?? "admin"),
+        );
         return { done: true, text: "✅ بخش راهنمای محصولات ذخیره شد.", returnTo: { id: "admin.productGuides" } };
-      } catch (error) { return { text: error instanceof Error ? `⚠️ ${error.message}` : "⚠️ ذخیره راهنما ناموفق بود." }; }
+      } catch (error) {
+        return { text: error instanceof Error ? `⚠️ ${error.message}` : "⚠️ ذخیره راهنما ناموفق بود." };
+      }
     },
   },
   product_guide_edit: {
@@ -1011,15 +1170,44 @@ status: ${detail.wallet.status}`;
     prompt: "📘 اطلاعات جدید راهنما را مرحله‌ای وارد کنید. ابتدا عنوان جدید را بفرستید:",
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
-      if (flow.step === "title") { flow.data.title = text.trim(); flow.step = "shortDescription"; return { text: "توضیح کوتاه جدید:", nextStep: "shortDescription" }; }
-      if (flow.step === "shortDescription") { flow.data.shortDescription = text.trim(); flow.step = "body"; return { text: "متن اصلی جدید:", nextStep: "body" }; }
-      if (flow.step === "body") { flow.data.body = text.trim(); flow.step = "icon"; return { text: "آیکن جدید:", nextStep: "icon" }; }
-      if (flow.step === "icon") { flow.data.icon = text.trim() || "📘"; flow.step = "displayOrder"; return { text: "ترتیب نمایش جدید:", nextStep: "displayOrder" }; }
+      if (flow.step === "title") {
+        flow.data.title = text.trim();
+        flow.step = "shortDescription";
+        return { text: "توضیح کوتاه جدید:", nextStep: "shortDescription" };
+      }
+      if (flow.step === "shortDescription") {
+        flow.data.shortDescription = text.trim();
+        flow.step = "body";
+        return { text: "متن اصلی جدید:", nextStep: "body" };
+      }
+      if (flow.step === "body") {
+        flow.data.body = text.trim();
+        flow.step = "icon";
+        return { text: "آیکن جدید:", nextStep: "icon" };
+      }
+      if (flow.step === "icon") {
+        flow.data.icon = text.trim() || "📘";
+        flow.step = "displayOrder";
+        return { text: "ترتیب نمایش جدید:", nextStep: "displayOrder" };
+      }
       const order = parseInteger(text);
       try {
-        await ProductGuideService.save({ title: String(flow.data.title), shortDescription: String(flow.data.shortDescription), body: String(flow.data.body), icon: String(flow.data.icon ?? "📘"), displayOrder: Number.isFinite(order) ? order : 0, isActive: true }, String(ctx.from?.id ?? "admin"), String(flow.data.sectionId));
+        await ProductGuideService.save(
+          {
+            title: String(flow.data.title),
+            shortDescription: String(flow.data.shortDescription),
+            body: String(flow.data.body),
+            icon: String(flow.data.icon ?? "📘"),
+            displayOrder: Number.isFinite(order) ? order : 0,
+            isActive: true,
+          },
+          String(ctx.from?.id ?? "admin"),
+          String(flow.data.sectionId),
+        );
         return { done: true, text: "✅ بخش راهنما ویرایش شد.", returnTo: { id: "admin.productGuides" } };
-      } catch (error) { return { text: error instanceof Error ? `⚠️ ${error.message}` : "⚠️ ویرایش راهنما ناموفق بود." }; }
+      } catch (error) {
+        return { text: error instanceof Error ? `⚠️ ${error.message}` : "⚠️ ویرایش راهنما ناموفق بود." };
+      }
     },
   },
 
@@ -1030,7 +1218,8 @@ status: ${detail.wallet.status}`;
       const prompts: Record<string, string> = {
         apiBaseUrl: "🌐 API URL جدید را وارد کنید:\n\nمثال: http://136.244.104.77:5000/api/v1",
         apiKey: "🔑 API KEY جدید را وارد کنید:\n\nفقط API Key اعتبارسنجی و ذخیره می‌شود؛ Callback بررسی نخواهد شد.",
-        callbackUrl: "🔗 Callback URL جدید را وارد کنید:\n\nمثال: https://domain.com/payments/callback\n\nفقط Callback اعتبارسنجی و ذخیره می‌شود؛ API Key بررسی نخواهد شد.",
+        callbackUrl:
+          "🔗 Callback URL جدید را وارد کنید:\n\nمثال: https://domain.com/payments/callback\n\nفقط Callback اعتبارسنجی و ذخیره می‌شود؛ API Key بررسی نخواهد شد.",
         gatewayName: "🏷 نام نمایشی درگاه را وارد کنید:\n\nمثال: پرداخت آنی",
         displayOrder: "🔢 ترتیب نمایش را به عدد وارد کنید:\n\nمثال: 1",
       };
@@ -1081,7 +1270,9 @@ status: ${detail.wallet.status}`;
         }
         if (flow.step === "confirm") return { text: "برای ادامه روی دکمه تأیید بزنید." };
       } catch (error) {
-        return { text: error instanceof Error ? `❌ ${error.message}\n\nهمان مرحله را با مقدار معتبر دوباره ارسال کنید:` : "❌ ذخیره مرحله ناموفق بود" };
+        return {
+          text: error instanceof Error ? `❌ ${error.message}\n\nهمان مرحله را با مقدار معتبر دوباره ارسال کنید:` : "❌ ذخیره مرحله ناموفق بود",
+        };
       }
       return { text: "⚠️ مرحله نامعتبر است." };
     },
@@ -1090,11 +1281,13 @@ status: ${detail.wallet.status}`;
     firstStep: "fields",
     prompt: (ctx) => {
       const field = String(ctx.session.flow?.data.field ?? "");
-      if (field === "apiBaseUrl") return `🌐 آدرس پنل Xray را وارد کنید:
+      if (field === "apiBaseUrl")
+        return `🌐 آدرس پنل Xray را وارد کنید:
 
 مثال: https://domain.com:port/securityPath`;
       if (field === "apiToken") return "🔑 توکن API پنل Xray را وارد کنید:";
-      if (field === "subscriptionBaseUrl") return `🔗 لینک پایه اشتراک را وارد کنید (اختیاری):
+      if (field === "subscriptionBaseUrl")
+        return `🔗 لینک پایه اشتراک را وارد کنید (اختیاری):
 
 مثال: https://domain.com:2096/sub/`;
       return `⚙️ تنظیمات پنل Xray را به شکل key:value ارسال کنید.
@@ -1151,7 +1344,11 @@ export async function startFlow(ctx: AppContext, name: FlowName, data: Record<st
   const definition = definitions[name];
   if (!definition) throw new Error("جریان پیدا نشد");
   ctx.session.flow = { name, step: definition.firstStep, data, returnTo: currentReturnTo(ctx) };
-  await flowPrompt(ctx, typeof definition.prompt === "function" ? await definition.prompt(ctx) : definition.prompt, definition.initialKeyboard ? await definition.initialKeyboard(ctx) : []);
+  await flowPrompt(
+    ctx,
+    typeof definition.prompt === "function" ? await definition.prompt(ctx) : definition.prompt,
+    definition.initialKeyboard ? await definition.initialKeyboard(ctx) : [],
+  );
 }
 
 export async function handleActiveFlowText(ctx: AppContext, text: string) {
@@ -1170,7 +1367,23 @@ export async function handleActiveFlowText(ctx: AppContext, text: string) {
   if (!result) return false;
   if (result.done) {
     ctx.session.flow = undefined;
-    await ctx.reply(result.text, flow.name === "instant_topup" ? { reply_markup: { inline_keyboard: [[{ text: "💳 پرداخت", url: String(result.text.match(/https?:\/\/\S+/)?.[0] ?? "") }], [{ text: "🔄 بررسی وضعیت", callback_data: callbackFor("wallet.history") }, { text: "🎫 پشتیبانی", callback_data: callbackFor("support") }], [{ text: "🏠 خانه", callback_data: callbackFor("home") }]] } } : undefined);
+    await ctx.reply(
+      result.text,
+      flow.name === "instant_topup"
+        ? {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "💳 پرداخت", url: String(result.text.match(/https?:\/\/\S+/)?.[0] ?? "") }],
+                [
+                  { text: "🔄 بررسی وضعیت", callback_data: callbackFor("wallet.history") },
+                  { text: "🎫 پشتیبانی", callback_data: callbackFor("support") },
+                ],
+                [{ text: "🏠 خانه", callback_data: callbackFor("home") }],
+              ],
+            },
+          }
+        : undefined,
+    );
     await renderPanel(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace", RenderMode.SEND_NEW);
     return true;
   }
@@ -1215,12 +1428,14 @@ export function registerFlowEngine(bot: AppBot) {
         return;
       }
       flow.data.categoryId = category.id;
-      await flowPrompt(ctx, `✅ دسته‌بندی انتخاب شد: ${category.name}\n\nحالا سایر فیلدهای محصول را ارسال کنید یا فقط برای تغییر دسته‌بندی بنویسید: ذخیره`);
+      await flowPrompt(
+        ctx,
+        `✅ دسته‌بندی انتخاب شد: ${category.name}\n\nحالا سایر فیلدهای محصول را ارسال کنید یا فقط برای تغییر دسته‌بندی بنویسید: ذخیره`,
+      );
     } catch {
       await flowPrompt(ctx, "⚠️ دسته‌بندی نامعتبر یا حذف‌شده است. لطفاً دوباره انتخاب کنید.", await productCategoryKeyboard());
     }
   });
-
 
   bot.action(/^flow:back:([^:]+):?([^:]*)$/, async (ctx) => {
     await ctx.answerCbQuery();
@@ -1267,27 +1482,27 @@ export function registerFlowEngine(bot: AppBot) {
   });
 
   bot.action("broadcast:confirm", async (ctx) => {
-  const flow = ctx.session.flow;
+    const flow = ctx.session.flow;
 
-  if (!flow || flow.name !== "broadcast_create" || flow.step !== "confirm") {
-    await ctx.answerCbQuery("درخواست ارسال فعالی وجود ندارد");
-    return;
-  }
+    if (!flow || flow.name !== "broadcast_create" || flow.step !== "confirm") {
+      await ctx.answerCbQuery("درخواست ارسال فعالی وجود ندارد");
+      return;
+    }
 
-  if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
-    await ctx.answerCbQuery("دسترسی غیرمجاز");
-    return;
-  }
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
+      await ctx.answerCbQuery("دسترسی غیرمجاز");
+      return;
+    }
 
-  await ctx.answerCbQuery("در حال ارسال...");
+    await ctx.answerCbQuery("در حال ارسال...");
 
-  const result = await completeBroadcast(ctx);
+    const result = await completeBroadcast(ctx);
 
-  ctx.session.flow = undefined;
+    ctx.session.flow = undefined;
 
-  await ctx.reply(result);
-  await renderPanel(ctx, { id: "admin.notifications" }, "replace");
-});
+    await ctx.reply(result);
+    await renderPanel(ctx, { id: "admin.notifications" }, "replace");
+  });
 
   bot.action(/^flow:start:([^:]+)(?::([^:]+))?(?::([^:]+))?$/, async (ctx) => {
     await ctx.answerCbQuery();
@@ -1297,33 +1512,33 @@ export function registerFlowEngine(bot: AppBot) {
       return;
     }
     if (name === "coupon_code") return startFlow(ctx, "coupon_code", { productId: ctx.match[2] });
-const adminOnlyFlows: FlowName[] = [
-  "product_create",
-  "product_edit",
-  "account_create",
-  "account_edit",
-  "coupon_create",
-  "coupon_edit",
-  "category_create",
-  "category_edit",
-  "product_price",
-  "crypto_wallet_create",
-  "crypto_wallet_edit",
-  "minimum_topup",
-  "referral_tier_create",
-  "store_status",
-  "forced_join_create",
-  "product_guide_create",
-  "product_guide_edit",
-  "wallet_adjust",
-  "broadcast_create",
-  "payment_gateway_update",
-  "payment_gateway_setup",
-  "xray_panel_setup",
-  "free_account_create",
-  "free_account_edit",
-  "free_test_config",
-];
+    const adminOnlyFlows: FlowName[] = [
+      "product_create",
+      "product_edit",
+      "account_create",
+      "account_edit",
+      "coupon_create",
+      "coupon_edit",
+      "category_create",
+      "category_edit",
+      "product_price",
+      "crypto_wallet_create",
+      "crypto_wallet_edit",
+      "minimum_topup",
+      "referral_tier_create",
+      "store_status",
+      "forced_join_create",
+      "product_guide_create",
+      "product_guide_edit",
+      "wallet_adjust",
+      "broadcast_create",
+      "payment_gateway_update",
+      "payment_gateway_setup",
+      "xray_panel_setup",
+      "free_account_create",
+      "free_account_edit",
+      "free_test_config",
+    ];
     if (adminOnlyFlows.includes(name) && (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))) {
       await ctx.answerCbQuery("دسترسی غیرمجاز");
       return;
@@ -1333,11 +1548,11 @@ const adminOnlyFlows: FlowName[] = [
     if (name === "payment_gateway_setup") return startFlow(ctx, "payment_gateway_setup");
     if (name === "xray_panel_setup") return startFlow(ctx, "xray_panel_setup", { field: ctx.match[2] });
     if (name === "coupon_edit") return startFlow(ctx, "coupon_edit", { couponId: ctx.match[2] });
-if (name === "broadcast_create") {
-  return startFlow(ctx, "broadcast_create", {
-    target: ctx.match[2],
-  });
-}
+    if (name === "broadcast_create") {
+      return startFlow(ctx, "broadcast_create", {
+        target: ctx.match[2],
+      });
+    }
     if (name === "category_edit") return startFlow(ctx, "category_edit", { categoryId: ctx.match[2] });
     if (name === "product_edit") return startFlow(ctx, "product_edit", { productId: ctx.match[2], field: ctx.match[3] });
     if (name === "free_test_config") return startFlow(ctx, "free_test_config", { field: ctx.match[2] });

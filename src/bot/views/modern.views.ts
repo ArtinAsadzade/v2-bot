@@ -802,22 +802,25 @@ ${
     const link = `https://t.me/${botUsername}?start=${user.referralCode}`;
     const nextTarget = Math.max(Math.ceil((stats.totalReferrals + 1) / 5) * 5, 5);
     return {
-      text: `🎁 دعوت دوستان
+      text: `🎁 برنامه دعوت دوستان
 
 ${divider}
-👥 تعداد دعوت‌ها
+
+👥 تعداد دعوت‌های موفق
 ${stats.totalReferrals.toLocaleString("fa-IR")} نفر
 
-🎁 پاداش‌های قابل دریافت
+💎 پاداش قابل دریافت
 ${money(stats.pendingAmount)}
 
-📈 پیشرفت تا پاداش بعدی
+📈 فاصله تا پاداش بعدی
 ${progressBar(stats.totalReferrals % nextTarget, nextTarget)}
 
-🔗 لینک دعوت
+🔗 لینک اختصاصی شما
 ${link}
 
-کافی است لینک را برای دوستانتان بفرستید. پس از عضویت موفق، پاداش‌ها در همین بخش نمایش داده می‌شوند.`,
+لینک دعوت خود را با دوستانتان به اشتراک بگذارید. هر کاربری که از طریق این لینک عضو شود، در آمار شما ثبت شده و پاداش‌های مربوطه به حساب شما تعلق می‌گیرد.
+
+✨ هرچه افراد بیشتری دعوت کنید، پاداش‌های بیشتری دریافت خواهید کرد.`,
       keyboard: [[{ text: "💎 دریافت پاداش", action: "referral:claim" }], [{ text: "📋 کپی لینک دعوت", action: "referral:copy" }]],
     };
   });
@@ -866,7 +869,6 @@ ${divider}
 💰 درآمد امروز: ${money(paymentStats.todayRevenue)}
 ⏳ پرداخت‌های در انتظار: ${paymentStats.pending.toLocaleString("fa-IR")}
 🎫 تیکت‌های باز: ${stats.openTickets.toLocaleString("fa-IR")}
-🗄 هشدار موجودی کم: ${lowInventory}
 🛡 وضعیت سیستم: ساختار مانیتورینگ فعال
 ${divider}
 
@@ -963,6 +965,7 @@ ${divider}
           { text: "🎁 پاداش دعوت", action: callbackFor("admin.referrals") },
           { text: "📊 گزارش کاربران", action: callbackFor("admin.analytics") },
         ],
+        [{ text: "📣 اطلاع‌رسانی", action: callbackFor("admin.broadcast") }],
       ],
     };
   });
@@ -1603,10 +1606,7 @@ ${
     )
     .join("\n\n") || "هنوز بخشی ثبت نشده است."
 }
-
-${divider}
-
-نمایش پلن‌ها در گروه‌ها: ${plansSetting.enabled ? "✅ فعال" : "⛔ غیرفعال"}`,
+`,
       keyboard: [
         [{ text: "➕ ساخت بخش راهنما", action: "flow:start:product_guide_create" }],
         ...sections.map((section) => [
@@ -1614,12 +1614,6 @@ ${divider}
           { text: section.isActive ? "⛔ غیرفعال" : "✅ فعال", action: `admin:product_guide:status:${section.id}:${section.isActive ? "0" : "1"}` },
           { text: "🗑 حذف", action: `admin:product_guide:delete:${section.id}` },
         ]),
-        [
-          {
-            text: plansSetting.enabled ? "⛔ غیرفعال‌سازی /plans" : "✅ فعال‌سازی /plans",
-            action: `admin:public_plans:${plansSetting.enabled ? "disabled" : "enabled"}`,
-          },
-        ],
       ],
     };
   });
