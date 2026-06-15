@@ -396,12 +396,18 @@ export function registerModernHandlers(bot: AppBot) {
 
 
 
-  function xrayInboundPickerKeyboard(target: string, inbounds: Awaited<ReturnType<typeof XrayClientService.listInbounds>>, selectedIds: number[], productId?: string) {
+  const pickerTargetAlias = { free_test: "f", product_create: "pc", product_edit: "pe" } as const;
+  const pickerTargetFromAlias = { f: "free_test", pc: "product_create", pe: "product_edit" } as const;
+  type XrayPickerTargetAlias = keyof typeof pickerTargetFromAlias;
+  const pickerAlias = (target: "free_test" | "product_create" | "product_edit") => pickerTargetAlias[target];
+
+  function xrayInboundPickerKeyboard(target: "free_test" | "product_create" | "product_edit", inbounds: Awaited<ReturnType<typeof XrayClientService.listInbounds>>, selectedIds: number[], productId?: string) {
     const selected = new Set(selectedIds);
+    const targetAlias = pickerAlias(target);
     const suffix = productId ? `:${productId}` : "";
-    const rows = inbounds.map((inbound) => [{ text: `${selected.has(inbound.id) ? "☑" : "☐"} ${inbound.remark ?? inbound.tag ?? `inbound-${inbound.id}`} | ${inbound.protocol ?? "—"} · port ${inbound.port ?? "—"}`, callback_data: `admin:xray_picker:inbound:toggle:${target}:${inbound.id}${suffix}` }]);
-    rows.push([{ text: "✅ ذخیره اینباندها", callback_data: `admin:xray_picker:inbounds:save:${target}${suffix}` }]);
-    rows.push([{ text: "🔄 بروزرسانی لیست", callback_data: `admin:xray_picker:inbounds:${target}${suffix}` }, { text: "🔙 بازگشت", callback_data: target === "free_test" ? callbackFor("admin.freeAccounts") : productId ? callbackFor("admin.product", { productId }) : callbackFor("admin.products") }]);
+    const rows = inbounds.map((inbound) => [{ text: `${selected.has(inbound.id) ? "☑" : "☐"} ${inbound.remark ?? inbound.tag ?? `inbound-${inbound.id}`} | ${inbound.protocol ?? "—"} · port ${inbound.port ?? "—"}`, callback_data: `xpi:t:${targetAlias}:${inbound.id}${suffix}` }]);
+    rows.push([{ text: "✅ ذخیره اینباندها", callback_data: `xpi:s:${targetAlias}${suffix}` }]);
+    rows.push([{ text: "🔄 بروزرسانی لیست", callback_data: `xpi:l:${targetAlias}${suffix}` }, { text: "🔙 بازگشت", callback_data: target === "free_test" ? callbackFor("admin.freeAccounts") : productId ? callbackFor("admin.product", { productId }) : callbackFor("admin.products") }]);
     return { inline_keyboard: rows };
   }
 
@@ -419,10 +425,11 @@ export function registerModernHandlers(bot: AppBot) {
   }
 
   async function showXrayGroupPicker(ctx: AppContext, target: "free_test" | "product_create" | "product_edit", productId?: string) {
-    const groups = await XrayClientService.listGroups().catch(() => []);
+    const groups = await XrayClientService.listGroups();
     ctx.session.xrayPicker = { target, productId, groups: JSON.stringify(groups) };
     const suffix = productId ? `:${productId}` : "";
-    const rows = [[{ text: "بدون گروه", callback_data: `admin:xray_picker:group:select:${target}:__none__${suffix}` }], ...groups.map((g) => [{ text: `${g.name} (${g.clientCount ?? 0})`, callback_data: `admin:xray_picker:group:select:${target}:${encodeURIComponent(g.name)}${suffix}` }]), [{ text: "🔄 بروزرسانی گروه‌ها", callback_data: `admin:xray_picker:group:${target}${suffix}` }, { text: "🔙 بازگشت", callback_data: target === "free_test" ? callbackFor("admin.freeAccounts") : productId ? callbackFor("admin.product", { productId }) : callbackFor("admin.products") }]];
+    const targetAlias = pickerAlias(target);
+    const rows = [[{ text: "بدون گروه", callback_data: `xpg:s:${targetAlias}:n${suffix}` }], ...groups.map((g, index) => [{ text: `${g.name} (${g.clientCount ?? 0})`, callback_data: `xpg:s:${targetAlias}:${index}${suffix}` }]), [{ text: "🔄 بروزرسانی گروه‌ها", callback_data: `xpg:l:${targetAlias}${suffix}` }, { text: "🔙 بازگشت", callback_data: target === "free_test" ? callbackFor("admin.freeAccounts") : productId ? callbackFor("admin.product", { productId }) : callbackFor("admin.products") }]];
     await ctx.reply(`👥 انتخاب گروه کلاینت\n\n${target === "product_edit" ? "⚠️ تغییر گروه فقط روی خریدهای جدید اعمال می‌شود.\n\n" : ""}${groups.length ? groups.map((g) => `• ${g.name} (${g.clientCount ?? 0})`).join("\n") : "گروهی در پنل تعریف نشده است.\nمی‌توانید «بدون گروه» را انتخاب کنید."}`, { reply_markup: { inline_keyboard: rows } });
   }
 
@@ -435,32 +442,66 @@ export function registerModernHandlers(bot: AppBot) {
     ctx.session.flow = undefined;
   }
 
+  bot.action(/^xpg:l:(f|pc|pe)(?::([^:]+))?$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
+    await showXrayGroupPicker(ctx, pickerTargetFromAlias[ctx.match[1] as XrayPickerTargetAlias], ctx.match[2]);
+  });
+
   bot.action(/^admin:xray_picker:group:(free_test|product_create|product_edit)(?::([^:]+))?$/, async (ctx) => {
     await ctx.answerCbQuery();
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
     await showXrayGroupPicker(ctx, ctx.match[1] as any, ctx.match[2]);
   });
 
-  bot.action(/^admin:xray_picker:group:select:(free_test|product_create|product_edit):([^:]+)(?::([^:]+))?$/, async (ctx) => {
-    await ctx.answerCbQuery();
+  async function saveXrayGroupSelection(ctx: AppContext, target: "free_test" | "product_create" | "product_edit", selected: string | null, productId?: string) {
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
-    const target = ctx.match[1] as "free_test" | "product_create" | "product_edit";
-    const productId = ctx.match[3];
-    const selected = ctx.match[2] === "__none__" ? null : decodeURIComponent(ctx.match[2]);
-    const groups = await XrayClientService.listGroups().catch(() => []);
-    if (selected && !groups.some((g) => g.name === selected)) return void await ctx.reply("⚠️ گروه انتخابی در لیست زنده وجود ندارد.");
     if (target === "free_test") { await FreeAccountService.updateXrayConfig({ groupName: selected }, String(ctx.from.id)); await ctx.reply("✅ گروه اکانت تست ذخیره شد."); return renderPanel(ctx, { id: "admin.freeAccounts" }, "replace"); }
     if (target === "product_edit" && productId) { await AdminService.updateProduct(productId, { xrayGroupName: selected }, String(ctx.from.id)); await ctx.reply("✅ گروه محصول برای خریدهای بعدی ذخیره شد."); return renderPanel(ctx, { id: "admin.product", params: { productId } }, "replace"); }
     if (!ctx.session.flow || ctx.session.flow.name !== "product_create") return void await ctx.reply("⚠️ فرم ساخت محصول فعال نیست.");
     ctx.session.flow.data.xrayGroupName = selected ?? undefined;
     ctx.session.flow.step = "inbounds";
     await showXrayInboundPicker(ctx, "product_create");
+  }
+
+  bot.action(/^xpg:s:(f|pc|pe):(n|\d+)(?::([^:]+))?$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const target = pickerTargetFromAlias[ctx.match[1] as XrayPickerTargetAlias];
+    const groups = ctx.session.xrayPicker?.groups ? JSON.parse(ctx.session.xrayPicker.groups) as Awaited<ReturnType<typeof XrayClientService.listGroups>> : [];
+    const selected = ctx.match[2] === "n" ? null : groups[Number(ctx.match[2])]?.name;
+    if (ctx.match[2] !== "n" && !selected) return void await ctx.reply("⚠️ گروه انتخابی پیدا نشد. لیست را بروزرسانی کنید.");
+    return saveXrayGroupSelection(ctx, target, selected, ctx.match[3]);
+  });
+
+  bot.action(/^admin:xray_picker:group:select:(free_test|product_create|product_edit):([^:]+)(?::([^:]+))?$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const selected = ctx.match[2] === "__none__" ? null : decodeURIComponent(ctx.match[2]);
+    return saveXrayGroupSelection(ctx, ctx.match[1] as any, selected, ctx.match[3]);
+  });
+
+  bot.action(/^xpi:l:(f|pc|pe)(?::([^:]+))?$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
+    await showXrayInboundPicker(ctx, pickerTargetFromAlias[ctx.match[1] as XrayPickerTargetAlias], ctx.match[2]);
   });
 
   bot.action(/^admin:xray_picker:inbounds:(free_test|product_create|product_edit)(?::([^:]+))?$/, async (ctx) => {
     await ctx.answerCbQuery();
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
     await showXrayInboundPicker(ctx, ctx.match[1] as any, ctx.match[2]);
+  });
+
+  bot.action(/^xpi:t:(f|pc|pe):(\d+)(?::([^:]+))?$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
+    const state = ctx.session.xrayPicker;
+    const id = Number(ctx.match[2]);
+    const target = pickerTargetFromAlias[ctx.match[1] as XrayPickerTargetAlias];
+    if (!state?.inboundOptions) return showXrayInboundPicker(ctx, target, ctx.match[3]);
+    const inbounds = JSON.parse(state.inboundOptions) as Awaited<ReturnType<typeof XrayClientService.listInbounds>>;
+    if (!inbounds.some((inbound) => inbound.id === id)) return void await ctx.reply("⚠️ اینباند انتخابی در لیست زنده وجود ندارد.");
+    state.selectedIds = (state.selectedIds ?? []).includes(id) ? (state.selectedIds ?? []).filter((item) => item !== id) : [...(state.selectedIds ?? []), id];
+    await ctx.editMessageReplyMarkup(xrayInboundPickerKeyboard(target, inbounds, state.selectedIds, ctx.match[3])).catch(() => undefined);
   });
 
   bot.action(/^admin:xray_picker:inbound:toggle:(free_test|product_create|product_edit):(\d+)(?::([^:]+))?$/, async (ctx) => {
@@ -472,13 +513,13 @@ export function registerModernHandlers(bot: AppBot) {
     const inbounds = JSON.parse(state.inboundOptions) as Awaited<ReturnType<typeof XrayClientService.listInbounds>>;
     if (!inbounds.some((inbound) => inbound.id === id)) return void await ctx.reply("⚠️ اینباند انتخابی در لیست زنده وجود ندارد.");
     state.selectedIds = (state.selectedIds ?? []).includes(id) ? (state.selectedIds ?? []).filter((item) => item !== id) : [...(state.selectedIds ?? []), id];
-    await ctx.editMessageReplyMarkup(xrayInboundPickerKeyboard(ctx.match[1], inbounds, state.selectedIds, ctx.match[3])).catch(() => undefined);
+    await ctx.editMessageReplyMarkup(xrayInboundPickerKeyboard(ctx.match[1] as any, inbounds, state.selectedIds, ctx.match[3])).catch(() => undefined);
   });
 
-  bot.action(/^admin:xray_picker:inbounds:save:(free_test|product_create|product_edit)(?::([^:]+))?$/, async (ctx) => {
+  bot.action(/^xpi:s:(f|pc|pe)(?::([^:]+))?$/, async (ctx) => {
     await ctx.answerCbQuery();
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
-    const target = ctx.match[1] as "free_test" | "product_create" | "product_edit";
+    const target = pickerTargetFromAlias[ctx.match[1] as XrayPickerTargetAlias];
     const productId = ctx.match[2];
     const state = ctx.session.xrayPicker;
     if (!state?.selectedIds?.length) return void await ctx.reply("⚠️ حداقل یک اینباند لازم است");
