@@ -136,7 +136,6 @@ ${divider}
           { text: anyConfig?.enabled ? "🚫 غیرفعال‌سازی" : "✅ فعال‌سازی", action: `admin:xray:enabled:${anyConfig?.enabled ? "0" : "1"}` },
         ],
         [{ text: "🧩 کلاینت‌های Xray", action: callbackFor("admin.xrayClients") }],
-        [{ text: "🔙 بازگشت", action: callbackFor("admin.dashboard") }],
       ],
     };
   });
