@@ -522,7 +522,8 @@ model OrderItem {
   id                        String    @id @default(auto()) @map("_id") @db.ObjectId
   orderId                   String    @db.ObjectId
   productId                 String    @db.ObjectId
-  productAccountId          String    @db.ObjectId
+  productAccountId          String?   @db.ObjectId
+  xrayClientId              String?   @db.ObjectId
   deliveredUsername         String
   deliveredPassword         String?
   deliveredSubscriptionLink String?
@@ -531,14 +532,17 @@ model OrderItem {
   purchaseDate              DateTime  @default(now())
   expiresAt                 DateTime?
   isActive                  Boolean   @default(true)
+  legacyStatus              String?
 
-  order          Order          @relation(fields: [orderId], references: [id])
-  product        Product        @relation(fields: [productId], references: [id])
-  productAccount ProductAccount @relation(fields: [productAccountId], references: [id])
+  order          Order           @relation(fields: [orderId], references: [id])
+  product        Product         @relation(fields: [productId], references: [id])
+  productAccount ProductAccount? @relation(fields: [productAccountId], references: [id])
+  xrayClient     XrayClient?     @relation(fields: [xrayClientId], references: [id])
 
   @@index([orderId])
   @@index([productId])
   @@index([productAccountId])
+  @@index([xrayClientId])
   @@index([expiresAt, isActive])
 }
 
