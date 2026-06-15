@@ -489,7 +489,7 @@ export function registerModernHandlers(bot: AppBot) {
     if (!flow || flow.name !== "product_create") throw new Error("فرم ساخت محصول فعال نیست");
     const categoryId = String(flow.data.categoryId ?? "");
     if (!categoryId) throw new Error("دسته‌بندی محصول مشخص نیست");
-    await ProductService.create({ mode: "xray_auto", categoryId, title: String(flow.data.title), price: Number(flow.data.price), duration: Number(flow.data.durationDays ?? flow.data.duration), durationDays: Number(flow.data.durationDays ?? flow.data.duration), trafficGB: Number(flow.data.trafficGB), stockLimit: Number(flow.data.stockLimit), inboundIds: flow.data.inboundIds as unknown as number[], inboundSnapshot: String(flow.data.inboundSnapshot), limitIp: Number(flow.data.limitIp ?? 0), xrayGroupName: flow.data.xrayGroupName ? String(flow.data.xrayGroupName) : null });
+    await ProductService.create({ mode: "xray_auto", categoryId, title: String(flow.data.title), price: Number(flow.data.price), duration: Number(flow.data.durationDays ?? flow.data.duration), durationDays: Number(flow.data.durationDays ?? flow.data.duration), trafficGB: Number(flow.data.trafficGB), stockLimit: Number(flow.data.stockLimit), inboundIds: flow.data.inboundIds as unknown as number[], inboundSnapshot: String(flow.data.inboundSnapshot), limitIp: Number(flow.data.limitIp ?? 0), xrayGroupName: flow.data.xrayGroupName ? String(flow.data.xrayGroupName) : null, actorId: String(ctx.from?.id ?? "admin") });
     ctx.session.flow = undefined;
   }
 

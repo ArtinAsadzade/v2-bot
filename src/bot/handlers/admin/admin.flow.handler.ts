@@ -76,7 +76,7 @@ export async function handleAdminFlow(ctx: AppContext): Promise<boolean> {
     }
 
     if (flow.step === "category") {
-      const product = await ProductService.create({ mode: "manual_inventory", categoryName: text, title: String(flow.data.title), price: Number(flow.data.price), duration: Number(flow.data.duration) });
+      const product = await ProductService.create({ mode: "manual_inventory", categoryName: text, title: String(flow.data.title), price: Number(flow.data.price), duration: Number(flow.data.duration), actorId: String(ctx.from?.id ?? "admin") });
       await AdminService.audit(String(ctx.from?.id ?? "system"), "product.create", { productId: product.id });
       resetFlow(ctx);
       await ctx.reply(`✅ محصول ${product.title} ساخته شد.`, navigationKeyboard("admin:dashboard"));
