@@ -504,6 +504,11 @@ model ProductAccount {
   reservedAt       DateTime?
   soldTo           String?              @db.ObjectId
   soldAt           DateTime?
+  assignedTo       String?              @db.ObjectId
+  assignedAt       DateTime?
+  expiresAt        DateTime?
+  disabledAt       DateTime?
+  deletedAt        DateTime?
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
@@ -514,6 +519,8 @@ model ProductAccount {
   @@index([productId, status])
   @@index([reservedBy])
   @@index([soldTo])
+  @@index([assignedTo])
+  @@index([status, expiresAt])
 }
 
 model ProductAccountHistory {
@@ -569,6 +576,7 @@ model OrderItem {
   purchaseDate              DateTime  @default(now())
   expiresAt                 DateTime?
   isActive                  Boolean   @default(true)
+  legacyStatus              String?
 
   order          Order           @relation(fields: [orderId], references: [id])
   product        Product         @relation(fields: [productId], references: [id])
@@ -577,7 +585,7 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productId])
-  @@index([productAccountId])
+  @@unique([productAccountId])
   @@index([xrayClientId])
   @@index([expiresAt, isActive])
 }

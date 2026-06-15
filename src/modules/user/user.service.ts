@@ -1,6 +1,7 @@
 import { prisma } from "../../services/prisma";
 import { eventBus } from "../../services/event-bus.service";
 import { ReferralService } from "../referral/referral.service";
+import { calculateAccountDisplayStatus } from "../account/account-status.service";
 
 type TelegramUser = { id: number; username?: string; first_name?: string; last_name?: string };
 
@@ -28,18 +29,21 @@ export class UserService {
     const [user, activeAccounts, expiredAccounts, purchasedAccounts, activeFreeAccounts, recentOrders, walletTransactions, referralCount, pendingReferralRewards, freeRewards] = await Promise.all([
       prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { balance: true, referralCode: true } }),
       prisma.orderItem.findMany({
-        where: {
-          order: { userId, status: "completed" },
-          isActive: true,
-          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-          NOT: { productAccount: { is: { status: { in: ["disabled", "expired"] } } } },
-        },
+        where: { order: { userId, status: "completed" }, isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
         include: { order: true, product: true, productAccount: true, xrayClient: true },
         orderBy: { purchaseDate: "desc" },
-        take: 20,
-      }),
+        take: 50,
+      }).then((items) => items.filter((item) => calculateAccountDisplayStatus({
+        status: item.productAccount?.status ?? item.xrayClient?.status,
+        expiresAt: item.expiresAt ?? item.productAccount?.expiresAt ?? item.xrayClient?.expiresAt,
+        disabledAt: item.productAccount?.disabledAt,
+        deletedAt: item.productAccount?.deletedAt,
+        productActive: item.product?.isActive,
+        hasRequiredDeliveryData: Boolean(item.xrayClientId || (item.productAccountId && item.productAccount) || item.legacyStatus),
+        legacy: item.legacyStatus === "broken_product_account",
+      }, now) === "active").slice(0, 20)),
       prisma.orderItem.findMany({
-        where: { order: { userId, status: "completed" }, OR: [{ isActive: false }, { expiresAt: { lte: now } }, { productAccount: { is: { status: "expired" } } }] },
+        where: { order: { userId, status: "completed" }, OR: [{ isActive: false }, { expiresAt: { lte: now } }, { productAccount: { is: { status: "expired" } } }, { legacyStatus: { not: null } }] },
         include: { order: true, product: true, productAccount: true, xrayClient: true },
         orderBy: { purchaseDate: "desc" },
         take: 10,

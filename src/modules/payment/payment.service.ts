@@ -906,10 +906,12 @@ export class PaymentService {
       }
       await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "XRAY_STOCK_RESERVED", metadata: { productId: product.id, method: data.method } });
     } else {
-      account = await tx.productAccount.findFirst({ where: { AND: [availableInventoryWhere(product.id), unassignedInventoryWhere()] }, orderBy: { createdAt: "asc" } });
+      const candidates = await tx.productAccount.findMany({ where: { AND: [availableInventoryWhere(product.id), unassignedInventoryWhere()] }, orderBy: { createdAt: "asc" }, take: 10 });
+      for (const candidate of candidates) {
+        const reserved = await tx.productAccount.updateMany({ where: { id: candidate.id, productId: product.id, status: "available", soldTo: null, soldAt: null, assignedTo: null, assignedAt: null }, data: { status: "reserved", reservedBy: data.userId, reservedAt } });
+        if (reserved.count === 1) { account = candidate; break; }
+      }
       if (!account) throw new Error("موجودی این محصول تمام شده است");
-      const reserved = await tx.productAccount.updateMany({ where: { id: account.id, AND: [availableInventoryWhere(product.id), unassignedInventoryWhere()] }, data: { status: "reserved", reservedBy: data.userId, reservedAt } });
-      if (reserved.count !== 1) throw new Error("این اکانت هم‌اکنون رزرو شد؛ دوباره تلاش کنید");
       await tx.productAccountHistory.create({ data: { accountId: account.id, actorId: data.userId, action: "Inventory Reserved", fromValue: "available", toValue: "reserved", metadata: JSON.stringify({ invoiceId: data.invoice?.id, productId: product.id, reservedAt, method: data.method }) } });
       await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Reserved", metadata: { accountId: account.id, productId: product.id, method: data.method } });
     }
@@ -959,8 +961,9 @@ export class PaymentService {
 
     if (!isXray) {
       const soldAt = new Date();
-      const sold = await tx.productAccount.updateMany({ where: { id: account!.id, productId: product.id, status: "reserved", reservedBy: data.userId, AND: [unassignedInventoryWhere()] }, data: { status: "sold", soldTo: data.userId, soldAt, reservedBy: null, reservedAt: null } });
+      const sold = await tx.productAccount.updateMany({ where: { id: account!.id, productId: product.id, status: "reserved", reservedBy: data.userId, AND: [unassignedInventoryWhere()] }, data: { status: "sold", soldTo: data.userId, soldAt, assignedTo: data.userId, assignedAt: soldAt, expiresAt, reservedBy: null, reservedAt: null } });
       if (sold.count !== 1) throw new Error("تحویل اکانت ناموفق بود");
+      if (!orderItem.productAccountId) throw new Error("شناسه اکانت تحویلی نامعتبر است");
       await tx.productAccountHistory.create({ data: { accountId: account!.id, actorId: data.userId, action: "Inventory Sold", fromValue: "reserved", toValue: "sold", metadata: JSON.stringify({ invoiceId: data.invoice?.id, orderId: order.id, orderItemId: orderItem.id, productId: product.id, soldAt, expiresAt, method: data.method }) } });
       await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Sold", metadata: { accountId: account!.id, orderId: order.id } });
     }
