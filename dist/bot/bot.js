@@ -7,25 +7,34 @@ const user_service_1 = require("../modules/user/user.service");
 const notification_service_1 = require("../services/notification.service");
 const access_control_middleware_1 = require("./middlewares/access-control.middleware");
 const forced_join_middleware_1 = require("./middlewares/forced-join.middleware");
+const forced_join_events_1 = require("./handlers/forced-join-events");
+const rate_limit_middleware_1 = require("./middlewares/rate-limit.middleware");
+const monitoring_service_1 = require("../services/monitoring.service");
 if (!process.env.BOT_TOKEN) {
     throw new Error("BOT_TOKEN is missing");
 }
 exports.bot = new telegraf_1.Telegraf(process.env.BOT_TOKEN);
 notification_service_1.notificationService.setBot(exports.bot);
 (0, notification_service_1.registerNotificationEvents)();
+(0, forced_join_events_1.registerForcedJoinEvents)(exports.bot);
 exports.bot.use((0, telegraf_1.session)({
     defaultSession: () => ({ selectedCoupons: {}, navigation: { stack: [] } }),
 }));
 exports.bot.use(async (ctx, next) => {
-    if (ctx.from)
-        await user_service_1.UserService.findOrCreateUser(ctx);
+    if (ctx.from) {
+        const user = await user_service_1.UserService.findOrCreateUser(ctx);
+        ctx.state.userId = user.id;
+    }
     await next();
 });
+exports.bot.use((0, rate_limit_middleware_1.rateLimitMiddleware)());
 exports.bot.use((0, access_control_middleware_1.accessControlMiddleware)());
 exports.bot.use((0, forced_join_middleware_1.forcedJoinMiddleware)());
 exports.bot.catch((error, ctx) => {
+    const message = error instanceof Error ? error.message : String(error);
     logger_1.logger.error("Unhandled bot error", {
         updateId: ctx.update.update_id,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
     });
+    monitoring_service_1.MonitoringService.record({ type: "UNHANDLED_BOT_ERROR", section: "Telegram Bot", description: message, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined, userId: ctx.state.userId, severity: "critical", suggestedAction: "لاگ سرور و آخرین آپدیت تلگرام را بررسی کنید." });
 });

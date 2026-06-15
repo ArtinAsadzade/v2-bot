@@ -31,6 +31,14 @@ export class ForcedJoinService {
     return prisma.forcedJoinChannel.findMany({ orderBy: [{ status: "asc" }, { createdAt: "desc" }] });
   }
 
+  static async findActiveByChatId(chatId: string) {
+    return prisma.forcedJoinChannel.findFirst({ where: { chatId: String(chatId), status: "active" } });
+  }
+
+  static async updateBotAdminStatus(channelId: string, status: string) {
+    return prisma.forcedJoinChannel.update({ where: { id: channelId }, data: { lastBotAdminStatus: status, lastBotAdminCheckedAt: new Date() } });
+  }
+
   static async upsert(data: { chatId: string; title: string; inviteLink?: string; status?: "active" | "inactive" }, actorId: string) {
     const { chatId, title, inviteLink } = validateForcedJoinChannel(data);
     const channel = await prisma.forcedJoinChannel.upsert({

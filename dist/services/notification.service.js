@@ -2,9 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.notificationService = void 0;
 exports.registerNotificationEvents = registerNotificationEvents;
+const panel_ui_1 = require("../bot/navigation/panel-ui");
 const prisma_1 = require("./prisma");
 const logger_1 = require("./logger");
 const event_bus_service_1 = require("./event-bus.service");
+const messages_1 = require("../utils/messages");
 class NotificationService {
     setBot(bot) {
         this.bot = bot;
@@ -51,7 +53,14 @@ class NotificationService {
     }
     toInlineKeyboard(actions) {
         return {
-            inline_keyboard: actions.map((row) => row.map((action) => ({ text: action.text, callback_data: action.callbackData }))),
+            inline_keyboard: actions
+                .map((row) => row.filter((action) => {
+                const valid = (0, panel_ui_1.isValidCallbackData)(action.callbackData);
+                if (!valid)
+                    logger_1.logger.warn("CALLBACK_DATA_INVALID_PREVENTED", { text: action.text, callbackData: action.callbackData });
+                return valid;
+            }).map((action) => ({ text: action.text, callback_data: action.callbackData })))
+                .filter((row) => row.length > 0),
         };
     }
     async getAdminTelegramIds() {
@@ -74,8 +83,8 @@ function registerNotificationEvents() {
     notificationEventsRegistered = true;
     event_bus_service_1.eventBus.on("deposit.created", async (event) => {
         await exports.notificationService.notifyAdmins({
-            text: `💳 درخواست شارژ جدید\n\nشناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`,
-            actions: [[{ text: "👁 مشاهده", callbackData: `admin:deposits` }]],
+            text: (0, messages_1.screenMessage)({ tone: "PAYMENT", title: "درخواست شارژ جدید", description: "یک درخواست شارژ برای بررسی ثبت شده است.", body: `شناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`, actionHint: "برای بررسی، دکمه مشاهده را انتخاب کنید." }),
+            actions: [[{ text: "👁 مشاهده", callbackData: (0, panel_ui_1.callbackFor)("admin.deposits") }]],
         });
     });
     event_bus_service_1.eventBus.on("ticket.created", async (event) => {
@@ -87,16 +96,22 @@ function registerNotificationEvents() {
 👤 کاربر: ${event.telegramId}
 
 برای مشاهده تاریخچه یا پاسخ مستقیم، یکی از دکمه‌های زیر را انتخاب کنید.`,
-            actions: [[{ text: "👁 مشاهده تیکت", callbackData: `nav:admin.ticket?ticketId=${event.ticketId}` }, { text: "💬 ورود به چت", callbackData: `support:admin:chat:${event.ticketId}` }]],
+            actions: [[{ text: "👁 مشاهده تیکت", callbackData: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: event.ticketId }) }, { text: "💬 ورود به چت", callbackData: (0, panel_ui_1.actionFor)("support:admin:chat", event.ticketId) }]],
         });
     });
     event_bus_service_1.eventBus.on("referral.reward.claimed", async (event) => {
-        await exports.notificationService.notifyUser(event.userId, `🎁 پاداش زیرمجموعه به مبلغ ${event.amount.toLocaleString("fa-IR")} تومان به کیف پول شما اضافه شد.`);
+        await exports.notificationService.notifyUser(event.userId, (0, messages_1.successMessage)("پاداش دعوت اضافه شد", `مبلغ ${event.amount.toLocaleString("fa-IR")} تومان به کیف پول شما اضافه شد.`, "برای مشاهده جزئیات به بخش کیف پول بروید."));
+    });
+    event_bus_service_1.eventBus.on("payment.delivery.failed", async (event) => {
+        await exports.notificationService.notifyAdmins({
+            text: (0, messages_1.screenMessage)({ tone: "WARNING", title: "تحویل پرداخت نیازمند بررسی است", description: "پرداخت ثبت شده اما تحویل خودکار کامل نشده است.", body: `فاکتور: ${event.invoiceId}\nکاربر: ${event.userId}`, actionHint: "لطفاً فاکتور را از پنل مدیریت بررسی کنید." }),
+            actions: [[{ text: "👁 مشاهده فاکتور", callbackData: (0, panel_ui_1.callbackFor)("admin.invoice", { invoiceId: event.invoiceId }) }]],
+        });
     });
     event_bus_service_1.eventBus.on("free_config.claimed", async (event) => {
         await exports.notificationService.notifyUser(event.userId, {
             text: `🎁 کانفیگ رایگان شما:\n\n${event.config}`,
-            actions: [[{ text: "🏠 خانه", callbackData: "nav:home" }]],
+            actions: [[{ text: "🏠 خانه", callbackData: (0, panel_ui_1.callbackFor)("home") }]],
         });
     });
 }

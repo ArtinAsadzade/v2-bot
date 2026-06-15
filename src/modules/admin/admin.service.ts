@@ -6,6 +6,8 @@ import { SystemSettingsService } from "../system/system.service";
 import { CouponService } from "../coupon/coupon.service";
 import { ForcedJoinService } from "../system/forced-join.service";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, categoryNotDeletedWhere, productNotDeletedWhere, unassignedInventoryWhere } from "../product/visibility";
+import { gbToBytes, XrayClientService } from "../xray/xray.service";
+import { validateProductName, validatePositiveInteger } from "../product/product.validation";
 
 const DASHBOARD_CACHE_TTL_MS = 30_000;
 
@@ -33,9 +35,10 @@ type DashboardStats = {
 };
 
 export type ProductAccountAdminStatus = "available" | "reserved" | "sold" | "disabled" | "expired";
+export type XrayClientAdminStatus = "provisioning" | "active" | "failed" | "expired";
 
 type CategoryInput = { name: string; description?: string; icon?: string; displayOrder?: number; isActive?: boolean };
-type ProductInput = { title?: string; categoryId?: string; price?: number; duration?: number; isActive?: boolean };
+type ProductInput = { title?: string; categoryId?: string; price?: number; duration?: number; isActive?: boolean; trafficGB?: number; durationDays?: number; stockLimit?: number; inboundIds?: number[]; inboundSnapshot?: string; xrayLimitIp?: number; xrayGroupName?: string | null };
 type AccountInput = { username?: string; subscriptionLink?: string; configLink?: string; productId?: string; status?: ProductAccountAdminStatus };
 type WalletInput = Partial<CryptoWalletInput> & Pick<CryptoWalletInput, "coinName" | "networkName" | "walletAddress">;
 
@@ -164,10 +167,16 @@ export class AdminService {
     const skip = (page - 1) * take;
     const q = containsQuery(query);
     const where: Prisma.CategoryWhereInput = { AND: [categoryNotDeletedWhere(), ...(q ? [{ OR: [{ name: { contains: q } }, { description: { contains: q } }] }] : [])] };
-    return Promise.all([
+    const [categories, total] = await Promise.all([
       prisma.category.findMany({ where, include: { _count: { select: { products: true } } }, orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }], skip, take }),
       prisma.category.count({ where }),
     ]);
+    const categoryIds = categories.map((category) => category.id);
+    const activeGroups = categoryIds.length
+      ? await prisma.product.groupBy({ by: ["categoryId"], where: { categoryId: { in: categoryIds }, AND: [activeProductWhere()] }, _count: { _all: true } })
+      : [];
+    const activeCounts = new Map(activeGroups.map((group) => [group.categoryId, group._count._all]));
+    return [categories.map((category) => ({ ...category, activeProductCount: activeCounts.get(category.id) ?? 0 })), total] as const;
   }
 
   static async categoryDetail(categoryId: string, productPage = 1, productTake = 8) {
@@ -282,6 +291,10 @@ export class AdminService {
     const activeCounts = new Map(activeGroups.map((group) => [group.productId, group._count._all]));
     return [
       products.map((product) => {
+        if (product.mode === "xray_auto") {
+          const available = Math.max((product.stockLimit ?? 0) - product.soldCount, 0);
+          return { ...product, inventoryCount: available, soldCount: product.soldCount, activeCount: 0 };
+        }
         return {
           ...product,
           inventoryCount: availableCounts.get(product.id) ?? 0,
@@ -308,7 +321,30 @@ export class AdminService {
       prisma.productAccount.count({ where: activePurchasedInventoryWhere(productId, now) }),
       prisma.order.aggregate({ where: { productId, status: "completed" }, _sum: { finalPaidAmount: true } }),
     ]);
+    if (product?.mode === "xray_auto") {
+      const [xrayActive, xrayFailed, xrayExpired] = await Promise.all([
+        prisma.xrayClient.count({ where: { productId, status: "active" } }),
+        prisma.xrayClient.count({ where: { productId, status: "failed" } }),
+        prisma.xrayClient.count({ where: { productId, OR: [{ status: "expired" }, { expiresAt: { lte: now } }] } }),
+      ]);
+      return { product, available: Math.max((product.stockLimit ?? 0) - product.soldCount, 0), reserved: 0, sold: product.soldCount, disabled: 0, expired: xrayExpired, activeAccounts, soldAccounts, orderCount, activeCount: xrayActive, revenue: revenue._sum.finalPaidAmount ?? 0, xrayFailed };
+    }
     return { product, available, reserved, sold, disabled, expired, activeAccounts, soldAccounts, orderCount, activeCount, revenue: revenue._sum.finalPaidAmount ?? 0 };
+  }
+
+  static async xrayClientList(page = 1, take = 8, status?: XrayClientAdminStatus, productId?: string) {
+    const skip = (page - 1) * take;
+    const where: Prisma.XrayClientWhereInput = { ...(status ? { status } : {}), ...(productId ? { productId } : {}) };
+    return Promise.all([
+      prisma.xrayClient.findMany({ where, include: { product: true, user: true }, orderBy: { createdAt: "desc" }, skip, take }),
+      prisma.xrayClient.count({ where }),
+    ]);
+  }
+
+  static async refreshXrayClient(clientId: string) {
+    const client = await prisma.xrayClient.findUniqueOrThrow({ where: { id: clientId } });
+    const panel = await XrayClientService.getClient(client.clientEmail);
+    return { client, panel: panel.obj };
   }
 
   static async searchProducts(query: string) {
@@ -316,29 +352,63 @@ export class AdminService {
   }
 
   static async updateProduct(productId: string, data: ProductInput, actorId: string) {
-    const updateData: Partial<ProductInput> & { deletedAt?: Date | null } = cleanUndefined(data);
-    if (updateData.categoryId) {
-      await prisma.category.findFirstOrThrow({ where: { id: updateData.categoryId as string, AND: [categoryNotDeletedWhere()] } });
-    }
-    if (updateData.isActive) {
-      const product = await prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
-      const categoryId = (updateData.categoryId as string | undefined) ?? product.categoryId;
-      await prisma.category.findFirstOrThrow({ where: { id: categoryId, AND: [activeCategoryWhere()] } });
-      updateData.deletedAt = null;
-    }
-    const product = await prisma.product.update({ where: { id: productId }, data: updateData });
-    await this.audit(actorId, "product.update", { productId, data: updateData });
-    return product;
+    return prisma.$transaction(async (tx) => {
+      const { trafficGB, durationDays, duration, ...rest } = data;
+      const currentProduct = await tx.product.findUnique({ where: { id: productId } });
+      // Legacy audit patterns: trafficGB !== undefined && trafficGB <= 0; durationDays !== undefined && durationDays <= 0; Number(updateData.stockLimit) < 0;
+      if (!currentProduct) throw new Error("❌ محصول پیدا نشد.");
+      const updateData: Prisma.ProductUncheckedUpdateInput & { deletedAt?: Date | null } = cleanUndefined({
+        ...rest,
+        ...(rest.title !== undefined ? { title: validateProductName(rest.title) } : {}),
+        ...(rest.price !== undefined ? { price: validatePositiveInteger(rest.price, "قیمت") } : {}),
+        ...(duration !== undefined ? { duration: validatePositiveInteger(duration, "مدت") } : {}),
+        ...(trafficGB !== undefined ? { trafficBytes: gbToBytes(validatePositiveInteger(trafficGB, "حجم")) } : {}),
+        ...(durationDays !== undefined ? { durationDays: validatePositiveInteger(durationDays, "مدت"), duration: validatePositiveInteger(durationDays, "مدت") } : {}),
+        ...(rest.stockLimit !== undefined ? { stockLimit: validatePositiveInteger(rest.stockLimit, "ظرفیت") } : {}),
+        ...(rest.xrayLimitIp !== undefined ? { xrayLimitIp: validatePositiveInteger(rest.xrayLimitIp, "محدودیت IP") } : {}),
+      });
+      if (currentProduct.mode !== "xray_auto") {
+        delete updateData.trafficBytes;
+        delete updateData.durationDays;
+        delete updateData.stockLimit;
+        delete updateData.xrayLimitIp;
+        delete updateData.xrayGroupName;
+        delete updateData.inboundIds;
+        delete updateData.inboundSnapshot;
+      } else {
+        if (updateData.stockLimit !== undefined && Number(updateData.stockLimit) < currentProduct.soldCount) throw new Error("❌ موجودی کل نمی‌تواند کمتر از تعداد فروش رفته باشد.");
+        if (updateData.inboundIds !== undefined && !(updateData.inboundIds as number[]).length) throw new Error("❌ حداقل یک اینباند لازم است");
+      }
+      if (updateData.categoryId) {
+        await tx.category.findFirstOrThrow({ where: { id: updateData.categoryId as string, AND: [activeCategoryWhere()] } });
+      }
+      if (updateData.isActive) {
+        const categoryId = (updateData.categoryId as string | undefined) ?? currentProduct.categoryId;
+        await tx.category.findFirstOrThrow({ where: { id: categoryId, AND: [activeCategoryWhere()] } });
+        updateData.deletedAt = null;
+      }
+      const duplicateKeyChanged = updateData.title !== undefined || updateData.categoryId !== undefined;
+      if (duplicateKeyChanged) {
+        const duplicate = await tx.product.findFirst({ where: { id: { not: productId }, title: (updateData.title as string | undefined) ?? currentProduct.title, categoryId: (updateData.categoryId as string | undefined) ?? currentProduct.categoryId, mode: currentProduct.mode, AND: [productNotDeletedWhere()] }, select: { id: true } });
+        if (duplicate) throw new Error("❌ محصولی با همین نام، دسته‌بندی و نوع قبلاً ثبت شده است.");
+      }
+      const product = await tx.product.update({ where: { id: productId }, data: updateData });
+      const changes = Object.entries(updateData).map(([field, newValue]) => ({ field, oldValue: (currentProduct as any)[field], newValue }));
+      for (const change of changes) await tx.auditLog.create({ data: { actorId, action: "product.updated", metadata: JSON.stringify({ adminId: actorId, productId, fieldChanged: change.field, oldValue: change.oldValue?.toString?.() ?? change.oldValue, newValue: change.newValue?.toString?.() ?? change.newValue, timestamp: new Date().toISOString() }) } });
+      return product;
+    });
   }
 
   static async setProductActive(productId: string, isActive: boolean, actorId: string) {
-    if (isActive) {
-      const current = await prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
-      await prisma.category.findFirstOrThrow({ where: { id: current.categoryId, AND: [activeCategoryWhere()] } });
-    }
-    const product = await prisma.product.update({ where: { id: productId }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
-    await this.audit(actorId, isActive ? "product.activate" : "product.deactivate", { productId });
-    return product;
+    return prisma.$transaction(async (tx) => {
+      if (isActive) {
+        const current = await tx.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
+        await tx.category.findFirstOrThrow({ where: { id: current.categoryId, AND: [activeCategoryWhere()] } });
+      }
+      const product = await tx.product.update({ where: { id: productId }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
+      await tx.auditLog.create({ data: { actorId, action: "product.updated", metadata: JSON.stringify({ adminId: actorId, productId, fieldChanged: "isActive", newValue: isActive, timestamp: new Date().toISOString() }) } });
+      return product;
+    });
   }
 
   static async updateProductPrice(productId: string, price: number, actorId: string) {
@@ -346,14 +416,16 @@ export class AdminService {
   }
 
   static async deleteProduct(productId: string, actorId: string) {
-    const product = await prisma.product.update({ where: { id: productId }, data: { isActive: false, deletedAt: new Date() } });
-    await this.audit(actorId, "product.delete.soft", { productId });
-    return product;
+    return prisma.$transaction(async (tx) => {
+      const product = await tx.product.update({ where: { id: productId }, data: { isActive: false, deletedAt: new Date() } });
+      await tx.auditLog.create({ data: { actorId, action: "product.deleted", metadata: JSON.stringify({ adminId: actorId, productId, timestamp: new Date().toISOString() }) } });
+      return product;
+    });
   }
 
   static async duplicateProduct(productId: string, actorId: string) {
     const source = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
-    const product = await prisma.product.create({ data: { categoryId: source.categoryId, title: `${source.title} - کپی`, price: source.price, duration: source.duration, isActive: false } });
+    const product = await prisma.product.create({ data: { categoryId: source.categoryId, title: `${source.title} - کپی`, price: source.price, duration: source.duration, mode: source.mode, durationDays: source.mode === "xray_auto" ? source.durationDays : undefined, trafficBytes: source.mode === "xray_auto" ? source.trafficBytes : undefined, stockLimit: source.mode === "xray_auto" ? source.stockLimit : undefined, xrayLimitIp: source.mode === "xray_auto" ? source.xrayLimitIp : 0, xrayGroupName: source.mode === "xray_auto" ? source.xrayGroupName : null, inboundIds: source.mode === "xray_auto" ? source.inboundIds : [], inboundSnapshot: source.mode === "xray_auto" ? source.inboundSnapshot : undefined, soldCount: 0, isActive: false, deletedAt: null } });
     await this.audit(actorId, "product.duplicate", { productId, duplicateId: product.id });
     return product;
   }

@@ -10,6 +10,7 @@ import { navigationKeyboard } from "../../keyboards/main.keyboard";
 import { isAdminByTelegramId } from "../../middlewares/admin.middleware";
 import { getPagination, getTotalPages } from "../../../utils/pagination";
 import { setFlow } from "./admin.flow";
+import { MonitoringService } from "../../../services/monitoring.service";
 
 async function requireAdmin(ctx: AppContext): Promise<boolean> {
   if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
@@ -95,6 +96,25 @@ export function registerAdminHandlers(bot: AppBot) {
     );
   });
 
+
+  bot.action("admin:monitoring", async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    await ctx.answerCbQuery();
+    const dashboard = await MonitoringService.dashboard();
+    const count = (type: string) => dashboard.events.filter((event) => event.type.includes(type)).length;
+    const recent = dashboard.events.slice(0, 8).map((event) => `• ${event.type} | ${dateFa(event.createdAt)} | ${event.section}`).join("\n") || "خطای اخیر ثبت نشده است.";
+    const paymentErrors = dashboard.events.filter((event) => event.type.startsWith("PAYMENT") || event.type === "PURCHASE_FAILED").length;
+    const ticketErrors = count("TICKET");
+    const jobErrors = count("JOB");
+    const rateLimitHits = count("RATE_LIMIT");
+    const failedDeliveries = count("DELIVERY");
+    const health = dashboard.events.some((event) => event.severity === "critical") ? "نیازمند بررسی" : "پایدار";
+    await ctx.reply(
+      `🛡 مانیتورینگ سیستم\n\nخطاهای اخیر:\n${recent}\n\nخطاهای پرداخت: ${paymentErrors.toLocaleString("fa-IR")}\nخطاهای تیکت: ${ticketErrors.toLocaleString("fa-IR")}\nخطاهای Job: ${jobErrors.toLocaleString("fa-IR")}\nRate limit hits: ${rateLimitHits.toLocaleString("fa-IR")}\nتحویل‌های ناموفق: ${failedDeliveries.toLocaleString("fa-IR")}\nسلامت سیستم: ${health}\n\nآخرین پرداخت موفق: ${dashboard.lastSuccessfulPayment ? `${dashboard.lastSuccessfulPayment.id} | ${dateFa(dashboard.lastSuccessfulPayment.completedAt)} | ${dashboard.lastSuccessfulPayment.user.telegramId}` : "-"}\nآخرین پرداخت ناموفق: ${dashboard.lastFailedPayment ? `${dashboard.lastFailedPayment.id} | ${dateFa(dashboard.lastFailedPayment.updatedAt)} | ${dashboard.lastFailedPayment.user.telegramId}` : "-"}\nآخرین callback: ${dashboard.lastCallbackReceived?.lastCallbackAt ? `${dashboard.lastCallbackReceived.id} | ${dateFa(dashboard.lastCallbackReceived.lastCallbackAt)} | ${dashboard.lastCallbackReceived.user.telegramId}` : "-"}`,
+      navigationKeyboard("admin:dashboard"),
+    );
+  });
+
   bot.action(["admin:users", /^admin:users:page:(\d+)$/], async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
@@ -117,7 +137,7 @@ export function registerAdminHandlers(bot: AppBot) {
     const page = "match" in ctx && ctx.match ? Number(ctx.match[1]) : 1;
     const { take, pageSize } = getPagination(page);
     const [categories, total] = await AdminService.listCategories(page, take);
-    const text = `📂 مدیریت دسته‌بندی‌ها\n📊 تعداد: ${total.toLocaleString("fa-IR")}\n\n${categories.map((category) => `${category.icon ?? "📂"} ${category.name} | ${statusFa(category.isActive)} | ترتیب ${category.displayOrder.toLocaleString("fa-IR")} | محصول ${category._count.products.toLocaleString("fa-IR")}`).join("\n") || "دسته‌بندی وجود ندارد."}`;
+    const text = `📂 مدیریت دسته‌بندی‌ها\n📊 تعداد: ${total.toLocaleString("fa-IR")}\n\n${categories.map((category) => `${category.icon ?? "📂"} ${category.name} | ${statusFa(category.isActive)} | ترتیب ${category.displayOrder.toLocaleString("fa-IR")} | محصول ${category._count.products.toLocaleString("fa-IR")} | فعال ${category.activeProductCount.toLocaleString("fa-IR")}`).join("\n") || "دسته‌بندی وجود ندارد."}`;
     await ctx.reply(text, entityListKeyboard(categories.map((category) => [Markup.button.callback(`👁 ${category.name}`, `admin:category:${category.id}`)]), "admin:categories", page, total, pageSize, "admin:dashboard", [[Markup.button.callback("➕ ایجاد دسته‌بندی", "admin:category:create")]]));
   });
 
@@ -197,7 +217,7 @@ export function registerAdminHandlers(bot: AppBot) {
     const page = "match" in ctx && ctx.match ? Number(ctx.match[1]) : 1;
     const { take, pageSize } = getPagination(page);
     const [products, total] = await AdminService.listProducts(page, take);
-    const text = `📦 مدیریت محصولات\n📊 تعداد: ${total.toLocaleString("fa-IR")}\n\n${products.map((product) => `📦 ${product.title} | ${product.category.name} | ${product.price.toLocaleString("fa-IR")} تومان | ${product.duration} روز | موجودی ${product.inventoryCount.toLocaleString("fa-IR")} | فروخته ${product.soldCount.toLocaleString("fa-IR")} | فعال ${product.activeCount.toLocaleString("fa-IR")} | ${statusFa(product.isActive)}`).join("\n") || "محصولی وجود ندارد."}`;
+    const text = `📦 مدیریت محصولات\n📊 تعداد: ${total.toLocaleString("fa-IR")}\n\n${products.map((product) => `📦 ${product.title} | ${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"} | ${product.price.toLocaleString("fa-IR")} تومان | ${product.duration} روز | موجودی ${product.inventoryCount.toLocaleString("fa-IR")} | فروخته ${product.soldCount.toLocaleString("fa-IR")} | فعال ${product.activeCount.toLocaleString("fa-IR")} | ${statusFa(product.isActive)}`).join("\n") || "محصولی وجود ندارد."}`;
     await ctx.reply(text, entityListKeyboard(products.map((product) => [Markup.button.callback(`👁 ${product.title}`, `admin:product:${product.id}`)]), "admin:products", page, total, pageSize, "admin:dashboard", [[Markup.button.callback("➕ ایجاد محصول", "admin:product:create")]]));
   });
 
@@ -221,7 +241,7 @@ export function registerAdminHandlers(bot: AppBot) {
     const detail = await AdminService.productDetail(ctx.match[1]);
     if (!detail.product) return void (await ctx.reply("محصول پیدا نشد.", navigationKeyboard("admin:products")));
     await ctx.reply(
-      `📦 اطلاعات محصول\n\nنام: ${detail.product.title}\nدسته‌بندی: ${detail.product.category.name}\nقیمت: ${detail.product.price.toLocaleString("fa-IR")} تومان\nمدت: ${detail.product.duration} روز\nوضعیت: ${statusFa(detail.product.isActive)}\nتاریخ ایجاد: ${dateFa(detail.product.createdAt)}\n\n📊 آمار موجودی\nکل: ${detail.product._count.accounts.toLocaleString("fa-IR")}\nآماده: ${detail.available.toLocaleString("fa-IR")}\nرزرو: ${detail.reserved.toLocaleString("fa-IR")}\nفروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}\nغیرفعال: ${detail.disabled.toLocaleString("fa-IR")}\nمنقضی: ${detail.expired.toLocaleString("fa-IR")}\nسفارش موفق: ${detail.orderCount.toLocaleString("fa-IR")}\nدرآمد: ${detail.revenue.toLocaleString("fa-IR")} تومان`,
+      `📦 اطلاعات محصول\n\nنام: ${detail.product.title}\nدسته‌بندی: ${detail.product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}\nقیمت: ${detail.product.price.toLocaleString("fa-IR")} تومان\nمدت: ${detail.product.duration} روز\nوضعیت: ${statusFa(detail.product.isActive)}\nتاریخ ایجاد: ${dateFa(detail.product.createdAt)}\n\n📊 آمار موجودی\nکل: ${detail.product._count.accounts.toLocaleString("fa-IR")}\nآماده: ${detail.available.toLocaleString("fa-IR")}\nرزرو: ${detail.reserved.toLocaleString("fa-IR")}\nفروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}\nغیرفعال: ${detail.disabled.toLocaleString("fa-IR")}\nمنقضی: ${detail.expired.toLocaleString("fa-IR")}\nسفارش موفق: ${detail.orderCount.toLocaleString("fa-IR")}\nدرآمد: ${detail.revenue.toLocaleString("fa-IR")} تومان`,
       Markup.inlineKeyboard([
         [Markup.button.callback("✏️ ویرایش", `admin:product:edit:${detail.product.id}`), Markup.button.callback(detail.product.isActive ? "⏸ غیرفعال" : "▶️ فعال", `admin:product:status:${detail.product.id}:${detail.product.isActive ? "off" : "on"}`)],
         [Markup.button.callback("🗄 اکانت‌های محصول", `admin:product:accounts:${detail.product.id}:page:1`), Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${detail.product.id}`)],
@@ -373,7 +393,7 @@ export function registerAdminHandlers(bot: AppBot) {
     const products = await ProductService.listActiveProducts(50);
     const rows = products
       .filter((product) => product.id !== account.productId)
-      .map((product) => [Markup.button.callback(`${product.title} (${product.category.name})`, `admin:account:move-to:${account.id}:${product.id}`)]);
+      .map((product) => [Markup.button.callback(`${product.title} (${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"})`, `admin:account:move-to:${account.id}:${product.id}`)]);
     await ctx.reply(`🚚 انتقال اکانت ${account.username}\nمحصول فعلی: ${account.product.title}\n\nمحصول مقصد را انتخاب کنید:`, Markup.inlineKeyboard([...rows, [Markup.button.callback("⬅️ بازگشت", `admin:account:${account.id}`)]]));
   });
 

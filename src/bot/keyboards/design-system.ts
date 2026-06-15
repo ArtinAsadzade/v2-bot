@@ -1,8 +1,8 @@
 import type { InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup } from "telegraf/types";
-import type { PanelViewId } from "../navigation/panel-ui";
+import { callbackFor, ensureCallbackData, type PanelViewId } from "../navigation/panel-ui";
 
-export type ButtonTone = "primary" | "success" | "danger" | "neutral";
-export type TelegramButtonStyle = "primary" | "success" | "danger";
+export type ButtonTone = "primary" | "success" | "danger" | "warning" | "neutral";
+export type TelegramButtonStyle = "primary" | "success" | "danger" | "warning";
 
 type StyledKeyboardButton = KeyboardButton & { style?: TelegramButtonStyle; icon_custom_emoji_id?: string };
 type StyledInlineKeyboardButton = InlineKeyboardButton.CallbackButton & { style?: TelegramButtonStyle; icon_custom_emoji_id?: string };
@@ -17,19 +17,24 @@ type InlineButton = InlineCallbackButton | InlineUrlButton;
 export type ReplyKeyboardScope = "home" | "shop" | "profile" | "wallet" | "payment" | "support" | "freeAccount" | "admin" | "settings";
 
 export const labels = {
-  home: "🏠 منوی اصلی",
-  wallet: "👛 کیف پول",
-  walletBalance: "💰 موجودی",
-  topup: "💳 شارژ کیف پول",
-  transactions: "📜 تراکنش‌ها",
+  home: "🏠 خانه",
+  userMenu: "🏠 منوی کاربر",
+  wallet: "💳 کیف پول",
+  walletBalance: "💳 موجودی فعلی",
+  topup: "➕ شارژ کیف پول",
+  transactions: "📜 تاریخچه تراکنش‌ها",
   instantPayment: "⚡ پرداخت آنی",
-  walletPayment: "👛 پرداخت از کیف پول",
-  shop: "🛒 خرید",
-  shopLegacy: "🛒 خرید سرویس",
+  walletPayment: "💳 پرداخت با کیف پول",
+  shop: "🛒 فروشگاه",
+  shopLegacy: "🛒 فروشگاه",
   buyAgain: "🛒 خرید مجدد",
-  coupon: "🎁 کد تخفیف",
-  orders: "📦 سفارش‌های من",
+  coupon: "🎟 تخفیف‌ها",
+  account: "👤 حساب کاربری",
+  freeAccount: "🆓 اکانت تست",
+  referral: "🎁 دعوت دوستان",
+  orders: "📦 اکانت‌های من",
   support: "🎫 پشتیبانی",
+  guide: "📘 راهنما",
   settings: "⚙️ تنظیمات",
   retry: "🔄 تلاش مجدد",
   refresh: "🔄 بروزرسانی وضعیت",
@@ -37,30 +42,43 @@ export const labels = {
   cancel: "❌ لغو عملیات",
   paymentSuccess: "✅ موفق",
   paymentFailure: "❌ ناموفق",
-  adminStats: "📊 آمار",
+  adminStats: "📊 داشبورد",
+  adminStore: "🛒 فروشگاه",
+  adminFinance: "💳 مالی",
+  adminUsersSupport: "👥 کاربران و پشتیبانی",
+  adminContent: "📢 محتوا و اطلاع‌رسانی",
+  adminBotSettings: "⚙️ تنظیمات بات",
+  adminMonitoring: "🛡 مانیتورینگ سیستم",
   adminPayments: "💳 پرداخت‌ها",
   adminProducts: "📦 محصولات",
-  adminCategories: "📁 دسته‌بندی‌ها",
+  adminCategories: "📂 دسته‌بندی‌ها",
+  adminInventory: "🗄 موجودی اکانت‌ها",
   adminUsers: "👥 کاربران",
-  adminCoupons: "🎟 تخفیف‌ها",
-  adminDashboard: "⚙️ داشبورد ادمین",
+  adminTickets: "🎫 تیکت‌ها",
+  adminNotifications: "📢 اطلاع‌رسانی",
+  adminCoupons: "🎟 کدهای تخفیف",
+  adminDashboard: "🛡 پنل مدیریت",
 } as const;
 
 const toneToStyle: Record<Exclude<ButtonTone, "neutral">, TelegramButtonStyle> = {
   primary: "primary",
   success: "success",
   danger: "danger",
+  warning: "warning",
 };
 
-// Bot API 9.4 supports button colors and custom emoji icons. Telegraf 4.16.3's
-// bundled TypeScript types do not expose these fields yet, so builders attach
-// the raw API fields directly. Disable style fields only for older self-hosted
-// Bot API servers by setting TELEGRAM_BUTTON_STYLE_ENABLED=false.
+// Compatibility check (2026-06-13): official Bot API 9.4 exposes
+// KeyboardButton/InlineKeyboardButton `style` and `icon_custom_emoji_id`, while
+// Telegraf 4.16.3 can send unknown raw fields but its bundled types lag behind.
+// The premium fields are therefore opt-in raw payload decorations with a safe
+// fallback: set TELEGRAM_BUTTON_STYLE_ENABLED=false or TELEGRAM_CUSTOM_EMOJI_ENABLED=false
+// for older self-hosted Bot API servers or bots that cannot use premium emoji.
 function buttonDecorations(button: ButtonStyleFields) {
   const styleEnabled = process.env.TELEGRAM_BUTTON_STYLE_ENABLED !== "false";
+  const customEmojiEnabled = process.env.TELEGRAM_CUSTOM_EMOJI_ENABLED === "true";
   return {
     ...(styleEnabled && button.tone && button.tone !== "neutral" ? { style: toneToStyle[button.tone] } : {}),
-    ...(button.customEmojiId ? { icon_custom_emoji_id: button.customEmojiId } : {}),
+    ...(customEmojiEnabled && button.customEmojiId ? { icon_custom_emoji_id: button.customEmojiId } : {}),
   };
 }
 
@@ -70,7 +88,7 @@ function replyButton(button: ReplyButton): StyledKeyboardButton {
 
 function inlineButton(button: InlineButton): StyledInlineKeyboardButton | StyledUrlInlineKeyboardButton {
   if ("url" in button) return { text: button.text, url: button.url, ...buttonDecorations(button) };
-  return { text: button.text, callback_data: button.action, ...buttonDecorations(button) };
+  return { text: button.text, callback_data: ensureCallbackData(button.action), ...buttonDecorations(button) };
 }
 
 export function buildReplyKeyboard(rows: ReplyButton[][]): { reply_markup: ReplyKeyboardMarkup } {
@@ -89,101 +107,120 @@ export function buildInlineKeyboard(rows: InlineButton[][]): { reply_markup: Inl
 
 export function MainMenuKeyboard(isAdmin = false) {
   const rows: ReplyButton[][] = [
-    [
-      { text: labels.shop, tone: "primary" },
-      { text: labels.wallet, tone: "primary" },
-    ],
-    [{ text: labels.orders }, { text: labels.coupon }],
-    [{ text: labels.support }, { text: labels.settings }],
+    [{ text: labels.shop }, { text: labels.wallet }],
+    [{ text: labels.orders }, { text: labels.freeAccount }],
+    [{ text: labels.guide }, { text: labels.support }],
+    [{ text: labels.referral }, { text: labels.account }],
   ];
-  if (isAdmin) rows.push([{ text: labels.adminDashboard, tone: "primary" }]);
+  if (isAdmin) rows.push([{ text: labels.adminDashboard }]);
   return buildReplyKeyboard(rows);
 }
 
-export function WalletKeyboard() {
-  return buildReplyKeyboard([
-    [
-      { text: labels.topup, tone: "primary" },
-      { text: labels.walletBalance, tone: "success" },
-    ],
-    [{ text: labels.transactions }, { text: labels.home }],
-  ]);
+export function UserKeyboard() {
+  return MainMenuKeyboard();
 }
 
-export function PaymentKeyboard() {
-  return buildReplyKeyboard([
-    [
-      { text: labels.retry, tone: "primary" },
-      { text: labels.support, tone: "danger" },
-    ],
-    [{ text: labels.home }],
-  ]);
+export function WalletKeyboard() {
+  return MainMenuKeyboard();
+}
+
+export function ShopKeyboard() {
+  return MainMenuKeyboard();
 }
 
 export function PurchaseKeyboard() {
-  return buildReplyKeyboard([
-    [{ text: labels.shop, tone: "primary" }, { text: labels.coupon }],
-    [{ text: labels.wallet }, { text: labels.instantPayment, tone: "success" }],
-    [{ text: labels.home }],
-  ]);
+  return ShopKeyboard();
 }
 
 export function SupportKeyboard() {
-  return buildReplyKeyboard([[{ text: "➕ تیکت جدید", tone: "primary" }, { text: "📂 تیکت‌های من" }], [{ text: labels.home }]]);
+  return MainMenuKeyboard();
 }
 
 export function AdminKeyboard() {
   return buildReplyKeyboard([
-    [{ text: labels.adminStats, tone: "primary" }, { text: labels.adminPayments }],
-    [{ text: labels.adminProducts }, { text: labels.adminCategories }],
-    [{ text: labels.adminUsers }, { text: labels.adminCoupons }],
-    [{ text: labels.settings }, { text: labels.home }],
+    [{ text: labels.adminStats }, { text: labels.adminStore }],
+    [{ text: labels.adminFinance }, { text: labels.adminUsersSupport }],
+    [{ text: labels.adminContent }, { text: labels.adminBotSettings }],
+    [{ text: labels.adminMonitoring }],
+    [{ text: labels.userMenu }],
   ]);
 }
 
+export function AdminProductsKeyboard() {
+  return AdminKeyboard();
+}
+
+export function AdminPaymentsKeyboard() {
+  return AdminKeyboard();
+}
+
+export function AdminUsersKeyboard() {
+  return AdminKeyboard();
+}
+
+export function AdminSettingsKeyboard() {
+  return AdminKeyboard();
+}
+
+export function WalletActionKeyboard() {
+  return buildInlineKeyboard([
+    [{ text: labels.topup, action: callbackFor("deposit"), tone: "primary" }],
+    [{ text: labels.transactions, action: callbackFor("wallet.history") }],
+  ]);
+}
+
+export function PaymentKeyboard() {
+  return MainMenuKeyboard();
+}
+
 export function SettingsKeyboard() {
-  return buildReplyKeyboard([[{ text: labels.wallet }, { text: labels.support }], [{ text: labels.home }]]);
+  return AdminKeyboard();
 }
 
 export function InvoiceActionKeyboard(paymentLink: string, backAction: string) {
   return buildInlineKeyboard([
-    [{ text: labels.instantPayment, url: paymentLink, tone: "success" }],
+    [{ text: "💳 پرداخت", url: paymentLink, tone: "success" }],
     [
-      { text: labels.back, action: backAction },
-      { text: labels.home, action: "home" },
+      { text: "🔄 بررسی وضعیت", action: backAction },
+      { text: labels.support, action: callbackFor("support") },
+      { text: labels.home, action: callbackFor("home") },
     ],
   ]);
 }
 
 export function paymentSuccessKeyboard(_type: "wallet" | "product") {
-  return buildReplyKeyboard([[{ text: labels.home }, { text: labels.buyAgain, tone: "primary" }], [{ text: labels.orders, tone: "success" }]]);
+  return buildInlineKeyboard([
+    [{ text: labels.orders, action: callbackFor("account.details"), tone: "success" }, { text: labels.buyAgain, action: callbackFor("shop.categories"), tone: "primary" }],
+    [{ text: labels.home, action: callbackFor("home") }],
+  ]);
 }
 
 export function paymentFailureKeyboard() {
-  return buildReplyKeyboard([
-    [
-      { text: labels.retry, tone: "primary" },
-      { text: labels.support, tone: "danger" },
-    ],
-    [{ text: labels.home }],
+  return buildInlineKeyboard([
+    [{ text: labels.retry, action: callbackFor("deposit"), tone: "primary" }, { text: labels.support, action: callbackFor("support"), tone: "danger" }],
+    [{ text: labels.home, action: callbackFor("home") }],
   ]);
 }
 
 export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record<string, string> } | "refresh" | "claimFree" | "newTicket"> = {
   [labels.shop]: { id: "shop.categories" },
-  [labels.shopLegacy]: { id: "shop.categories" },
-  "🛒 فروشگاه": { id: "shop.categories" },
   [labels.buyAgain]: { id: "shop.categories" },
   [labels.orders]: { id: "account.details" },
-  "📦 اکانت‌های من": { id: "account.details" },
-  "🆓 اکانت تست": { id: "freeAccount" },
+  [labels.account]: { id: "account" },
+  [labels.freeAccount]: { id: "freeAccount" },
+  [labels.guide]: { id: "productGuide" },
+  [labels.referral]: { id: "referral" },
+  "🎁 اکانت تست": { id: "freeAccount" },
   [labels.refresh]: "refresh",
+  [labels.retry]: { id: "deposit" },
   "🔄 بروزرسانی": "refresh",
   "👤 پروفایل": { id: "account" },
   [labels.wallet]: { id: "wallet" },
   [labels.walletBalance]: { id: "wallet" },
-  "💰 کیف پول": { id: "wallet" },
+  "💸 برداشت‌ها": { id: "referral" },
+  "🎁 پاداش‌ها": { id: "referral" },
   [labels.home]: { id: "home" },
+  [labels.userMenu]: { id: "home" },
   [labels.topup]: { id: "deposit" },
   "➕ شارژ حساب": { id: "deposit" },
   [labels.transactions]: { id: "wallet.history" },
@@ -192,13 +229,21 @@ export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record
   "➕ تیکت جدید": "newTicket",
   "📂 تیکت‌های من": { id: "support" },
   "🎁 دریافت اکانت تست": "claimFree",
-  [labels.adminStats]: { id: "admin.analytics" },
+  [labels.adminStats]: { id: "admin.dashboard" },
+  [labels.adminFinance]: { id: "admin.finance" },
+  [labels.adminUsersSupport]: { id: "admin.usersSupport" },
+  [labels.adminContent]: { id: "admin.content" },
+  [labels.adminBotSettings]: { id: "admin.botSettings" },
+  [labels.adminMonitoring]: { id: "admin.monitoring" },
   [labels.adminProducts]: { id: "admin.products" },
   [labels.adminCategories]: { id: "admin.categories" },
+  [labels.adminInventory]: { id: "admin.accounts" },
   [labels.adminPayments]: { id: "admin.paymentGateway" },
   [labels.adminUsers]: { id: "admin.users" },
+  [labels.adminTickets]: { id: "admin.tickets" },
+  [labels.adminNotifications]: { id: "admin.notifications" },
   [labels.adminCoupons]: { id: "admin.coupons" },
-  [labels.settings]: { id: "admin.settings" },
+  [labels.settings]: { id: "admin.botSettings" },
   [labels.adminDashboard]: { id: "admin.dashboard" },
   [labels.support]: { id: "support" },
   "🎧 پشتیبانی": { id: "support" },

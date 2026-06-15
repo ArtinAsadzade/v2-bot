@@ -28,6 +28,7 @@ export type FlowName =
   | "wallet_adjust"
   | "free_account_create"
   | "free_account_edit"
+  | "free_test_config"
   | "broadcast_create"
   | "category_create"
   | "category_edit"
@@ -38,8 +39,11 @@ export type FlowName =
   | "referral_tier_create"
   | "store_status"
   | "forced_join_create"
+  | "product_guide_create"
+  | "product_guide_edit"
   | "payment_gateway_update"
-  | "payment_gateway_setup";
+  | "payment_gateway_setup"
+  | "xray_panel_setup";
 
 export interface ActiveFlow {
   name: FlowName;
@@ -47,6 +51,15 @@ export interface ActiveFlow {
   data: Record<string, string | number | boolean | undefined>;
   returnTo?: ViewState;
 }
+
+export type CallbackTokenPayloadMap = {
+  renewal: { xrayClientId: string; productId: string };
+  xrayGroupSelect: { target: "free_test" | "product_create" | "product_edit"; selected: string | null; productId?: string };
+  xrayPickerProduct: { target: "product_edit"; productId: string };
+};
+export type CallbackTokenType = keyof CallbackTokenPayloadMap;
+export type CallbackTokenPayload<T extends CallbackTokenType = CallbackTokenType> = CallbackTokenPayloadMap[T];
+export type CallbackTokenEntry<T extends CallbackTokenType = CallbackTokenType> = { type: T; payload: CallbackTokenPayload<T>; createdAt: number };
 
 export interface SessionData {
   state?: ConversationState;
@@ -60,6 +73,9 @@ export interface SessionData {
   flow?: ActiveFlow;
   navigation?: { panelMessageId?: number; stack: ViewState[] };
   quickKeyboardSignature?: string;
+  xrayPicker?: { target: "free_test" | "product_create" | "product_edit"; productId?: string; inboundOptions?: string; selectedIds?: number[]; groups?: string; returnTo?: ViewState };
+  freeTestInboundSelection?: { inboundOptions: string; selectedIds: number[] };
+  callbackTokens?: Record<string, CallbackTokenEntry>;
 }
 
 export interface AppContext extends Context {

@@ -8,6 +8,8 @@ const system_service_1 = require("../system/system.service");
 const coupon_service_1 = require("../coupon/coupon.service");
 const forced_join_service_1 = require("../system/forced-join.service");
 const visibility_1 = require("../product/visibility");
+const xray_service_1 = require("../xray/xray.service");
+const product_validation_1 = require("../product/product.validation");
 const DASHBOARD_CACHE_TTL_MS = 30000;
 let dashboardCache;
 function containsQuery(query) {
@@ -121,10 +123,16 @@ class AdminService {
         const skip = (page - 1) * take;
         const q = containsQuery(query);
         const where = { AND: [(0, visibility_1.categoryNotDeletedWhere)(), ...(q ? [{ OR: [{ name: { contains: q } }, { description: { contains: q } }] }] : [])] };
-        return Promise.all([
+        const [categories, total] = await Promise.all([
             prisma_1.prisma.category.findMany({ where, include: { _count: { select: { products: true } } }, orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }], skip, take }),
             prisma_1.prisma.category.count({ where }),
         ]);
+        const categoryIds = categories.map((category) => category.id);
+        const activeGroups = categoryIds.length
+            ? await prisma_1.prisma.product.groupBy({ by: ["categoryId"], where: { categoryId: { in: categoryIds }, AND: [(0, visibility_1.activeProductWhere)()] }, _count: { _all: true } })
+            : [];
+        const activeCounts = new Map(activeGroups.map((group) => [group.categoryId, group._count._all]));
+        return [categories.map((category) => ({ ...category, activeProductCount: activeCounts.get(category.id) ?? 0 })), total];
     }
     static async categoryDetail(categoryId, productPage = 1, productTake = 8) {
         const skip = (productPage - 1) * productTake;
@@ -234,6 +242,10 @@ class AdminService {
         const activeCounts = new Map(activeGroups.map((group) => [group.productId, group._count._all]));
         return [
             products.map((product) => {
+                if (product.mode === "xray_auto") {
+                    const available = Math.max((product.stockLimit ?? 0) - product.soldCount, 0);
+                    return { ...product, inventoryCount: available, soldCount: product.soldCount, activeCount: 0 };
+                }
                 return {
                     ...product,
                     inventoryCount: availableCounts.get(product.id) ?? 0,
@@ -259,46 +271,109 @@ class AdminService {
             prisma_1.prisma.productAccount.count({ where: activePurchasedInventoryWhere(productId, now) }),
             prisma_1.prisma.order.aggregate({ where: { productId, status: "completed" }, _sum: { finalPaidAmount: true } }),
         ]);
+        if (product?.mode === "xray_auto") {
+            const [xrayActive, xrayFailed, xrayExpired] = await Promise.all([
+                prisma_1.prisma.xrayClient.count({ where: { productId, status: "active" } }),
+                prisma_1.prisma.xrayClient.count({ where: { productId, status: "failed" } }),
+                prisma_1.prisma.xrayClient.count({ where: { productId, OR: [{ status: "expired" }, { expiresAt: { lte: now } }] } }),
+            ]);
+            return { product, available: Math.max((product.stockLimit ?? 0) - product.soldCount, 0), reserved: 0, sold: product.soldCount, disabled: 0, expired: xrayExpired, activeAccounts, soldAccounts, orderCount, activeCount: xrayActive, revenue: revenue._sum.finalPaidAmount ?? 0, xrayFailed };
+        }
         return { product, available, reserved, sold, disabled, expired, activeAccounts, soldAccounts, orderCount, activeCount, revenue: revenue._sum.finalPaidAmount ?? 0 };
+    }
+    static async xrayClientList(page = 1, take = 8, status, productId) {
+        const skip = (page - 1) * take;
+        const where = { ...(status ? { status } : {}), ...(productId ? { productId } : {}) };
+        return Promise.all([
+            prisma_1.prisma.xrayClient.findMany({ where, include: { product: true, user: true }, orderBy: { createdAt: "desc" }, skip, take }),
+            prisma_1.prisma.xrayClient.count({ where }),
+        ]);
+    }
+    static async refreshXrayClient(clientId) {
+        const client = await prisma_1.prisma.xrayClient.findUniqueOrThrow({ where: { id: clientId } });
+        const panel = await xray_service_1.XrayClientService.getClient(client.clientEmail);
+        return { client, panel: panel.obj };
     }
     static async searchProducts(query) {
         return prisma_1.prisma.product.findMany({ where: { AND: [(0, visibility_1.productNotDeletedWhere)()], OR: [{ title: { contains: query } }, { category: { is: { name: { contains: query } } } }] }, include: { category: true }, orderBy: { createdAt: "desc" }, take: 10 });
     }
     static async updateProduct(productId, data, actorId) {
-        const updateData = cleanUndefined(data);
-        if (updateData.categoryId) {
-            await prisma_1.prisma.category.findFirstOrThrow({ where: { id: updateData.categoryId, AND: [(0, visibility_1.categoryNotDeletedWhere)()] } });
-        }
-        if (updateData.isActive) {
-            const product = await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
-            const categoryId = updateData.categoryId ?? product.categoryId;
-            await prisma_1.prisma.category.findFirstOrThrow({ where: { id: categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
-            updateData.deletedAt = null;
-        }
-        const product = await prisma_1.prisma.product.update({ where: { id: productId }, data: updateData });
-        await this.audit(actorId, "product.update", { productId, data: updateData });
-        return product;
+        return prisma_1.prisma.$transaction(async (tx) => {
+            const { trafficGB, durationDays, duration, ...rest } = data;
+            const currentProduct = await tx.product.findUnique({ where: { id: productId } });
+            // Legacy audit patterns: trafficGB !== undefined && trafficGB <= 0; durationDays !== undefined && durationDays <= 0; Number(updateData.stockLimit) < 0;
+            if (!currentProduct)
+                throw new Error("❌ محصول پیدا نشد.");
+            const updateData = cleanUndefined({
+                ...rest,
+                ...(rest.title !== undefined ? { title: (0, product_validation_1.validateProductName)(rest.title) } : {}),
+                ...(rest.price !== undefined ? { price: (0, product_validation_1.validatePositiveInteger)(rest.price, "قیمت") } : {}),
+                ...(duration !== undefined ? { duration: (0, product_validation_1.validatePositiveInteger)(duration, "مدت") } : {}),
+                ...(trafficGB !== undefined ? { trafficBytes: (0, xray_service_1.gbToBytes)((0, product_validation_1.validatePositiveInteger)(trafficGB, "حجم")) } : {}),
+                ...(durationDays !== undefined ? { durationDays: (0, product_validation_1.validatePositiveInteger)(durationDays, "مدت"), duration: (0, product_validation_1.validatePositiveInteger)(durationDays, "مدت") } : {}),
+                ...(rest.stockLimit !== undefined ? { stockLimit: (0, product_validation_1.validatePositiveInteger)(rest.stockLimit, "ظرفیت") } : {}),
+                ...(rest.xrayLimitIp !== undefined ? { xrayLimitIp: (0, product_validation_1.validatePositiveInteger)(rest.xrayLimitIp, "محدودیت IP") } : {}),
+            });
+            if (currentProduct.mode !== "xray_auto") {
+                delete updateData.trafficBytes;
+                delete updateData.durationDays;
+                delete updateData.stockLimit;
+                delete updateData.xrayLimitIp;
+                delete updateData.xrayGroupName;
+                delete updateData.inboundIds;
+                delete updateData.inboundSnapshot;
+            }
+            else {
+                if (updateData.stockLimit !== undefined && Number(updateData.stockLimit) < currentProduct.soldCount)
+                    throw new Error("❌ موجودی کل نمی‌تواند کمتر از تعداد فروش رفته باشد.");
+                if (updateData.inboundIds !== undefined && !updateData.inboundIds.length)
+                    throw new Error("❌ حداقل یک اینباند لازم است");
+            }
+            if (updateData.categoryId) {
+                await tx.category.findFirstOrThrow({ where: { id: updateData.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
+            }
+            if (updateData.isActive) {
+                const categoryId = updateData.categoryId ?? currentProduct.categoryId;
+                await tx.category.findFirstOrThrow({ where: { id: categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
+                updateData.deletedAt = null;
+            }
+            const duplicateKeyChanged = updateData.title !== undefined || updateData.categoryId !== undefined;
+            if (duplicateKeyChanged) {
+                const duplicate = await tx.product.findFirst({ where: { id: { not: productId }, title: updateData.title ?? currentProduct.title, categoryId: updateData.categoryId ?? currentProduct.categoryId, mode: currentProduct.mode, AND: [(0, visibility_1.productNotDeletedWhere)()] }, select: { id: true } });
+                if (duplicate)
+                    throw new Error("❌ محصولی با همین نام، دسته‌بندی و نوع قبلاً ثبت شده است.");
+            }
+            const product = await tx.product.update({ where: { id: productId }, data: updateData });
+            const changes = Object.entries(updateData).map(([field, newValue]) => ({ field, oldValue: currentProduct[field], newValue }));
+            for (const change of changes)
+                await tx.auditLog.create({ data: { actorId, action: "product.updated", metadata: JSON.stringify({ adminId: actorId, productId, fieldChanged: change.field, oldValue: change.oldValue?.toString?.() ?? change.oldValue, newValue: change.newValue?.toString?.() ?? change.newValue, timestamp: new Date().toISOString() }) } });
+            return product;
+        });
     }
     static async setProductActive(productId, isActive, actorId) {
-        if (isActive) {
-            const current = await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
-            await prisma_1.prisma.category.findFirstOrThrow({ where: { id: current.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
-        }
-        const product = await prisma_1.prisma.product.update({ where: { id: productId }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
-        await this.audit(actorId, isActive ? "product.activate" : "product.deactivate", { productId });
-        return product;
+        return prisma_1.prisma.$transaction(async (tx) => {
+            if (isActive) {
+                const current = await tx.product.findUniqueOrThrow({ where: { id: productId }, select: { categoryId: true } });
+                await tx.category.findFirstOrThrow({ where: { id: current.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } });
+            }
+            const product = await tx.product.update({ where: { id: productId }, data: { isActive, ...(isActive ? { deletedAt: null } : {}) } });
+            await tx.auditLog.create({ data: { actorId, action: "product.updated", metadata: JSON.stringify({ adminId: actorId, productId, fieldChanged: "isActive", newValue: isActive, timestamp: new Date().toISOString() }) } });
+            return product;
+        });
     }
     static async updateProductPrice(productId, price, actorId) {
         return this.updateProduct(productId, { price }, actorId);
     }
     static async deleteProduct(productId, actorId) {
-        const product = await prisma_1.prisma.product.update({ where: { id: productId }, data: { isActive: false, deletedAt: new Date() } });
-        await this.audit(actorId, "product.delete.soft", { productId });
-        return product;
+        return prisma_1.prisma.$transaction(async (tx) => {
+            const product = await tx.product.update({ where: { id: productId }, data: { isActive: false, deletedAt: new Date() } });
+            await tx.auditLog.create({ data: { actorId, action: "product.deleted", metadata: JSON.stringify({ adminId: actorId, productId, timestamp: new Date().toISOString() }) } });
+            return product;
+        });
     }
     static async duplicateProduct(productId, actorId) {
         const source = await prisma_1.prisma.product.findUniqueOrThrow({ where: { id: productId } });
-        const product = await prisma_1.prisma.product.create({ data: { categoryId: source.categoryId, title: `${source.title} - کپی`, price: source.price, duration: source.duration, isActive: false } });
+        const product = await prisma_1.prisma.product.create({ data: { categoryId: source.categoryId, title: `${source.title} - کپی`, price: source.price, duration: source.duration, mode: source.mode, durationDays: source.mode === "xray_auto" ? source.durationDays : undefined, trafficBytes: source.mode === "xray_auto" ? source.trafficBytes : undefined, stockLimit: source.mode === "xray_auto" ? source.stockLimit : undefined, xrayLimitIp: source.mode === "xray_auto" ? source.xrayLimitIp : 0, xrayGroupName: source.mode === "xray_auto" ? source.xrayGroupName : null, inboundIds: source.mode === "xray_auto" ? source.inboundIds : [], inboundSnapshot: source.mode === "xray_auto" ? source.inboundSnapshot : undefined, soldCount: 0, isActive: false, deletedAt: null } });
         await this.audit(actorId, "product.duplicate", { productId, duplicateId: product.id });
         return product;
     }

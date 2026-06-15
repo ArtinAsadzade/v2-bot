@@ -11,6 +11,7 @@ const main_keyboard_1 = require("../../keyboards/main.keyboard");
 const admin_middleware_1 = require("../../middlewares/admin.middleware");
 const pagination_1 = require("../../../utils/pagination");
 const admin_flow_1 = require("./admin.flow");
+const monitoring_service_1 = require("../../../services/monitoring.service");
 async function requireAdmin(ctx) {
     if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id))) {
         await ctx.answerCbQuery?.("دسترسی غیرمجاز").catch(() => undefined);
@@ -85,6 +86,21 @@ function registerAdminHandlers(bot) {
         const stats = await admin_service_1.AdminService.dashboard();
         await ctx.reply(`👨‍💼 پنل مدیریت\n\n👥 کاربران: ${stats.users.toLocaleString("fa-IR")}\n📂 دسته‌بندی‌ها: ${stats.categories.toLocaleString("fa-IR")}\n📦 محصولات: ${stats.products.toLocaleString("fa-IR")}\n🗄 موجودی کل: ${stats.totalAccounts.toLocaleString("fa-IR")}\n✅ آماده: ${stats.availableAccounts.toLocaleString("fa-IR")} | ⏳ رزرو: ${stats.reservedAccounts.toLocaleString("fa-IR")} | 💰 فروخته: ${stats.soldAccounts.toLocaleString("fa-IR")} | ⏸ غیرفعال: ${stats.disabledAccounts.toLocaleString("fa-IR")} | ⌛ منقضی: ${stats.expiredAccounts.toLocaleString("fa-IR")}\n💳 کیف پول‌ها: ${stats.wallets.toLocaleString("fa-IR")}\n💳 واریزی‌های در انتظار: ${stats.submittedDeposits.toLocaleString("fa-IR")}\n🎧 تیکت‌های باز: ${stats.openTickets.toLocaleString("fa-IR")}\n🧾 سفارش‌ها: ${stats.orders.toLocaleString("fa-IR")}\n💰 درآمد: ${stats.revenue.toLocaleString("fa-IR")} تومان`, (0, admin_keyboard_1.adminKeyboard)());
     });
+    bot.action("admin:monitoring", async (ctx) => {
+        if (!(await requireAdmin(ctx)))
+            return;
+        await ctx.answerCbQuery();
+        const dashboard = await monitoring_service_1.MonitoringService.dashboard();
+        const count = (type) => dashboard.events.filter((event) => event.type.includes(type)).length;
+        const recent = dashboard.events.slice(0, 8).map((event) => `• ${event.type} | ${dateFa(event.createdAt)} | ${event.section}`).join("\n") || "خطای اخیر ثبت نشده است.";
+        const paymentErrors = dashboard.events.filter((event) => event.type.startsWith("PAYMENT") || event.type === "PURCHASE_FAILED").length;
+        const ticketErrors = count("TICKET");
+        const jobErrors = count("JOB");
+        const rateLimitHits = count("RATE_LIMIT");
+        const failedDeliveries = count("DELIVERY");
+        const health = dashboard.events.some((event) => event.severity === "critical") ? "نیازمند بررسی" : "پایدار";
+        await ctx.reply(`🛡 مانیتورینگ سیستم\n\nخطاهای اخیر:\n${recent}\n\nخطاهای پرداخت: ${paymentErrors.toLocaleString("fa-IR")}\nخطاهای تیکت: ${ticketErrors.toLocaleString("fa-IR")}\nخطاهای Job: ${jobErrors.toLocaleString("fa-IR")}\nRate limit hits: ${rateLimitHits.toLocaleString("fa-IR")}\nتحویل‌های ناموفق: ${failedDeliveries.toLocaleString("fa-IR")}\nسلامت سیستم: ${health}\n\nآخرین پرداخت موفق: ${dashboard.lastSuccessfulPayment ? `${dashboard.lastSuccessfulPayment.id} | ${dateFa(dashboard.lastSuccessfulPayment.completedAt)} | ${dashboard.lastSuccessfulPayment.user.telegramId}` : "-"}\nآخرین پرداخت ناموفق: ${dashboard.lastFailedPayment ? `${dashboard.lastFailedPayment.id} | ${dateFa(dashboard.lastFailedPayment.updatedAt)} | ${dashboard.lastFailedPayment.user.telegramId}` : "-"}\nآخرین callback: ${dashboard.lastCallbackReceived?.lastCallbackAt ? `${dashboard.lastCallbackReceived.id} | ${dateFa(dashboard.lastCallbackReceived.lastCallbackAt)} | ${dashboard.lastCallbackReceived.user.telegramId}` : "-"}`, (0, main_keyboard_1.navigationKeyboard)("admin:dashboard"));
+    });
     bot.action(["admin:users", /^admin:users:page:(\d+)$/], async (ctx) => {
         if (!(await requireAdmin(ctx)))
             return;
@@ -108,7 +124,7 @@ function registerAdminHandlers(bot) {
         const page = "match" in ctx && ctx.match ? Number(ctx.match[1]) : 1;
         const { take, pageSize } = (0, pagination_1.getPagination)(page);
         const [categories, total] = await admin_service_1.AdminService.listCategories(page, take);
-        const text = `📂 مدیریت دسته‌بندی‌ها\n📊 تعداد: ${total.toLocaleString("fa-IR")}\n\n${categories.map((category) => `${category.icon ?? "📂"} ${category.name} | ${statusFa(category.isActive)} | ترتیب ${category.displayOrder.toLocaleString("fa-IR")} | محصول ${category._count.products.toLocaleString("fa-IR")}`).join("\n") || "دسته‌بندی وجود ندارد."}`;
+        const text = `📂 مدیریت دسته‌بندی‌ها\n📊 تعداد: ${total.toLocaleString("fa-IR")}\n\n${categories.map((category) => `${category.icon ?? "📂"} ${category.name} | ${statusFa(category.isActive)} | ترتیب ${category.displayOrder.toLocaleString("fa-IR")} | محصول ${category._count.products.toLocaleString("fa-IR")} | فعال ${category.activeProductCount.toLocaleString("fa-IR")}`).join("\n") || "دسته‌بندی وجود ندارد."}`;
         await ctx.reply(text, entityListKeyboard(categories.map((category) => [telegraf_1.Markup.button.callback(`👁 ${category.name}`, `admin:category:${category.id}`)]), "admin:categories", page, total, pageSize, "admin:dashboard", [[telegraf_1.Markup.button.callback("➕ ایجاد دسته‌بندی", "admin:category:create")]]));
     });
     bot.action("admin:categories:search", async (ctx) => {
@@ -191,7 +207,7 @@ function registerAdminHandlers(bot) {
         const page = "match" in ctx && ctx.match ? Number(ctx.match[1]) : 1;
         const { take, pageSize } = (0, pagination_1.getPagination)(page);
         const [products, total] = await admin_service_1.AdminService.listProducts(page, take);
-        const text = `📦 مدیریت محصولات\n📊 تعداد: ${total.toLocaleString("fa-IR")}\n\n${products.map((product) => `📦 ${product.title} | ${product.category.name} | ${product.price.toLocaleString("fa-IR")} تومان | ${product.duration} روز | موجودی ${product.inventoryCount.toLocaleString("fa-IR")} | فروخته ${product.soldCount.toLocaleString("fa-IR")} | فعال ${product.activeCount.toLocaleString("fa-IR")} | ${statusFa(product.isActive)}`).join("\n") || "محصولی وجود ندارد."}`;
+        const text = `📦 مدیریت محصولات\n📊 تعداد: ${total.toLocaleString("fa-IR")}\n\n${products.map((product) => `📦 ${product.title} | ${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"} | ${product.price.toLocaleString("fa-IR")} تومان | ${product.duration} روز | موجودی ${product.inventoryCount.toLocaleString("fa-IR")} | فروخته ${product.soldCount.toLocaleString("fa-IR")} | فعال ${product.activeCount.toLocaleString("fa-IR")} | ${statusFa(product.isActive)}`).join("\n") || "محصولی وجود ندارد."}`;
         await ctx.reply(text, entityListKeyboard(products.map((product) => [telegraf_1.Markup.button.callback(`👁 ${product.title}`, `admin:product:${product.id}`)]), "admin:products", page, total, pageSize, "admin:dashboard", [[telegraf_1.Markup.button.callback("➕ ایجاد محصول", "admin:product:create")]]));
     });
     bot.action("admin:products:search", async (ctx) => {
@@ -215,7 +231,7 @@ function registerAdminHandlers(bot) {
         const detail = await admin_service_1.AdminService.productDetail(ctx.match[1]);
         if (!detail.product)
             return void (await ctx.reply("محصول پیدا نشد.", (0, main_keyboard_1.navigationKeyboard)("admin:products")));
-        await ctx.reply(`📦 اطلاعات محصول\n\nنام: ${detail.product.title}\nدسته‌بندی: ${detail.product.category.name}\nقیمت: ${detail.product.price.toLocaleString("fa-IR")} تومان\nمدت: ${detail.product.duration} روز\nوضعیت: ${statusFa(detail.product.isActive)}\nتاریخ ایجاد: ${dateFa(detail.product.createdAt)}\n\n📊 آمار موجودی\nکل: ${detail.product._count.accounts.toLocaleString("fa-IR")}\nآماده: ${detail.available.toLocaleString("fa-IR")}\nرزرو: ${detail.reserved.toLocaleString("fa-IR")}\nفروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}\nغیرفعال: ${detail.disabled.toLocaleString("fa-IR")}\nمنقضی: ${detail.expired.toLocaleString("fa-IR")}\nسفارش موفق: ${detail.orderCount.toLocaleString("fa-IR")}\nدرآمد: ${detail.revenue.toLocaleString("fa-IR")} تومان`, telegraf_1.Markup.inlineKeyboard([
+        await ctx.reply(`📦 اطلاعات محصول\n\nنام: ${detail.product.title}\nدسته‌بندی: ${detail.product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}\nقیمت: ${detail.product.price.toLocaleString("fa-IR")} تومان\nمدت: ${detail.product.duration} روز\nوضعیت: ${statusFa(detail.product.isActive)}\nتاریخ ایجاد: ${dateFa(detail.product.createdAt)}\n\n📊 آمار موجودی\nکل: ${detail.product._count.accounts.toLocaleString("fa-IR")}\nآماده: ${detail.available.toLocaleString("fa-IR")}\nرزرو: ${detail.reserved.toLocaleString("fa-IR")}\nفروخته‌شده: ${detail.sold.toLocaleString("fa-IR")}\nغیرفعال: ${detail.disabled.toLocaleString("fa-IR")}\nمنقضی: ${detail.expired.toLocaleString("fa-IR")}\nسفارش موفق: ${detail.orderCount.toLocaleString("fa-IR")}\nدرآمد: ${detail.revenue.toLocaleString("fa-IR")} تومان`, telegraf_1.Markup.inlineKeyboard([
             [telegraf_1.Markup.button.callback("✏️ ویرایش", `admin:product:edit:${detail.product.id}`), telegraf_1.Markup.button.callback(detail.product.isActive ? "⏸ غیرفعال" : "▶️ فعال", `admin:product:status:${detail.product.id}:${detail.product.isActive ? "off" : "on"}`)],
             [telegraf_1.Markup.button.callback("🗄 اکانت‌های محصول", `admin:product:accounts:${detail.product.id}:page:1`), telegraf_1.Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${detail.product.id}`)],
             [telegraf_1.Markup.button.callback("📋 کپی محصول", `admin:product:duplicate:${detail.product.id}`)],
@@ -356,7 +372,7 @@ function registerAdminHandlers(bot) {
         const products = await product_service_1.ProductService.listActiveProducts(50);
         const rows = products
             .filter((product) => product.id !== account.productId)
-            .map((product) => [telegraf_1.Markup.button.callback(`${product.title} (${product.category.name})`, `admin:account:move-to:${account.id}:${product.id}`)]);
+            .map((product) => [telegraf_1.Markup.button.callback(`${product.title} (${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"})`, `admin:account:move-to:${account.id}:${product.id}`)]);
         await ctx.reply(`🚚 انتقال اکانت ${account.username}\nمحصول فعلی: ${account.product.title}\n\nمحصول مقصد را انتخاب کنید:`, telegraf_1.Markup.inlineKeyboard([...rows, [telegraf_1.Markup.button.callback("⬅️ بازگشت", `admin:account:${account.id}`)]]));
     });
     bot.action(/^admin:account:move-to:([^:]+):([^:]+)$/, async (ctx) => {

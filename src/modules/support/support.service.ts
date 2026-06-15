@@ -1,11 +1,12 @@
 import { prisma } from "../../services/prisma";
 import { notificationService } from "../../services/notification.service";
 import { eventBus } from "../../services/event-bus.service";
+import { actionFor, callbackFor } from "../../bot/navigation/panel-ui";
 
 const divider = "━━━━━━━━━━━━━━";
 const shortId = (id: string) => id.slice(-6).toUpperCase();
-const ticketAction = (ticketId: string) => `nav:admin.ticket?ticketId=${ticketId}`;
-const userTicketAction = (ticketId: string) => `support:chat:${ticketId}`;
+const ticketAction = (ticketId: string) => callbackFor("admin.ticket", { ticketId });
+const userTicketAction = (ticketId: string) => actionFor("support:chat", ticketId);
 const preview = (message: string) => (message.length > 600 ? `${message.slice(0, 600)}…` : message);
 const statusLabel = (status: string) => (status === "open" ? "باز" : "بسته");
 
@@ -49,8 +50,8 @@ export class SupportService {
     await notificationService.notifyAdmins({
       text: `🎫 پیام جدید پشتیبانی\n${divider}\n\n🧾 تیکت: #${shortId(ticket.id)}\n👤 کاربر: ${ticket.user.telegramId}${ticket.user.username ? ` (@${ticket.user.username})` : ""}\n🕒 زمان: ${ticketMessage.createdAt.toLocaleString("fa-IR")}\n\n👤 پیام کاربر:\n${preview(text)}`,
       actions: [
-        [{ text: "👁 مشاهده تیکت", callbackData: ticketAction(ticket.id) }, { text: "💬 پاسخ", callbackData: `support:admin:chat:${ticket.id}` }],
-        [{ text: "✅ بستن تیکت", callbackData: `admin:ticket:close:${ticket.id}` }],
+        [{ text: "👁 مشاهده تیکت", callbackData: ticketAction(ticket.id) }, { text: "💬 پاسخ", callbackData: actionFor("support:admin:chat", ticket.id) }],
+        [{ text: "✅ بستن تیکت", callbackData: actionFor("admin:ticket:close", ticket.id) }],
       ],
     });
 
@@ -74,7 +75,7 @@ export class SupportService {
 
     await notificationService.notifyUser(ticket.userId, {
       text: `🎧 پاسخ پشتیبانی\n${divider}\n\n🧾 تیکت: #${shortId(ticket.id)}\n🕒 زمان: ${ticketMessage.createdAt.toLocaleString("fa-IR")}\n\n👨‍💼 پشتیبانی:\n${preview(text)}\n\nبرای ادامه گفتگو روی دکمه زیر بزنید.`,
-      actions: [[{ text: "💬 باز کردن گفتگو", callbackData: userTicketAction(ticket.id) }], [{ text: "✅ بستن تیکت", callbackData: `support:close:${ticket.id}` }]],
+      actions: [[{ text: "💬 باز کردن گفتگو", callbackData: userTicketAction(ticket.id) }], [{ text: "✅ بستن تیکت", callbackData: actionFor("support:close", ticket.id) }]],
     });
 
     eventBus.emit("ticket.message.created", { ticketId, userId: ticket.userId, senderRole: "admin", message: text });
@@ -127,7 +128,7 @@ export class SupportService {
     } else {
       await notificationService.notifyAdmins({
         text: `🔄 تیکت #${shortId(ticketId)} دوباره باز شد.\n\n👤 کاربر: ${reopened.user.telegramId}\n⚡ وضعیت: ${statusLabel(reopened.status)}`,
-        actions: [[{ text: "👁 مشاهده تیکت", callbackData: ticketAction(ticketId) }, { text: "💬 ورود به چت", callbackData: `support:admin:chat:${ticketId}` }]],
+        actions: [[{ text: "👁 مشاهده تیکت", callbackData: ticketAction(ticketId) }, { text: "💬 ورود به چت", callbackData: actionFor("support:admin:chat", ticketId) }]],
       });
     }
     return reopened;

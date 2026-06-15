@@ -95,7 +95,7 @@ export function forcedJoinMiddleware(): MiddlewareFn<AppContext> {
     const missing = await missingRequiredChannels(ctx, activeChannels);
     if (!missing.length) return next();
 
-    const isVerification = ctx.callbackQuery && "data" in ctx.callbackQuery && ctx.callbackQuery.data === VERIFY_ACTION;
+    const isVerification = ctx.callbackQuery && "data" in ctx.callbackQuery && ctx.callbackQuery.data.startsWith(VERIFY_ACTION);
 
     if (isVerification) {
       await ctx.answerCbQuery("⚠️ هنوز عضویت شما در همه کانال‌ها تایید نشده است.", { show_alert: true }).catch(() => undefined);

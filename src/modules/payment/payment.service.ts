@@ -4,11 +4,13 @@ import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { PaymentInvoiceStatus, PaymentInvoiceType } from "@prisma/client";
 import { prisma } from "../../services/prisma";
 import { WalletService } from "../wallet/wallet.service";
-import { CouponService } from "../coupon/coupon.service";
+import { CouponService, normalizeCouponCode } from "../coupon/coupon.service";
 import { AdminService } from "../admin/admin.service";
 import { eventBus } from "../../services/event-bus.service";
 import { logger } from "../../services/logger";
+import { MonitoringService } from "../../services/monitoring.service";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, unassignedInventoryWhere } from "../product/visibility";
+import { XrayClientService, sanitizePanelError, xrayTrafficSnapshot } from "../xray/xray.service";
 
 export type PaymentGatewayInput = {
   enabled?: boolean;
@@ -53,9 +55,10 @@ class DuplicateGatewayPayIdError extends Error {
 }
 
 const CALLBACK_TOKEN_PARAM = "token";
-const CALLBACK_INVOICE_PARAM = "invoice";
+const CALLBACK_INVOICE_PARAM = "invoice_id";
 const ALREADY_PROCESSED_FA = "⚠️ این پرداخت قبلاً پردازش شده است.";
 const DEFAULT_GATEWAY_API_BASE_URL = "http://136.244.104.77:5000/api/v1";
+function slugify(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "svc"; }
 
 function assertPositiveAmount(amount: number) {
   if (!Number.isInteger(amount) || amount <= 0) throw new Error("مبلغ پرداخت معتبر نیست");
@@ -109,8 +112,8 @@ function invoiceCallbackUrl(baseCallbackUrl: string, data: { invoiceId: string; 
   const withId = baseCallbackUrl.includes("{invoiceId}") ? baseCallbackUrl.split("{invoiceId}").join(encodeURIComponent(data.invoiceId)) : baseCallbackUrl;
   const withToken = withId.includes("{token}") ? withId.split("{token}").join(encodeURIComponent(data.callbackToken)) : withId;
   const url = new URL(withToken);
-  url.searchParams.set(CALLBACK_TOKEN_PARAM, data.callbackToken);
   url.searchParams.set(CALLBACK_INVOICE_PARAM, data.invoiceId);
+  url.searchParams.set(CALLBACK_TOKEN_PARAM, data.callbackToken);
   return url.toString();
 }
 
@@ -178,24 +181,38 @@ function paymentLog(event: string, metadata: Record<string, unknown> = {}) {
   logger.info(event, { event, ...metadata });
 }
 
+function xrayClientEmail(input: { telegramId: string; productId: string; orderId: string }) {
+  return `tg${input.telegramId}-p${input.productId.slice(-8)}-o${input.orderId.slice(-8)}`.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 64);
+}
+
 async function audit(tx: DbClient, data: AuditData) {
-  if (data.invoiceId) {
-    await tx.paymentAuditLog.create({
+  try {
+    if (data.invoiceId) {
+      await tx.paymentAuditLog.create({
+        data: {
+          userId: data.userId ?? undefined,
+          invoiceId: data.invoiceId,
+          action: data.action,
+          metadata: data.metadata ? JSON.stringify({ ...data.metadata, actorId: data.actorId }) : data.actorId ? JSON.stringify({ actorId: data.actorId }) : undefined,
+        },
+      });
+    }
+    await tx.auditLog.create({
       data: {
-        userId: data.userId ?? undefined,
-        invoiceId: data.invoiceId,
+        actorId: data.actorId ?? data.userId ?? "system",
         action: data.action,
-        metadata: data.metadata ? JSON.stringify({ ...data.metadata, actorId: data.actorId }) : data.actorId ? JSON.stringify({ actorId: data.actorId }) : undefined,
+        metadata: JSON.stringify({ invoiceId: data.invoiceId, userId: data.userId, ...(data.metadata ?? {}) }),
       },
     });
-  }
-  await tx.auditLog.create({
-    data: {
-      actorId: data.actorId ?? data.userId ?? "system",
+  } catch (error) {
+    logger.error("PAYMENT_AUDIT_LOG_FAILED", {
+      event: "PAYMENT_AUDIT_LOG_FAILED",
       action: data.action,
-      metadata: JSON.stringify({ invoiceId: data.invoiceId, userId: data.userId, ...(data.metadata ?? {}) }),
-    },
-  });
+      invoiceId: data.invoiceId,
+      userId: data.userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 export class PaymentGatewayService {
@@ -412,12 +429,16 @@ export class PaymentService {
     let couponId: string | null = null;
     let couponCode: string | null = null;
     if (data.couponCode?.trim()) {
-      const coupon = await CouponService.validateForUser(data.couponCode, data.userId, tx, originalAmount);
-      const calculation = CouponService.calculate(coupon, originalAmount);
-      couponId = coupon.id;
-      couponCode = coupon.code;
-      discountAmount = calculation.discountAmount;
-      finalAmount = calculation.finalAmount;
+      const validation = await CouponService.validateForCheckout({ code: data.couponCode, userId: data.userId, originalAmount, tx });
+      if (!validation.ok) {
+        paymentLog("COUPON_RECHECK_FAILED", { userId: data.userId, productId: data.productId, couponCode: normalizeCouponCode(data.couponCode), reason: validation.reason, severity: "warning" });
+        await audit(tx, { userId: data.userId, action: "COUPON_RECHECK_FAILED", metadata: { productId: data.productId, couponCode: normalizeCouponCode(data.couponCode), reason: validation.reason, severity: "warning" } });
+        throw new Error(validation.reason);
+      }
+      couponId = validation.coupon.id;
+      couponCode = validation.coupon.code;
+      discountAmount = validation.discountAmount;
+      finalAmount = validation.finalAmount;
     }
 
     assertPositiveAmount(finalAmount);
@@ -427,7 +448,7 @@ export class PaymentService {
   private static assertInvoiceAmountIntegrity(invoice: Pick<PaymentInvoice, "amount" | "originalAmount" | "discountAmount" | "gatewayAmount">) {
     const expectedAmount = invoice.originalAmount > 0 ? invoice.originalAmount - invoice.discountAmount : invoice.amount;
     if (expectedAmount !== invoice.amount) return { ok: false as const, reason: "stored_final_amount_mismatch", expectedAmount };
-    if (invoice.gatewayAmount !== null && invoice.gatewayAmount !== invoice.amount) return { ok: false as const, reason: "gateway_amount_mismatch", expectedAmount };
+    if (invoice.gatewayAmount !== null && invoice.gatewayAmount !== undefined && invoice.gatewayAmount !== invoice.amount) return { ok: false as const, reason: "gateway_amount_mismatch", expectedAmount };
     return { ok: true as const, expectedAmount };
   }
 
@@ -452,8 +473,10 @@ export class PaymentService {
     }
 
     try {
-      return await prisma.paymentInvoice.update({
-        where: { id: invoice.id },
+      paymentLog("PAYMENT_INVOICE_UPDATE_PAYID", { invoiceId: invoice.id, userId: invoice.userId, payId: gatewayResult.parsed.payId, gatewayAmount });
+      await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_INVOICE_UPDATE_PAYID", metadata: { payId: gatewayResult.parsed.payId, gatewayAmount } });
+      const attached = await prisma.paymentInvoice.updateMany({
+        where: { id: invoice.id, status: "PENDING", OR: [{ payId: null }, { payId: { isSet: false } }] },
         data: {
           payId: gatewayResult.parsed.payId,
           paymentLink: gatewayResult.parsed.paymentLink,
@@ -461,6 +484,15 @@ export class PaymentService {
           gatewayResponse: safeJson(gatewayResult.raw),
         },
       });
+      if (attached.count === 1) return prisma.paymentInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
+
+      const current = await prisma.paymentInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
+      if (current.status === "PENDING" && current.payId === gatewayResult.parsed.payId && current.paymentLink === gatewayResult.parsed.paymentLink) {
+        paymentLog("PAYMENT_LINK_READY", { invoiceId: current.id, userId: current.userId, payId: current.payId, idempotent: true });
+        await audit(prisma, { userId: current.userId, invoiceId: current.id, action: "PAYMENT_LINK_READY", metadata: { payId: current.payId, idempotent: true } });
+        return current;
+      }
+      throw new Error("فاکتور دیگر قابل اتصال به پاسخ درگاه نیست");
     } catch (error) {
       if (this.isUniqueConstraintError(error, "payId")) {
         const racedDuplicate = await prisma.paymentInvoice.findFirst({ where: { payId: gatewayResult.parsed.payId, NOT: { id: invoice.id } }, select: { id: true, userId: true, status: true } });
@@ -477,7 +509,7 @@ export class PaymentService {
     }
   }
 
-  static async createInvoice(data: { userId: string; amount: number; type: PaymentInvoiceType; productId?: string; originalAmount?: number; discountAmount?: number; couponId?: string | null; couponCode?: string | null }) {
+  static async createInvoice(data: { userId: string; amount: number; type: PaymentInvoiceType; productId?: string; originalAmount?: number; discountAmount?: number; couponId?: string | null; couponCode?: string | null; renewalId?: string; renewalXrayClientId?: string }) {
     assertPositiveAmount(data.amount);
     const gateway = await PaymentGatewayService.get();
     if (!gateway.enabled) throw new Error("پرداخت آنی در حال حاضر غیرفعال است");
@@ -497,11 +529,12 @@ export class PaymentService {
       discountAmount,
       coupon: data.couponId ? { connect: { id: data.couponId } } : undefined,
       couponCode: data.couponCode ?? undefined,
-      gatewayAmount: data.amount,
       callbackToken: crypto.randomBytes(32).toString("hex"),
       type: data.type,
       status: "PENDING",
       product: data.productId ? { connect: { id: data.productId } } : undefined,
+      renewal: data.renewalId ? { connect: { id: data.renewalId } } : undefined,
+      renewalXrayClientId: data.renewalXrayClientId,
     };
     paymentLog("PAYMENT_INVOICE_CREATE_PAYLOAD", {
       userId: data.userId,
@@ -531,10 +564,12 @@ export class PaymentService {
     await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_REQUEST", metadata: { endpoint: "/invoice/create", price: data.amount, callback_url: callbackUrl } });
     try {
       const gatewayResult = await this.requestGatewayInvoice(gateway, data.amount, callbackUrl);
-      paymentLog("PAYMENT_GATEWAY_RESPONSE", { invoiceId: invoice.id, userId: data.userId, payId: gatewayResult.parsed.payId });
-      await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_RESPONSE", metadata: gatewayResult.raw as Record<string, unknown> });
+      paymentLog("PAYMENT_INVOICE_GATEWAY_RESPONSE", { invoiceId: invoice.id, userId: data.userId, payId: gatewayResult.parsed.payId, paymentLink: gatewayResult.parsed.paymentLink });
+      await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_INVOICE_GATEWAY_RESPONSE", metadata: gatewayResult.raw as Record<string, unknown> });
       const updatedInvoice = await this.attachGatewayInvoiceResponse(invoice, gatewayResult, data.amount);
       await prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastSuccessfulRequest: new Date(), lastConnectionStatus: "success", lastConnectionError: null } });
+      paymentLog("PAYMENT_LINK_READY", { invoiceId: updatedInvoice.id, userId: updatedInvoice.userId, payId: updatedInvoice.payId, paymentLink: updatedInvoice.paymentLink });
+      await audit(prisma, { userId: updatedInvoice.userId, invoiceId: updatedInvoice.id, action: "PAYMENT_LINK_READY", metadata: { payId: updatedInvoice.payId, paymentLink: updatedInvoice.paymentLink } });
       return updatedInvoice;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -543,9 +578,11 @@ export class PaymentService {
       await prisma.paymentGatewayConfig.update({ where: { id: "singleton" }, data: { lastFailedRequest: new Date(), lastConnectionStatus: "failed", lastConnectionError: message } });
       await audit(prisma, { userId: data.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_REQUEST_FAILED", metadata: { stage: "gateway_create", error: message } });
       if (error instanceof DuplicateGatewayPayIdError) {
+        MonitoringService.record({ type: "PAYMENT_FAILED", section: "Payment Gateway", description: `Duplicate gateway pay_id: ${error.payId}`, userId: data.userId, severity: "critical", suggestedAction: "درگاه پرداخت و یکتایی pay_id را بررسی کنید.", metadata: { invoiceId: invoice.id, duplicateInvoiceId: error.existingInvoiceId } });
         await prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { gatewayResponse: safeJson({ error: error.message, payId: error.payId, duplicateInvoiceId: error.existingInvoiceId }), deliveryStatus: "DUPLICATE_GATEWAY_PAY_ID" } });
         throw new Error("پاسخ درگاه پرداخت معتبر نبود. موضوع ثبت شد و پشتیبانی در حال بررسی است.");
       }
+      MonitoringService.record({ type: "PAYMENT_FAILED", section: "Payment Gateway", description: message, userId: data.userId, severity: "critical", suggestedAction: "وضعیت API درگاه، کلید API و شبکه سرور را بررسی کنید.", metadata: { invoiceId: invoice.id, stage: "gateway_create" } });
       throw new Error("ارتباط با درگاه پرداخت برقرار نشد. لطفاً چند دقیقه دیگر دوباره تلاش کنید");
     }
   }
@@ -564,17 +601,19 @@ export class PaymentService {
 
     if (normalized.invoice_id) {
       const byLegacyToken = await prisma.paymentInvoice.findUnique({ where: { callbackToken: normalized.invoice_id } });
+      // Gateway documentation calls this parameter invoice_id, but older bot links used token/invoice/pay_id.
+      // Never pass invoice_id to the ObjectId lookup until it is syntactically validated.
       if (byLegacyToken) return { invoice: byLegacyToken, matchedBy: "legacyToken" };
       if (isValidObjectId(normalized.invoice_id)) {
         const byLegacyInvoice = await prisma.paymentInvoice.findUnique({ where: { id: normalized.invoice_id } });
         if (byLegacyInvoice) return { invoice: byLegacyInvoice, matchedBy: "legacyInvoice" };
       }
-      const byPayId = await prisma.paymentInvoice.findUnique({ where: { payId: normalized.invoice_id } });
+      const byPayId = await prisma.paymentInvoice.findFirst({ where: { payId: normalized.invoice_id } });
       if (byPayId) return { invoice: byPayId, matchedBy: "payId" };
     }
 
     if (normalized.pay_id) {
-      const byPayId = await prisma.paymentInvoice.findUnique({ where: { payId: normalized.pay_id } });
+      const byPayId = await prisma.paymentInvoice.findFirst({ where: { payId: normalized.pay_id } });
       if (byPayId) return { invoice: byPayId, matchedBy: "payId" };
     }
 
@@ -586,6 +625,7 @@ export class PaymentService {
     if (!normalizedReference.token && !normalizedReference.invoice && !normalizedReference.invoice_id && !normalizedReference.pay_id) {
       paymentLog("PAYMENT_CALLBACK_REJECTED", { reason: "missing_callback_reference", query: metadata.query });
       await prisma.auditLog.create({ data: { actorId: "system", action: "PAYMENT_CALLBACK_REJECTED", metadata: JSON.stringify({ reason: "missing_callback_reference", ...metadata }) } });
+      MonitoringService.record({ type: "PAYMENT_CALLBACK_FAILED", section: "Payment Callback", description: "Missing callback reference", severity: "critical", suggestedAction: "پارامترهای callback درگاه را بررسی کنید.", metadata });
       return { statusCode: 400, text: "Invalid payment callback." };
     }
 
@@ -593,6 +633,7 @@ export class PaymentService {
     if (!resolved) {
       paymentLog("PAYMENT_CALLBACK_REJECTED", { reason: "invoice_not_found", reference: normalizedReference, query: metadata.query });
       await prisma.auditLog.create({ data: { actorId: "system", action: "PAYMENT_CALLBACK_REJECTED", metadata: JSON.stringify({ reason: "invoice_not_found", reference: normalizedReference, ...metadata }) } });
+      MonitoringService.record({ type: "PAYMENT_CALLBACK_FAILED", section: "Payment Callback", description: "Payment invoice not found", severity: "critical", suggestedAction: "ارسال invoice_id/token/pay_id از سمت درگاه را بررسی کنید.", metadata: { reference: normalizedReference, ...metadata } });
       return { statusCode: 404, text: "Payment invoice not found." };
     }
     const invoice = resolved.invoice;
@@ -607,12 +648,14 @@ export class PaymentService {
       const failed = await prisma.paymentInvoice.updateMany({ where: { id: invoice.id, status: "PENDING" }, data: { status: "FAILED", verifiedAt: new Date(), deliveryStatus: "FAILED" } });
       paymentLog("PAYMENT_PROCESS_FAILED", { invoiceId: invoice.id, userId: invoice.userId, stage: "callback_security", reason: integrity.reason, statusChanged: failed.count === 1 });
       await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_PROCESS_FAILED", metadata: { stage: "callback_security", reason: integrity.reason, gatewayAmount: invoice.gatewayAmount, amount: invoice.amount, originalAmount: invoice.originalAmount, discountAmount: invoice.discountAmount, amountExpected: integrity.expectedAmount } });
+      MonitoringService.record({ type: "PAYMENT_CALLBACK_FAILED", section: "Payment Callback", description: `Invoice amount mismatch: ${integrity.reason}`, userId: invoice.userId, severity: "critical", suggestedAction: "مبلغ فاکتور و مقدار برگشتی درگاه را بررسی کنید.", metadata: { invoiceId: invoice.id } });
       return { statusCode: 409, text: "Invoice amount mismatch.", failed: { invoice: { ...invoice, status: failed.count === 1 ? "FAILED" : invoice.status }, type: invoice.type as PaymentInvoiceType } };
     }
 
     if (normalizedReference.pay_id && invoice.payId && normalizedReference.pay_id !== invoice.payId) {
       paymentLog("PAYMENT_CALLBACK_REJECTED", { invoiceId: invoice.id, userId: invoice.userId, reason: "pay_id_mismatch", expectedPayId: invoice.payId, receivedPayId: normalizedReference.pay_id });
       await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_REJECTED", metadata: { reason: "pay_id_mismatch", expectedPayId: invoice.payId, receivedPayId: normalizedReference.pay_id, reference: normalizedReference } });
+      MonitoringService.record({ type: "PAYMENT_CALLBACK_FAILED", section: "Payment Callback", description: "pay_id mismatch", userId: invoice.userId, severity: "critical", suggestedAction: "احتمال callback اشتباه یا دستکاری شده را بررسی کنید.", metadata: { invoiceId: invoice.id, expectedPayId: invoice.payId, receivedPayId: normalizedReference.pay_id } });
       return { statusCode: 409, text: "Payment callback pay_id mismatch." };
     }
 
@@ -621,16 +664,20 @@ export class PaymentService {
       if (duplicate) {
         paymentLog("PAYMENT_CALLBACK_REJECTED", { invoiceId: invoice.id, userId: invoice.userId, reason: "duplicate_callback_pay_id", payId: normalizedReference.pay_id, duplicateInvoiceId: duplicate.id });
         await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_GATEWAY_DUPLICATE_PAY_ID", metadata: { source: "callback", payId: normalizedReference.pay_id, duplicateInvoiceId: duplicate.id, duplicateUserId: duplicate.userId, duplicateStatus: duplicate.status } });
+        MonitoringService.record({ type: "PAYMENT_DUPLICATE_CALLBACK", section: "Payment Callback", description: `Duplicate callback pay_id: ${normalizedReference.pay_id}`, userId: invoice.userId, severity: "critical", suggestedAction: "pay_id تکراری در درگاه را فوری بررسی کنید.", metadata: { invoiceId: invoice.id, duplicateInvoiceId: duplicate.id } });
         return { statusCode: 409, text: "Duplicate gateway pay_id." };
       }
     }
 
     paymentLog("PAYMENT_CALLBACK_PROCESSING", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, type: invoice.type });
     await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_PROCESSING", metadata: { status: invoice.status, type: invoice.type, payId: invoice.payId } });
+    paymentLog("PAYMENT_CALLBACK_VALIDATED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, type: invoice.type });
+    await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_VALIDATED", metadata: { status: invoice.status, type: invoice.type } });
 
     if (invoice.status === "COMPLETED" || invoice.status === "PAID") {
       paymentLog("PAYMENT_DUPLICATE_CALLBACK_IGNORED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status });
       await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_DUPLICATE_CALLBACK_IGNORED", metadata: { status: invoice.status, reference: normalizedReference } });
+      MonitoringService.record({ type: "PAYMENT_DUPLICATE_CALLBACK", section: "Payment Callback", description: `Duplicate callback ignored for ${invoice.status}`, userId: invoice.userId, severity: "warning", suggestedAction: "اگر تکرار زیاد است، retry درگاه را بررسی کنید.", metadata: { invoiceId: invoice.id, status: invoice.status } });
       if (invoice.status === "COMPLETED") return { statusCode: 200, text: ALREADY_PROCESSED_FA };
     }
     if (invoice.status === "FAILED" || invoice.status === "CANCELED" || invoice.status === "EXPIRED") return { statusCode: 409, text: "Payment invoice is not payable." };
@@ -650,6 +697,7 @@ export class PaymentService {
       if (!markedPaid) return { statusCode: 200, text: ALREADY_PROCESSED_FA };
       paidInvoice = markedPaid;
       paymentLog("PAYMENT_INVOICE_MARKED_PAID", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, payId: paidInvoice.payId, amount: paidInvoice.amount, type: paidInvoice.type });
+      paymentLog("PAYMENT_MARKED_PAID", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, payId: paidInvoice.payId, amount: paidInvoice.amount, type: paidInvoice.type });
     }
 
     const staleProcessingBefore = new Date(Date.now() - 5 * 60_000);
@@ -660,13 +708,20 @@ export class PaymentService {
     if (fulfillmentLock.count !== 1) return { statusCode: 200, text: ALREADY_PROCESSED_FA };
 
     try {
-      const result = await this.fulfillPaidInvoice(paidInvoice.id);
+      paymentLog("PAYMENT_FULFILLMENT_STARTED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
+      await audit(prisma, { userId: paidInvoice.userId, invoiceId: paidInvoice.id, action: "PAYMENT_FULFILLMENT_STARTED", metadata: { type: paidInvoice.type } });
+      let result = await this.fulfillPaidInvoice(paidInvoice.id);
+      if ((result as any).needsXrayProvisioning && (result as any).order?.id) result = await this.provisionXrayClient((result as any).order.id, paidInvoice.id) as any;
+      paymentLog("PAYMENT_COMPLETED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
       AdminService.invalidateDashboardCache();
       return { statusCode: 200, text: "Payment completed successfully.", result };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       paymentLog("PAYMENT_PROCESS_FAILED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, stage: "fulfillment", error: message });
-      await prisma.paymentInvoice.update({ where: { id: paidInvoice.id }, data: { deliveryStatus: "FAILED", verifiedAt: new Date() } });
+      paymentLog("PAYMENT_FAILED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, stage: "fulfillment", error: message });
+      await prisma.paymentInvoice.update({ where: { id: paidInvoice.id }, data: { deliveryStatus: "FAILED_DELIVERY", verifiedAt: new Date() } });
+      MonitoringService.record({ type: "PAYMENT_DELIVERY_FAILED", section: "Payment Delivery", description: message, userId: paidInvoice.userId, severity: "critical", suggestedAction: "تحویل محصول/شارژ کیف پول را از پنل مدیریت بررسی و دستی اصلاح کنید.", metadata: { invoiceId: paidInvoice.id, type: paidInvoice.type } });
+      eventBus.emit("payment.delivery.failed", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type, error: message });
       await audit(prisma, { userId: paidInvoice.userId, invoiceId: paidInvoice.id, action: "PAYMENT_PROCESS_FAILED", metadata: { stage: "fulfillment", error: message, statusKept: "PAID" } });
       return { statusCode: 500, text: "Payment processing failed.", failed: { invoice: paidInvoice, type: paidInvoice.type as PaymentInvoiceType, error: message } };
     }
@@ -679,6 +734,11 @@ export class PaymentService {
       if (fresh.status !== "PAID") throw new Error("فاکتور در وضعیت پرداخت‌شده نیست");
       if (fresh.deliveryStatus !== "PROCESSING") throw new Error("فاکتور در حال پردازش تحویل نیست");
 
+      if (fresh.type === "XRAY_RENEWAL") {
+        const result = await this.fulfillXrayRenewal(fresh.id);
+        return { ...result, type: fresh.type as PaymentInvoiceType };
+      }
+
       if (fresh.type === "WALLET_TOPUP") {
         const user = await this.creditWallet(tx, { userId: fresh.userId, amount: fresh.amount, reason: `شارژ کیف پول با پرداخت آنی - فاکتور ${fresh.id}`, actorId: fresh.userId, invoiceId: fresh.id, referenceId: `invoice:${fresh.id}` });
         const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), deliveryStatus: "COMPLETED" } });
@@ -689,20 +749,95 @@ export class PaymentService {
       }
 
       if (fresh.orderId) {
-        const existingOrder = await tx.order.findUnique({ where: { id: fresh.orderId }, include: { product: true, items: { include: { productAccount: true }, take: 1 } } });
+        const existingOrder = await tx.order.findUnique({ where: { id: fresh.orderId }, include: { product: true, items: { include: { productAccount: true, xrayClient: true }, take: 1 } } });
         if (existingOrder?.items[0]) {
+          const existingClient = existingOrder.items[0].xrayClient;
+          if (existingClient && existingClient.status !== "active") {
+            if (existingClient.status === "failed") throw new Error("تحویل Xray قبلاً ناموفق شده و نیازمند بررسی مدیر است");
+            return { invoice: fresh, order: existingOrder, product: existingOrder.product, account: { id: existingClient.id, username: existingClient.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem: existingOrder.items[0], xrayClient: existingClient, needsXrayProvisioning: existingClient.status === "provisioning" || existingClient.status === "creating", type: fresh.type as PaymentInvoiceType };
+          }
           const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: fresh.completedAt ?? new Date(), verifiedAt: new Date(), deliveryStatus: "COMPLETED" } });
           return { invoice: completed, order: existingOrder, product: existingOrder.product, account: existingOrder.items[0].productAccount, orderItem: existingOrder.items[0], type: fresh.type as PaymentInvoiceType };
         }
       }
 
       const delivered = await this.purchaseProduct(tx, { userId: fresh.userId, productId: fresh.productId ?? "", couponCode: fresh.couponCode ?? undefined, method: "INSTANT", invoice: fresh });
+      if (delivered.xrayClient) {
+        const processing = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { verifiedAt: new Date(), orderId: delivered.order.id, deliveryStatus: "PROCESSING" } });
+        return { invoice: processing, ...delivered, needsXrayProvisioning: true, type: fresh.type as PaymentInvoiceType };
+      }
       const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), orderId: delivered.order.id, deliveryStatus: "COMPLETED" } });
       paymentLog("PAYMENT_PRODUCT_DELIVERED", { invoiceId: fresh.id, userId: fresh.userId, orderId: delivered.order.id, productId: delivered.product.id, accountId: delivered.account.id });
       await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PAYMENT_PRODUCT_DELIVERED", metadata: { orderId: delivered.order.id, productId: delivered.product.id, accountId: delivered.account.id } });
       await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PAYMENT_INVOICE_COMPLETED", metadata: { orderId: delivered.order.id, amount: fresh.amount, type: fresh.type } });
-      return { invoice: completed, ...delivered, type: fresh.type as PaymentInvoiceType };
+      return { invoice: completed, ...delivered, needsXrayProvisioning: Boolean(delivered.xrayClient), type: fresh.type as PaymentInvoiceType };
     });
+  }
+
+
+  static async buildXrayRenewalQuote(userId: string, xrayClientId: string, productId: string) {
+    const [client, product] = await Promise.all([
+      prisma.xrayClient.findFirstOrThrow({ where: { id: xrayClientId, userId }, include: { product: true } }),
+      prisma.product.findFirstOrThrow({ where: { id: productId, mode: "xray_auto", isActive: true, deletedAt: null } }),
+    ]);
+    if (!product.trafficBytes || !product.durationDays) throw new Error("پلن تمدید Xray کامل نیست");
+    let traffic: any = null;
+    let liveOk = true;
+    try { traffic = await XrayClientService.traffic(client.clientEmail); } catch { liveOk = false; }
+    const snapshot = xrayTrafficSnapshot(traffic, client.trafficBytes, client.usedBytes);
+    const now = new Date();
+    const baseExpiry = client.expiresAt > now ? client.expiresAt : now;
+    const newExpiry = new Date(baseExpiry.getTime() + product.durationDays * 86_400_000);
+    const newTotalBytes = snapshot.totalBytes + product.trafficBytes;
+    return { client, currentProduct: client.product, product, ...snapshot, newTotalBytes, oldExpiry: client.expiresAt, newExpiry, addTrafficBytes: product.trafficBytes, addDays: product.durationDays, liveOk };
+  }
+
+  static async renewXrayWithWallet(userId: string, xrayClientId: string, productId: string) {
+    const quote = await this.buildXrayRenewalQuote(userId, xrayClientId, productId);
+    const renewal = await prisma.$transaction(async (tx) => {
+      await this.assertUserCanPay(userId, tx);
+      const walletUser = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { balance: true } });
+      if (walletUser.balance < quote.product.price) throw new Error("موجودی کیف پول کافی نیست");
+      const created = await tx.xrayRenewal.create({ data: { userId, xrayClientId, renewalProductId: productId, oldTotalBytes: quote.totalBytes, newTotalBytes: quote.newTotalBytes, oldExpiry: quote.oldExpiry, newExpiry: quote.newExpiry, oldUsedBytes: quote.usedBytes, oldRemainingBytes: quote.remainingBytes, addTrafficBytes: quote.addTrafficBytes, addDays: quote.addDays, status: "provisioning" } });
+      await this.debitWallet(tx, { userId, amount: quote.product.price, reason: `تمدید سرویس Xray ${quote.client.clientEmail}`, actorId: userId, referenceId: `xray-renewal:${created.id}` });
+      return created;
+    });
+    return this.applyXrayRenewal(renewal.id);
+  }
+
+  static async createXrayRenewalInvoice(userId: string, xrayClientId: string, productId: string) {
+    const quote = await this.buildXrayRenewalQuote(userId, xrayClientId, productId);
+    const renewal = await prisma.xrayRenewal.create({ data: { userId, xrayClientId, renewalProductId: productId, oldTotalBytes: quote.totalBytes, newTotalBytes: quote.newTotalBytes, oldExpiry: quote.oldExpiry, newExpiry: quote.newExpiry, oldUsedBytes: quote.usedBytes, oldRemainingBytes: quote.remainingBytes, addTrafficBytes: quote.addTrafficBytes, addDays: quote.addDays, status: "provisioning" } });
+    const invoice = await this.createInvoice({ userId, amount: quote.product.price, originalAmount: quote.product.price, discountAmount: 0, type: "XRAY_RENEWAL", productId, renewalId: renewal.id, renewalXrayClientId: xrayClientId });
+    await prisma.xrayRenewal.update({ where: { id: renewal.id }, data: { invoiceId: invoice.id } });
+    return invoice;
+  }
+
+  private static async fulfillXrayRenewal(invoiceId: string) {
+    const invoice = await prisma.paymentInvoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    const renewal = invoice.renewalId ? await prisma.xrayRenewal.findUniqueOrThrow({ where: { id: invoice.renewalId }, include: { xrayClient: true, renewalProduct: true } }) : await prisma.xrayRenewal.findFirstOrThrow({ where: { invoiceId }, include: { xrayClient: true, renewalProduct: true } });
+    const updated = await this.applyXrayRenewal(renewal.id, invoiceId);
+    const completed = await prisma.paymentInvoice.update({ where: { id: invoiceId }, data: { status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), deliveryStatus: "COMPLETED" } });
+    return { invoice: completed, renewal: updated, xrayClient: updated.xrayClient };
+  }
+
+  private static async applyXrayRenewal(renewalId: string, invoiceId?: string) {
+    const renewal = await prisma.xrayRenewal.findUniqueOrThrow({ where: { id: renewalId }, include: { xrayClient: true, renewalProduct: true } });
+    if (renewal.status === "active") return renewal;
+    try {
+      await XrayClientService.updateClient(renewal.xrayClient.clientEmail, { totalBytes: renewal.newTotalBytes, expiresAt: renewal.newExpiry, telegramId: renewal.xrayClient.telegramId, limitIp: renewal.xrayClient.limitIp ?? renewal.renewalProduct.xrayLimitIp ?? 0, groupName: renewal.xrayClient.groupName ?? renewal.renewalProduct.xrayGroupName });
+      const [, updatedRenewal] = await prisma.$transaction([
+        prisma.xrayClient.update({ where: { id: renewal.xrayClientId }, data: { trafficBytes: renewal.newTotalBytes, expiresAt: renewal.newExpiry, limitIp: renewal.xrayClient.limitIp ?? renewal.renewalProduct.xrayLimitIp ?? 0, groupName: renewal.xrayClient.groupName ?? renewal.renewalProduct.xrayGroupName, status: "active", lastError: null } }),
+        prisma.xrayRenewal.update({ where: { id: renewal.id }, data: { status: "active", lastError: null, invoiceId: invoiceId ?? renewal.invoiceId } }),
+      ]);
+      return prisma.xrayRenewal.findUniqueOrThrow({ where: { id: updatedRenewal.id }, include: { xrayClient: true, renewalProduct: true } });
+    } catch (error) {
+      const message = sanitizePanelError(error);
+      await prisma.xrayRenewal.update({ where: { id: renewal.id }, data: { status: "renewal_failed", lastError: message, invoiceId: invoiceId ?? renewal.invoiceId } });
+      await prisma.xrayClient.update({ where: { id: renewal.xrayClientId }, data: { status: "renewal_failed", lastError: message } });
+      MonitoringService.record({ type: "PAYMENT_DELIVERY_FAILED", section: "Xray Renewal", description: message, userId: renewal.userId, severity: "critical", suggestedAction: "تمدید پرداخت‌شده را از پنل بررسی و دستی اعمال کنید.", metadata: { renewalId: renewal.id, invoiceId } });
+      throw new Error("پرداخت موفق بود اما تمدید سرویس نیازمند بررسی است.");
+    }
   }
 
   static async markNotification(invoiceId: string, status: "SENT" | "FAILED", metadata: Record<string, unknown> = {}) {
@@ -747,60 +882,140 @@ export class PaymentService {
       totalAmount = data.invoice.amount;
       if (originalAmount - discountAmount !== totalAmount) throw new Error("مبلغ فاکتور با مبلغ خرید همخوانی ندارد");
     } else if (data.couponCode) {
-      const coupon = await CouponService.validateForUser(data.couponCode, data.userId, tx, originalAmount);
-      couponId = coupon.id;
-      couponMaxUses = coupon.maxUses;
-      const calculation = CouponService.calculate(coupon, originalAmount);
-      discountAmount = calculation.discountAmount;
-      totalAmount = calculation.finalAmount;
+      const validation = await CouponService.validateForCheckout({ code: data.couponCode, userId: data.userId, originalAmount, tx });
+      if (!validation.ok) {
+        paymentLog("COUPON_RECHECK_FAILED", { userId: data.userId, productId: data.productId, couponCode: normalizeCouponCode(data.couponCode), reason: validation.reason, severity: "warning" });
+        await audit(tx, { userId: data.userId, invoiceId: undefined, action: "COUPON_RECHECK_FAILED", metadata: { productId: data.productId, couponCode: normalizeCouponCode(data.couponCode), reason: validation.reason, severity: "warning" } });
+        throw new Error(validation.reason);
+      }
+      couponId = validation.coupon.id;
+      couponMaxUses = validation.coupon.maxUses;
+      discountAmount = validation.discountAmount;
+      totalAmount = validation.finalAmount;
     }
 
-    const account = await tx.productAccount.findFirst({ where: { AND: [availableInventoryWhere(product.id), unassignedInventoryWhere()] }, orderBy: { createdAt: "asc" } });
-    if (!account) throw new Error("موجودی این محصول تمام شده است");
-
+    const isXray = product.mode === "xray_auto" && Boolean(product.trafficBytes && product.durationDays && product.stockLimit && product.inboundIds.length);
+    let account: Awaited<ReturnType<typeof tx.productAccount.findFirst>> | null = null;
     const reservedAt = new Date();
-    const reserved = await tx.productAccount.updateMany({ where: { id: account.id, AND: [availableInventoryWhere(product.id), unassignedInventoryWhere()] }, data: { status: "reserved", reservedBy: data.userId, reservedAt } });
-    if (reserved.count !== 1) throw new Error("این اکانت هم‌اکنون رزرو شد؛ دوباره تلاش کنید");
-    await tx.productAccountHistory.create({ data: { accountId: account.id, actorId: data.userId, action: "Inventory Reserved", fromValue: "available", toValue: "reserved", metadata: JSON.stringify({ invoiceId: data.invoice?.id, productId: product.id, reservedAt, method: data.method }) } });
-    await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Reserved", metadata: { accountId: account.id, productId: product.id, method: data.method } });
+    if (isXray) {
+      if (!product.trafficBytes || !product.durationDays || !product.stockLimit || !product.inboundIds.length) throw new Error("تنظیمات محصول Xray کامل نیست");
+      const reserved = await tx.product.updateMany({ where: { id: product.id, mode: "xray_auto", soldCount: { lt: product.stockLimit } }, data: { soldCount: { increment: 1 } } });
+      if (reserved.count !== 1) {
+        MonitoringService.record({ type: "XRAY_STOCK_RESERVATION_FAILED", section: "Xray Stock", description: "Xray stock reservation failed", userId: data.userId, severity: "warning", suggestedAction: "موجودی محصول Xray و soldCount را بررسی کنید.", metadata: { productId: product.id } });
+        throw new Error("موجودی این محصول تمام شده است");
+      }
+      await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "XRAY_STOCK_RESERVED", metadata: { productId: product.id, method: data.method } });
+    } else {
+      const candidates = await tx.productAccount.findMany({ where: { AND: [availableInventoryWhere(product.id), unassignedInventoryWhere()] }, orderBy: { createdAt: "asc" }, take: 10 });
+      for (const candidate of candidates) {
+        const reserved = await tx.productAccount.updateMany({ where: { id: candidate.id, productId: product.id, status: "available", soldTo: null, soldAt: null, assignedTo: null, assignedAt: null }, data: { status: "reserved", reservedBy: data.userId, reservedAt } });
+        if (reserved.count === 1) { account = candidate; break; }
+      }
+      if (!account) throw new Error("موجودی این محصول تمام شده است");
+      await tx.productAccountHistory.create({ data: { accountId: account.id, actorId: data.userId, action: "Inventory Reserved", fromValue: "available", toValue: "reserved", metadata: JSON.stringify({ invoiceId: data.invoice?.id, productId: product.id, reservedAt, method: data.method }) } });
+      await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Reserved", metadata: { accountId: account.id, productId: product.id, method: data.method } });
+    }
 
     if (data.method === "WALLET" && totalAmount > 0) {
       await this.debitWallet(tx, { userId: data.userId, amount: totalAmount, reason: `خرید محصول ${product.title}`, actorId: data.userId, referenceId: `purchase:${data.userId}:${product.id}:${reservedAt.getTime()}` });
     }
 
     if (couponId) {
-      const couponUpdated = data.invoice
-        ? await tx.coupon.updateMany({ where: { id: couponId }, data: { usedCount: { increment: 1 } } })
-        : await tx.coupon.updateMany({ where: { id: couponId, status: "active", deletedAt: null, usedCount: { lt: couponMaxUses }, expiresAt: { gt: new Date() } }, data: { usedCount: { increment: 1 } } });
-      if (couponUpdated.count !== 1) throw new Error("کد تخفیف دیگر قابل استفاده نیست");
+      const couponLimit = await tx.coupon.findUniqueOrThrow({ where: { id: couponId }, select: { maxUses: true, perUserLimit: true, status: true, deletedAt: true, expiresAt: true } });
+      const usageCount = await tx.couponUsage.count({ where: { couponId, userId: data.userId } });
+      if (usageCount >= couponLimit.perUserLimit) {
+        await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "COUPON_USAGE_RACE_BLOCKED", metadata: { couponId, reason: "per_user_limit" } });
+        throw new Error("سقف استفاده شما از این کد تخفیف تکمیل شده است");
+      }
+      const couponUpdated = await tx.coupon.updateMany({ where: { id: couponId, status: "active", deletedAt: null, usedCount: { lt: couponLimit.maxUses }, expiresAt: { gt: new Date() } }, data: { usedCount: { increment: 1 } } });
+      if (couponUpdated.count !== 1) {
+        await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "COUPON_USAGE_RACE_BLOCKED", metadata: { couponId, reason: "global_limit_or_expired" } });
+        throw new Error("کد تخفیف دیگر قابل استفاده نیست");
+      }
     }
 
     const order = await tx.order.create({ data: { userId: data.userId, productId: product.id, couponId, originalAmount, totalAmount, finalPaidAmount: totalAmount, discountAmount, status: "completed" } });
     const purchaseDate = new Date();
-    const durationDays = account.durationDays ?? product.duration;
+    const durationDays = isXray ? (product.durationDays ?? product.duration) : (account!.durationDays ?? product.duration);
     const expiresAt = new Date(purchaseDate.getTime() + durationDays * 86_400_000);
-    const orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, productAccountId: account.id, deliveredUsername: account.username, deliveredPassword: account.password, deliveredSubscriptionLink: account.subscriptionLink, deliveredConfigLink: account.configLink, deliveredConfig: account.configLink || account.config, purchaseDate, expiresAt, isActive: true } });
+    let xrayClient: Awaited<ReturnType<typeof tx.xrayClient.create>> | null = null;
+    let orderItem;
+    if (isXray) {
+      const user = await tx.user.findUniqueOrThrow({ where: { id: data.userId }, select: { telegramId: true } });
+      const email = xrayClientEmail({ telegramId: user.telegramId, productId: product.id, orderId: order.id });
+      xrayClient = await tx.xrayClient.upsert({
+        where: { clientEmail: email },
+        update: {},
+        create: { userId: data.userId, telegramId: user.telegramId, productId: product.id, orderId: order.id, clientEmail: email, inboundIds: product.inboundIds, limitIp: product.xrayLimitIp ?? 0, groupName: product.xrayGroupName, expiresAt, trafficBytes: product.trafficBytes!, status: "provisioning" },
+      });
+      orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, xrayClientId: xrayClient.id, deliveredUsername: email, deliveredSubscriptionLink: null, deliveredConfigLink: null, deliveredConfig: "XRAY_LIVE_LINKS", purchaseDate, expiresAt, isActive: false } });
+    } else {
+      orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, productAccountId: account!.id, deliveredUsername: account!.username, deliveredPassword: account!.password, deliveredSubscriptionLink: account!.subscriptionLink, deliveredConfigLink: account!.configLink, deliveredConfig: account!.configLink || account!.config, purchaseDate, expiresAt, isActive: true } });
+    }
 
     if (couponId) {
       const usageSlot = await tx.couponUsage.count({ where: { couponId, userId: data.userId } });
-      if (!data.invoice && usageSlot >= (await tx.coupon.findUniqueOrThrow({ where: { id: couponId }, select: { perUserLimit: true } })).perUserLimit) throw new Error("سقف استفاده شما از این کد تخفیف تکمیل شده است");
       await tx.couponUsage.create({ data: { couponId, userId: data.userId, orderId: order.id, usageSlot } });
       await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "COUPON_USAGE_RECORDED", metadata: { couponId, orderId: order.id, usageSlot, originalAmount, discountAmount, finalAmount: totalAmount } });
     }
 
-    const soldAt = new Date();
-    const sold = await tx.productAccount.updateMany({ where: { id: account.id, productId: product.id, status: "reserved", reservedBy: data.userId, AND: [unassignedInventoryWhere()] }, data: { status: "sold", soldTo: data.userId, soldAt, reservedBy: null, reservedAt: null } });
-    if (sold.count !== 1) throw new Error("تحویل اکانت ناموفق بود");
-    await tx.productAccountHistory.create({ data: { accountId: account.id, actorId: data.userId, action: "Inventory Sold", fromValue: "reserved", toValue: "sold", metadata: JSON.stringify({ invoiceId: data.invoice?.id, orderId: order.id, orderItemId: orderItem.id, productId: product.id, soldAt, expiresAt, method: data.method }) } });
-    await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "PRODUCT_DELIVERED", metadata: { productId: product.id, orderId: order.id, accountId: account.id, method: data.method, originalAmount, discountAmount, finalAmount: totalAmount } });
-    await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Sold", metadata: { accountId: account.id, orderId: order.id } });
+    if (!isXray) {
+      const soldAt = new Date();
+      const sold = await tx.productAccount.updateMany({ where: { id: account!.id, productId: product.id, status: "reserved", reservedBy: data.userId, AND: [unassignedInventoryWhere()] }, data: { status: "sold", soldTo: data.userId, soldAt, assignedTo: data.userId, assignedAt: soldAt, expiresAt, reservedBy: null, reservedAt: null } });
+      if (sold.count !== 1) throw new Error("تحویل اکانت ناموفق بود");
+      if (!orderItem.productAccountId) throw new Error("شناسه اکانت تحویلی نامعتبر است");
+      await tx.productAccountHistory.create({ data: { accountId: account!.id, actorId: data.userId, action: "Inventory Sold", fromValue: "reserved", toValue: "sold", metadata: JSON.stringify({ invoiceId: data.invoice?.id, orderId: order.id, orderItemId: orderItem.id, productId: product.id, soldAt, expiresAt, method: data.method }) } });
+      await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Sold", metadata: { accountId: account!.id, orderId: order.id } });
+    }
+    await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: isXray ? "XRAY_PRODUCT_DELIVERED" : "PRODUCT_DELIVERED", metadata: { productId: product.id, orderId: order.id, accountId: account?.id, xrayClientId: xrayClient?.id, method: data.method, originalAmount, discountAmount, finalAmount: totalAmount } });
+    const deliveredAccount = account ? await tx.productAccount.findUniqueOrThrow({ where: { id: account.id } }) : { id: xrayClient!.id, username: xrayClient!.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" };
+    return { order, product, account: deliveredAccount, orderItem, xrayClient, totalAmount, originalAmount, discountAmount, couponId, couponCode: data.couponCode, expiresAt };
+  }
 
-    const deliveredAccount = await tx.productAccount.findUniqueOrThrow({ where: { id: account.id } });
-    return { order, product, account: deliveredAccount, orderItem, totalAmount, originalAmount, discountAmount, couponId, couponCode: data.couponCode, expiresAt };
+  private static async provisionXrayClient(orderId: string, invoiceId?: string) {
+    const client = await prisma.xrayClient.findFirstOrThrow({ where: { orderId }, include: { order: true } });
+    if (client.status === "active") {
+      const orderItem = await prisma.orderItem.findFirst({ where: { xrayClientId: client.id } });
+      const product = await prisma.product.findUniqueOrThrow({ where: { id: client.productId ?? "" } });
+      return { order: client.order!, product, account: { id: client.id, username: client.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem, xrayClient: client, totalAmount: client.order?.totalAmount ?? 0, originalAmount: client.order?.originalAmount ?? 0, discountAmount: client.order?.discountAmount ?? 0, couponId: client.order?.couponId ?? null, couponCode: undefined, expiresAt: client.expiresAt };
+    }
+    if (client.status !== "provisioning" && client.status !== "creating") throw new Error("تحویل Xray قبلاً ناموفق شده و نیازمند بررسی مدیر است");
+    try {
+      const created = await XrayClientService.createClient({ email: client.clientEmail, trafficBytes: client.trafficBytes, expiresAt: client.expiresAt, telegramId: client.telegramId, inboundIds: client.inboundIds, limitIp: client.limitIp, groupName: client.groupName });
+      const updated = await prisma.xrayClient.update({ where: { id: client.id }, data: { status: "active", clientSubId: created.subId, panelClientId: created.uuid ?? created.id, lastError: null } });
+      const orderItem = await prisma.orderItem.updateMany({ where: { xrayClientId: client.id }, data: { isActive: true } });
+      await prisma.order.update({ where: { id: orderId }, data: { status: "completed" } });
+      if (invoiceId) await prisma.paymentInvoice.update({ where: { id: invoiceId }, data: { deliveryStatus: "COMPLETED", status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), orderId } });
+      await audit(prisma, { userId: client.userId, invoiceId, action: "XRAY_PRODUCT_DELIVERED", metadata: { orderId, xrayClientId: client.id } });
+      const product = await prisma.product.findUniqueOrThrow({ where: { id: client.productId ?? "" } });
+      const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+      const item = await prisma.orderItem.findFirst({ where: { xrayClientId: client.id } });
+      return { order, product, account: { id: updated.id, username: updated.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem: item, xrayClient: updated, totalAmount: order.totalAmount, originalAmount: order.originalAmount, discountAmount: order.discountAmount, couponId: order.couponId, couponCode: undefined, expiresAt: updated.expiresAt };
+    } catch (error) {
+      const message = sanitizePanelError(error);
+      logger.error("XRAY_CLIENT_CREATE_FAILED", { orderId, error: message });
+      await prisma.xrayClient.update({ where: { id: client.id }, data: { status: "failed", lastError: message } });
+      await prisma.order.update({ where: { id: orderId }, data: { status: "failed_delivery" } });
+      if (invoiceId) await prisma.paymentInvoice.update({ where: { id: invoiceId }, data: { deliveryStatus: "FAILED_DELIVERY", verifiedAt: new Date(), orderId } });
+      MonitoringService.record({ type: "XRAY_CLIENT_CREATE_FAILED", section: "Xray Delivery", description: message, userId: client.userId, severity: "critical", suggestedAction: "تحویل سرویس Xray را بررسی و دستی retry کنید. موجودی تا رفع خطا مصرف‌شده باقی می‌ماند.", metadata: { orderId, xrayClientId: client.id } });
+      throw new Error("پرداخت/سفارش ثبت شد اما تحویل Xray نیازمند بررسی مدیر است.");
+    }
   }
 
   static async purchaseProductWithWallet(userId: string, productId: string, couponCode?: string) {
-    const result = await prisma.$transaction((tx) => this.purchaseProduct(tx, { userId, productId, couponCode, method: "WALLET" }));
+    let result;
+    try {
+      result = await prisma.$transaction((tx) => this.purchaseProduct(tx, { userId, productId, couponCode, method: "WALLET" }));
+      if (result.xrayClient) result = await this.provisionXrayClient(result.order.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/کد تخفیف|کوپن|تخفیف/.test(message)) {
+        paymentLog("COUPON_RECHECK_FAILED", { userId, productId, couponCode, reason: message, severity: "warning" });
+      } else {
+        MonitoringService.record({ type: "PURCHASE_FAILED", section: "Purchase Flow", description: message, userId, severity: "critical", suggestedAction: "موجودی، کیف پول و وضعیت محصول را بررسی کنید.", metadata: { productId, couponCode } });
+      }
+      throw error;
+    }
     AdminService.invalidateDashboardCache();
     eventBus.emit("order.created", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });
     eventBus.emit("order.completed", { orderId: result.order.id, userId, productId, totalAmount: result.totalAmount });
@@ -822,8 +1037,12 @@ export class PaymentService {
     const product = await tx.product.findFirst({ where: { id: productId, AND: [activeProductWhere(), { category: { is: activeCategoryWhere() } }] } });
     if (!product) throw new Error("محصول پیدا نشد");
     if (expectedAmount !== undefined && product.price !== expectedAmount) throw new Error("مبلغ فاکتور با قیمت محصول همخوانی ندارد");
-    const stock = await tx.productAccount.count({ where: { AND: [availableInventoryWhere(productId), unassignedInventoryWhere()] } });
-    if (stock < 1) throw new Error("موجودی این محصول تمام شده است");
+    if (product.mode === "xray_auto" && product.trafficBytes && product.durationDays && product.stockLimit && product.inboundIds.length) {
+      if (product.soldCount >= product.stockLimit) throw new Error("موجودی این محصول تمام شده است");
+    } else {
+      const stock = await tx.productAccount.count({ where: { AND: [availableInventoryWhere(productId), unassignedInventoryWhere()] } });
+      if (stock < 1) throw new Error("موجودی این محصول تمام شده است");
+    }
     return product;
   }
 
@@ -839,6 +1058,14 @@ export class PaymentService {
 }
 
 export class PaymentInvoiceService {
+  static async buildXrayRenewalQuote(userId: string, xrayClientId: string, productId: string) {
+    return PaymentService.buildXrayRenewalQuote(userId, xrayClientId, productId);
+  }
+
+  static async renewXrayWithWallet(userId: string, xrayClientId: string, productId: string) {
+    return PaymentService.renewXrayWithWallet(userId, xrayClientId, productId);
+  }
+
   static async createWalletTopupInvoice(userId: string, amount: number) {
     return PaymentService.createInvoice({ userId, amount, originalAmount: amount, discountAmount: 0, type: "WALLET_TOPUP" });
   }
@@ -857,9 +1084,14 @@ export class PaymentInvoiceService {
     });
   }
 
+  static async createXrayRenewalInvoice(userId: string, xrayClientId: string, productId: string) {
+    return PaymentService.createXrayRenewalInvoice(userId, xrayClientId, productId);
+  }
+
   static async processCallback(reference: string | CallbackReference, metadata: Record<string, unknown> = {}) {
     return PaymentService.completePayment(reference, metadata);
   }
+
 
   static async markNotification(invoiceId: string, status: "SENT" | "FAILED", metadata: Record<string, unknown> = {}) {
     return PaymentService.markNotification(invoiceId, status, metadata);
@@ -880,12 +1112,26 @@ export class PaymentInvoiceService {
   }
 
   static async stats() {
-    const [successful, failed, pending, recent] = await Promise.all([
-      prisma.paymentInvoice.count({ where: { status: { in: ["PAID", "COMPLETED"] } } }),
+    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfWeek = new Date(startOfToday);
+    startOfWeek.setDate(startOfWeek.getDate() - 6);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const revenueWhere = (from: Date): Prisma.PaymentInvoiceWhereInput => ({ status: "COMPLETED", completedAt: { gte: from } });
+    const [total, successful, paid, failed, pending, cancelled, todayRevenue, weeklyRevenue, monthlyRevenue, recent, gateway] = await Promise.all([
+      prisma.paymentInvoice.count(),
+      prisma.paymentInvoice.count({ where: { status: "COMPLETED" } }),
+      prisma.paymentInvoice.count({ where: { status: "PAID" } }),
       prisma.paymentInvoice.count({ where: { status: "FAILED" } }),
       prisma.paymentInvoice.count({ where: { status: "PENDING" } }),
-      prisma.paymentInvoice.findMany({ include: { user: true, product: true, coupon: true }, orderBy: { createdAt: "desc" }, take: 5 }),
+      prisma.paymentInvoice.count({ where: { status: "CANCELED" } }),
+      prisma.paymentInvoice.aggregate({ where: revenueWhere(startOfToday), _sum: { amount: true } }),
+      prisma.paymentInvoice.aggregate({ where: revenueWhere(startOfWeek), _sum: { amount: true } }),
+      prisma.paymentInvoice.aggregate({ where: revenueWhere(startOfMonth), _sum: { amount: true } }),
+      prisma.paymentInvoice.findMany({ include: { user: true, product: true, coupon: true }, orderBy: { createdAt: "desc" }, take: 8 }),
+      PaymentGatewayService.getConfig(),
     ]);
-    return { successful, failed, pending, recent };
+    return { total, successful, paid, failed, pending, cancelled, todayRevenue: todayRevenue._sum.amount ?? 0, weeklyRevenue: weeklyRevenue._sum.amount ?? 0, monthlyRevenue: monthlyRevenue._sum.amount ?? 0, recent, gatewayStatus: gateway.lastConnectionStatus ?? "unknown" };
   }
 }

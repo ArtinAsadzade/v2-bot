@@ -5,11 +5,15 @@ exports.freeAccountExpiresAt = freeAccountExpiresAt;
 exports.formatFreeAccountDate = formatFreeAccountDate;
 exports.formatRemainingTime = formatRemainingTime;
 exports.formatFreeAccountError = formatFreeAccountError;
+exports.validateFreeTestActivation = validateFreeTestActivation;
+exports.validateFreeTestInboundSelection = validateFreeTestInboundSelection;
 exports.registerFreeAccountEvents = registerFreeAccountEvents;
 const client_1 = require("@prisma/client");
 const prisma_1 = require("../../services/prisma");
 const event_bus_service_1 = require("../../services/event-bus.service");
 const logger_1 = require("../../services/logger");
+const monitoring_service_1 = require("../../services/monitoring.service");
+const xray_service_1 = require("../xray/xray.service");
 const COOLDOWN_DAYS = 30;
 const DAY_MS = 86400000;
 exports.FREE_ACCOUNT_STATUS_LABELS = {
@@ -93,6 +97,28 @@ ${formatFreeAccountDate(nextAvailableAt)}
 }
 function isUniqueConstraint(error) {
     return error instanceof client_1.Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
+function validateFreeTestActivation(config, panelEnabled) {
+    if (!panelEnabled)
+        return "اتصال پنل Xray برقرار نیست.";
+    if (BigInt(config.trafficBytes) <= 0n)
+        return "حجم تست باید بیشتر از صفر باشد.";
+    if (config.durationDays <= 0)
+        return "مدت اکانت تست باید بیشتر از صفر باشد.";
+    if (config.stockLimit <= 0)
+        return "موجودی باید بیشتر از صفر باشد.";
+    if (!config.inboundIds.length)
+        return "ابتدا حداقل یک اینباند انتخاب کنید.";
+    return undefined;
+}
+function validateFreeTestInboundSelection(inbounds, selectedIds) {
+    const uniqueIds = [...new Set(selectedIds)];
+    if (!uniqueIds.length)
+        throw new FreeAccountError("INVALID_INPUT", "حداقل یک اینباند لازم است");
+    const liveIds = new Set(inbounds.map((i) => i.id));
+    if (uniqueIds.some((id) => !liveIds.has(id)))
+        throw new FreeAccountError("INVALID_INPUT", "اینباندهای انتخابی معتبر نیستند");
+    return { inboundIds: uniqueIds, inboundSnapshot: (0, xray_service_1.xrayInboundSnapshot)(inbounds, uniqueIds) };
 }
 const availableInventoryWhere = { status: "available", assignedTo: null, assignment: { is: null } };
 class FreeAccountService {
@@ -324,6 +350,109 @@ class FreeAccountService {
         if (onlyActive)
             await this.expireDueAccounts();
         return prisma_1.prisma.freeAccountAssignment.findMany({ where: { userId, ...(onlyActive ? { isActive: true, account: { is: { status: "assigned" } } } : {}) }, include: { account: true }, orderBy: { createdAt: "desc" } });
+    }
+    static async getXrayConfig() {
+        const config = await prisma_1.prisma.freeTestConfig.upsert({ where: { id: "singleton" }, update: {}, create: { id: "singleton", enabled: false, trafficBytes: 0n, durationDays: 1, stockLimit: 0, usedCount: 0, inboundIds: [] } });
+        return { ...config, available: Math.max(config.stockLimit - config.usedCount, 0) };
+    }
+    static async updateXrayConfig(data, actorId) {
+        const current = await this.getXrayConfig();
+        const enabledConfig = await xray_service_1.XrayPanelService.getEnabledConfig();
+        const next = { ...current, ...data, trafficBytes: data.trafficGB !== undefined ? (0, xray_service_1.gbToBytes)(data.trafficGB) : current.trafficBytes, stockLimit: data.stockLimit ?? current.stockLimit, durationDays: data.durationDays ?? current.durationDays, inboundIds: data.inboundIds ?? current.inboundIds, limitIp: data.limitIp ?? current.limitIp };
+        if (data.limitIp !== undefined && (!Number.isInteger(data.limitIp) || data.limitIp < 0))
+            throw new FreeAccountError("INVALID_INPUT", "محدودیت IP معتبر نیست");
+        let inboundSnapshot = data.inboundSnapshot ?? current.inboundSnapshot;
+        if (data.enabled) {
+            const reason = validateFreeTestActivation(next, Boolean(enabledConfig));
+            if (reason)
+                throw new FreeAccountError(reason.includes("پنل") ? "XRAY_UNAVAILABLE" : "INVALID_INPUT", reason === "ابتدا حداقل یک اینباند انتخاب کنید." ? "ابتدا حداقل یک اینباند را از بخش «🔗 انتخاب اینباندها» انتخاب کنید." : reason);
+        }
+        if (data.stockLimit !== undefined && data.stockLimit < current.usedCount)
+            throw new FreeAccountError("INVALID_INPUT", "موجودی کل نمی‌تواند کمتر از تعداد مصرف‌شده باشد");
+        if (data.inboundIds !== undefined) {
+            const live = await xray_service_1.XrayClientService.listInbounds();
+            const validated = validateFreeTestInboundSelection(live, data.inboundIds);
+            inboundSnapshot = validated.inboundSnapshot;
+            data.inboundIds = validated.inboundIds;
+        }
+        else if (data.enabled && next.inboundIds.length) {
+            const live = await xray_service_1.XrayClientService.listInbounds();
+            validateFreeTestInboundSelection(live, next.inboundIds);
+        }
+        const patch = { inboundSnapshot };
+        if (data.enabled !== undefined)
+            patch.enabled = data.enabled;
+        if (data.trafficGB !== undefined)
+            patch.trafficBytes = (0, xray_service_1.gbToBytes)(data.trafficGB);
+        if (data.durationDays !== undefined)
+            patch.durationDays = data.durationDays;
+        if (data.stockLimit !== undefined)
+            patch.stockLimit = data.stockLimit;
+        if (data.inboundIds !== undefined)
+            patch.inboundIds = data.inboundIds;
+        if (data.limitIp !== undefined)
+            patch.limitIp = data.limitIp;
+        if (data.groupName !== undefined)
+            patch.groupName = data.groupName || null;
+        const saved = await prisma_1.prisma.freeTestConfig.update({ where: { id: "singleton" }, data: patch });
+        await prisma_1.prisma.auditLog.create({ data: { actorId, action: "free_test_config.update", metadata: JSON.stringify({ fields: Object.keys(patch) }) } });
+        return saved;
+    }
+    static async xrayEligibility(userId) {
+        const now = new Date();
+        const config = await this.getXrayConfig();
+        const [user, last, active] = await Promise.all([
+            prisma_1.prisma.user.findUnique({ where: { id: userId }, select: { isBanned: true } }),
+            prisma_1.prisma.xrayClient.findFirst({ where: { userId, isFreeTest: true }, orderBy: { createdAt: "desc" } }),
+            prisma_1.prisma.xrayClient.findFirst({ where: { userId, isFreeTest: true, status: { in: ["active", "provisioning", "creating"] }, expiresAt: { gt: now } }, orderBy: { createdAt: "desc" } }),
+        ]);
+        const lastClaimAt = last?.createdAt;
+        const nextAvailableAt = lastClaimAt ? new Date(lastClaimAt.getTime() + COOLDOWN_DAYS * DAY_MS) : undefined;
+        const eligible = Boolean(config.enabled && !user?.isBanned && !active && (!nextAvailableAt || nextAvailableAt <= now) && config.available > 0);
+        return { eligible, config, user, last, active, lastClaimAt, nextAvailableAt, available: config.available };
+    }
+    static async claimXray(userId) {
+        const now = new Date();
+        const cutoff = new Date(now.getTime() - COOLDOWN_DAYS * DAY_MS);
+        let reserved;
+        try {
+            reserved = await prisma_1.prisma.$transaction(async (tx) => {
+                const user = await tx.user.findUnique({ where: { id: userId }, select: { id: true, telegramId: true, isBanned: true } });
+                if (!user || user.isBanned)
+                    throw new FreeAccountError("USER_BLOCKED", "حساب شما مسدود است");
+                const config = await tx.freeTestConfig.findUnique({ where: { id: "singleton" } });
+                if (!config?.enabled)
+                    throw new FreeAccountError("NO_INVENTORY", "اکانت تست فعال نیست");
+                if (!config.inboundIds.length || config.trafficBytes <= 0n || config.durationDays <= 0 || config.stockLimit <= 0)
+                    throw new FreeAccountError("INVALID_INPUT", "تنظیمات اکانت تست کامل نیست");
+                const last = await tx.xrayClient.findFirst({ where: { userId, isFreeTest: true }, orderBy: { createdAt: "desc" } });
+                if (last && last.createdAt > cutoff)
+                    throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", { lastClaimAt: last.createdAt, nextAvailableAt: new Date(last.createdAt.getTime() + COOLDOWN_DAYS * DAY_MS) });
+                const stock = await tx.freeTestConfig.updateMany({ where: { id: "singleton", enabled: true, usedCount: { lt: config.stockLimit } }, data: { usedCount: { increment: 1 } } });
+                if (stock.count !== 1)
+                    throw new FreeAccountError("NO_INVENTORY", "موجودی اکانت تست تکمیل شده است");
+                const expiresAt = new Date(now.getTime() + config.durationDays * DAY_MS);
+                const client = await tx.xrayClient.create({ data: { userId, telegramId: user.telegramId, isFreeTest: true, clientEmail: `pending-test-${user.telegramId}-${now.getTime()}`, inboundIds: config.inboundIds, limitIp: config.limitIp ?? 0, groupName: config.groupName, expiresAt, trafficBytes: config.trafficBytes, status: "provisioning" } });
+                const email = `test-tg${user.telegramId}-${client.id.slice(-6)}`;
+                const updated = await tx.xrayClient.update({ where: { id: client.id }, data: { clientEmail: email } });
+                await tx.freeAccountUserLock.upsert({ where: { userId }, create: { userId, lastClaimAt: now, lastAssignmentId: client.id }, update: { lastClaimAt: now, lastAssignmentId: client.id } });
+                return updated;
+            });
+            const live = await xray_service_1.XrayClientService.listInbounds();
+            const valid = new Set(live.map((i) => i.id));
+            if (reserved.inboundIds.some((id) => !valid.has(id)))
+                throw new Error("اینباندهای اکانت تست در پنل معتبر نیستند");
+            const created = await xray_service_1.XrayClientService.createClient({ email: reserved.clientEmail, trafficBytes: reserved.trafficBytes, expiresAt: reserved.expiresAt, telegramId: reserved.telegramId, inboundIds: reserved.inboundIds, limitIp: reserved.limitIp, groupName: reserved.groupName });
+            return prisma_1.prisma.xrayClient.update({ where: { id: reserved.id }, data: { status: "active", clientSubId: created.subId, panelClientId: created.uuid ?? created.id, lastError: null } });
+        }
+        catch (error) {
+            if (reserved?.id) {
+                const message = error instanceof Error ? error.message : String(error);
+                await prisma_1.prisma.xrayClient.update({ where: { id: reserved.id }, data: { status: "failed", lastError: message } });
+                monitoring_service_1.MonitoringService.record({ type: "PAYMENT_DELIVERY_FAILED", section: "Free Test", description: message, userId, severity: "critical", suggestedAction: "اکانت تست رزروشده را در پنل بررسی و دستی بسازید.", metadata: { xrayClientId: reserved.id } });
+            }
+            throw error;
+        }
     }
     static async getAccount(accountId) {
         return prisma_1.prisma.freeAccount.findUnique({ where: { id: accountId }, include: { assignment: { include: { user: true } } } });

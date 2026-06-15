@@ -1,8 +1,10 @@
 import type { InlineKeyboardMarkup } from "telegraf/types";
+import { actionFor, callbackFor, isValidCallbackData } from "../bot/navigation/panel-ui";
 import type { AppBot } from "../types/bot";
 import { prisma } from "./prisma";
 import { logger } from "./logger";
 import { eventBus } from "./event-bus.service";
+import { screenMessage, successMessage } from "../utils/messages";
 
 export type NotificationAction = {
   text: string;
@@ -74,7 +76,13 @@ class NotificationService {
 
   private toInlineKeyboard(actions: NotificationAction[][]): InlineKeyboardMarkup {
     return {
-      inline_keyboard: actions.map((row) => row.map((action) => ({ text: action.text, callback_data: action.callbackData }))),
+      inline_keyboard: actions
+        .map((row) => row.filter((action) => {
+          const valid = isValidCallbackData(action.callbackData);
+          if (!valid) logger.warn("CALLBACK_DATA_INVALID_PREVENTED", { text: action.text, callbackData: action.callbackData });
+          return valid;
+        }).map((action) => ({ text: action.text, callback_data: action.callbackData })))
+        .filter((row) => row.length > 0),
     };
   }
 
@@ -103,8 +111,8 @@ export function registerNotificationEvents() {
 
   eventBus.on("deposit.created", async (event) => {
     await notificationService.notifyAdmins({
-      text: `💳 درخواست شارژ جدید\n\nشناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`,
-      actions: [[{ text: "👁 مشاهده", callbackData: `admin:deposits` }]],
+      text: screenMessage({ tone: "PAYMENT", title: "درخواست شارژ جدید", description: "یک درخواست شارژ برای بررسی ثبت شده است.", body: `شناسه: ${event.depositId}\nمبلغ: ${event.amount.toLocaleString("fa-IR")} تومان\nارز: ${event.cryptoType.toUpperCase()}`, actionHint: "برای بررسی، دکمه مشاهده را انتخاب کنید." }),
+      actions: [[{ text: "👁 مشاهده", callbackData: callbackFor("admin.deposits") }]],
     });
   });
 
@@ -117,19 +125,25 @@ export function registerNotificationEvents() {
 👤 کاربر: ${event.telegramId}
 
 برای مشاهده تاریخچه یا پاسخ مستقیم، یکی از دکمه‌های زیر را انتخاب کنید.`,
-      actions: [[{ text: "👁 مشاهده تیکت", callbackData: `nav:admin.ticket?ticketId=${event.ticketId}` }, { text: "💬 ورود به چت", callbackData: `support:admin:chat:${event.ticketId}` }]],
+      actions: [[{ text: "👁 مشاهده تیکت", callbackData: callbackFor("admin.ticket", { ticketId: event.ticketId }) }, { text: "💬 ورود به چت", callbackData: actionFor("support:admin:chat", event.ticketId) }]],
     });
   });
 
   eventBus.on("referral.reward.claimed", async (event) => {
-    await notificationService.notifyUser(event.userId, `🎁 پاداش زیرمجموعه به مبلغ ${event.amount.toLocaleString("fa-IR")} تومان به کیف پول شما اضافه شد.`);
+    await notificationService.notifyUser(event.userId, successMessage("پاداش دعوت اضافه شد", `مبلغ ${event.amount.toLocaleString("fa-IR")} تومان به کیف پول شما اضافه شد.`, "برای مشاهده جزئیات به بخش کیف پول بروید."));
+  });
+
+  eventBus.on("payment.delivery.failed", async (event) => {
+    await notificationService.notifyAdmins({
+      text: screenMessage({ tone: "WARNING", title: "تحویل پرداخت نیازمند بررسی است", description: "پرداخت ثبت شده اما تحویل خودکار کامل نشده است.", body: `فاکتور: ${event.invoiceId}\nکاربر: ${event.userId}`, actionHint: "لطفاً فاکتور را از پنل مدیریت بررسی کنید." }),
+      actions: [[{ text: "👁 مشاهده فاکتور", callbackData: callbackFor("admin.invoice", { invoiceId: event.invoiceId }) }]],
+    });
   });
 
   eventBus.on("free_config.claimed", async (event) => {
     await notificationService.notifyUser(event.userId, {
       text: `🎁 کانفیگ رایگان شما:\n\n${event.config}`,
-      actions: [[{ text: "🏠 خانه", callbackData: "nav:home" }]],
+      actions: [[{ text: "🏠 خانه", callbackData: callbackFor("home") }]],
     });
   });
 }
-

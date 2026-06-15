@@ -2,6 +2,7 @@ import { Markup } from "telegraf";
 import type { InlineKeyboardButton } from "telegraf/types";
 import type { AppContext } from "../../types/bot";
 import { replyKeyboard, replyKeyboardSignature, type ReplyKeyboardScope } from "../keyboards/reply.keyboard";
+import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 
 export type UiButton = { text: string; action: string };
 export type UiKeyboard = UiButton[][];
@@ -15,12 +16,17 @@ export type PanelViewId =
   | "wallet"
   | "account"
   | "account.details"
+  | "account.xray"
+  | "account.renew"
+  | "account.renew.products"
+  | "account.renew.summary"
   | "account.history"
   | "wallet.history"
   | "deposit"
   | "support"
   | "referral"
   | "freeAccount"
+  | "productGuide"
   | "admin.dashboard"
   | "admin.users"
   | "admin.user"
@@ -39,12 +45,20 @@ export type PanelViewId =
   | "admin.coupon"
   | "admin.crypto"
   | "admin.store"
+  | "admin.finance"
+  | "admin.usersSupport"
+  | "admin.content"
+  | "admin.botSettings"
+  | "admin.monitoring"
   | "admin.forcedJoin"
+  | "admin.productGuides"
   | "admin.referrals"
   | "admin.analytics"
   | "admin.transactions"
   | "admin.notifications"
   | "admin.settings"
+  | "admin.xraySettings"
+  | "admin.xrayClients"
   | "admin.paymentGateway"
   | "admin.paymentStats"
   | "admin.invoices"
@@ -56,7 +70,13 @@ export type PanelViewId =
   | "admin.ticket";
 
 export type ViewState = { id: PanelViewId; params?: Record<string, string | number | boolean | undefined> };
-export type ViewRenderResult = { text: string; keyboard: UiKeyboard; parseMode?: "HTML"; replyKeyboard?: ReplyKeyboardScope };
+export enum RenderMode {
+  EDIT_CURRENT = "EDIT_CURRENT",
+  SEND_NEW = "SEND_NEW",
+  AUTO = "AUTO",
+}
+
+export type ViewRenderResult = { text: string; keyboard: UiKeyboard; parseMode?: "HTML"; replyKeyboard?: ReplyKeyboardScope; renderMode?: RenderMode; navigation?: { back?: boolean; home?: boolean } };
 export type ViewRenderer = (ctx: AppContext, params: Record<string, string>) => Promise<ViewRenderResult>;
 
 const registry = new Map<PanelViewId, ViewRenderer>();
@@ -65,12 +85,58 @@ export function registerView(id: PanelViewId, renderer: ViewRenderer): void {
   registry.set(id, renderer);
 }
 
+export function registeredPanelViewIds(): PanelViewId[] {
+  return [...registry.keys()];
+}
+
+const PARAM_ALIASES: Record<string, string> = {
+  page: "p",
+  productPage: "pp",
+  productId: "pid",
+  categoryId: "cid",
+  accountId: "aid",
+  xrayClientId: "xid",
+  userId: "uid",
+  walletId: "wid",
+  couponId: "co",
+  invoiceId: "iid",
+  ticketId: "tid",
+  depositId: "did",
+  status: "s",
+};
+const PARAM_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_ALIASES).map(([key, value]) => [value, key]));
+const PARAM_VALUE_ALIASES: Record<string, Record<string, string>> = {
+  status: { all: "a", active: "ac", provisioning: "p", creating: "c", failed: "f", expired: "e", disabled: "d", missing_on_panel: "m" },
+};
+const PARAM_VALUE_ALIAS_REVERSE: Record<string, Record<string, string>> = Object.fromEntries(
+  Object.entries(PARAM_VALUE_ALIASES).map(([key, values]) => [key, Object.fromEntries(Object.entries(values).map(([value, alias]) => [alias, value]))]),
+);
+
+export function isValidCallbackData(action: string): boolean {
+  return Buffer.byteLength(action, "utf8") <= 64;
+}
+
+export function ensureCallbackData(action: string): string {
+  if (!isValidCallbackData(action)) {
+    throw new Error(`Telegram callback payload is too long (${Buffer.byteLength(action, "utf8")} bytes): ${action}`);
+  }
+  return action;
+}
+
+export function actionFor(prefix: string, ...parts: Array<string | number | boolean | undefined>): string {
+  return ensureCallbackData([prefix, ...parts.filter((part) => part !== undefined && part !== "").map(String)].join(":"));
+}
+
 export function callbackFor(view: PanelViewId, params: Record<string, string | number | boolean | undefined> = {}): string {
   const query = Object.entries(params)
-    .filter(([, value]) => value !== undefined)
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+    .filter(([, value]) => value !== undefined && value !== "")
+    .map(([key, value]) => {
+      const normalizedValue = PARAM_VALUE_ALIASES[key]?.[String(value)] ?? String(value);
+      return `${encodeURIComponent(PARAM_ALIASES[key] ?? key)}=${encodeURIComponent(normalizedValue)}`;
+    })
     .join("&");
-  return query ? `nav:${view}?${query}` : `nav:${view}`;
+  const callback = query ? `nav:${view}?${query}` : `nav:${view}`;
+  return ensureCallbackData(callback);
 }
 
 function parseParams(raw?: string): Record<string, string> {
@@ -78,7 +144,9 @@ function parseParams(raw?: string): Record<string, string> {
   const params: Record<string, string> = {};
   for (const part of raw.split("&").filter(Boolean)) {
     const [key, value = ""] = part.split("=");
-    params[decodeURIComponent(key)] = decodeURIComponent(value);
+    const fullKey = PARAM_ALIAS_REVERSE[decodeURIComponent(key)] ?? decodeURIComponent(key);
+    const decodedValue = decodeURIComponent(value);
+    params[fullKey] = PARAM_VALUE_ALIAS_REVERSE[fullKey]?.[decodedValue] ?? decodedValue;
   }
   return params;
 }
@@ -87,7 +155,7 @@ function isPanelViewId(value: string): value is PanelViewId {
   return PANEL_VIEW_IDS.has(value);
 }
 
-const PANEL_VIEW_IDS = new Set<string>([
+export const PANEL_VIEW_IDS = new Set<string>([
   "home",
   "shop.categories",
   "shop.products",
@@ -97,12 +165,17 @@ const PANEL_VIEW_IDS = new Set<string>([
   "wallet",
   "account",
   "account.details",
+  "account.xray",
+  "account.renew",
+  "account.renew.products",
+  "account.renew.summary",
   "account.history",
   "wallet.history",
   "deposit",
   "support",
   "referral",
   "freeAccount",
+  "productGuide",
   "admin.dashboard",
   "admin.users",
   "admin.user",
@@ -121,12 +194,20 @@ const PANEL_VIEW_IDS = new Set<string>([
   "admin.coupon",
   "admin.crypto",
   "admin.store",
+  "admin.finance",
+  "admin.usersSupport",
+  "admin.content",
+  "admin.botSettings",
+  "admin.monitoring",
   "admin.forcedJoin",
+  "admin.productGuides",
   "admin.referrals",
   "admin.analytics",
   "admin.transactions",
   "admin.notifications",
   "admin.settings",
+  "admin.xraySettings",
+  "admin.xrayClients",
   "admin.paymentGateway",
   "admin.paymentStats",
   "admin.invoices",
@@ -147,47 +228,95 @@ export function parseNavAction(action: string): ViewState | undefined {
 }
 
 export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?: boolean; cancel?: boolean } = { back: true, home: true }) {
-  const normalized: InlineKeyboardButton.CallbackButton[][] = rows.map((row) => row.map((button) => Markup.button.callback(button.text, button.action)));
+  const seenNav = new Set<string>();
+  const normalized: InlineKeyboardButton.CallbackButton[][] = rows
+    .map((row) =>
+      row
+        .filter((button) => {
+          if ((button.action === "nav:back" || button.action === callbackFor("home")) && seenNav.has(button.action)) return false;
+          if (button.action === "nav:back" || button.action === callbackFor("home")) seenNav.add(button.action);
+          return true;
+        })
+        .flatMap((button) => {
+          try {
+            return [Markup.button.callback(button.text, ensureCallbackData(button.action))];
+          } catch (error) {
+            console.error("CALLBACK_DATA_INVALID_PREVENTED", { text: button.text, action: button.action, error: error instanceof Error ? error.message : String(error) });
+            return [];
+          }
+        }),
+    )
+    .filter((row) => row.length > 0);
   const nav: InlineKeyboardButton.CallbackButton[] = [];
-  if (options.back) nav.push(Markup.button.callback("⬅️ بازگشت", "nav:back"));
-  if (options.home) nav.push(Markup.button.callback("🏠 منوی اصلی", callbackFor("home")));
+  if (options.back && !seenNav.has("nav:back")) nav.push(Markup.button.callback("🔙 بازگشت", ensureCallbackData("nav:back")));
+  if (options.home && !seenNav.has(callbackFor("home"))) nav.push(Markup.button.callback("🏠 خانه", callbackFor("home")));
   if (nav.length) normalized.push(nav);
   if (options.cancel) normalized.push([Markup.button.callback("❌ لغو عملیات", "flow:cancel")]);
   return Markup.inlineKeyboard(normalized);
 }
 
-export async function renderPanel(ctx: AppContext, state: ViewState, mode: "push" | "replace" | "back" = "push"): Promise<void> {
+export async function renderPanel(ctx: AppContext, state: ViewState, mode: "push" | "replace" | "back" = "push", renderMode: RenderMode = RenderMode.AUTO): Promise<void> {
   const renderer = registry.get(state.id);
   if (!renderer) throw new Error(`View is not registered: ${state.id}`);
   const params: Record<string, string> = {};
   for (const [key, value] of Object.entries(state.params ?? {})) {
     params[key] = String(value ?? "");
   }
-  const result = await renderer(ctx, params);
+  let result: ViewRenderResult;
+  try {
+    result = await renderer(ctx, params);
+  } catch (error) {
+    console.error("PANEL_RENDER_FAILED", { state, error: error instanceof Error ? error.message : String(error) });
+    result = {
+      text: "❌ نمایش این بخش ممکن نیست\n\nلطفاً از منوی اصلی دوباره وارد شوید.",
+      keyboard: [[{ text: "🏠 خانه", action: callbackFor("home") }, { text: "🎫 پشتیبانی", action: callbackFor("support") }]],
+    };
+    renderMode = RenderMode.SEND_NEW;
+  }
 
   ctx.session.navigation ??= { stack: [] };
   if (mode === "push") ctx.session.navigation.stack.push(state);
   if (mode === "replace") ctx.session.navigation.stack = [state];
 
   if (result.replyKeyboard) {
-    const signature = replyKeyboardSignature(result.replyKeyboard);
-    if (ctx.session.quickKeyboardSignature !== signature) {
-      ctx.session.quickKeyboardSignature = signature;
-      await ctx.reply("⌨️ منوی دسترسی سریع به‌روزرسانی شد.", replyKeyboard(result.replyKeyboard));
+    const isAdmin = result.replyKeyboard !== "admin" && result.replyKeyboard !== "settings" && ctx.from ? await isAdminByTelegramId(ctx.from.id) : false;
+    const signature = replyKeyboardSignature(result.replyKeyboard, { isAdmin });
+    if (!ctx.callbackQuery && ctx.session.quickKeyboardSignature !== signature) {
+      await ctx.reply("⌨️ منوی دسترسی سریع", replyKeyboard(result.replyKeyboard, { isAdmin }));
     }
+    ctx.session.quickKeyboardSignature = signature;
   }
 
-  const keyboard = panelKeyboard(result.keyboard, { back: state.id !== "home", home: state.id !== "home" });
+  const isHome = state.id === "home";
+  const keyboard = panelKeyboard(result.keyboard, { back: result.navigation?.back ?? !isHome, home: result.navigation?.home ?? !isHome });
   const extra = { parse_mode: result.parseMode, ...keyboard };
   const fallbackReply = async () => {
-    const sent = await ctx.reply(result.text, extra);
-    ctx.session.navigation!.panelMessageId = sent.message_id;
+    try {
+      const sent = await ctx.reply(result.text, extra);
+      ctx.session.navigation!.panelMessageId = sent.message_id;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("BUTTON_DATA_INVALID")) throw error;
+      console.error("BUTTON_DATA_INVALID_REPLY_FALLBACK", { state, error: message });
+      const sent = await ctx.reply("نمایش این بخش با خطای دکمه مواجه شد. لطفاً دوباره تلاش کنید.", panelKeyboard([[{ text: "🏠 خانه", action: callbackFor("home") }]], { back: false, home: false }));
+      ctx.session.navigation!.panelMessageId = sent.message_id;
+    }
   };
 
-  if (ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message) {
-    await ctx.editMessageText(result.text, extra).catch(async () => {
+  const effectiveRenderMode = result.renderMode ?? renderMode;
+  const shouldEdit = effectiveRenderMode === RenderMode.EDIT_CURRENT || (effectiveRenderMode === RenderMode.AUTO && Boolean(ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message));
+
+  if (shouldEdit && ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message) {
+    await ctx.editMessageText(result.text, extra).catch(async (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("BUTTON_DATA_INVALID")) {
+        console.error("BUTTON_DATA_INVALID_RENDER_FALLBACK", { state, error: message });
+        result.text = "نمایش این بخش با خطای دکمه مواجه شد. لطفاً دوباره تلاش کنید.";
+      }
       await ctx.editMessageReplyMarkup(keyboard.reply_markup).catch(() => undefined);
-      await fallbackReply();
+      await fallbackReply().catch(async (replyError) => {
+        console.error("PANEL_FALLBACK_REPLY_FAILED", { state, error: replyError instanceof Error ? replyError.message : String(replyError) });
+      });
     });
     return;
   }
@@ -199,5 +328,5 @@ export async function goBack(ctx: AppContext): Promise<void> {
   const stack = ctx.session.navigation?.stack ?? [];
   stack.pop();
   const previous = stack.pop() ?? { id: "home" };
-  await renderPanel(ctx, previous, "push");
+  await renderPanel(ctx, previous, "push", RenderMode.EDIT_CURRENT);
 }

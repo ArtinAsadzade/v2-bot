@@ -1,37 +1,147 @@
 import { prisma } from "../services/prisma";
 import { logger } from "../services/logger";
 import { notificationService } from "../services/notification.service";
+import { MonitoringService } from "../services/monitoring.service";
 import { FreeAccountService } from "../modules/free-account/free-account.service";
 
 let isRunning = false;
 const DAY_MS = 86_400_000;
 const REMINDER_DAYS = [7, 3, 1, 0] as const;
+const DEFAULT_BATCH_SIZE = 25;
+const ALERT_COOLDOWN_MS = 30 * 60_000;
+let lastExpirationAlert: { key: string; at: number } | undefined;
 
-export async function deactivateExpiredAccounts() {
+export type AccountExpirationSummary = {
+  checked: number;
+  expired: number;
+  failed: number;
+  manualExpired: number;
+  xrayExpired: number;
+  freeExpired: number;
+  durationMs: number;
+};
+
+type DueOrderItem = Awaited<ReturnType<typeof findDueOrderItems>>[number];
+
+export async function deactivateExpiredAccounts(batchSize = DEFAULT_BATCH_SIZE): Promise<AccountExpirationSummary> {
   if (isRunning) {
     logger.warn("Account expiration job skipped because previous run is still active");
-    return { count: 0 };
+    return { checked: 0, expired: 0, failed: 0, manualExpired: 0, xrayExpired: 0, freeExpired: 0, durationMs: 0 };
   }
 
   isRunning = true;
+  const startedAt = Date.now();
+  const summary: AccountExpirationSummary = { checked: 0, expired: 0, failed: 0, manualExpired: 0, xrayExpired: 0, freeExpired: 0, durationMs: 0 };
+  const errors: string[] = [];
+  logger.info("ACCOUNT_EXPIRATION_JOB_STARTED", { event: "ACCOUNT_EXPIRATION_JOB_STARTED", batchSize });
+
   try {
-    await sendExpirationReminders();
+    await sendExpirationReminders().catch((error) => {
+      logger.warn("ACCOUNT_EXPIRATION_REMINDERS_FAILED", { event: "ACCOUNT_EXPIRATION_REMINDERS_FAILED", error: error instanceof Error ? error.message : String(error) });
+    });
+
+    const freeResult = await FreeAccountService.expireDueAccounts().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`free accounts: ${message}`);
+      summary.failed += 1;
+      logger.error("ACCOUNT_EXPIRATION_ITEM_FAILED", { event: "ACCOUNT_EXPIRATION_ITEM_FAILED", scope: "free_accounts", error: message });
+      return { count: 0 };
+    });
+    summary.freeExpired = freeResult.count;
+    summary.expired += freeResult.count;
+
     const now = new Date();
-    const [result, expiredInventory, freeResult] = await Promise.all([
-      prisma.orderItem.updateMany({
-        where: { isActive: true, expiresAt: { lte: now } },
-        data: { isActive: false },
-      }),
-      expirePurchasedInventory(now),
-      FreeAccountService.expireDueAccounts(),
-    ]);
-    if (result.count > 0) logger.info("Expired purchased accounts deactivated", { count: result.count });
-    if (expiredInventory.count > 0) logger.info("Expired purchased inventory marked", { count: expiredInventory.count });
-    if (freeResult.count > 0) logger.info("Expired free test accounts archived", { count: freeResult.count });
-    return { count: result.count + expiredInventory.count + freeResult.count };
+    while (true) {
+      const dueItems = await findDueOrderItems(now, batchSize);
+      if (!dueItems.length) break;
+      summary.checked += dueItems.length;
+      for (const item of dueItems) {
+        try {
+          const result = await expireOneOrderItem(item, now);
+          if (!result.expired) continue;
+          summary.expired += 1;
+          if (result.kind === "manual") summary.manualExpired += 1;
+          if (result.kind === "xray") summary.xrayExpired += 1;
+          logger.info("ACCOUNT_EXPIRATION_ITEM_EXPIRED", { event: "ACCOUNT_EXPIRATION_ITEM_EXPIRED", orderItemId: item.id, orderId: item.orderId, kind: result.kind });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          summary.failed += 1;
+          errors.push(message);
+          logger.error("ACCOUNT_EXPIRATION_ITEM_FAILED", { event: "ACCOUNT_EXPIRATION_ITEM_FAILED", orderItemId: item.id, orderId: item.orderId, error: message });
+        }
+      }
+    }
+
+    summary.durationMs = Date.now() - startedAt;
+    logger.info("ACCOUNT_EXPIRATION_JOB_FINISHED", { event: "ACCOUNT_EXPIRATION_JOB_FINISHED", ...summary });
+    if (summary.failed > 0) await alertExpirationFailures(summary, errors[0]);
+    return summary;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    summary.failed += 1;
+    summary.durationMs = Date.now() - startedAt;
+    logger.error("ACCOUNT_EXPIRATION_JOB_FAILED", { event: "ACCOUNT_EXPIRATION_JOB_FAILED", ...summary, error: message });
+    await alertExpirationFailures(summary, message, true);
+    return summary;
   } finally {
     isRunning = false;
   }
+}
+
+async function findDueOrderItems(now: Date, take: number) {
+  return prisma.orderItem.findMany({
+    where: { isActive: true, expiresAt: { lte: now } },
+    select: { id: true, orderId: true, productId: true, productAccountId: true, xrayClientId: true, expiresAt: true },
+    orderBy: { expiresAt: "asc" },
+    take,
+  });
+}
+
+async function expireOneOrderItem(item: DueOrderItem, now: Date): Promise<{ expired: boolean; kind: "manual" | "xray" | "order_item" }> {
+  return prisma.$transaction(async (tx) => {
+    const deactivated = await tx.orderItem.updateMany({ where: { id: item.id, isActive: true, expiresAt: { lte: now } }, data: { isActive: false } });
+    if (deactivated.count === 0) return { expired: false, kind: "order_item" as const };
+
+    if (item.productAccountId) {
+      const accountUpdate = await tx.productAccount.updateMany({ where: { id: item.productAccountId, status: "sold" }, data: { status: "expired" } });
+      if (accountUpdate.count > 0) {
+        const existingHistory = await tx.productAccountHistory.findFirst({ where: { accountId: item.productAccountId, action: "account.expire", metadata: { contains: item.id } }, select: { id: true } });
+        if (!existingHistory) {
+          await tx.productAccountHistory.create({ data: { accountId: item.productAccountId, actorId: "system", action: "account.expire", fromValue: "sold", toValue: "expired", metadata: JSON.stringify({ orderId: item.orderId, orderItemId: item.id, productId: item.productId, expiresAt: item.expiresAt }) } });
+        }
+      }
+      return { expired: true, kind: "manual" as const };
+    }
+
+    if (item.xrayClientId) {
+      await tx.xrayClient.updateMany({ where: { id: item.xrayClientId, status: { in: ["creating", "provisioning", "active", "renewal_failed", "missing_on_panel"] } }, data: { status: "expired", lastError: null } });
+      await tx.auditLog.create({ data: { actorId: "system", action: "xray_client.expire", metadata: JSON.stringify({ orderId: item.orderId, orderItemId: item.id, productId: item.productId, xrayClientId: item.xrayClientId, expiresAt: item.expiresAt }) } });
+      return { expired: true, kind: "xray" as const };
+    }
+
+    await tx.auditLog.create({ data: { actorId: "system", action: "order_item.expire", metadata: JSON.stringify({ orderId: item.orderId, orderItemId: item.id, productId: item.productId, expiresAt: item.expiresAt }) } });
+    return { expired: true, kind: "order_item" as const };
+  }, { timeout: 15_000, maxWait: 5_000 });
+}
+
+async function alertExpirationFailures(summary: AccountExpirationSummary, sampleError = "unknown", databaseFailure = false) {
+  const key = sampleError.slice(0, 160);
+  const now = Date.now();
+  if (lastExpirationAlert?.key === key && now - lastExpirationAlert.at < ALERT_COOLDOWN_MS) {
+    logger.warn("ACCOUNT_EXPIRATION_ALERT_SUPPRESSED", { event: "ACCOUNT_EXPIRATION_ALERT_SUPPRESSED", failed: summary.failed, sampleError });
+    return;
+  }
+  lastExpirationAlert = { key, at: now };
+  logger.warn("ACCOUNT_EXPIRATION_ALERT_SENT", { event: "ACCOUNT_EXPIRATION_ALERT_SENT", failed: summary.failed, sampleError });
+  MonitoringService.record({
+    type: "JOB_FAILED",
+    section: "Account Expiration",
+    description: `failed=${summary.failed}; sample=${sampleError}`,
+    severity: databaseFailure ? "critical" : "warning",
+    alert: true,
+    suggestedAction: `Failed count: ${summary.failed}. Duration: ${summary.durationMs}ms. لاگ ACCOUNT_EXPIRATION_ITEM_FAILED را بررسی کنید و آیتم مشکل‌دار را دستی بازبینی کنید.`,
+    metadata: summary,
+  });
 }
 
 async function sendExpirationReminders() {
@@ -58,36 +168,4 @@ async function sendExpirationReminders() {
       });
     }
   }
-}
-
-async function expirePurchasedInventory(now: Date) {
-  return prisma.$transaction(async (tx) => {
-    const dueItems = await tx.orderItem.findMany({
-      where: { expiresAt: { lte: now }, productAccount: { is: { status: "sold" } } },
-      select: { id: true, productAccountId: true, productId: true, orderId: true, expiresAt: true },
-      take: 500,
-    });
-    const accountIds = [...new Set(dueItems.map((item) => item.productAccountId))];
-    if (!accountIds.length) return { count: 0 };
-
-    const updated = await tx.productAccount.updateMany({
-      where: { id: { in: accountIds }, status: "sold" },
-      data: { status: "expired" },
-    });
-
-    if (updated.count > 0) {
-      await tx.productAccountHistory.createMany({
-        data: dueItems.map((item) => ({
-          accountId: item.productAccountId,
-          actorId: "system",
-          action: "account.expire",
-          fromValue: "sold",
-          toValue: "expired",
-          metadata: JSON.stringify({ orderId: item.orderId, orderItemId: item.id, productId: item.productId, expiresAt: item.expiresAt }),
-        })),
-      });
-    }
-
-    return { count: updated.count };
-  });
 }

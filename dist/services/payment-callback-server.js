@@ -10,6 +10,7 @@ const prisma_1 = require("./prisma");
 const logger_1 = require("./logger");
 const design_system_1 = require("../bot/keyboards/design-system");
 const custom_emoji_1 = require("../bot/keyboards/custom-emoji");
+const messages_1 = require("../utils/messages");
 const money = (value) => `${value.toLocaleString("fa-IR")} تومان`;
 function parsedCallbackUrl(req) {
     return new URL(req.url ?? "/", "http://localhost");
@@ -35,19 +36,24 @@ async function notifyUser(bot, result) {
         return;
     try {
         if ("error" in payload) {
-            const failure = (0, custom_emoji_1.composeCustomEmojiMessage)([(0, custom_emoji_1.customEmoji)("❌", "TELEGRAM_EMOJI_ERROR_ID"), " پرداخت ناموفق بود\n\n💬 در صورت کسر وجه با پشتیبانی تماس بگیرید"]);
+            const failure = (0, custom_emoji_1.composeCustomEmojiMessage)([(0, custom_emoji_1.customEmoji)("❌", "TELEGRAM_EMOJI_ERROR_ID"), " ", (0, messages_1.errorMessage)("پرداخت ناموفق بود", "پرداخت شما تکمیل نشد یا تأیید نهایی دریافت نشد.", "اگر مبلغی از حساب شما کسر شده است، با پشتیبانی در ارتباط باشید.")]);
             await bot.telegram.sendMessage(Number(user.telegramId), failure.text, { ...(0, design_system_1.paymentFailureKeyboard)(), entities: failure.entities });
             await payment_service_1.PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "failed", error: payload.error });
             return;
         }
         if (payload.type === "WALLET_TOPUP" && "user" in payload && payload.user) {
-            const success = (0, custom_emoji_1.composeCustomEmojiMessage)([(0, custom_emoji_1.customEmoji)("✅", "TELEGRAM_EMOJI_SUCCESS_ID"), ` پرداخت با موفقیت انجام شد\n\n💰 مبلغ:\n${money(invoice.amount)}\n\n💳 موجودی جدید:\n${money(payload.user.balance)}`]);
+            const success = (0, custom_emoji_1.composeCustomEmojiMessage)([(0, custom_emoji_1.customEmoji)("✅", "TELEGRAM_EMOJI_SUCCESS_ID"), " ", (0, messages_1.walletSummaryMessage)(payload.user.balance, `مبلغ شارژ شده: ${money(invoice.amount)}`)]);
             await bot.telegram.sendMessage(Number(user.telegramId), success.text, { ...(0, design_system_1.paymentSuccessKeyboard)("wallet"), entities: success.entities });
             await payment_service_1.PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "wallet_topup", amount: invoice.amount, balance: payload.user.balance });
             return;
         }
+        if (payload.type === "XRAY_RENEWAL" && payload.xrayClient) {
+            await bot.telegram.sendMessage(Number(user.telegramId), `✅ تمدید سرویس Xray با موفقیت انجام شد.\n\nشناسه: ${payload.xrayClient.clientEmail}`, { reply_markup: { inline_keyboard: [[{ text: "🧩 مشاهده سرویس", callback_data: `nav:account.xray?xid=${payload.xrayClient.id}` }]] } });
+            await payment_service_1.PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "xray_renewal", xrayClientId: payload.xrayClient.id });
+            return;
+        }
         if ("product" in payload && "account" in payload && payload.product && payload.account) {
-            const success = (0, custom_emoji_1.composeCustomEmojiMessage)([(0, custom_emoji_1.customEmoji)("✅", "TELEGRAM_EMOJI_SUCCESS_ID"), ` خرید با موفقیت انجام شد\n\n📦 محصول:\n${payload.product.title}\n\n👤 نام کاربری:\n${payload.account.username ?? "—"}\n\n🔗 لینک اشتراک:\n${payload.account.subscriptionLink ?? "—"}\n\n⚙️ کانفیگ:\n${payload.account.configLink ?? payload.account.config ?? "—"}`]);
+            const success = (0, custom_emoji_1.composeCustomEmojiMessage)([(0, custom_emoji_1.customEmoji)("✅", "TELEGRAM_EMOJI_SUCCESS_ID"), " ", (0, messages_1.purchaseSuccessMessage)({ productTitle: payload.product.title, username: payload.account.username, subscriptionLink: payload.account.subscriptionLink, config: payload.account.configLink ?? payload.account.config })]);
             await bot.telegram.sendMessage(Number(user.telegramId), success.text, { ...(0, design_system_1.paymentSuccessKeyboard)("product"), entities: success.entities });
             await payment_service_1.PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "product_purchase", productId: payload.product.id, accountId: payload.account.id });
         }
@@ -63,7 +69,7 @@ function startPaymentCallbackServer(bot) {
         const callbackUrl = parsedCallbackUrl(req);
         if (req.method !== "GET" || callbackUrl.pathname !== "/payments/callback") {
             res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-            res.end("Not found");
+            res.end("درخواست پیدا نشد.");
             return;
         }
         try {
@@ -79,9 +85,9 @@ function startPaymentCallbackServer(bot) {
         catch (error) {
             logger_1.logger.error("Payment callback crashed", { error: error instanceof Error ? error.message : String(error), url: req.url, remoteAddress: req.socket.remoteAddress });
             res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-            res.end("Payment callback failed.");
+            res.end("پرداخت بررسی نشد.");
         }
     });
-    server.listen(port, () => logger_1.logger.info("Payment callback server is running", { port, route: "GET /payments/callback?token=...&invoice=..." }));
+    server.listen(port, () => logger_1.logger.info("Payment callback server is running", { port, route: "GET /payments/callback?invoice_id=...&token=..." }));
     return server;
 }
