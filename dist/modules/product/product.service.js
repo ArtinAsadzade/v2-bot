@@ -107,12 +107,32 @@ class ProductService {
     static async getProduct(productId) {
         return prisma_1.prisma.product.findUnique({ where: { id: productId }, include: { category: true } });
     }
+    static async getActiveProductForUser(productId) {
+        return prisma_1.prisma.product.findFirst({ where: { id: productId, AND: [(0, visibility_1.activeProductWhere)(), { category: { is: (0, visibility_1.activeCategoryWhere)() } }] }, include: { category: true } });
+    }
     static async create(data) {
         const category = data.categoryId
             ? await prisma_1.prisma.category.findFirstOrThrow({ where: { id: data.categoryId, AND: [(0, visibility_1.activeCategoryWhere)()] } })
             : await prisma_1.prisma.category.upsert({ where: { name: (data.categoryName ?? "عمومی").trim() }, update: { isActive: true, deletedAt: null }, create: { name: (data.categoryName ?? "عمومی").trim(), isActive: true } });
-        const inboundIds = data.inboundIds ?? [];
-        return prisma_1.prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: data.duration, durationDays: inboundIds.length ? data.duration : undefined, mode: inboundIds.length ? "xray_auto" : "manual_inventory", trafficBytes: inboundIds.length && data.trafficGB ? (0, xray_service_1.gbToBytes)(data.trafficGB) : undefined, stockLimit: inboundIds.length ? data.stockLimit : undefined, soldCount: 0, inboundIds, inboundSnapshot: data.inboundSnapshot, xrayLimitIp: Math.max(0, Number(data.limitIp ?? 0)), xrayGroupName: data.xrayGroupName || null } });
+        const inboundIds = [...new Set(data.inboundIds ?? [])];
+        if (data.mode === "xray_auto") {
+            const durationDays = data.durationDays ?? data.duration;
+            const trafficBytes = data.trafficBytes ?? (data.trafficGB !== undefined ? (0, xray_service_1.gbToBytes)(data.trafficGB) : undefined);
+            const stockLimit = data.stockLimit ?? -1;
+            const limitIp = data.xrayLimitIp ?? Math.max(0, Number(data.limitIp ?? 0));
+            if (!inboundIds.length)
+                throw new Error("❌ برای ساخت محصول Xray حداقل یک اینباند لازم است.");
+            if (!trafficBytes || trafficBytes <= 0n)
+                throw new Error("❌ حجم محصول Xray باید بیشتر از صفر باشد.");
+            if (!Number.isInteger(durationDays) || durationDays <= 0)
+                throw new Error("❌ مدت محصول Xray باید بیشتر از صفر باشد.");
+            if (!Number.isInteger(stockLimit) || stockLimit < 0)
+                throw new Error("❌ موجودی محصول Xray باید صفر یا بیشتر باشد.");
+            if (!Number.isInteger(limitIp) || limitIp < 0)
+                throw new Error("❌ محدودیت IP باید صفر یا بیشتر باشد.");
+            return prisma_1.prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: durationDays, durationDays, mode: "xray_auto", trafficBytes, stockLimit, soldCount: 0, inboundIds, inboundSnapshot: data.inboundSnapshot, xrayLimitIp: limitIp, xrayGroupName: data.xrayGroupName || null } });
+        }
+        return prisma_1.prisma.product.create({ data: { categoryId: category.id, title: data.title.trim(), price: data.price, duration: data.duration, mode: "manual_inventory", soldCount: 0, inboundIds: [] } });
     }
     static async addAccount(productId, data) {
         if (!data.username.trim() || !data.subscriptionLink.trim() || !data.configLink.trim())
@@ -151,8 +171,8 @@ class ProductService {
     }
     static async availableStock(productId) {
         const product = await prisma_1.prisma.product.findUnique({ where: { id: productId }, select: { mode: true, stockLimit: true, soldCount: true } });
-        if (product?.mode === "xray_auto" && product.stockLimit)
-            return Math.max(product.stockLimit - product.soldCount, 0);
+        if (product?.mode === "xray_auto")
+            return Math.max((product.stockLimit ?? 0) - product.soldCount, 0);
         return prisma_1.prisma.productAccount.count({ where: (0, visibility_1.availableInventoryWhere)(productId) });
     }
     static async listCategoriesForAdmin(take = 100) {
