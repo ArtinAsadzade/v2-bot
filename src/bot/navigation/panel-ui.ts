@@ -67,8 +67,7 @@ export type PanelViewId =
   | "admin.deposit"
   | "admin.orders"
   | "admin.tickets"
-  | "admin.ticket"
-  | "admin.broadcast";
+  | "admin.ticket";
 
 export type ViewState = { id: PanelViewId; params?: Record<string, string | number | boolean | undefined> };
 export enum RenderMode {
