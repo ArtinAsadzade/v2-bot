@@ -3,11 +3,26 @@ import { CouponService } from "../../../modules/coupon/coupon.service";
 import { ProductService } from "../../../modules/product/product.service";
 import { AdminService, type ProductAccountAdminStatus } from "../../../modules/admin/admin.service";
 import { resetFlow, getFlow } from "./admin.flow";
+import { isValidationError } from "../../../modules/product/product.validation";
 import { navigationKeyboard } from "../../keyboards/main.keyboard";
 
 function asPositiveInteger(value: string): number | undefined {
   const number = Number(value.replace(/[,،]/g, ""));
   return Number.isInteger(number) && number > 0 ? number : undefined;
+}
+
+function asNonNegativeInteger(value: string): number | undefined {
+  const number = Number(value.replace(/[,،]/g, ""));
+  return Number.isInteger(number) && number >= 0 ? number : undefined;
+}
+
+function asNonNegativeNumber(value: string): number | undefined {
+  const number = Number(value.replace(/[,،]/g, ""));
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+async function replyValidationError(ctx: AppContext, error: unknown, back: string) {
+  await ctx.reply(isValidationError(error) ? error.message : "❌ مقدار واردشده معتبر نیست.", navigationKeyboard(back));
 }
 
 
@@ -76,14 +91,64 @@ export async function handleAdminFlow(ctx: AppContext): Promise<boolean> {
     }
 
     if (flow.step === "category") {
-      const product = await ProductService.create({ mode: "manual_inventory", categoryName: text, title: String(flow.data.title), price: Number(flow.data.price), duration: Number(flow.data.duration), actorId: String(ctx.from?.id ?? "admin") });
-      await AdminService.audit(String(ctx.from?.id ?? "system"), "product.create", { productId: product.id });
-      resetFlow(ctx);
-      await ctx.reply(`✅ محصول ${product.title} ساخته شد.`, navigationKeyboard("admin:dashboard"));
+      try {
+        const product = await ProductService.create({ mode: "manual_inventory", categoryName: text, title: String(flow.data.title), price: Number(flow.data.price), duration: Number(flow.data.duration), actorId: String(ctx.from?.id ?? "admin") });
+        await AdminService.audit(String(ctx.from?.id ?? "system"), "product.create", { productId: product.id });
+        resetFlow(ctx);
+        await ctx.reply(`✅ محصول ${product.title} ساخته شد.`, navigationKeyboard("admin:dashboard"));
+      } catch (error) {
+        if (isValidationError(error)) {
+          await replyValidationError(ctx, error, "admin:dashboard");
+          return true;
+        }
+        throw error;
+      }
       return true;
     }
   }
 
+
+  if (flow.flow === "product_field_edit") {
+    const productId = String(flow.data.productId);
+    const field = String(flow.data.field);
+    try {
+      let updated;
+      if (field === "traffic") {
+        const trafficGB = asNonNegativeNumber(text);
+        if (trafficGB === undefined) throw new Error("❌ حجم باید عدد صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.");
+        updated = await AdminService.updateXrayTraffic(productId, trafficGB, String(ctx.from?.id ?? "system"));
+      } else if (field === "duration") {
+        const durationDays = asNonNegativeInteger(text);
+        if (durationDays === undefined) throw new Error("❌ مدت باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.");
+        updated = await AdminService.updateXrayDuration(productId, durationDays, String(ctx.from?.id ?? "system"));
+      } else if (field === "stock") {
+        const stockLimit = asNonNegativeInteger(text);
+        if (stockLimit === undefined) throw new Error("❌ موجودی کل باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی ناموجود.");
+        updated = await AdminService.updateXrayStockLimit(productId, stockLimit, String(ctx.from?.id ?? "system"));
+      } else if (field === "limit_ip") {
+        const xrayLimitIp = asNonNegativeInteger(text);
+        if (xrayLimitIp === undefined) throw new Error("❌ محدودیت IP باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.");
+        updated = await AdminService.updateXrayLimitIp(productId, xrayLimitIp, String(ctx.from?.id ?? "system"));
+      } else if (field === "group") {
+        updated = await AdminService.updateXrayGroup(productId, ["بدون گروه", "none", "-"] .includes(text.trim().toLowerCase()) ? null : text.trim(), String(ctx.from?.id ?? "system"));
+      } else if (field === "inbounds") {
+        const inboundIds = text.split(/[,،\s]+/).filter(Boolean).map(Number);
+        if (!inboundIds.length || inboundIds.some((id) => !Number.isInteger(id) || id < 0)) throw new Error("❌ حداقل یک اینباند معتبر وارد کنید.");
+        updated = await AdminService.updateXrayInbounds(productId, inboundIds, JSON.stringify(inboundIds), String(ctx.from?.id ?? "system"));
+      } else {
+        throw new Error("❌ فیلد ویرایش معتبر نیست.");
+      }
+      resetFlow(ctx);
+      await ctx.reply(`✅ محصول ${updated.title} ذخیره شد.`, navigationKeyboard(`admin:product:${updated.id}`));
+    } catch (error) {
+      if (isValidationError(error)) {
+        await replyValidationError(ctx, error, `admin:product:${productId}`);
+        return true;
+      }
+      throw error;
+    }
+    return true;
+  }
 
   if (flow.flow === "category_create" || flow.flow === "category_edit") {
     const data = parseKeyValueLines(text);
@@ -108,19 +173,27 @@ export async function handleAdminFlow(ctx: AppContext): Promise<boolean> {
     const data = parseKeyValueLines(text);
     const price = optionalPositiveInteger(data.price ?? data["قیمت"]);
     const duration = optionalPositiveInteger(data.duration ?? data["مدت"]);
-    const updated = await AdminService.updateProduct(
-      String(flow.data.productId),
-      {
-        title: data.title ?? data.name ?? data["عنوان"],
-        categoryId: data.categoryId ?? data["دسته"],
-        price,
-        duration,
-        isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
-      },
-      String(ctx.from?.id ?? "system"),
-    );
-    resetFlow(ctx);
-    await ctx.reply(`✅ محصول ${updated.title} ذخیره شد.`, navigationKeyboard(`admin:product:${updated.id}`));
+    try {
+      const updated = await AdminService.updateProduct(
+        String(flow.data.productId),
+        {
+          title: data.title ?? data.name ?? data["عنوان"],
+          categoryId: data.categoryId ?? data["دسته"],
+          price,
+          duration,
+          isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
+        },
+        String(ctx.from?.id ?? "system"),
+      );
+      resetFlow(ctx);
+      await ctx.reply(`✅ محصول ${updated.title} ذخیره شد.`, navigationKeyboard(`admin:product:${updated.id}`));
+    } catch (error) {
+      if (isValidationError(error)) {
+        await replyValidationError(ctx, error, `admin:product:${flow.data.productId}`);
+        return true;
+      }
+      throw error;
+    }
     return true;
   }
 

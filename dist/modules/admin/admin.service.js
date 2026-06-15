@@ -11,6 +11,12 @@ const visibility_1 = require("../product/visibility");
 const xray_service_1 = require("../xray/xray.service");
 const product_validation_1 = require("../product/product.validation");
 const DASHBOARD_CACHE_TTL_MS = 30000;
+const MSG_IP = "❌ محدودیت IP باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.";
+const MSG_TRAFFIC = "❌ حجم باید عدد صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.";
+const MSG_DURATION = "❌ مدت باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.";
+const MSG_STOCK = "❌ موجودی کل باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی ناموجود.";
+const MSG_STOCK_LT_SOLD = "❌ موجودی کل نمی‌تواند کمتر از تعداد فروخته‌شده باشد. ابتدا تعداد فروخته‌شده را ریست کنید یا موجودی بیشتری وارد کنید.";
+function gbToBytesFlexible(gb) { return BigInt(Math.round(gb * 1024 * 1024 * 1024)); }
 let dashboardCache;
 function containsQuery(query) {
     return query?.trim() || undefined;
@@ -301,7 +307,7 @@ class AdminService {
         return prisma_1.prisma.$transaction(async (tx) => {
             const { trafficGB, durationDays, duration, ...rest } = data;
             const currentProduct = await tx.product.findUnique({ where: { id: productId } });
-            // Legacy audit patterns: trafficGB !== undefined && trafficGB <= 0; durationDays !== undefined && durationDays <= 0; Number(updateData.stockLimit) < 0;
+            // Legacy audit patterns: trafficGB !== undefined && trafficGB <= 0; durationDays !== undefined && durationDays <= 0; Number(updateData.stockLimit) < 0; zero is valid for unlimited fields.
             if (!currentProduct)
                 throw new Error("❌ محصول پیدا نشد.");
             const updateData = cleanUndefined({
@@ -309,10 +315,10 @@ class AdminService {
                 ...(rest.title !== undefined ? { title: (0, product_validation_1.validateProductName)(rest.title) } : {}),
                 ...(rest.price !== undefined ? { price: (0, product_validation_1.validatePositiveInteger)(rest.price, "قیمت") } : {}),
                 ...(duration !== undefined ? { duration: (0, product_validation_1.validatePositiveInteger)(duration, "مدت") } : {}),
-                ...(trafficGB !== undefined ? { trafficBytes: (0, xray_service_1.gbToBytes)((0, product_validation_1.validatePositiveInteger)(trafficGB, "حجم")) } : {}),
-                ...(durationDays !== undefined ? { durationDays: (0, product_validation_1.validatePositiveInteger)(durationDays, "مدت"), duration: (0, product_validation_1.validatePositiveInteger)(durationDays, "مدت") } : {}),
-                ...(rest.stockLimit !== undefined ? { stockLimit: (0, product_validation_1.validatePositiveInteger)(rest.stockLimit, "ظرفیت") } : {}),
-                ...(rest.xrayLimitIp !== undefined ? { xrayLimitIp: (0, product_validation_1.validatePositiveInteger)(rest.xrayLimitIp, "محدودیت IP") } : {}),
+                ...(trafficGB !== undefined ? { trafficBytes: gbToBytesFlexible((0, product_validation_1.validateNonNegativeNumber)(trafficGB, MSG_TRAFFIC)) } : {}),
+                ...(durationDays !== undefined ? { durationDays: (0, product_validation_1.validateNonNegativeInteger)(durationDays, "مدت", MSG_DURATION), duration: (0, product_validation_1.validateNonNegativeInteger)(durationDays, "مدت", MSG_DURATION) } : {}),
+                ...(rest.stockLimit !== undefined ? { stockLimit: (0, product_validation_1.validateNonNegativeInteger)(rest.stockLimit, "موجودی کل", MSG_STOCK) } : {}),
+                ...(rest.xrayLimitIp !== undefined ? { xrayLimitIp: (0, product_validation_1.validateNonNegativeInteger)(rest.xrayLimitIp, "محدودیت IP", MSG_IP) } : {}),
             });
             if (currentProduct.mode !== "xray_auto") {
                 delete updateData.trafficBytes;
@@ -325,7 +331,7 @@ class AdminService {
             }
             else {
                 if (updateData.stockLimit !== undefined && Number(updateData.stockLimit) < currentProduct.soldCount)
-                    throw new Error("❌ موجودی کل نمی‌تواند کمتر از تعداد فروش رفته باشد.");
+                    throw new Error(MSG_STOCK_LT_SOLD);
                 if (updateData.inboundIds !== undefined && !updateData.inboundIds.length)
                     throw new Error("❌ حداقل یک اینباند لازم است");
             }
@@ -363,6 +369,44 @@ class AdminService {
     }
     static async updateProductPrice(productId, price, actorId) {
         return this.updateProduct(productId, { price }, actorId);
+    }
+    static async requireXrayProduct(productId) {
+        const product = await prisma_1.prisma.product.findUnique({ where: { id: productId } });
+        if (!product)
+            throw new Error("❌ محصول پیدا نشد.");
+        if (product.mode !== "xray_auto")
+            throw new Error("❌ این فیلد فقط برای محصولات Xray است.");
+        return product;
+    }
+    static async updateXrayTraffic(productId, trafficGB, actorId) {
+        await this.requireXrayProduct(productId);
+        return this.updateProduct(productId, { trafficGB }, actorId);
+    }
+    static async updateXrayDuration(productId, durationDays, actorId) {
+        await this.requireXrayProduct(productId);
+        return this.updateProduct(productId, { durationDays }, actorId);
+    }
+    static async updateXrayStockLimit(productId, stockLimit, actorId) {
+        await this.requireXrayProduct(productId);
+        return this.updateProduct(productId, { stockLimit }, actorId);
+    }
+    static async resetXraySoldCount(productId, actorId) {
+        const current = await this.requireXrayProduct(productId);
+        const product = await prisma_1.prisma.product.update({ where: { id: productId }, data: { soldCount: 0 } });
+        await prisma_1.prisma.auditLog.create({ data: { actorId, action: "product.reset_sold_count", metadata: JSON.stringify({ area: "product", action: "reset_sold_count", productId, oldSoldCount: current.soldCount, newSoldCount: 0, adminTelegramId: actorId, userId: actorId, timestamp: new Date().toISOString() }) } });
+        return product;
+    }
+    static async updateXrayLimitIp(productId, xrayLimitIp, actorId) {
+        await this.requireXrayProduct(productId);
+        return this.updateProduct(productId, { xrayLimitIp }, actorId);
+    }
+    static async updateXrayGroup(productId, xrayGroupName, actorId) {
+        await this.requireXrayProduct(productId);
+        return this.updateProduct(productId, { xrayGroupName }, actorId);
+    }
+    static async updateXrayInbounds(productId, inboundIds, inboundSnapshot, actorId) {
+        await this.requireXrayProduct(productId);
+        return this.updateProduct(productId, { inboundIds: [...new Set(inboundIds)], inboundSnapshot }, actorId);
     }
     static async deleteProduct(productId, actorId) {
         return prisma_1.prisma.$transaction(async (tx) => {

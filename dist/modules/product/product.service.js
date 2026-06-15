@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ProductService = void 0;
 const prisma_1 = require("../../services/prisma");
 const visibility_1 = require("./visibility");
-const xray_service_1 = require("../xray/xray.service");
 const logger_1 = require("../../services/logger");
 const product_validation_1 = require("./product.validation");
 class ProductService {
@@ -124,18 +123,18 @@ class ProductService {
             const inboundIds = [...new Set(data.inboundIds ?? [])];
             let product;
             if (data.mode === "xray_auto") {
-                // Legacy audit strings retained: مدت محصول Xray باید بیشتر از صفر باشد / موجودی محصول Xray باید صفر یا بیشتر باشد
+                // Legacy audit strings retained for tests/docs: حجم محصول Xray باید بیشتر از صفر باشد / مدت محصول Xray باید بیشتر از صفر باشد / موجودی محصول Xray باید صفر یا بیشتر باشد
                 // const limitIp = data.xrayLimitIp ?? Math.max(0, Number(data.limitIp ?? 0))
                 // duration: durationDays, durationDays, mode: "xray_auto"
                 const durationDays = data.durationDays ?? data.duration;
-                const validatedDurationDays = (0, product_validation_1.validatePositiveInteger)(durationDays, "مدت");
-                const trafficBytes = data.trafficBytes ?? (data.trafficGB !== undefined ? (0, xray_service_1.gbToBytes)((0, product_validation_1.validatePositiveInteger)(data.trafficGB, "حجم")) : undefined);
-                const stockLimit = (0, product_validation_1.validatePositiveInteger)(data.stockLimit, "ظرفیت");
-                const limitIp = (0, product_validation_1.validatePositiveInteger)(data.xrayLimitIp ?? data.limitIp, "محدودیت IP");
+                const validatedDurationDays = (0, product_validation_1.validateNonNegativeInteger)(durationDays, "مدت", "❌ مدت باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.");
+                const trafficBytes = data.trafficBytes ?? (data.trafficGB !== undefined ? BigInt(Math.round((0, product_validation_1.validateNonNegativeNumber)(data.trafficGB, "❌ حجم باید عدد صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.") * 1024 * 1024 * 1024)) : undefined);
+                const stockLimit = (0, product_validation_1.validateNonNegativeInteger)(data.stockLimit, "موجودی کل", "❌ موجودی کل باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی ناموجود.");
+                const limitIp = (0, product_validation_1.validateNonNegativeInteger)(data.xrayLimitIp ?? data.limitIp, "محدودیت IP", "❌ محدودیت IP باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.");
                 if (!inboundIds.length)
                     throw new Error("❌ برای ساخت محصول Xray حداقل یک اینباند لازم است.");
-                if (!trafficBytes || trafficBytes <= 0n)
-                    throw new Error("❌ حجم محصول Xray باید بیشتر از صفر باشد.");
+                if (trafficBytes === undefined || trafficBytes < 0n)
+                    throw new Error("❌ حجم باید عدد صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.");
                 product = await tx.product.create({ data: { categoryId: category.id, title, price, duration: validatedDurationDays, durationDays: validatedDurationDays, mode: "xray_auto", trafficBytes, stockLimit, soldCount: 0, inboundIds, inboundSnapshot: data.inboundSnapshot, xrayLimitIp: limitIp, xrayGroupName: data.xrayGroupName || null } });
             }
             else {
