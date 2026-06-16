@@ -56,6 +56,11 @@ function callbackQueryMetadata(url: URL) {
   return Object.fromEntries(url.searchParams.entries());
 }
 
+function dateValue(value: Date | string | null | undefined) {
+  if (!value) return undefined;
+  return value instanceof Date ? value : new Date(value);
+}
+
 export async function notifyUser(bot: AppBot, result: unknown) {
   if (!result || typeof result !== "object" || !("invoice" in result)) return;
   const payload = result as PaymentNotificationPayload;
@@ -160,7 +165,10 @@ export async function notifyUser(bot: AppBot, result: unknown) {
                   { text: "🔗 دریافت لینک اشتراک", callback_data: `xray:sub:${client.id}` },
                   { text: "⚙️ دریافت کانفیگ‌ها", callback_data: `xray:configs:${client.id}` },
                 ],
-                [{ text: "🏠 خانه", callback_data: callbackFor("home") }],
+                [
+                  { text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") },
+                  { text: "🏠 خانه", callback_data: callbackFor("home") },
+                ],
               ],
             },
           },
@@ -183,7 +191,7 @@ export async function notifyUser(bot: AppBot, result: unknown) {
           username: payload.account.username,
           subscriptionLink: payload.account.subscriptionLink,
           config: payload.account.configLink ?? payload.account.config,
-          expiresAt: payload.expiresAt ?? payload.orderItem?.expiresAt ?? undefined,
+          expiresAt: dateValue(payload.expiresAt ?? payload.orderItem?.expiresAt),
         }),
       ]);
       await bot.telegram.sendMessage(Number(user.telegramId), success.text, { ...paymentSuccessKeyboard("product"), entities: success.entities });

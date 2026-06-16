@@ -650,10 +650,7 @@ export class PaymentService {
     return {
       invoice: this.notificationInvoice(invoice),
       type: "PRODUCT_PURCHASE",
-      product: {
-        id: delivery.product.id,
-        title: delivery.product.title,
-      },
+      product: delivery.product,
       account: {
         id: account.id,
         username: account.username,
@@ -661,6 +658,8 @@ export class PaymentService {
         configLink: account.configLink,
         config: account.config,
       },
+      order: delivery.order,
+      orderItem: delivery.orderItem,
       xrayClient: xrayClient
         ? {
             id: xrayClient.id,
@@ -678,6 +677,8 @@ export class PaymentService {
       type: "PRODUCT_PURCHASE" as const,
       product: notification.product,
       account: notification.account,
+      order: purchaseResult.order,
+      orderItem: purchaseResult.orderItem,
       xrayClient: notification.xrayClient,
       purchaseResult,
     };
@@ -856,7 +857,19 @@ export class PaymentService {
       }
 
       if (fresh.orderId) {
-        const existingOrder = await tx.order.findUnique({ where: { id: fresh.orderId }, include: { product: true, items: { include: { productAccount: true, xrayClient: true }, take: 1 } } });
+        const existingOrder = await tx.order.findUnique({ where: { id: fresh.orderId }, include: { product: true, items: { include: { productAccount: true, xrayClient: true }, take: 1 }, xrayClients: { take: 1 } } });
+        if (existingOrder && !existingOrder.items[0] && existingOrder.xrayClients[0]) {
+          const existingClient = existingOrder.xrayClients[0];
+          if (existingClient.status === "active") {
+            const item = await tx.orderItem.findFirst({ where: { xrayClientId: existingClient.id } });
+            if (item) {
+              const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: fresh.completedAt ?? new Date(), verifiedAt: new Date(), deliveryStatus: "COMPLETED", orderId: existingOrder.id } });
+              return { invoice: completed, order: existingOrder, product: existingOrder.product, account: { id: existingClient.id, username: existingClient.clientEmail, subscriptionLink: null, configLink: null, config: item.deliveredConfig }, orderItem: item, xrayClient: existingClient, type: fresh.type as PaymentInvoiceType };
+            }
+          }
+          if (existingClient.status === "failed") throw new Error("تحویل Xray قبلاً ناموفق شده و نیازمند بررسی مدیر است");
+          return { invoice: fresh, order: existingOrder, product: existingOrder.product, account: { id: existingClient.id, username: existingClient.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem: null, xrayClient: existingClient, needsXrayProvisioning: existingClient.status === "provisioning" || existingClient.status === "creating", type: fresh.type as PaymentInvoiceType };
+        }
         if (existingOrder?.items[0]) {
           const existingClient = existingOrder.items[0].xrayClient;
           if (existingClient && existingClient.status !== "active") {
