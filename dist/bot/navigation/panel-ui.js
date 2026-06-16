@@ -46,7 +46,10 @@ const PARAM_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_ALIASES).map
 const PARAM_VALUE_ALIASES = {
     status: { all: "a", active: "ac", provisioning: "p", creating: "c", failed: "f", expired: "e", disabled: "d", missing_on_panel: "m" },
 };
-const PARAM_VALUE_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_VALUE_ALIASES).map(([key, values]) => [key, Object.fromEntries(Object.entries(values).map(([value, alias]) => [alias, value]))]));
+const PARAM_VALUE_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_VALUE_ALIASES).map(([key, values]) => [
+    key,
+    Object.fromEntries(Object.entries(values).map(([value, alias]) => [alias, value])),
+]));
 function isValidCallbackData(action) {
     return Buffer.byteLength(action, "utf8") <= 64;
 }
@@ -173,7 +176,11 @@ function panelKeyboard(rows, options = { back: true, home: true }) {
             return [telegraf_1.Markup.button.callback(button.text, ensureCallbackData(button.action))];
         }
         catch (error) {
-            console.error("CALLBACK_DATA_INVALID_PREVENTED", { text: button.text, action: button.action, error: error instanceof Error ? error.message : String(error) });
+            console.error("CALLBACK_DATA_INVALID_PREVENTED", {
+                text: button.text,
+                action: button.action,
+                error: error instanceof Error ? error.message : String(error),
+            });
             return [];
         }
     }))
@@ -206,7 +213,12 @@ async function renderPanel(ctx, state, mode = "push", renderMode = RenderMode.AU
         console.error("PANEL_RENDER_FAILED", { state, error: error instanceof Error ? error.message : String(error) });
         result = {
             text: "❌ نمایش این بخش ممکن نیست\n\nلطفاً از منوی اصلی دوباره وارد شوید.",
-            keyboard: [[{ text: "🏠 خانه", action: callbackFor("home") }, { text: "🎫 پشتیبانی", action: callbackFor("support") }]],
+            keyboard: [
+                [
+                    { text: "🏠 خانه", action: callbackFor("home") },
+                    { text: "🎫 پشتیبانی", action: callbackFor("support") },
+                ],
+            ],
         };
         renderMode = RenderMode.SEND_NEW;
     }
@@ -241,7 +253,8 @@ async function renderPanel(ctx, state, mode = "push", renderMode = RenderMode.AU
         }
     };
     const effectiveRenderMode = result.renderMode ?? renderMode;
-    const shouldEdit = effectiveRenderMode === RenderMode.EDIT_CURRENT || (effectiveRenderMode === RenderMode.AUTO && Boolean(ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message));
+    const shouldEdit = effectiveRenderMode === RenderMode.EDIT_CURRENT ||
+        (effectiveRenderMode === RenderMode.AUTO && Boolean(ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message));
     if (shouldEdit && ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message) {
         await ctx.editMessageText(result.text, extra).catch(async (error) => {
             const message = error instanceof Error ? error.message : String(error);

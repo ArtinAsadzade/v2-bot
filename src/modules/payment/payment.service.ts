@@ -36,6 +36,23 @@ type ProductInvoiceQuote = {
   couponCode: string | null;
 };
 
+type InvoiceNotificationPayload =
+  | {
+      invoice: Pick<PaymentInvoice, "id" | "userId" | "amount">;
+      type: "WALLET_TOPUP";
+      user: { balance: number };
+    }
+  | {
+      invoice: Pick<PaymentInvoice, "id" | "userId" | "amount">;
+      type: "PRODUCT_PURCHASE" | "XRAY_RENEWAL";
+      product?: { id: string; title: string };
+      account?: { id: string; username: string | null; subscriptionLink: string | null; configLink: string | null; config: string | null };
+      order?: unknown;
+      orderItem?: unknown;
+      xrayClient?: { id: string; clientEmail: string; expiresAt?: Date };
+      renewal?: unknown;
+    };
+
 class GatewayHttpError extends Error {
   constructor(public readonly status: number, message: string) {
     super(message);
@@ -620,6 +637,34 @@ export class PaymentService {
     return null;
   }
 
+  private static async existingCompletedResult(invoiceId: string): Promise<InvoiceNotificationPayload | null> {
+    const invoice = await prisma.paymentInvoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) return null;
+    if (invoice.type === "WALLET_TOPUP" && invoice.status === "COMPLETED") {
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: invoice.userId }, select: { balance: true } });
+      return { invoice, type: "WALLET_TOPUP", user };
+    }
+    if (invoice.type === "XRAY_RENEWAL" && invoice.status === "COMPLETED") {
+      const renewal = invoice.renewalId ? await prisma.xrayRenewal.findUnique({ where: { id: invoice.renewalId }, include: { xrayClient: true } }) : null;
+      return { invoice, type: "XRAY_RENEWAL", renewal: renewal ?? undefined, xrayClient: renewal?.xrayClient ? { id: renewal.xrayClient.id, clientEmail: renewal.xrayClient.clientEmail, expiresAt: renewal.xrayClient.expiresAt } : undefined };
+    }
+    if (invoice.type === "PRODUCT_PURCHASE" && invoice.status === "COMPLETED" && invoice.orderId) {
+      const order = await prisma.order.findUnique({
+        where: { id: invoice.orderId },
+        include: { product: true, items: { include: { productAccount: true, xrayClient: true }, take: 1 } },
+      });
+      const item = order?.items[0];
+      if (!order || !item) return { invoice, type: "PRODUCT_PURCHASE" };
+      const account = item.xrayClient
+        ? { id: item.xrayClient.id, username: item.xrayClient.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }
+        : item.productAccount
+          ? { id: item.productAccount.id, username: item.productAccount.username, subscriptionLink: item.productAccount.subscriptionLink, configLink: item.productAccount.configLink, config: item.productAccount.config }
+          : { id: item.id, username: item.deliveredUsername, subscriptionLink: item.deliveredSubscriptionLink, configLink: item.deliveredConfigLink, config: item.deliveredConfig };
+      return { invoice, type: "PRODUCT_PURCHASE", order, product: order.product, account, orderItem: item, xrayClient: item.xrayClient ? { id: item.xrayClient.id, clientEmail: item.xrayClient.clientEmail, expiresAt: item.xrayClient.expiresAt } : undefined };
+    }
+    return null;
+  }
+
   static async completePayment(reference: string | CallbackReference, metadata: Record<string, unknown> = {}) {
     const normalizedReference = normalizeCallbackReference(reference);
     if (!normalizedReference.token && !normalizedReference.invoice && !normalizedReference.invoice_id && !normalizedReference.pay_id) {
@@ -679,7 +724,7 @@ export class PaymentService {
       paymentLog("PAYMENT_DUPLICATE_CALLBACK_IGNORED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, deliveryStatus: invoice.deliveryStatus });
       await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_DUPLICATE_CALLBACK_IGNORED", metadata: { status: invoice.status, deliveryStatus: invoice.deliveryStatus, reference: normalizedReference } });
       MonitoringService.record({ type: "PAYMENT_DUPLICATE_CALLBACK", section: "Payment Callback", description: `Duplicate callback ignored for ${invoice.status}/${invoice.deliveryStatus ?? "none"}`, userId: invoice.userId, severity: "warning", suggestedAction: "اگر تکرار زیاد است، retry درگاه را بررسی کنید.", metadata: { invoiceId: invoice.id, status: invoice.status, deliveryStatus: invoice.deliveryStatus } });
-      return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+      return { statusCode: 200, text: ALREADY_PROCESSED_FA, result: await this.existingCompletedResult(invoice.id) };
     }
     if (invoice.status === "FAILED" || invoice.status === "CANCELED" || invoice.status === "EXPIRED") return { statusCode: 409, text: "Payment invoice is not payable." };
 
@@ -695,7 +740,7 @@ export class PaymentService {
         await audit(tx, { userId: fresh.userId, invoiceId: fresh.id, action: "PAYMENT_INVOICE_MARKED_PAID", metadata: { payId: fresh.payId, amount: fresh.amount, type: fresh.type } });
         return fresh;
       });
-      if (!markedPaid) return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+      if (!markedPaid) return { statusCode: 200, text: ALREADY_PROCESSED_FA, result: await this.existingCompletedResult(invoice.id) };
       paidInvoice = markedPaid;
       paymentLog("PAYMENT_INVOICE_MARKED_PAID", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, payId: paidInvoice.payId, amount: paidInvoice.amount, type: paidInvoice.type });
       paymentLog("PAYMENT_MARKED_PAID", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, payId: paidInvoice.payId, amount: paidInvoice.amount, type: paidInvoice.type });
@@ -706,7 +751,7 @@ export class PaymentService {
       where: { id: paidInvoice.id, status: "PAID", OR: [{ deliveryStatus: null }, { deliveryStatus: { in: ["PENDING", "FAILED", "FAILED_DELIVERY"] } }, { deliveryStatus: "PROCESSING", updatedAt: { lt: staleProcessingBefore } }] },
       data: { deliveryStatus: "PROCESSING" },
     });
-    if (fulfillmentLock.count !== 1) return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+    if (fulfillmentLock.count !== 1) return { statusCode: 200, text: ALREADY_PROCESSED_FA, result: await this.existingCompletedResult(paidInvoice.id) };
 
     try {
       paymentLog("PAYMENT_FULFILLMENT_STARTED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
@@ -1096,6 +1141,10 @@ export class PaymentService {
 }
 
 export class PaymentInvoiceService {
+  static async purchaseProductWithWallet(userId: string, productId: string, couponCode?: string) {
+    return PaymentService.purchaseProductWithWallet(userId, productId, couponCode);
+  }
+
   static async buildXrayRenewalQuote(userId: string, xrayClientId: string, productId: string) {
     return PaymentService.buildXrayRenewalQuote(userId, xrayClientId, productId);
   }

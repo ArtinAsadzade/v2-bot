@@ -46,15 +46,74 @@ const parseCouponType = (value) => {
 function parseKeyValueLines(text) {
     const entries = [];
     const aliases = {
-        url: "apiBaseUrl", baseUrl: "apiBaseUrl", token: "apiToken", اشتراک: "subscriptionBaseUrl", فعال: "enabled", وضعیت: "enabled",
-        name: "title", عنوان: "title", قیمت: "price", دسته: "categoryId", category: "categoryId",
-        traffic: "trafficGB", volume: "trafficGB", "حجم": "trafficGB",
-        duration: "duration", durationDays: "durationDays", "مدت": "durationDays",
-        stock: "stockLimit", "موجودی": "stockLimit",
-        limitIp: "xrayLimitIp", xrayLimitIp: "xrayLimitIp", ipLimit: "xrayLimitIp", "محدودیت IP": "xrayLimitIp", "محدودیت آیپی": "xrayLimitIp",
-        group: "xrayGroupName", "گروه": "xrayGroupName",
+        url: "apiBaseUrl",
+        baseUrl: "apiBaseUrl",
+        token: "apiToken",
+        اشتراک: "subscriptionBaseUrl",
+        فعال: "enabled",
+        وضعیت: "enabled",
+        name: "title",
+        عنوان: "title",
+        قیمت: "price",
+        دسته: "categoryId",
+        category: "categoryId",
+        traffic: "trafficGB",
+        volume: "trafficGB",
+        حجم: "trafficGB",
+        duration: "duration",
+        durationDays: "durationDays",
+        مدت: "durationDays",
+        stock: "stockLimit",
+        موجودی: "stockLimit",
+        limitIp: "xrayLimitIp",
+        xrayLimitIp: "xrayLimitIp",
+        ipLimit: "xrayLimitIp",
+        "محدودیت IP": "xrayLimitIp",
+        "محدودیت آیپی": "xrayLimitIp",
+        group: "xrayGroupName",
+        گروه: "xrayGroupName",
     };
-    const allowed = new Set(["apiBaseUrl", "apiToken", "subscriptionBaseUrl", "enabled", "url", "baseUrl", "token", "اشتراک", "فعال", "وضعیت", "title", "name", "categoryId", "category", "price", "duration", "durationDays", "trafficGB", "traffic", "volume", "stockLimit", "stock", "active", "عنوان", "قیمت", "مدت", "حجم", "موجودی", "دسته", "limitIp", "xrayLimitIp", "ipLimit", "محدودیت IP", "محدودیت آیپی", "group", "xrayGroupName", "گروه", "soldCount", "resetSoldCount"]);
+    const allowed = new Set([
+        "apiBaseUrl",
+        "apiToken",
+        "subscriptionBaseUrl",
+        "enabled",
+        "url",
+        "baseUrl",
+        "token",
+        "اشتراک",
+        "فعال",
+        "وضعیت",
+        "title",
+        "name",
+        "categoryId",
+        "category",
+        "price",
+        "duration",
+        "durationDays",
+        "trafficGB",
+        "traffic",
+        "volume",
+        "stockLimit",
+        "stock",
+        "active",
+        "عنوان",
+        "قیمت",
+        "مدت",
+        "حجم",
+        "موجودی",
+        "دسته",
+        "limitIp",
+        "xrayLimitIp",
+        "ipLimit",
+        "محدودیت IP",
+        "محدودیت آیپی",
+        "group",
+        "xrayGroupName",
+        "گروه",
+        "soldCount",
+        "resetSoldCount",
+    ]);
     for (const rawLine of text.split(/\n+/)) {
         const line = rawLine.trim();
         if (!line)
@@ -70,7 +129,9 @@ function parseKeyValueLines(text) {
     }
     return Object.fromEntries(entries);
 }
-function hasKey(data, key) { return Object.prototype.hasOwnProperty.call(data, key); }
+function hasKey(data, key) {
+    return Object.prototype.hasOwnProperty.call(data, key);
+}
 function parseResetGroup(value) {
     const normalized = (value ?? "").trim().toLowerCase();
     return !normalized || ["none", "-", "بدون گروه", "بدون‌گروه"].includes(normalized) ? null : value.trim();
@@ -166,11 +227,13 @@ const definitions = {
         firstStep: "amount",
         prompt: async () => {
             const setting = await deposit_service_1.FinancialSettingsService.get();
-            return `💰 شارژ کیف پول با پرداخت آنی
+            return `💳 شارژ کیف پول
 
-حداقل شارژ: ${money(setting.minimumTopupAmount)}
+حداقل مبلغ قابل شارژ: ${money(setting.minimumTopupAmount)}
 
-مبلغ را فقط به تومان وارد کنید. پس از پرداخت موفق، callback رسمی درگاه تأیید پرداخت محسوب می‌شود و کیف پول شما خودکار شارژ خواهد شد.`;
+لطفاً مبلغ موردنظر را به تومان وارد کنید.
+
+پس از تکمیل موفق پرداخت، تأییدیه رسمی درگاه پرداخت به‌صورت خودکار دریافت شده و مبلغ بلافاصله به کیف پول شما افزوده خواهد شد.`;
         },
         async handleText(ctx, text) {
             const user = await requireUser(ctx);
@@ -471,7 +534,10 @@ active: ${detail.category.isActive}`;
                     return { text: "موجودی معتبر نیست. دوباره وارد کنید:" };
                 flow.data.stockLimit = stock;
                 flow.step = "limitIp";
-                return { text: "🌐 محدودیت IP را وارد کنید\n\nمثال:\n0 = نامحدود\n1 = فقط یک IP\n2 = دو IP همزمان\n\n۰ یعنی بدون محدودیت", nextStep: "limitIp" };
+                return {
+                    text: "🌐 محدودیت IP را وارد کنید\n\nمثال:\n0 = نامحدود\n1 = فقط یک IP\n2 = دو IP همزمان\n\n۰ یعنی بدون محدودیت",
+                    nextStep: "limitIp",
+                };
             }
             if (flow.step === "limitIp") {
                 const limitIp = Number(text.replace(/[,،\s]/g, ""));
@@ -479,7 +545,10 @@ active: ${detail.category.isActive}`;
                     return { text: "محدودیت IP معتبر نیست. عددی بزرگ‌تر یا مساوی ۰ وارد کنید:\n۰ یعنی بدون محدودیت" };
                 flow.data.limitIp = limitIp;
                 flow.step = "group";
-                return { text: "👥 انتخاب گروه کلاینت\n\nلطفاً گروه کلاینت را از دکمه‌های زیر انتخاب کنید.", keyboard: [[{ text: "👥 انتخاب گروه", action: "admin:xray_picker:group:product_create" }]] };
+                return {
+                    text: "👥 انتخاب گروه کلاینت\n\nلطفاً گروه کلاینت را از دکمه‌های زیر انتخاب کنید.",
+                    keyboard: [[{ text: "👥 انتخاب گروه", action: "admin:xray_picker:group:product_create" }]],
+                };
             }
             if (flow.step !== "confirm")
                 return { text: "لطفاً انتخاب گروه و اینباند را با دکمه‌های فرم انجام دهید." };
@@ -522,13 +591,15 @@ categoryId: ${detail.product.categoryId}
 price: ${detail.product.price}
 duration: ${detail.product.duration}
 active: ${detail.product.isActive}
-${detail.product.mode === "xray_auto" ? `trafficGB: ${detail.product.trafficBytes ? Number(detail.product.trafficBytes) / 1073741824 : ""}
+${detail.product.mode === "xray_auto"
+                ? `trafficGB: ${detail.product.trafficBytes ? Number(detail.product.trafficBytes) / 1073741824 : ""}
 durationDays: ${detail.product.durationDays ?? detail.product.duration}
 stockLimit: ${detail.product.stockLimit ?? ""}
 limitIp: ${detail.product.xrayLimitIp ?? 0}
 group: ${detail.product.xrayGroupName ?? ""}
 
-نکته: تغییر حجم/مدت/اینباند فقط روی خریدهای بعدی اعمال می‌شود و سرویس‌های قبلی را تغییر نمی‌دهد.` : ""}
+نکته: تغییر حجم/مدت/اینباند فقط روی خریدهای بعدی اعمال می‌شود و سرویس‌های قبلی را تغییر نمی‌دهد.`
+                : ""}
 
 برای تغییر دسته‌بندی می‌توانید یکی از دکمه‌های دسته‌بندی فعال را انتخاب کنید.`;
         },
@@ -540,12 +611,26 @@ group: ${detail.product.xrayGroupName ?? ""}
             const detail = await admin_service_1.AdminService.productDetail(productId);
             const isXray = detail.product?.mode === "xray_auto";
             // Legacy audit: validFields = new Set(["title", "price", "category", "trafficGB", "durationDays", "stockLimit", "limitIp"]);
-            const validFields = new Set(["title", "price", "category", "trafficGB", "durationDays", "stockLimit", "limitIp", "xrayLimitIp", "group", "xrayGroupName", "soldCount", "resetSoldCount"]);
+            const validFields = new Set([
+                "title",
+                "price",
+                "category",
+                "trafficGB",
+                "durationDays",
+                "stockLimit",
+                "limitIp",
+                "xrayLimitIp",
+                "group",
+                "xrayGroupName",
+                "soldCount",
+                "resetSoldCount",
+            ]);
             if (field && !validFields.has(field))
                 return { done: true, text: "⚠️ فیلد ویرایش معتبر نیست.", returnTo: { id: "admin.product", params: { productId } } };
             const patch = {};
             if (field) {
-                if (["trafficGB", "durationDays", "stockLimit", "limitIp", "xrayLimitIp", "group", "xrayGroupName", "soldCount", "resetSoldCount"].includes(field) && !isXray)
+                if (["trafficGB", "durationDays", "stockLimit", "limitIp", "xrayLimitIp", "group", "xrayGroupName", "soldCount", "resetSoldCount"].includes(field) &&
+                    !isXray)
                     return { done: true, text: "⚠️ این فیلد فقط برای محصولات Xray است.", returnTo: { id: "admin.product", params: { productId } } };
                 if (field === "title")
                     patch.title = text.trim();
@@ -574,9 +659,13 @@ group: ${detail.product.xrayGroupName ?? ""}
                     title: data.title ?? data.name ?? data["عنوان"],
                     categoryId: data.categoryId ?? data.category ?? data["دسته"] ?? selectedCategoryId,
                     price: data.price || data["قیمت"] ? parseInteger(data.price ?? data["قیمت"] ?? "0") : undefined,
-                    duration: hasKey(data, "duration") || (!isXray && hasKey(data, "durationDays")) ? parseInteger(data.duration ?? data.durationDays ?? "0") : undefined,
+                    duration: hasKey(data, "duration") || (!isXray && hasKey(data, "durationDays"))
+                        ? parseInteger(data.duration ?? data.durationDays ?? "0")
+                        : undefined,
                     trafficGB: isXray && hasKey(data, "trafficGB") ? parseInteger(data.trafficGB) : undefined,
-                    durationDays: isXray && (hasKey(data, "durationDays") || hasKey(data, "duration")) ? parseInteger(data.durationDays ?? data.duration ?? "0") : undefined,
+                    durationDays: isXray && (hasKey(data, "durationDays") || hasKey(data, "duration"))
+                        ? parseInteger(data.durationDays ?? data.duration ?? "0")
+                        : undefined,
                     stockLimit: isXray && hasKey(data, "stockLimit") ? parseInteger(data.stockLimit) : undefined,
                     isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
                     xrayLimitIp: isXray && hasKey(data, "xrayLimitIp") ? parseInteger(data.xrayLimitIp) : undefined,
@@ -608,7 +697,15 @@ group: ${detail.product.xrayGroupName ?? ""}
             const value = parseInteger(text);
             if (!Number.isInteger(value) || (field === "limitIp" ? value < 0 : value <= 0))
                 return { text: field === "limitIp" ? "عدد صفر یا بزرگ‌تر وارد کنید:" : "یک عدد مثبت وارد کنید:" };
-            const patch = field === "trafficGB" ? { trafficGB: value } : field === "durationDays" ? { durationDays: value } : field === "stockLimit" ? { stockLimit: value } : field === "limitIp" ? { limitIp: value } : undefined;
+            const patch = field === "trafficGB"
+                ? { trafficGB: value }
+                : field === "durationDays"
+                    ? { durationDays: value }
+                    : field === "stockLimit"
+                        ? { stockLimit: value }
+                        : field === "limitIp"
+                            ? { limitIp: value }
+                            : undefined;
             if (!patch)
                 return { done: true, text: "⚠️ فیلد تنظیمات معتبر نیست.", returnTo: { id: "admin.freeAccounts" } };
             await free_account_service_1.FreeAccountService.updateXrayConfig(patch, String(ctx.from?.id ?? "admin"));
@@ -840,7 +937,13 @@ status: ${coupon.status} (active/inactive)`;
                 value: data.value ? parseInteger(data.value) : data["مقدار"] ? parseInteger(data["مقدار"]) : undefined,
                 maxUses: data.maxUses ? parseInteger(data.maxUses) : data["حداکثر"] ? parseInteger(data["حداکثر"]) : undefined,
                 perUserLimit: data.perUserLimit ? parseInteger(data.perUserLimit) : data["هر کاربر"] ? parseInteger(data["هر کاربر"]) : undefined,
-                minimumPurchaseAmount: data.minimumPurchaseAmount ? parseInteger(data.minimumPurchaseAmount) : data.minimum ? parseInteger(data.minimum) : data["حداقل خرید"] ? parseInteger(data["حداقل خرید"]) : undefined,
+                minimumPurchaseAmount: data.minimumPurchaseAmount
+                    ? parseInteger(data.minimumPurchaseAmount)
+                    : data.minimum
+                        ? parseInteger(data.minimum)
+                        : data["حداقل خرید"]
+                            ? parseInteger(data["حداقل خرید"])
+                            : undefined,
                 expiresAt: expiresInDays ? new Date(Date.now() + expiresInDays * 86400000) : undefined,
                 status: parseStatus(data.status ?? data["وضعیت"]),
             };
@@ -916,7 +1019,9 @@ status: ${detail.wallet.status}`;
                 networkName: data.networkName ?? data.network ?? data["شبکه"],
                 displayName: data.displayName ?? data.display ?? data["نام نمایشی"],
                 walletAddress: data.walletAddress ?? data.address ?? data["آدرس"],
-                displayOrder: data.displayOrder || data.order || data.sort || data["ترتیب"] ? parseInteger(data.displayOrder ?? data.order ?? data.sort ?? data["ترتیب"] ?? "0") : undefined,
+                displayOrder: data.displayOrder || data.order || data.sort || data["ترتیب"]
+                    ? parseInteger(data.displayOrder ?? data.order ?? data.sort ?? data["ترتیب"] ?? "0")
+                    : undefined,
                 status: parseStatus(data.status ?? data.active ?? data["وضعیت"]),
             }, String(ctx.from?.id ?? "admin"), walletId);
             return { done: true, text: "✅ کیف پول به‌روزرسانی شد.", returnTo: { id: "admin.wallet", params: { walletId: wallet.id } } };
@@ -955,11 +1060,27 @@ status: ${detail.wallet.status}`;
     },
     store_status: {
         firstStep: "status",
-        prompt: "وضعیت فروشگاه را وارد کنید (فعال / غیرفعال):",
+        prompt: `🏪 مدیریت وضعیت فروشگاه
+
+وضعیت موردنظر فروشگاه را انتخاب کنید:
+
+🟢 فعال: کاربران می‌توانند محصولات را ببینند و خرید انجام دهند.
+🔴 غیرفعال: فروشگاه بسته می‌شود و خرید جدید انجام نمی‌شود.`,
+        initialKeyboard: () => [
+            [
+                { text: "🟢 فعال کردن فروشگاه", action: "flow:store_status:active" },
+                { text: "🔴 غیرفعال کردن فروشگاه", action: "flow:store_status:inactive" },
+            ],
+        ],
         async handleText(ctx, text) {
-            const status = text.includes("غیر") || text.toLowerCase() === "inactive" ? "inactive" : "active";
+            const normalized = text.trim().toLowerCase();
+            const status = normalized.includes("غیر") || normalized === "inactive" || normalized === "off" || normalized === "0" ? "inactive" : "active";
             await admin_service_1.AdminService.setStoreStatus(status, String(ctx.from?.id ?? "admin"));
-            return { done: true, text: "✅ وضعیت فروشگاه ذخیره شد.", returnTo: { id: "admin.store" } };
+            return {
+                done: true,
+                text: status === "active" ? "✅ فروشگاه با موفقیت فعال شد." : "⛔ فروشگاه با موفقیت غیرفعال شد.",
+                returnTo: { id: "admin.store" },
+            };
         },
     },
     forced_join_create: {
@@ -978,12 +1099,21 @@ status: ${detail.wallet.status}`;
                 return { text: "لینک عضویت کانال را وارد کنید. برای کانال عمومیِ @username می‌توانید «-» بفرستید:", nextStep: "inviteLink" };
             }
             try {
-                await admin_service_1.AdminService.saveForcedJoinChannel({ chatId: String(flow.data.chatId), title: String(flow.data.title), inviteLink: text.trim() === "-" ? undefined : text.trim(), status: "active" }, String(ctx.from?.id ?? "admin"));
+                await admin_service_1.AdminService.saveForcedJoinChannel({
+                    chatId: String(flow.data.chatId),
+                    title: String(flow.data.title),
+                    inviteLink: text.trim() === "-" ? undefined : text.trim(),
+                    status: "active",
+                }, String(ctx.from?.id ?? "admin"));
             }
             catch (error) {
-                return { text: error instanceof Error ? `⚠️ ${error.message}
+                return {
+                    text: error instanceof Error
+                        ? `⚠️ ${error.message}
 
-لینک عضویت معتبر را وارد کنید:` : "⚠️ ذخیره کانال ناموفق بود. لینک عضویت را دوباره وارد کنید:" };
+لینک عضویت معتبر را وارد کنید:`
+                        : "⚠️ ذخیره کانال ناموفق بود. لینک عضویت را دوباره وارد کنید:",
+                };
             }
             return { done: true, text: "✅ کانال عضویت اجباری ذخیره شد.", returnTo: { id: "admin.forcedJoin" } };
         },
@@ -1015,7 +1145,14 @@ status: ${detail.wallet.status}`;
             }
             const order = parseInteger(text);
             try {
-                await product_guide_service_1.ProductGuideService.save({ title: String(flow.data.title), shortDescription: String(flow.data.shortDescription), body: String(flow.data.body), icon: String(flow.data.icon ?? "📘"), displayOrder: Number.isFinite(order) ? order : 0, isActive: true }, String(ctx.from?.id ?? "admin"));
+                await product_guide_service_1.ProductGuideService.save({
+                    title: String(flow.data.title),
+                    shortDescription: String(flow.data.shortDescription),
+                    body: String(flow.data.body),
+                    icon: String(flow.data.icon ?? "📘"),
+                    displayOrder: Number.isFinite(order) ? order : 0,
+                    isActive: true,
+                }, String(ctx.from?.id ?? "admin"));
                 return { done: true, text: "✅ بخش راهنمای محصولات ذخیره شد.", returnTo: { id: "admin.productGuides" } };
             }
             catch (error) {
@@ -1050,7 +1187,14 @@ status: ${detail.wallet.status}`;
             }
             const order = parseInteger(text);
             try {
-                await product_guide_service_1.ProductGuideService.save({ title: String(flow.data.title), shortDescription: String(flow.data.shortDescription), body: String(flow.data.body), icon: String(flow.data.icon ?? "📘"), displayOrder: Number.isFinite(order) ? order : 0, isActive: true }, String(ctx.from?.id ?? "admin"), String(flow.data.sectionId));
+                await product_guide_service_1.ProductGuideService.save({
+                    title: String(flow.data.title),
+                    shortDescription: String(flow.data.shortDescription),
+                    body: String(flow.data.body),
+                    icon: String(flow.data.icon ?? "📘"),
+                    displayOrder: Number.isFinite(order) ? order : 0,
+                    isActive: true,
+                }, String(ctx.from?.id ?? "admin"), String(flow.data.sectionId));
                 return { done: true, text: "✅ بخش راهنما ویرایش شد.", returnTo: { id: "admin.productGuides" } };
             }
             catch (error) {
@@ -1119,7 +1263,9 @@ status: ${detail.wallet.status}`;
                     return { text: "برای ادامه روی دکمه تأیید بزنید." };
             }
             catch (error) {
-                return { text: error instanceof Error ? `❌ ${error.message}\n\nهمان مرحله را با مقدار معتبر دوباره ارسال کنید:` : "❌ ذخیره مرحله ناموفق بود" };
+                return {
+                    text: error instanceof Error ? `❌ ${error.message}\n\nهمان مرحله را با مقدار معتبر دوباره ارسال کنید:` : "❌ ذخیره مرحله ناموفق بود",
+                };
             }
             return { text: "⚠️ مرحله نامعتبر است." };
         },
@@ -1218,7 +1364,20 @@ async function handleActiveFlowText(ctx, text) {
         return false;
     if (result.done) {
         ctx.session.flow = undefined;
-        await ctx.reply(result.text, flow.name === "instant_topup" ? { reply_markup: { inline_keyboard: [[{ text: "💳 پرداخت", url: String(result.text.match(/https?:\/\/\S+/)?.[0] ?? "") }], [{ text: "🔄 بررسی وضعیت", callback_data: (0, panel_ui_1.callbackFor)("wallet.history") }, { text: "🎫 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } } : undefined);
+        await ctx.reply(result.text, flow.name === "instant_topup"
+            ? {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "💳 پرداخت", url: String(result.text.match(/https?:\/\/\S+/)?.[0] ?? "") }],
+                        [
+                            { text: "🔄 بررسی وضعیت", callback_data: (0, panel_ui_1.callbackFor)("wallet.history") },
+                            { text: "🎫 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") },
+                        ],
+                        [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }],
+                    ],
+                },
+            }
+            : undefined);
         await (0, panel_ui_1.renderPanel)(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace", panel_ui_1.RenderMode.SEND_NEW);
         return true;
     }
@@ -1411,5 +1570,19 @@ function registerFlowEngine(bot) {
         if (name === "product_price")
             return startFlow(ctx, "product_price", { productId: ctx.match[2] });
         return startFlow(ctx, name);
+    });
+    bot.action(/^flow:store_status:(active|inactive)$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id))) {
+            await ctx.answerCbQuery("دسترسی غیرمجاز");
+            return;
+        }
+        const status = ctx.match[1];
+        await admin_service_1.AdminService.setStoreStatus(status, String(ctx.from.id));
+        ctx.session.flow = undefined;
+        await ctx.reply(status === "active"
+            ? "✅ فروشگاه با موفقیت فعال شد.\n\nکاربران اکنون می‌توانند محصولات را مشاهده و خرید کنند."
+            : "⛔ فروشگاه با موفقیت غیرفعال شد.\n\nتا زمان فعال‌سازی مجدد، خرید جدید برای کاربران بسته خواهد بود.");
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.store" }, "replace");
     });
 }
