@@ -78,9 +78,16 @@ async function notifyUser(bot, result) {
             if (payload.xrayClient) {
                 const expiry = payload.xrayClient.expiresAt ? new Date(payload.xrayClient.expiresAt).toLocaleDateString("fa-IR") : "ثبت نشده";
                 const subscription = payload.account.subscriptionLink ? `\n\n🔗 لینک اشتراک:\n${payload.account.subscriptionLink}` : "";
-                const config = payload.account.configLink || payload.account.config ? `\n\n⚙️ کانفیگ/لینک کانفیگ:\n${payload.account.configLink ?? payload.account.config}` : "";
+                const config = payload.account.configLink || payload.account.config
+                    ? `\n\n⚙️ کانفیگ/لینک کانفیگ:\n${payload.account.configLink ?? payload.account.config}`
+                    : "";
                 await bot.telegram.sendMessage(Number(user.telegramId), `🎉 Your Xray account is ready\n\n━━━━━━━━━━━━━━━━\n\n👤 Service ID:\n${payload.xrayClient.clientEmail}\n\n⏳ Valid until:\n${expiry}\n\n📦 This service has been added to “My Accounts”.${subscription}${config}`, {
-                    reply_markup: { inline_keyboard: [[{ text: "View My Accounts", callback_data: "nav:account.details" }], [{ text: "📦 مشاهده سرویس", callback_data: `nav:account.xray?xid=${payload.xrayClient.id}` }]] },
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "View My Accounts", callback_data: "nav:account.details" }],
+                            [{ text: "📦 مشاهده سرویس", callback_data: `nav:account.xray?xid=${payload.xrayClient.id}` }],
+                        ],
+                    },
                 });
                 await payment_service_1.PaymentInvoiceService.markNotification(invoice.id, "SENT", {
                     type: "xray_product_purchase",
@@ -124,49 +131,6 @@ function startPaymentCallbackServer(bot) {
             query: Object.fromEntries(callbackUrl.searchParams.entries()),
             remoteAddress: req.socket.remoteAddress,
         });
-        if (callbackUrl.pathname === "/test-payment" && process.env.NODE_ENV !== "production" && process.env.ENABLE_TEST_PAYMENT_ROUTE === "true") {
-            try {
-                const user = await prisma_1.prisma.user.findFirst({
-                    where: {
-                        telegramId: "8793993570",
-                    },
-                });
-                if (!user) {
-                    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-                    res.end("user not found");
-                    return;
-                }
-                await notifyUser(bot, {
-                    invoice: {
-                        id: "test",
-                        userId: user.id,
-                        amount: 72000,
-                    },
-                    product: {
-                        id: "prod1",
-                        title: "10GB | 30 روز",
-                    },
-                    account: {
-                        id: "acc1",
-                        username: "testuser",
-                        subscriptionLink: "https://example.com/sub",
-                        configLink: null,
-                        config: "vless://test",
-                    },
-                });
-                res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-                res.end("ok");
-                return;
-            }
-            catch (error) {
-                logger_1.logger.error("TEST PAYMENT FAILED", {
-                    error: error instanceof Error ? error.message : String(error),
-                });
-                res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-                res.end(error instanceof Error ? error.message : "test failed");
-                return;
-            }
-        }
         if (req.method !== "GET" || !["/payments/callback", "/api/payment/callback"].includes(callbackUrl.pathname)) {
             res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
             res.end("درخواست پیدا نشد.");

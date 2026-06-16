@@ -25,7 +25,15 @@ function actor(ctx) {
 function statusFa(value) {
     if (typeof value === "boolean")
         return value ? "فعال" : "غیرفعال";
-    return { active: "فعال", inactive: "غیرفعال", available: "AVAILABLE", reserved: "RESERVED", sold: "SOLD", disabled: "DISABLED", expired: "EXPIRED" }[String(value)] ?? String(value ?? "-");
+    return ({
+        active: "فعال",
+        inactive: "غیرفعال",
+        available: "AVAILABLE",
+        reserved: "RESERVED",
+        sold: "SOLD",
+        disabled: "DISABLED",
+        expired: "EXPIRED",
+    }[String(value)] ?? String(value ?? "-"));
 }
 function dateFa(date) {
     return date ? new Intl.DateTimeFormat("fa-IR", { dateStyle: "short", timeStyle: "short" }).format(date) : "-";
@@ -53,14 +61,26 @@ function productDetailText(detail) {
 function productDetailKeyboard(detail) {
     const p = detail.product;
     const rows = [
-        [telegraf_1.Markup.button.callback("✏️ عنوان/قیمت/دسته", `admin:product:edit:${p.id}`), telegraf_1.Markup.button.callback(p.isActive ? "⏸ غیرفعال" : "▶️ فعال", `admin:product:status:${p.id}:${p.isActive ? "off" : "on"}`)],
+        [
+            telegraf_1.Markup.button.callback("✏️ عنوان/قیمت/دسته", `admin:product:edit:${p.id}`),
+            telegraf_1.Markup.button.callback(p.isActive ? "⏸ غیرفعال" : "▶️ فعال", `admin:product:status:${p.id}:${p.isActive ? "off" : "on"}`),
+        ],
     ];
     if (p.mode === "xray_auto")
-        rows.push([telegraf_1.Markup.button.callback("✏️ تغییر حجم", `admin:pe:tr:${p.id}`), telegraf_1.Markup.button.callback("✏️ تغییر مدت", `admin:pe:du:${p.id}`)], [telegraf_1.Markup.button.callback("✏️ تغییر موجودی کل", `admin:pe:st:${p.id}`), telegraf_1.Markup.button.callback("♻️ ریست تعداد فروخته‌شده", `admin:pe:sr:${p.id}`)], [telegraf_1.Markup.button.callback("✏️ محدودیت IP", `admin:pe:ip:${p.id}`), telegraf_1.Markup.button.callback("✏️ گروه", `admin:pe:gr:${p.id}`)], [telegraf_1.Markup.button.callback("✏️ اینباندها", `admin:pe:in:${p.id}`)]);
+        rows.push([telegraf_1.Markup.button.callback("✏️ تغییر حجم", `admin:pe:tr:${p.id}`), telegraf_1.Markup.button.callback("✏️ تغییر مدت", `admin:pe:du:${p.id}`)], [
+            telegraf_1.Markup.button.callback("✏️ تغییر موجودی کل", `admin:pe:st:${p.id}`),
+            telegraf_1.Markup.button.callback("♻️ ریست تعداد فروخته‌شده", `admin:pe:sr:${p.id}`),
+        ], [telegraf_1.Markup.button.callback("✏️ محدودیت IP", `admin:pe:ip:${p.id}`), telegraf_1.Markup.button.callback("✏️ گروه", `admin:pe:gr:${p.id}`)], [telegraf_1.Markup.button.callback("✏️ اینباندها", `admin:pe:in:${p.id}`)]);
     else
-        rows.push([telegraf_1.Markup.button.callback("🗄 اکانت‌های محصول", `admin:product:accounts:${p.id}:page:1`), telegraf_1.Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${p.id}`)]);
+        rows.push([
+            telegraf_1.Markup.button.callback("🗄 اکانت‌های محصول", `admin:product:accounts:${p.id}:page:1`),
+            telegraf_1.Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${p.id}`),
+        ]);
     rows.push([telegraf_1.Markup.button.callback("📋 کپی محصول", `admin:product:duplicate:${p.id}`)]);
-    rows.push([telegraf_1.Markup.button.callback("🗑 حذف نرم", `admin:product:delete:${p.id}`), telegraf_1.Markup.button.callback("🔥 حذف دائمی", `admin:product:hard:${p.id}`)]);
+    rows.push([
+        telegraf_1.Markup.button.callback("🗑 حذف نرم", `admin:product:delete:${p.id}`),
+        telegraf_1.Markup.button.callback("🔥 حذف دائمی", `admin:product:hard:${p.id}`),
+    ]);
     rows.push([telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:products")]);
     return telegraf_1.Markup.inlineKeyboard(rows);
 }
@@ -91,7 +111,12 @@ function entityListKeyboard(rows, prefix, page, total, pageSize, backTo = "admin
         nav.push(telegraf_1.Markup.button.callback("⬅️ قبلی", `${prefix}:page:${page - 1}`));
     if (page < totalPages)
         nav.push(telegraf_1.Markup.button.callback("بعدی ➡️", `${prefix}:page:${page + 1}`));
-    return telegraf_1.Markup.inlineKeyboard([...extra, ...rows, ...(nav.length ? [nav] : []), [telegraf_1.Markup.button.callback("🔎 جستجو", `${prefix}:search`), telegraf_1.Markup.button.callback("↩️ بازگشت", backTo)]]);
+    return telegraf_1.Markup.inlineKeyboard([
+        ...extra,
+        ...rows,
+        ...(nav.length ? [nav] : []),
+        [telegraf_1.Markup.button.callback("🔎 جستجو", `${prefix}:search`), telegraf_1.Markup.button.callback("↩️ بازگشت", backTo)],
+    ]);
 }
 function productInputHelp() {
     return "هر خط را به شکل key:value ارسال کنید.\nمثال:\ntitle:VIP\nprice:250000\nduration:30\ncategoryId: شناسه دسته\nactive:true";
@@ -109,7 +134,13 @@ function inventoryStatsLine(stats) {
     return `کل: ${stats.total.toLocaleString("fa-IR")} | آماده: ${stats.available.toLocaleString("fa-IR")} | رزرو: ${stats.reserved.toLocaleString("fa-IR")} | فروخته: ${stats.sold.toLocaleString("fa-IR")} | غیرفعال: ${stats.disabled.toLocaleString("fa-IR")} | منقضی: ${stats.expired.toLocaleString("fa-IR")}`;
 }
 function accountStatusFilterKeyboard(currentStatus) {
-    const statuses = [["available", "✅ آماده"], ["reserved", "⏳ رزرو"], ["sold", "💰 فروخته"], ["disabled", "⏸ غیرفعال"], ["expired", "⌛ منقضی"]];
+    const statuses = [
+        ["available", "✅ آماده"],
+        ["reserved", "⏳ رزرو"],
+        ["sold", "💰 فروخته"],
+        ["disabled", "⏸ غیرفعال"],
+        ["expired", "⌛ منقضی"],
+    ];
     return statuses.map(([status, label]) => telegraf_1.Markup.button.callback(`${currentStatus === status ? "• " : ""}${label}`, `admin:accounts:status:${status}:page:1`));
 }
 function registerAdminHandlers(bot) {
@@ -126,7 +157,10 @@ function registerAdminHandlers(bot) {
         await ctx.answerCbQuery();
         const dashboard = await monitoring_service_1.MonitoringService.dashboard();
         const count = (type) => dashboard.events.filter((event) => event.type.includes(type)).length;
-        const recent = dashboard.events.slice(0, 8).map((event) => `• ${event.type} | ${dateFa(event.createdAt)} | ${event.section}`).join("\n") || "خطای اخیر ثبت نشده است.";
+        const recent = dashboard.events
+            .slice(0, 8)
+            .map((event) => `• ${event.type} | ${dateFa(event.createdAt)} | ${event.section}`)
+            .join("\n") || "خطای اخیر ثبت نشده است.";
         const paymentErrors = dashboard.events.filter((event) => event.type.startsWith("PAYMENT") || event.type === "PURCHASE_FAILED").length;
         const ticketErrors = count("TICKET");
         const jobErrors = count("JOB");
@@ -142,7 +176,8 @@ function registerAdminHandlers(bot) {
         const page = "match" in ctx && ctx.match ? Number(ctx.match[1]) : 1;
         const { take, pageSize } = (0, pagination_1.getPagination)(page);
         const [users, total] = await admin_service_1.AdminService.listUsers(page, take);
-        await ctx.reply(users.map((user) => `👤 ${user.telegramId} @${user.username ?? "-"} | ${user.balance.toLocaleString("fa-IR")} تومان`).join("\n") || "کاربری وجود ندارد.", paginationKeyboard("admin:users", page, (0, pagination_1.getTotalPages)(total, pageSize)));
+        await ctx.reply(users.map((user) => `👤 ${user.telegramId} @${user.username ?? "-"} | ${user.balance.toLocaleString("fa-IR")} تومان`).join("\n") ||
+            "کاربری وجود ندارد.", paginationKeyboard("admin:users", page, (0, pagination_1.getTotalPages)(total, pageSize)));
     });
     bot.action("admin:users:search", async (ctx) => {
         if (!(await requireAdmin(ctx)))
@@ -185,7 +220,9 @@ function registerAdminHandlers(bot) {
         if (!detail.category)
             return void (await ctx.reply("دسته‌بندی پیدا نشد.", (0, main_keyboard_1.navigationKeyboard)("admin:categories")));
         const productTotalPages = (0, pagination_1.getTotalPages)(detail.productCount, detail.productTake);
-        const products = detail.products.map((product) => `• ${product.title} | ${statusFa(product.isActive)} | فروش ${product._count.orders.toLocaleString("fa-IR")}`).join("\n") || "بدون محصول";
+        const products = detail.products
+            .map((product) => `• ${product.title} | ${statusFa(product.isActive)} | فروش ${product._count.orders.toLocaleString("fa-IR")}`)
+            .join("\n") || "بدون محصول";
         const productNav = [];
         if (productPage > 1)
             productNav.push(telegraf_1.Markup.button.callback("⬅️ محصولات قبلی", `admin:category:products:${detail.category.id}:page:${productPage - 1}`));
@@ -193,8 +230,14 @@ function registerAdminHandlers(bot) {
             productNav.push(telegraf_1.Markup.button.callback("محصولات بعدی ➡️", `admin:category:products:${detail.category.id}:page:${productPage + 1}`));
         await ctx.reply(`${detail.category.icon ?? "📂"} ${detail.category.name}\nتوضیحات: ${detail.category.description ?? "-"}\nترتیب نمایش: ${detail.category.displayOrder.toLocaleString("fa-IR")}\nوضعیت: ${statusFa(detail.category.isActive)}\n\n📊 آمار فروشگاه\nمحصولات: ${detail.productCount.toLocaleString("fa-IR")}\nمحصولات فعال: ${detail.activeProductCount.toLocaleString("fa-IR")}\nتعداد فروش: ${detail.salesCount.toLocaleString("fa-IR")}\n\n📦 محصولات داخل دسته (صفحه ${productPage.toLocaleString("fa-IR")} از ${productTotalPages.toLocaleString("fa-IR")}):\n${products}`, telegraf_1.Markup.inlineKeyboard([
             ...(productNav.length ? [productNav] : []),
-            [telegraf_1.Markup.button.callback("✏️ ویرایش", `admin:category:edit:${detail.category.id}`), telegraf_1.Markup.button.callback(detail.category.isActive ? "⏸ غیرفعال" : "▶️ فعال", `admin:category:status:${detail.category.id}:${detail.category.isActive ? "off" : "on"}`)],
-            [telegraf_1.Markup.button.callback("🗑 حذف نرم", `admin:category:delete:${detail.category.id}`), telegraf_1.Markup.button.callback("🔥 حذف دائمی", `admin:category:hard:${detail.category.id}`)],
+            [
+                telegraf_1.Markup.button.callback("✏️ ویرایش", `admin:category:edit:${detail.category.id}`),
+                telegraf_1.Markup.button.callback(detail.category.isActive ? "⏸ غیرفعال" : "▶️ فعال", `admin:category:status:${detail.category.id}:${detail.category.isActive ? "off" : "on"}`),
+            ],
+            [
+                telegraf_1.Markup.button.callback("🗑 حذف نرم", `admin:category:delete:${detail.category.id}`),
+                telegraf_1.Markup.button.callback("🔥 حذف دائمی", `admin:category:hard:${detail.category.id}`),
+            ],
             [telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:categories")],
         ]));
     });
@@ -271,7 +314,14 @@ function registerAdminHandlers(bot) {
         if (!(await requireAdmin(ctx)))
             return;
         await ctx.answerCbQuery();
-        const map = { tr: ["traffic", "حجم جدید را به گیگابایت وارد کنید. عدد ۰ یعنی نامحدود."], du: ["duration", "مدت جدید را به روز وارد کنید. عدد ۰ یعنی نامحدود."], st: ["stock", "موجودی کل محصول را وارد کنید. عدد ۰ یعنی ناموجود."], ip: ["limit_ip", "محدودیت IP را وارد کنید. عدد ۰ یعنی نامحدود."], gr: ["group", "نام گروه را وارد کنید یا «بدون گروه» ارسال کنید."], in: ["inbounds", "شناسه اینباندها را با کاما وارد کنید. حداقل یک اینباند لازم است."] };
+        const map = {
+            tr: ["traffic", "حجم جدید را به گیگابایت وارد کنید. عدد ۰ یعنی نامحدود."],
+            du: ["duration", "مدت جدید را به روز وارد کنید. عدد ۰ یعنی نامحدود."],
+            st: ["stock", "موجودی کل محصول را وارد کنید. عدد ۰ یعنی ناموجود."],
+            ip: ["limit_ip", "محدودیت IP را وارد کنید. عدد ۰ یعنی نامحدود."],
+            gr: ["group", "نام گروه را وارد کنید یا «بدون گروه» ارسال کنید."],
+            in: ["inbounds", "شناسه اینباندها را با کاما وارد کنید. حداقل یک اینباند لازم است."],
+        };
         const [field, prompt] = map[ctx.match[1]];
         (0, admin_flow_1.setFlow)(ctx, { flow: "product_field_edit", step: field, data: { productId: ctx.match[2], field } });
         await ctx.reply(prompt, (0, main_keyboard_1.navigationKeyboard)(`admin:product:${ctx.match[2]}`));
@@ -355,7 +405,9 @@ function registerAdminHandlers(bot) {
             return;
         await ctx.answerCbQuery();
         const stats = await admin_service_1.AdminService.accountStats();
-        const productLines = stats.products.map((product) => `• ${product.title} | ${statusFa(product.isActive)} | کل اکانت: ${product._count.accounts.toLocaleString("fa-IR")}`).join("\n") || "محصولی وجود ندارد.";
+        const productLines = stats.products
+            .map((product) => `• ${product.title} | ${statusFa(product.isActive)} | کل اکانت: ${product._count.accounts.toLocaleString("fa-IR")}`)
+            .join("\n") || "محصولی وجود ندارد.";
         await ctx.reply(`📊 آمار کامل موجودی\n${inventoryStatsLine(stats)}\n\n📦 موجودی بر اساس محصول:\n${productLines}`, (0, main_keyboard_1.navigationKeyboard)("admin:accounts"));
     });
     bot.action(/^admin:product:accounts:([^:]+):page:(\d+)$/, async (ctx) => {
@@ -383,7 +435,10 @@ function registerAdminHandlers(bot) {
             return;
         await ctx.answerCbQuery();
         const products = await product_service_1.ProductService.listActiveProducts(25);
-        await ctx.reply("برای کدام محصول اکانت اضافه شود؟", telegraf_1.Markup.inlineKeyboard([...products.map((product) => [telegraf_1.Markup.button.callback(product.title, `admin:account:create:${product.id}`)]), [telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:accounts")]]));
+        await ctx.reply("برای کدام محصول اکانت اضافه شود؟", telegraf_1.Markup.inlineKeyboard([
+            ...products.map((product) => [telegraf_1.Markup.button.callback(product.title, `admin:account:create:${product.id}`)]),
+            [telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:accounts")],
+        ]));
     });
     bot.action(/^admin:account:create:(.+)$/, async (ctx) => {
         if (!(await requireAdmin(ctx)))
@@ -399,11 +454,21 @@ function registerAdminHandlers(bot) {
         const account = await admin_service_1.AdminService.accountDetail(ctx.match[1]);
         if (!account)
             return void (await ctx.reply("اکانت پیدا نشد.", (0, main_keyboard_1.navigationKeyboard)("admin:accounts")));
-        const history = account.history.map((item) => `• ${dateFa(item.createdAt)} | ${item.action} | ${item.fromValue ?? "-"} → ${item.toValue ?? "-"}`).join("\n") || "بدون تاریخچه";
+        const history = account.history.map((item) => `• ${dateFa(item.createdAt)} | ${item.action} | ${item.fromValue ?? "-"} → ${item.toValue ?? "-"}`).join("\n") ||
+            "بدون تاریخچه";
         await ctx.reply(`🗄 جزئیات اکانت\n\nUsername: ${account.username}\nSubscription: ${account.subscriptionLink}\nConfig: ${account.configLink}\nProduct: ${account.product.title}\nStatus: ${statusFa(account.status)}\nAssigned User: ${account.assignedUser ? userLabel(account.assignedUser) : "-"}\nAssigned Date: ${dateFa(account.assignedDate)}\n\n📜 تاریخچه تخصیص/تغییر:\n${history}`, telegraf_1.Markup.inlineKeyboard([
-            [telegraf_1.Markup.button.callback("✏️ ویرایش", `admin:account:edit:${account.id}`), telegraf_1.Markup.button.callback("🚚 انتقال", `admin:account:move:${account.id}`)],
-            [telegraf_1.Markup.button.callback(account.status === "disabled" ? "▶️ فعال" : "⏸ غیرفعال", `admin:account:status:${account.id}:${account.status === "disabled" ? "available" : "disabled"}`), telegraf_1.Markup.button.callback("✅ AVAILABLE", `admin:account:status:${account.id}:available`)],
-            [telegraf_1.Markup.button.callback("⏳ EXPIRED", `admin:account:status:${account.id}:expired`), telegraf_1.Markup.button.callback("🗑 حذف", `admin:account:delete:${account.id}`)],
+            [
+                telegraf_1.Markup.button.callback("✏️ ویرایش", `admin:account:edit:${account.id}`),
+                telegraf_1.Markup.button.callback("🚚 انتقال", `admin:account:move:${account.id}`),
+            ],
+            [
+                telegraf_1.Markup.button.callback(account.status === "disabled" ? "▶️ فعال" : "⏸ غیرفعال", `admin:account:status:${account.id}:${account.status === "disabled" ? "available" : "disabled"}`),
+                telegraf_1.Markup.button.callback("✅ AVAILABLE", `admin:account:status:${account.id}:available`),
+            ],
+            [
+                telegraf_1.Markup.button.callback("⏳ EXPIRED", `admin:account:status:${account.id}:expired`),
+                telegraf_1.Markup.button.callback("🗑 حذف", `admin:account:delete:${account.id}`),
+            ],
             [telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:accounts")],
         ]));
     });
@@ -424,7 +489,9 @@ function registerAdminHandlers(bot) {
         const products = await product_service_1.ProductService.listActiveProducts(50);
         const rows = products
             .filter((product) => product.id !== account.productId)
-            .map((product) => [telegraf_1.Markup.button.callback(`${product.title} (${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"})`, `admin:account:move-to:${account.id}:${product.id}`)]);
+            .map((product) => [
+            telegraf_1.Markup.button.callback(`${product.title} (${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"})`, `admin:account:move-to:${account.id}:${product.id}`),
+        ]);
         await ctx.reply(`🚚 انتقال اکانت ${account.username}\nمحصول فعلی: ${account.product.title}\n\nمحصول مقصد را انتخاب کنید:`, telegraf_1.Markup.inlineKeyboard([...rows, [telegraf_1.Markup.button.callback("⬅️ بازگشت", `admin:account:${account.id}`)]]));
     });
     bot.action(/^admin:account:move-to:([^:]+):([^:]+)$/, async (ctx) => {
@@ -486,7 +553,10 @@ function registerAdminHandlers(bot) {
         if (!detail.wallet)
             return void (await ctx.reply("کیف پول پیدا نشد.", (0, main_keyboard_1.navigationKeyboard)("admin:wallets")));
         await ctx.reply(`💳 جزئیات کیف پول\n\nنام ارز: ${detail.wallet.coinName}\nنماد: ${detail.wallet.coinSymbol ?? detail.wallet.coinName}\nشبکه: ${detail.wallet.networkName}\nنام نمایشی: ${detail.wallet.displayName ?? "-"}\nآدرس: ${detail.wallet.walletAddress}\nترتیب: ${detail.wallet.displayOrder.toLocaleString("fa-IR")}\nوضعیت: ${statusFa(detail.wallet.status)}\n\n🛡 ایمنی حذف\nواریزی ساخته‌شده: ${detail.pendingDeposits.toLocaleString("fa-IR")}\nرسید ارسال‌شده: ${detail.submittedDeposits.toLocaleString("fa-IR")}\nپرداخت فعال: ${detail.activePayments.toLocaleString("fa-IR")}\nکل واریزی‌ها: ${detail.deposits.toLocaleString("fa-IR")}`, telegraf_1.Markup.inlineKeyboard([
-            [telegraf_1.Markup.button.callback("✏️ ویرایش", `admin:wallet:edit:${detail.wallet.id}`), telegraf_1.Markup.button.callback(detail.wallet.status === "active" ? "⏸ غیرفعال" : "▶️ فعال", `admin:wallet:status:${detail.wallet.id}:${detail.wallet.status === "active" ? "inactive" : "active"}`)],
+            [
+                telegraf_1.Markup.button.callback("✏️ ویرایش", `admin:wallet:edit:${detail.wallet.id}`),
+                telegraf_1.Markup.button.callback(detail.wallet.status === "active" ? "⏸ غیرفعال" : "▶️ فعال", `admin:wallet:status:${detail.wallet.id}:${detail.wallet.status === "active" ? "inactive" : "active"}`),
+            ],
             [telegraf_1.Markup.button.callback("🗑 حذف", `admin:wallet:delete:${detail.wallet.id}`), telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:wallets")],
         ]));
     });
@@ -509,7 +579,9 @@ function registerAdminHandlers(bot) {
             return;
         await ctx.answerCbQuery();
         const detail = await admin_service_1.AdminService.walletDetail(ctx.match[1]);
-        const warning = detail.activePayments ? `\n\n🛡 این کیف پول ${detail.activePayments.toLocaleString("fa-IR")} پرداخت فعال دارد و تا تعیین وضعیت آن‌ها قابل حذف نیست.` : "";
+        const warning = detail.activePayments
+            ? `\n\n🛡 این کیف پول ${detail.activePayments.toLocaleString("fa-IR")} پرداخت فعال دارد و تا تعیین وضعیت آن‌ها قابل حذف نیست.`
+            : "";
         await ctx.reply(`⚠️ آیا از حذف این کیف پول مطمئن هستید؟${warning}`, confirmKeyboard(`admin:wallet:delete-confirm:${ctx.match[1]}`, `admin:wallet:${ctx.match[1]}`));
     });
     bot.action(/^admin:wallet:delete-confirm:(.+)$/, async (ctx) => {
@@ -532,7 +604,12 @@ function registerAdminHandlers(bot) {
         if (deposits.length === 0)
             return void (await ctx.reply("واریزی در انتظار بررسی وجود ندارد.", (0, main_keyboard_1.navigationKeyboard)("admin:dashboard")));
         for (const deposit of deposits) {
-            const buttons = telegraf_1.Markup.inlineKeyboard([[telegraf_1.Markup.button.callback("✅ تایید", `admin:deposit:approve:${deposit.id}`), telegraf_1.Markup.button.callback("❌ رد", `admin:deposit:reject:${deposit.id}`)]]);
+            const buttons = telegraf_1.Markup.inlineKeyboard([
+                [
+                    telegraf_1.Markup.button.callback("✅ تایید", `admin:deposit:approve:${deposit.id}`),
+                    telegraf_1.Markup.button.callback("❌ رد", `admin:deposit:reject:${deposit.id}`),
+                ],
+            ]);
             const caption = `💳 واریزی\nکاربر: ${deposit.user.telegramId}\nمبلغ: ${deposit.amount.toLocaleString("fa-IR")} تومان\nارز: ${deposit.cryptoType}`;
             if (deposit.receipt)
                 await ctx.replyWithPhoto(deposit.receipt, { caption, ...buttons });
@@ -560,7 +637,10 @@ function registerAdminHandlers(bot) {
             return;
         await ctx.answerCbQuery();
         const [coupons] = await admin_service_1.AdminService.listCoupons();
-        await ctx.reply(`${coupons.map((coupon) => `🎟 ${coupon.code} | ${coupon.type === "percentage" ? `${coupon.value || coupon.discountPercent || 0}%` : `${coupon.value.toLocaleString("fa-IR")} تومان`} | ${coupon.status} | ${coupon.usedCount}/${coupon.maxUses}`).join("\n") || "کوپنی وجود ندارد."}\n\nبرای ایجاد کوپن جدید دکمه زیر را بزنید.`, telegraf_1.Markup.inlineKeyboard([[telegraf_1.Markup.button.callback("➕ کوپن جدید", "admin:coupon:create")], [telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:dashboard")]]));
+        await ctx.reply(`${coupons.map((coupon) => `🎟 ${coupon.code} | ${coupon.type === "percentage" ? `${coupon.value || coupon.discountPercent || 0}%` : `${coupon.value.toLocaleString("fa-IR")} تومان`} | ${coupon.status} | ${coupon.usedCount}/${coupon.maxUses}`).join("\n") || "کوپنی وجود ندارد."}\n\nبرای ایجاد کوپن جدید دکمه زیر را بزنید.`, telegraf_1.Markup.inlineKeyboard([
+            [telegraf_1.Markup.button.callback("➕ کوپن جدید", "admin:coupon:create")],
+            [telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:dashboard")],
+        ]));
     });
     bot.action("admin:coupon:create", async (ctx) => {
         if (!(await requireAdmin(ctx)))
@@ -574,7 +654,10 @@ function registerAdminHandlers(bot) {
             return;
         await ctx.answerCbQuery();
         const [tickets] = await admin_service_1.AdminService.listOpenTickets();
-        await ctx.reply("تیکت‌های باز:", telegraf_1.Markup.inlineKeyboard([...tickets.map((ticket) => [telegraf_1.Markup.button.callback(`🎧 ${ticket.user.telegramId} - ${ticket.id.slice(-6)}`, `admin:ticket:${ticket.id}`)]), [telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:dashboard")]]));
+        await ctx.reply("تیکت‌های باز:", telegraf_1.Markup.inlineKeyboard([
+            ...tickets.map((ticket) => [telegraf_1.Markup.button.callback(`🎧 ${ticket.user.telegramId} - ${ticket.id.slice(-6)}`, `admin:ticket:${ticket.id}`)]),
+            [telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:dashboard")],
+        ]));
     });
     bot.action(/^admin:ticket:([^:]+)$/, async (ctx) => {
         if (!(await requireAdmin(ctx)))
@@ -585,7 +668,10 @@ function registerAdminHandlers(bot) {
             return void (await ctx.reply("تیکت پیدا نشد.", (0, main_keyboard_1.navigationKeyboard)("admin:tickets")));
         ctx.session.liveTicketId = ticket.id;
         const history = ticket.messages.map((message) => `${message.senderRole === "admin" ? "ادمین" : "کاربر"}: ${message.message}`).join("\n") || "بدون پیام";
-        await ctx.reply(`🎧 تیکت ${ticket.id}\nکاربر: ${ticket.user.telegramId}\n\n${history}\n\n💬 حالت گفتگوی زنده فعال شد. هر پیام شما مستقیم داخل همین تیکت ارسال می‌شود.`, telegraf_1.Markup.inlineKeyboard([[telegraf_1.Markup.button.callback("✅ بستن تیکت", `admin:ticket:close:${ticket.id}`)], [telegraf_1.Markup.button.callback("🚪 خروج از چت", "admin:ticket:leave"), telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:tickets")]]));
+        await ctx.reply(`🎧 تیکت ${ticket.id}\nکاربر: ${ticket.user.telegramId}\n\n${history}\n\n💬 حالت گفتگوی زنده فعال شد. هر پیام شما مستقیم داخل همین تیکت ارسال می‌شود.`, telegraf_1.Markup.inlineKeyboard([
+            [telegraf_1.Markup.button.callback("✅ بستن تیکت", `admin:ticket:close:${ticket.id}`)],
+            [telegraf_1.Markup.button.callback("🚪 خروج از چت", "admin:ticket:leave"), telegraf_1.Markup.button.callback("⬅️ بازگشت", "admin:tickets")],
+        ]));
     });
     bot.action("admin:ticket:leave", async (ctx) => {
         if (!(await requireAdmin(ctx)))
@@ -608,6 +694,8 @@ function registerAdminHandlers(bot) {
             return;
         await ctx.answerCbQuery();
         const [orders] = await admin_service_1.AdminService.listRecentOrders();
-        await ctx.reply(orders.map((order) => `🧾 ${order.id.slice(-6)} | ${order.user.telegramId} | ${order.product.title} | ${order.totalAmount.toLocaleString("fa-IR")}`).join("\n") || "سفارشی وجود ندارد.", (0, main_keyboard_1.navigationKeyboard)("admin:dashboard"));
+        await ctx.reply(orders
+            .map((order) => `🧾 ${order.id.slice(-6)} | ${order.user.telegramId} | ${order.product.title} | ${order.totalAmount.toLocaleString("fa-IR")}`)
+            .join("\n") || "سفارشی وجود ندارد.", (0, main_keyboard_1.navigationKeyboard)("admin:dashboard"));
     });
 }

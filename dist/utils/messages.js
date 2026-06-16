@@ -29,7 +29,13 @@ const money = (value) => `${value.toLocaleString("fa-IR")} تومان`;
 const clean = (value) => (value && value.trim() ? value.trim() : "—");
 function screenMessage(options) {
     const icon = options.tone ? exports.UI_EMOJI[options.tone] : "🌿";
-    return [`${icon} ${options.title}`, "", options.description, options.body ? `\n${divider}\n${options.body}` : "", `\n${divider}\n${options.actionHint}`]
+    return [
+        `${icon} ${options.title}`,
+        "",
+        options.description,
+        options.body ? `\n${divider}\n${options.body}` : "",
+        `\n${divider}\n${options.actionHint}`,
+    ]
         .filter(Boolean)
         .join("\n");
 }
@@ -57,10 +63,16 @@ function paymentSummaryMessage(data) {
             data.discountAmount !== undefined ? `🎟 تخفیف: ${money(data.discountAmount)}` : undefined,
             data.payableAmount !== undefined ? `✅ مبلغ نهایی: ${money(data.payableAmount)}` : undefined,
             data.balance !== undefined ? `موجودی کیف پول: ${money(data.balance)}` : undefined,
-            data.shortage ? `${exports.UI_EMOJI.WARNING} کسری موجودی: ${money(data.shortage)}` : data.balance !== undefined ? `${exports.UI_EMOJI.SUCCESS} موجودی شما برای خرید کافی است.` : undefined,
+            data.shortage
+                ? `${exports.UI_EMOJI.WARNING} کسری موجودی: ${money(data.shortage)}`
+                : data.balance !== undefined
+                    ? `${exports.UI_EMOJI.SUCCESS} موجودی شما برای خرید کافی است.`
+                    : undefined,
             "",
             `⚡ روش پرداخت: کیف پول${data.gatewayEnabled ? "، پرداخت آنی" : ""}`,
-        ].filter((line) => line !== undefined).join("\n"),
+        ]
+            .filter((line) => line !== undefined)
+            .join("\n"),
         actionHint: "لطفاً روش پرداخت را انتخاب کنید.",
     });
 }
@@ -69,19 +81,40 @@ function purchaseSuccessMessage(data) {
         tone: "SUCCESS",
         title: "خرید با موفقیت انجام شد",
         description: "اطلاعات سرویس شما آماده استفاده است.",
-        body: [`📦 سرویس:\n${data.productTitle}`, `👤 نام کاربری:\n${clean(data.username)}`, `🔗 لینک اشتراک:\n${clean(data.subscriptionLink)}`, `⚙️ لینک کانفیگ:\n${clean(data.config)}`, `📅 تاریخ انقضا:\n${data.expiresAt ? data.expiresAt.toLocaleDateString("fa-IR") : "—"}`].join("\n\n"),
+        body: [
+            `📦 سرویس:\n${data.productTitle}`,
+            `👤 نام کاربری:\n${clean(data.username)}`,
+            `🔗 لینک اشتراک:\n${clean(data.subscriptionLink)}`,
+            `⚙️ لینک کانفیگ:\n${clean(data.config)}`,
+            `📅 تاریخ انقضا:\n${data.expiresAt ? data.expiresAt.toLocaleDateString("fa-IR") : "—"}`,
+        ].join("\n\n"),
         actionHint: "این اطلاعات همیشه از بخش اکانت‌های من در دسترس است.",
     });
 }
 function walletSummaryMessage(balance, body) {
-    return screenMessage({ tone: "WALLET", title: "کیف پول شما", description: `موجودی فعلی شما ${money(balance)} است.`, body, actionHint: "برای ادامه، یکی از گزینه‌های زیر را انتخاب کنید." });
+    return screenMessage({
+        tone: "WALLET",
+        title: "کیف پول شما",
+        description: `موجودی فعلی شما ${money(balance)} است.`,
+        body,
+        actionHint: "برای ادامه، یکی از گزینه‌های زیر را انتخاب کنید.",
+    });
 }
 function accountSummaryMessage(data) {
     return screenMessage({
         tone: "USER",
         title: "خلاصه حساب کاربری",
         description: "وضعیت حساب شما در یک نگاه آماده است.",
-        body: [`موجودی کیف پول: ${money(data.balance)}`, `تعداد دعوت‌ها: ${data.referralCount.toLocaleString("fa-IR")} نفر`, `جوایز فعال: ${data.freeRewards.toLocaleString("fa-IR")}`, `اکانت‌های فعال: ${data.activeAccounts.toLocaleString("fa-IR")}`, data.recentOrders !== undefined ? `خریدهای اخیر: ${data.recentOrders.toLocaleString("fa-IR")} سفارش` : undefined, data.pendingReferralAmount !== undefined ? `پاداش قابل برداشت: ${money(data.pendingReferralAmount)}` : undefined].filter(Boolean).join("\n"),
+        body: [
+            `موجودی کیف پول: ${money(data.balance)}`,
+            `تعداد دعوت‌ها: ${data.referralCount.toLocaleString("fa-IR")} نفر`,
+            `جوایز فعال: ${data.freeRewards.toLocaleString("fa-IR")}`,
+            `اکانت‌های فعال: ${data.activeAccounts.toLocaleString("fa-IR")}`,
+            data.recentOrders !== undefined ? `خریدهای اخیر: ${data.recentOrders.toLocaleString("fa-IR")} سفارش` : undefined,
+            data.pendingReferralAmount !== undefined ? `پاداش قابل برداشت: ${money(data.pendingReferralAmount)}` : undefined,
+        ]
+            .filter(Boolean)
+            .join("\n"),
         actionHint: "از میان اقدام‌های سریع زیر انتخاب کنید.",
     });
 }

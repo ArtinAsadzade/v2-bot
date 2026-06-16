@@ -628,6 +628,17 @@ class PaymentService {
                 : undefined,
         };
     }
+    static async productCallbackResult(invoice, purchaseResult) {
+        const notification = await this.productNotificationPayload(invoice, purchaseResult);
+        return {
+            invoice: notification.invoice,
+            type: "PRODUCT_PURCHASE",
+            product: notification.product,
+            account: notification.account,
+            xrayClient: notification.xrayClient,
+            purchaseResult,
+        };
+    }
     static walletTopupNotificationPayload(invoice, user) {
         return {
             invoice: this.notificationInvoice(invoice),
@@ -660,7 +671,7 @@ class PaymentService {
                 : item.productAccount
                     ? { id: item.productAccount.id, username: item.productAccount.username, subscriptionLink: item.productAccount.subscriptionLink, configLink: item.productAccount.configLink, config: item.productAccount.config }
                     : { id: item.id, username: item.deliveredUsername, subscriptionLink: item.deliveredSubscriptionLink, configLink: item.deliveredConfigLink, config: item.deliveredConfig };
-            return this.productNotificationPayload(invoice, { product: order.product, account, orderItem: item, xrayClient: item.xrayClient });
+            return this.productCallbackResult(invoice, { invoice, order, product: order.product, account, orderItem: item, xrayClient: item.xrayClient });
         }
         return null;
     }
@@ -750,14 +761,14 @@ class PaymentService {
             paymentLog("PAYMENT_FULFILLMENT_STARTED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
             await audit(prisma_1.prisma, { userId: paidInvoice.userId, invoiceId: paidInvoice.id, action: "PAYMENT_FULFILLMENT_STARTED", metadata: { type: paidInvoice.type } });
             let result = paidInvoice.type === "PRODUCT_PURCHASE"
-                ? await this.finalizePaidProductPurchase({ userId: paidInvoice.userId, productId: paidInvoice.productId ?? "", invoiceId: paidInvoice.id, paymentMethod: "INSTANT" })
+                ? await this.finalizePaidProductPurchase({ userId: paidInvoice.userId, productId: paidInvoice.productId ?? "", invoiceId: paidInvoice.id, paymentSource: "GATEWAY" })
                 : await this.fulfillPaidInvoice(paidInvoice.id);
             if (result.needsXrayProvisioning && result.order?.id)
                 result = await this.provisionXrayClient(result.order.id, paidInvoice.id);
             const notificationResult = paidInvoice.type === "WALLET_TOPUP"
                 ? this.walletTopupNotificationPayload(result.invoice ?? paidInvoice, result.user)
                 : paidInvoice.type === "PRODUCT_PURCHASE"
-                    ? await this.productNotificationPayload(result.invoice ?? paidInvoice, result)
+                    ? await this.productCallbackResult(result.invoice ?? paidInvoice, result)
                     : result;
             paymentLog("PAYMENT_COMPLETED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
             admin_service_1.AdminService.invalidateDashboardCache();
@@ -809,7 +820,7 @@ class PaymentService {
                     return { invoice: completed, order: existingOrder, product: existingOrder.product, account, orderItem: existingOrder.items[0], xrayClient: existingClient ?? undefined, type: fresh.type };
                 }
             }
-            const delivered = await this.purchaseProduct(tx, { userId: fresh.userId, productId: fresh.productId ?? "", couponCode: fresh.couponCode ?? undefined, method: "INSTANT", invoice: fresh });
+            const delivered = await this.purchaseProduct(tx, { userId: fresh.userId, productId: fresh.productId ?? "", couponCode: fresh.couponCode ?? undefined, method: "GATEWAY", invoice: fresh });
             if (delivered.xrayClient) {
                 const processing = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { verifiedAt: new Date(), orderId: delivered.order.id, deliveryStatus: "PROCESSING" } });
                 return { invoice: processing, ...delivered, needsXrayProvisioning: true, type: fresh.type };
@@ -1112,7 +1123,7 @@ class PaymentService {
                 return this.provisionXrayClient(result.order.id, invoice.id);
             return result;
         }
-        const result = await prisma_1.prisma.$transaction((tx) => this.purchaseProduct(tx, { userId: data.userId, productId: data.productId, couponCode: data.couponCode, method: data.paymentMethod }));
+        const result = await prisma_1.prisma.$transaction((tx) => this.purchaseProduct(tx, { userId: data.userId, productId: data.productId, couponCode: data.couponCode, method: data.paymentSource }));
         if (result.xrayClient)
             return this.provisionXrayClient(result.order.id);
         return result;
@@ -1120,7 +1131,7 @@ class PaymentService {
     static async purchaseProductWithWallet(userId, productId, couponCode) {
         let result;
         try {
-            result = await this.finalizePaidProductPurchase({ userId, productId, couponCode, paymentMethod: "WALLET" });
+            result = await this.finalizePaidProductPurchase({ userId, productId, couponCode, paymentSource: "WALLET" });
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
