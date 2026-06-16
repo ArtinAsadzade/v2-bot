@@ -122,28 +122,50 @@ export function startPaymentCallbackServer(bot: AppBot) {
     });
 
     if (callbackUrl.pathname === "/test-payment") {
-      await notifyUser(bot, {
-        invoice: {
-          id: "test",
-          userId: "8793993570",
-          amount: 72000,
-        },
-        product: {
-          id: "prod1",
-          title: "10GB | 30 روز",
-        },
-        account: {
-          id: "acc1",
-          username: "testuser",
-          subscriptionLink: "https://example.com/sub",
-          configLink: null,
-          config: "vless://test",
-        },
-      });
+      try {
+        const user = await prisma.user.findFirst({
+          where: {
+            telegramId: "8793993570",
+          },
+        });
 
-      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("ok");
-      return;
+        if (!user) {
+          res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end("user not found");
+          return;
+        }
+
+        await notifyUser(bot, {
+          invoice: {
+            id: "test",
+            userId: user.id,
+            amount: 72000,
+          },
+          product: {
+            id: "prod1",
+            title: "10GB | 30 روز",
+          },
+          account: {
+            id: "acc1",
+            username: "testuser",
+            subscriptionLink: "https://example.com/sub",
+            configLink: null,
+            config: "vless://test",
+          },
+        });
+
+        res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("ok");
+        return;
+      } catch (error) {
+        logger.error("TEST PAYMENT FAILED", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end(error instanceof Error ? error.message : "test failed");
+        return;
+      }
     }
 
     if (req.method !== "GET" || !["/payments/callback", "/api/payment/callback"].includes(callbackUrl.pathname)) {
