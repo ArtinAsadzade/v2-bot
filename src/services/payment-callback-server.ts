@@ -125,7 +125,7 @@ export function startPaymentCallbackServer(bot: AppBot) {
       await notifyUser(bot, {
         invoice: {
           id: "test",
-          userId: "USER_ID_HERE",
+          userId: "8793993570",
           amount: 72000,
         },
         product: {
