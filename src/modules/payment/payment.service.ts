@@ -26,7 +26,7 @@ type DbClient = TxClient | typeof prisma;
 
 type AuditData = { userId?: string | null; invoiceId?: string | null; action: string; metadata?: Record<string, unknown>; actorId?: string };
 
-type PurchaseMethod = "WALLET" | "INSTANT";
+type PurchaseMethod = "WALLET" | "GATEWAY";
 
 type ProductInvoiceQuote = {
   originalAmount: number;
@@ -671,6 +671,18 @@ export class PaymentService {
     };
   }
 
+  private static async productCallbackResult(invoice: Pick<PaymentInvoice, "id" | "userId" | "amount">, purchaseResult: any) {
+    const notification = await this.productNotificationPayload(invoice, purchaseResult) as any;
+    return {
+      invoice: notification.invoice,
+      type: "PRODUCT_PURCHASE" as const,
+      product: notification.product,
+      account: notification.account,
+      xrayClient: notification.xrayClient,
+      purchaseResult,
+    };
+  }
+
   private static walletTopupNotificationPayload(invoice: Pick<PaymentInvoice, "id" | "userId" | "amount">, user: { balance: number }): InvoiceNotificationPayload {
     return {
       invoice: this.notificationInvoice(invoice),
@@ -679,7 +691,7 @@ export class PaymentService {
     };
   }
 
-  private static async existingCompletedResult(invoiceId: string): Promise<InvoiceNotificationPayload | null> {
+  private static async existingCompletedResult(invoiceId: string): Promise<any | null> {
     const invoice = await prisma.paymentInvoice.findUnique({ where: { id: invoiceId } });
     if (!invoice) return null;
     if (invoice.type === "WALLET_TOPUP" && invoice.status === "COMPLETED") {
@@ -702,7 +714,7 @@ export class PaymentService {
         : item.productAccount
           ? { id: item.productAccount.id, username: item.productAccount.username, subscriptionLink: item.productAccount.subscriptionLink, configLink: item.productAccount.configLink, config: item.productAccount.config }
           : { id: item.id, username: item.deliveredUsername, subscriptionLink: item.deliveredSubscriptionLink, configLink: item.deliveredConfigLink, config: item.deliveredConfig };
-      return this.productNotificationPayload(invoice, { product: order.product, account, orderItem: item, xrayClient: item.xrayClient });
+      return this.productCallbackResult(invoice, { invoice, order, product: order.product, account, orderItem: item, xrayClient: item.xrayClient });
     }
     return null;
   }
@@ -799,13 +811,13 @@ export class PaymentService {
       paymentLog("PAYMENT_FULFILLMENT_STARTED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
       await audit(prisma, { userId: paidInvoice.userId, invoiceId: paidInvoice.id, action: "PAYMENT_FULFILLMENT_STARTED", metadata: { type: paidInvoice.type } });
       let result = paidInvoice.type === "PRODUCT_PURCHASE"
-        ? await this.finalizePaidProductPurchase({ userId: paidInvoice.userId, productId: paidInvoice.productId ?? "", invoiceId: paidInvoice.id, paymentMethod: "INSTANT" })
+        ? await this.finalizePaidProductPurchase({ userId: paidInvoice.userId, productId: paidInvoice.productId ?? "", invoiceId: paidInvoice.id, paymentSource: "GATEWAY" })
         : await this.fulfillPaidInvoice(paidInvoice.id);
       if ((result as any).needsXrayProvisioning && (result as any).order?.id) result = await this.provisionXrayClient((result as any).order.id, paidInvoice.id) as any;
       const notificationResult = paidInvoice.type === "WALLET_TOPUP"
         ? this.walletTopupNotificationPayload((result as any).invoice ?? paidInvoice, (result as any).user)
         : paidInvoice.type === "PRODUCT_PURCHASE"
-          ? await this.productNotificationPayload((result as any).invoice ?? paidInvoice, result)
+          ? await this.productCallbackResult((result as any).invoice ?? paidInvoice, result)
           : result;
       paymentLog("PAYMENT_COMPLETED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
       AdminService.invalidateDashboardCache();
@@ -857,7 +869,7 @@ export class PaymentService {
         }
       }
 
-      const delivered = await this.purchaseProduct(tx, { userId: fresh.userId, productId: fresh.productId ?? "", couponCode: fresh.couponCode ?? undefined, method: "INSTANT", invoice: fresh });
+      const delivered = await this.purchaseProduct(tx, { userId: fresh.userId, productId: fresh.productId ?? "", couponCode: fresh.couponCode ?? undefined, method: "GATEWAY", invoice: fresh });
       if (delivered.xrayClient) {
         const processing = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { verifiedAt: new Date(), orderId: delivered.order.id, deliveryStatus: "PROCESSING" } });
         return { invoice: processing, ...delivered, needsXrayProvisioning: true, type: fresh.type as PaymentInvoiceType };
@@ -1135,7 +1147,7 @@ export class PaymentService {
     }
   }
 
-  static async finalizePaidProductPurchase(data: { userId: string; productId: string; invoiceId?: string; paymentMethod: PurchaseMethod; couponCode?: string }): Promise<any> {
+  static async finalizePaidProductPurchase(data: { userId: string; productId: string; invoiceId?: string; paymentSource: PurchaseMethod; couponCode?: string }): Promise<any> {
     if (data.invoiceId) {
       const invoice = await prisma.paymentInvoice.findUniqueOrThrow({ where: { id: data.invoiceId } });
       if (invoice.type !== "PRODUCT_PURCHASE") throw new Error("فاکتور محصول نیست");
@@ -1145,7 +1157,7 @@ export class PaymentService {
       return result;
     }
 
-    const result = await prisma.$transaction((tx) => this.purchaseProduct(tx, { userId: data.userId, productId: data.productId, couponCode: data.couponCode, method: data.paymentMethod }));
+    const result = await prisma.$transaction((tx) => this.purchaseProduct(tx, { userId: data.userId, productId: data.productId, couponCode: data.couponCode, method: data.paymentSource }));
     if (result.xrayClient) return this.provisionXrayClient(result.order.id);
     return result;
   }
@@ -1153,7 +1165,7 @@ export class PaymentService {
   static async purchaseProductWithWallet(userId: string, productId: string, couponCode?: string) {
     let result;
     try {
-      result = await this.finalizePaidProductPurchase({ userId, productId, couponCode, paymentMethod: "WALLET" });
+      result = await this.finalizePaidProductPurchase({ userId, productId, couponCode, paymentSource: "WALLET" });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/کد تخفیف|کوپن|تخفیف/.test(message)) {
