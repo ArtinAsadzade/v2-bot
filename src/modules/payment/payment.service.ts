@@ -637,16 +637,53 @@ export class PaymentService {
     return null;
   }
 
+  private static notificationInvoice(invoice: Pick<PaymentInvoice, "id" | "userId" | "amount">) {
+    return { id: invoice.id, userId: invoice.userId, amount: invoice.amount };
+  }
+
+  private static productNotificationPayload(invoice: Pick<PaymentInvoice, "id" | "userId" | "amount">, delivery: any): InvoiceNotificationPayload {
+    return {
+      invoice: this.notificationInvoice(invoice),
+      type: "PRODUCT_PURCHASE",
+      product: {
+        id: delivery.product.id,
+        title: delivery.product.title,
+      },
+      account: {
+        id: delivery.account.id,
+        username: delivery.account.username,
+        subscriptionLink: delivery.account.subscriptionLink,
+        configLink: delivery.account.configLink,
+        config: delivery.account.config,
+      },
+      xrayClient: delivery.xrayClient
+        ? {
+            id: delivery.xrayClient.id,
+            clientEmail: delivery.xrayClient.clientEmail,
+            expiresAt: delivery.xrayClient.expiresAt,
+          }
+        : undefined,
+    };
+  }
+
+  private static walletTopupNotificationPayload(invoice: Pick<PaymentInvoice, "id" | "userId" | "amount">, user: { balance: number }): InvoiceNotificationPayload {
+    return {
+      invoice: this.notificationInvoice(invoice),
+      type: "WALLET_TOPUP",
+      user: { balance: user.balance },
+    };
+  }
+
   private static async existingCompletedResult(invoiceId: string): Promise<InvoiceNotificationPayload | null> {
     const invoice = await prisma.paymentInvoice.findUnique({ where: { id: invoiceId } });
     if (!invoice) return null;
     if (invoice.type === "WALLET_TOPUP" && invoice.status === "COMPLETED") {
       const user = await prisma.user.findUniqueOrThrow({ where: { id: invoice.userId }, select: { balance: true } });
-      return { invoice, type: "WALLET_TOPUP", user };
+      return this.walletTopupNotificationPayload(invoice, user);
     }
     if (invoice.type === "XRAY_RENEWAL" && invoice.status === "COMPLETED") {
       const renewal = invoice.renewalId ? await prisma.xrayRenewal.findUnique({ where: { id: invoice.renewalId }, include: { xrayClient: true } }) : null;
-      return { invoice, type: "XRAY_RENEWAL", renewal: renewal ?? undefined, xrayClient: renewal?.xrayClient ? { id: renewal.xrayClient.id, clientEmail: renewal.xrayClient.clientEmail, expiresAt: renewal.xrayClient.expiresAt } : undefined };
+      return { invoice: this.notificationInvoice(invoice), type: "XRAY_RENEWAL", renewal: renewal ?? undefined, xrayClient: renewal?.xrayClient ? { id: renewal.xrayClient.id, clientEmail: renewal.xrayClient.clientEmail, expiresAt: renewal.xrayClient.expiresAt } : undefined };
     }
     if (invoice.type === "PRODUCT_PURCHASE" && invoice.status === "COMPLETED" && invoice.orderId) {
       const order = await prisma.order.findUnique({
@@ -654,13 +691,13 @@ export class PaymentService {
         include: { product: true, items: { include: { productAccount: true, xrayClient: true }, take: 1 } },
       });
       const item = order?.items[0];
-      if (!order || !item) return { invoice, type: "PRODUCT_PURCHASE" };
+      if (!order || !item) return { invoice: this.notificationInvoice(invoice), type: "PRODUCT_PURCHASE" };
       const account = item.xrayClient
         ? { id: item.xrayClient.id, username: item.xrayClient.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }
         : item.productAccount
           ? { id: item.productAccount.id, username: item.productAccount.username, subscriptionLink: item.productAccount.subscriptionLink, configLink: item.productAccount.configLink, config: item.productAccount.config }
           : { id: item.id, username: item.deliveredUsername, subscriptionLink: item.deliveredSubscriptionLink, configLink: item.deliveredConfigLink, config: item.deliveredConfig };
-      return { invoice, type: "PRODUCT_PURCHASE", order, product: order.product, account, orderItem: item, xrayClient: item.xrayClient ? { id: item.xrayClient.id, clientEmail: item.xrayClient.clientEmail, expiresAt: item.xrayClient.expiresAt } : undefined };
+      return this.productNotificationPayload(invoice, { product: order.product, account, xrayClient: item.xrayClient });
     }
     return null;
   }
@@ -758,9 +795,14 @@ export class PaymentService {
       await audit(prisma, { userId: paidInvoice.userId, invoiceId: paidInvoice.id, action: "PAYMENT_FULFILLMENT_STARTED", metadata: { type: paidInvoice.type } });
       let result = await this.fulfillPaidInvoice(paidInvoice.id);
       if ((result as any).needsXrayProvisioning && (result as any).order?.id) result = await this.provisionXrayClient((result as any).order.id, paidInvoice.id) as any;
+      const notificationResult = paidInvoice.type === "WALLET_TOPUP"
+        ? this.walletTopupNotificationPayload((result as any).invoice ?? paidInvoice, (result as any).user)
+        : paidInvoice.type === "PRODUCT_PURCHASE"
+          ? this.productNotificationPayload((result as any).invoice ?? paidInvoice, result)
+          : result;
       paymentLog("PAYMENT_COMPLETED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
       AdminService.invalidateDashboardCache();
-      return { statusCode: 200, text: "Payment completed successfully.", result };
+      return { statusCode: 200, text: "Payment completed successfully.", result: notificationResult };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       paymentLog("PAYMENT_PROCESS_FAILED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, stage: "fulfillment", error: message });
