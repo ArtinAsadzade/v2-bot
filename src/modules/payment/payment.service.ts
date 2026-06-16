@@ -641,7 +641,12 @@ export class PaymentService {
     return { id: invoice.id, userId: invoice.userId, amount: invoice.amount };
   }
 
-  private static productNotificationPayload(invoice: Pick<PaymentInvoice, "id" | "userId" | "amount">, delivery: any): InvoiceNotificationPayload {
+  private static async productNotificationPayload(invoice: Pick<PaymentInvoice, "id" | "userId" | "amount">, delivery: any): Promise<InvoiceNotificationPayload> {
+    const xrayClient = delivery.xrayClient ?? delivery.orderItem?.xrayClient;
+    const xraySubscriptionLink = xrayClient ? await XrayClientService.subscriptionUrl(xrayClient).catch(() => null) : null;
+    const account = xrayClient
+      ? { id: xrayClient.id, username: xrayClient.clientEmail, subscriptionLink: xraySubscriptionLink, configLink: null, config: delivery.orderItem?.deliveredConfig ?? null }
+      : delivery.account;
     return {
       invoice: this.notificationInvoice(invoice),
       type: "PRODUCT_PURCHASE",
@@ -650,17 +655,17 @@ export class PaymentService {
         title: delivery.product.title,
       },
       account: {
-        id: delivery.account.id,
-        username: delivery.account.username,
-        subscriptionLink: delivery.account.subscriptionLink,
-        configLink: delivery.account.configLink,
-        config: delivery.account.config,
+        id: account.id,
+        username: account.username,
+        subscriptionLink: account.subscriptionLink,
+        configLink: account.configLink,
+        config: account.config,
       },
-      xrayClient: delivery.xrayClient
+      xrayClient: xrayClient
         ? {
-            id: delivery.xrayClient.id,
-            clientEmail: delivery.xrayClient.clientEmail,
-            expiresAt: delivery.xrayClient.expiresAt,
+            id: xrayClient.id,
+            clientEmail: xrayClient.clientEmail,
+            expiresAt: xrayClient.expiresAt,
           }
         : undefined,
     };
@@ -693,11 +698,11 @@ export class PaymentService {
       const item = order?.items[0];
       if (!order || !item) return { invoice: this.notificationInvoice(invoice), type: "PRODUCT_PURCHASE" };
       const account = item.xrayClient
-        ? { id: item.xrayClient.id, username: item.xrayClient.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }
+        ? { id: item.xrayClient.id, username: item.xrayClient.clientEmail, subscriptionLink: await XrayClientService.subscriptionUrl(item.xrayClient).catch(() => null), configLink: null, config: item.deliveredConfig }
         : item.productAccount
           ? { id: item.productAccount.id, username: item.productAccount.username, subscriptionLink: item.productAccount.subscriptionLink, configLink: item.productAccount.configLink, config: item.productAccount.config }
           : { id: item.id, username: item.deliveredUsername, subscriptionLink: item.deliveredSubscriptionLink, configLink: item.deliveredConfigLink, config: item.deliveredConfig };
-      return this.productNotificationPayload(invoice, { product: order.product, account, xrayClient: item.xrayClient });
+      return this.productNotificationPayload(invoice, { product: order.product, account, orderItem: item, xrayClient: item.xrayClient });
     }
     return null;
   }
@@ -798,7 +803,7 @@ export class PaymentService {
       const notificationResult = paidInvoice.type === "WALLET_TOPUP"
         ? this.walletTopupNotificationPayload((result as any).invoice ?? paidInvoice, (result as any).user)
         : paidInvoice.type === "PRODUCT_PURCHASE"
-          ? this.productNotificationPayload((result as any).invoice ?? paidInvoice, result)
+          ? await this.productNotificationPayload((result as any).invoice ?? paidInvoice, result)
           : result;
       paymentLog("PAYMENT_COMPLETED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
       AdminService.invalidateDashboardCache();
@@ -845,7 +850,8 @@ export class PaymentService {
             return { invoice: fresh, order: existingOrder, product: existingOrder.product, account: { id: existingClient.id, username: existingClient.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem: existingOrder.items[0], xrayClient: existingClient, needsXrayProvisioning: existingClient.status === "provisioning" || existingClient.status === "creating", type: fresh.type as PaymentInvoiceType };
           }
           const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: fresh.completedAt ?? new Date(), verifiedAt: new Date(), deliveryStatus: "COMPLETED" } });
-          return { invoice: completed, order: existingOrder, product: existingOrder.product, account: existingOrder.items[0].productAccount, orderItem: existingOrder.items[0], type: fresh.type as PaymentInvoiceType };
+          const account = existingClient ? { id: existingClient.id, username: existingClient.clientEmail, subscriptionLink: null, configLink: null, config: existingOrder.items[0].deliveredConfig } : existingOrder.items[0].productAccount;
+          return { invoice: completed, order: existingOrder, product: existingOrder.product, account, orderItem: existingOrder.items[0], xrayClient: existingClient ?? undefined, type: fresh.type as PaymentInvoiceType };
         }
       }
 
