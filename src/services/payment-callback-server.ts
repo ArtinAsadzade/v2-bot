@@ -39,7 +39,7 @@ function callbackQueryMetadata(url: URL) {
   return Object.fromEntries(url.searchParams.entries());
 }
 
-async function notifyUser(bot: AppBot, result: unknown) {
+export async function notifyUser(bot: AppBot, result: unknown) {
   if (!result || typeof result !== "object" || !("invoice" in result)) return;
   const payload = result as PaymentNotificationPayload;
   const invoice = payload.invoice;
@@ -48,29 +48,60 @@ async function notifyUser(bot: AppBot, result: unknown) {
 
   try {
     if ("error" in payload) {
-      const failure = composeCustomEmojiMessage([customEmoji("❌", "TELEGRAM_EMOJI_ERROR_ID"), " ", errorMessage("پرداخت ثبت شد اما تحویل ناموفق بود", "پرداخت شما با موفقیت ثبت شد، اما تحویل اکانت با مشکل مواجه شد.", "پشتیبانی بررسی می‌کند و نتیجه را اطلاع می‌دهد.")]);
+      const failure = composeCustomEmojiMessage([
+        customEmoji("❌", "TELEGRAM_EMOJI_ERROR_ID"),
+        " ",
+        errorMessage(
+          "پرداخت ثبت شد اما تحویل ناموفق بود",
+          "پرداخت شما با موفقیت ثبت شد، اما تحویل اکانت با مشکل مواجه شد.",
+          "پشتیبانی بررسی می‌کند و نتیجه را اطلاع می‌دهد.",
+        ),
+      ]);
       await bot.telegram.sendMessage(Number(user.telegramId), failure.text, { ...paymentFailureKeyboard(), entities: failure.entities });
       await PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "failed", error: payload.error });
       return;
     }
 
     if (payload.type === "WALLET_TOPUP" && "user" in payload && payload.user) {
-      const success = composeCustomEmojiMessage([customEmoji("✅", "TELEGRAM_EMOJI_SUCCESS_ID"), " ", walletSummaryMessage(payload.user.balance, `مبلغ شارژ شده: ${money(invoice.amount)}`)]);
+      const success = composeCustomEmojiMessage([
+        customEmoji("✅", "TELEGRAM_EMOJI_SUCCESS_ID"),
+        " ",
+        walletSummaryMessage(payload.user.balance, `مبلغ شارژ شده: ${money(invoice.amount)}`),
+      ]);
       await bot.telegram.sendMessage(Number(user.telegramId), success.text, { ...paymentSuccessKeyboard("wallet"), entities: success.entities });
-      await PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "wallet_topup", amount: invoice.amount, balance: payload.user.balance });
+      await PaymentInvoiceService.markNotification(invoice.id, "SENT", {
+        type: "wallet_topup",
+        amount: invoice.amount,
+        balance: payload.user.balance,
+      });
       return;
     }
 
     if (payload.type === "XRAY_RENEWAL" && payload.xrayClient) {
-      await bot.telegram.sendMessage(Number(user.telegramId), `✅ تمدید سرویس Xray با موفقیت انجام شد.\n\nشناسه: ${payload.xrayClient.clientEmail}`, { reply_markup: { inline_keyboard: [[{ text: "🧩 مشاهده سرویس", callback_data: `nav:account.xray?xid=${payload.xrayClient.id}` }]] } });
+      await bot.telegram.sendMessage(Number(user.telegramId), `✅ تمدید سرویس Xray با موفقیت انجام شد.\n\nشناسه: ${payload.xrayClient.clientEmail}`, {
+        reply_markup: { inline_keyboard: [[{ text: "🧩 مشاهده سرویس", callback_data: `nav:account.xray?xid=${payload.xrayClient.id}` }]] },
+      });
       await PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "xray_renewal", xrayClientId: payload.xrayClient.id });
       return;
     }
 
     if ("product" in payload && "account" in payload && payload.product && payload.account) {
-      const success = composeCustomEmojiMessage([customEmoji("✅", "TELEGRAM_EMOJI_SUCCESS_ID"), " ", purchaseSuccessMessage({ productTitle: payload.product.title, username: payload.account.username, subscriptionLink: payload.account.subscriptionLink, config: payload.account.configLink ?? payload.account.config })]);
+      const success = composeCustomEmojiMessage([
+        customEmoji("✅", "TELEGRAM_EMOJI_SUCCESS_ID"),
+        " ",
+        purchaseSuccessMessage({
+          productTitle: payload.product.title,
+          username: payload.account.username,
+          subscriptionLink: payload.account.subscriptionLink,
+          config: payload.account.configLink ?? payload.account.config,
+        }),
+      ]);
       await bot.telegram.sendMessage(Number(user.telegramId), success.text, { ...paymentSuccessKeyboard("product"), entities: success.entities });
-      await PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "product_purchase", productId: payload.product.id, accountId: payload.account.id });
+      await PaymentInvoiceService.markNotification(invoice.id, "SENT", {
+        type: "product_purchase",
+        productId: payload.product.id,
+        accountId: payload.account.id,
+      });
     }
   } catch (error) {
     logger.error("Payment notification failed", { error: error instanceof Error ? error.message : String(error), invoiceId: invoice.id });
@@ -90,18 +121,28 @@ export function startPaymentCallbackServer(bot: AppBot) {
 
     try {
       const reference = callbackReferenceFromUrl(callbackUrl);
-      const result = await PaymentInvoiceService.processCallback(reference, { url: req.url, remoteAddress: req.socket.remoteAddress, query: callbackQueryMetadata(callbackUrl) });
+      const result = await PaymentInvoiceService.processCallback(reference, {
+        url: req.url,
+        remoteAddress: req.socket.remoteAddress,
+        query: callbackQueryMetadata(callbackUrl),
+      });
       if (result.result) await notifyUser(bot, result.result);
       if (result.failed) await notifyUser(bot, result.failed);
       res.writeHead(result.statusCode, { "Content-Type": "text/plain; charset=utf-8" });
       res.end(result.text);
     } catch (error) {
-      logger.error("Payment callback crashed", { error: error instanceof Error ? error.message : String(error), url: req.url, remoteAddress: req.socket.remoteAddress });
+      logger.error("Payment callback crashed", {
+        error: error instanceof Error ? error.message : String(error),
+        url: req.url,
+        remoteAddress: req.socket.remoteAddress,
+      });
       res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("پرداخت بررسی نشد.");
     }
   });
 
-  server.listen(port, () => logger.info("Payment callback server is running", { port, route: "GET /payments/callback or /api/payment/callback?invoice_id=...&token=..." }));
+  server.listen(port, () =>
+    logger.info("Payment callback server is running", { port, route: "GET /payments/callback or /api/payment/callback?invoice_id=...&token=..." }),
+  );
   return server;
 }
