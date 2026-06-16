@@ -674,11 +674,12 @@ export class PaymentService {
     paymentLog("PAYMENT_CALLBACK_VALIDATED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, type: invoice.type });
     await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_VALIDATED", metadata: { status: invoice.status, type: invoice.type } });
 
-    if (invoice.status === "COMPLETED" || invoice.status === "PAID") {
-      paymentLog("PAYMENT_DUPLICATE_CALLBACK_IGNORED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status });
-      await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_DUPLICATE_CALLBACK_IGNORED", metadata: { status: invoice.status, reference: normalizedReference } });
-      MonitoringService.record({ type: "PAYMENT_DUPLICATE_CALLBACK", section: "Payment Callback", description: `Duplicate callback ignored for ${invoice.status}`, userId: invoice.userId, severity: "warning", suggestedAction: "اگر تکرار زیاد است، retry درگاه را بررسی کنید.", metadata: { invoiceId: invoice.id, status: invoice.status } });
-      if (invoice.status === "COMPLETED") return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+    const deliveryRetryable = invoice.status === "PAID" && (invoice.deliveryStatus === null || invoice.deliveryStatus === "PENDING" || invoice.deliveryStatus === "FAILED_DELIVERY");
+    if (invoice.status === "COMPLETED" || (invoice.status === "PAID" && !deliveryRetryable)) {
+      paymentLog("PAYMENT_DUPLICATE_CALLBACK_IGNORED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, deliveryStatus: invoice.deliveryStatus });
+      await audit(prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_DUPLICATE_CALLBACK_IGNORED", metadata: { status: invoice.status, deliveryStatus: invoice.deliveryStatus, reference: normalizedReference } });
+      MonitoringService.record({ type: "PAYMENT_DUPLICATE_CALLBACK", section: "Payment Callback", description: `Duplicate callback ignored for ${invoice.status}/${invoice.deliveryStatus ?? "none"}`, userId: invoice.userId, severity: "warning", suggestedAction: "اگر تکرار زیاد است، retry درگاه را بررسی کنید.", metadata: { invoiceId: invoice.id, status: invoice.status, deliveryStatus: invoice.deliveryStatus } });
+      return { statusCode: 200, text: ALREADY_PROCESSED_FA };
     }
     if (invoice.status === "FAILED" || invoice.status === "CANCELED" || invoice.status === "EXPIRED") return { statusCode: 409, text: "Payment invoice is not payable." };
 
@@ -702,7 +703,7 @@ export class PaymentService {
 
     const staleProcessingBefore = new Date(Date.now() - 5 * 60_000);
     const fulfillmentLock = await prisma.paymentInvoice.updateMany({
-      where: { id: paidInvoice.id, status: "PAID", OR: [{ deliveryStatus: null }, { deliveryStatus: { in: ["PENDING", "FAILED"] } }, { deliveryStatus: "PROCESSING", updatedAt: { lt: staleProcessingBefore } }] },
+      where: { id: paidInvoice.id, status: "PAID", OR: [{ deliveryStatus: null }, { deliveryStatus: { in: ["PENDING", "FAILED", "FAILED_DELIVERY"] } }, { deliveryStatus: "PROCESSING", updatedAt: { lt: staleProcessingBefore } }] },
       data: { deliveryStatus: "PROCESSING" },
     });
     if (fulfillmentLock.count !== 1) return { statusCode: 200, text: ALREADY_PROCESSED_FA };

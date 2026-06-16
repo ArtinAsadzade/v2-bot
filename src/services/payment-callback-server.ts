@@ -48,7 +48,7 @@ async function notifyUser(bot: AppBot, result: unknown) {
 
   try {
     if ("error" in payload) {
-      const failure = composeCustomEmojiMessage([customEmoji("❌", "TELEGRAM_EMOJI_ERROR_ID"), " ", errorMessage("پرداخت ناموفق بود", "پرداخت شما تکمیل نشد یا تأیید نهایی دریافت نشد.", "اگر مبلغی از حساب شما کسر شده است، با پشتیبانی در ارتباط باشید.")]);
+      const failure = composeCustomEmojiMessage([customEmoji("❌", "TELEGRAM_EMOJI_ERROR_ID"), " ", errorMessage("پرداخت ثبت شد اما تحویل ناموفق بود", "پرداخت شما با موفقیت ثبت شد، اما تحویل اکانت با مشکل مواجه شد.", "پشتیبانی بررسی می‌کند و نتیجه را اطلاع می‌دهد.")]);
       await bot.telegram.sendMessage(Number(user.telegramId), failure.text, { ...paymentFailureKeyboard(), entities: failure.entities });
       await PaymentInvoiceService.markNotification(invoice.id, "SENT", { type: "failed", error: payload.error });
       return;
@@ -82,7 +82,7 @@ export function startPaymentCallbackServer(bot: AppBot) {
   const port = Number(process.env.PAYMENT_CALLBACK_PORT ?? process.env.PORT ?? 3000);
   const server = http.createServer(async (req, res) => {
     const callbackUrl = parsedCallbackUrl(req);
-    if (req.method !== "GET" || callbackUrl.pathname !== "/payments/callback") {
+    if (req.method !== "GET" || !["/payments/callback", "/api/payment/callback"].includes(callbackUrl.pathname)) {
       res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("درخواست پیدا نشد.");
       return;
@@ -102,6 +102,6 @@ export function startPaymentCallbackServer(bot: AppBot) {
     }
   });
 
-  server.listen(port, () => logger.info("Payment callback server is running", { port, route: "GET /payments/callback?invoice_id=...&token=..." }));
+  server.listen(port, () => logger.info("Payment callback server is running", { port, route: "GET /payments/callback or /api/payment/callback?invoice_id=...&token=..." }));
   return server;
 }
