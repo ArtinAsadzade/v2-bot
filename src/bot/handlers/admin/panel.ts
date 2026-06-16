@@ -26,7 +26,19 @@ function actor(ctx: AppContext) {
 
 function statusFa(value: boolean | string | null | undefined) {
   if (typeof value === "boolean") return value ? "فعال" : "غیرفعال";
-  return ({ active: "فعال", inactive: "غیرفعال", available: "AVAILABLE", reserved: "RESERVED", sold: "SOLD", disabled: "DISABLED", expired: "EXPIRED" } as Record<string, string>)[String(value)] ?? String(value ?? "-");
+  return (
+    (
+      {
+        active: "فعال",
+        inactive: "غیرفعال",
+        available: "AVAILABLE",
+        reserved: "RESERVED",
+        sold: "SOLD",
+        disabled: "DISABLED",
+        expired: "EXPIRED",
+      } as Record<string, string>
+    )[String(value)] ?? String(value ?? "-")
+  );
 }
 
 function dateFa(date?: Date | null) {
@@ -57,17 +69,31 @@ function productDetailText(detail: Awaited<ReturnType<typeof AdminService.produc
 function productDetailKeyboard(detail: Awaited<ReturnType<typeof AdminService.productDetail>>) {
   const p = detail.product!;
   const rows: InlineKeyboardButton.CallbackButton[][] = [
-    [Markup.button.callback("✏️ عنوان/قیمت/دسته", `admin:product:edit:${p.id}`), Markup.button.callback(p.isActive ? "⏸ غیرفعال" : "▶️ فعال", `admin:product:status:${p.id}:${p.isActive ? "off" : "on"}`)],
+    [
+      Markup.button.callback("✏️ عنوان/قیمت/دسته", `admin:product:edit:${p.id}`),
+      Markup.button.callback(p.isActive ? "⏸ غیرفعال" : "▶️ فعال", `admin:product:status:${p.id}:${p.isActive ? "off" : "on"}`),
+    ],
   ];
-  if (p.mode === "xray_auto") rows.push(
-    [Markup.button.callback("✏️ تغییر حجم", `admin:pe:tr:${p.id}`), Markup.button.callback("✏️ تغییر مدت", `admin:pe:du:${p.id}`)],
-    [Markup.button.callback("✏️ تغییر موجودی کل", `admin:pe:st:${p.id}`), Markup.button.callback("♻️ ریست تعداد فروخته‌شده", `admin:pe:sr:${p.id}`)],
-    [Markup.button.callback("✏️ محدودیت IP", `admin:pe:ip:${p.id}`), Markup.button.callback("✏️ گروه", `admin:pe:gr:${p.id}`)],
-    [Markup.button.callback("✏️ اینباندها", `admin:pe:in:${p.id}`)],
-  );
-  else rows.push([Markup.button.callback("🗄 اکانت‌های محصول", `admin:product:accounts:${p.id}:page:1`), Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${p.id}`)]);
+  if (p.mode === "xray_auto")
+    rows.push(
+      [Markup.button.callback("✏️ تغییر حجم", `admin:pe:tr:${p.id}`), Markup.button.callback("✏️ تغییر مدت", `admin:pe:du:${p.id}`)],
+      [
+        Markup.button.callback("✏️ تغییر موجودی کل", `admin:pe:st:${p.id}`),
+        Markup.button.callback("♻️ ریست تعداد فروخته‌شده", `admin:pe:sr:${p.id}`),
+      ],
+      [Markup.button.callback("✏️ محدودیت IP", `admin:pe:ip:${p.id}`), Markup.button.callback("✏️ گروه", `admin:pe:gr:${p.id}`)],
+      [Markup.button.callback("✏️ اینباندها", `admin:pe:in:${p.id}`)],
+    );
+  else
+    rows.push([
+      Markup.button.callback("🗄 اکانت‌های محصول", `admin:product:accounts:${p.id}:page:1`),
+      Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${p.id}`),
+    ]);
   rows.push([Markup.button.callback("📋 کپی محصول", `admin:product:duplicate:${p.id}`)]);
-  rows.push([Markup.button.callback("🗑 حذف نرم", `admin:product:delete:${p.id}`), Markup.button.callback("🔥 حذف دائمی", `admin:product:hard:${p.id}`)]);
+  rows.push([
+    Markup.button.callback("🗑 حذف نرم", `admin:product:delete:${p.id}`),
+    Markup.button.callback("🔥 حذف دائمی", `admin:product:hard:${p.id}`),
+  ]);
   rows.push([Markup.button.callback("⬅️ بازگشت", "admin:products")]);
   return Markup.inlineKeyboard(rows);
 }
@@ -91,12 +117,25 @@ function confirmKeyboard(confirmAction: string, cancelAction: string) {
   return Markup.inlineKeyboard([[Markup.button.callback("✅ تایید", confirmAction), Markup.button.callback("❌ انصراف", cancelAction)]]);
 }
 
-function entityListKeyboard(rows: InlineKeyboardButton.CallbackButton[][], prefix: string, page: number, total: number, pageSize: number, backTo = "admin:dashboard", extra: InlineKeyboardButton.CallbackButton[][] = []) {
+function entityListKeyboard(
+  rows: InlineKeyboardButton.CallbackButton[][],
+  prefix: string,
+  page: number,
+  total: number,
+  pageSize: number,
+  backTo = "admin:dashboard",
+  extra: InlineKeyboardButton.CallbackButton[][] = [],
+) {
   const totalPages = getTotalPages(total, pageSize);
   const nav: InlineKeyboardButton.CallbackButton[] = [];
   if (page > 1) nav.push(Markup.button.callback("⬅️ قبلی", `${prefix}:page:${page - 1}`));
   if (page < totalPages) nav.push(Markup.button.callback("بعدی ➡️", `${prefix}:page:${page + 1}`));
-  return Markup.inlineKeyboard([...extra, ...rows, ...(nav.length ? [nav] : []), [Markup.button.callback("🔎 جستجو", `${prefix}:search`), Markup.button.callback("↩️ بازگشت", backTo)]]);
+  return Markup.inlineKeyboard([
+    ...extra,
+    ...rows,
+    ...(nav.length ? [nav] : []),
+    [Markup.button.callback("🔎 جستجو", `${prefix}:search`), Markup.button.callback("↩️ بازگشت", backTo)],
+  ]);
 }
 
 function productInputHelp() {
@@ -120,8 +159,16 @@ function inventoryStatsLine(stats: { total: number; available: number; reserved:
 }
 
 function accountStatusFilterKeyboard(currentStatus?: ProductAccountAdminStatus) {
-  const statuses: Array<[ProductAccountAdminStatus, string]> = [["available", "✅ آماده"], ["reserved", "⏳ رزرو"], ["sold", "💰 فروخته"], ["disabled", "⏸ غیرفعال"], ["expired", "⌛ منقضی"]];
-  return statuses.map(([status, label]) => Markup.button.callback(`${currentStatus === status ? "• " : ""}${label}`, `admin:accounts:status:${status}:page:1`));
+  const statuses: Array<[ProductAccountAdminStatus, string]> = [
+    ["available", "✅ آماده"],
+    ["reserved", "⏳ رزرو"],
+    ["sold", "💰 فروخته"],
+    ["disabled", "⏸ غیرفعال"],
+    ["expired", "⌛ منقضی"],
+  ];
+  return statuses.map(([status, label]) =>
+    Markup.button.callback(`${currentStatus === status ? "• " : ""}${label}`, `admin:accounts:status:${status}:page:1`),
+  );
 }
 
 export function registerAdminHandlers(bot: AppBot) {
@@ -135,13 +182,16 @@ export function registerAdminHandlers(bot: AppBot) {
     );
   });
 
-
   bot.action("admin:monitoring", async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
     const dashboard = await MonitoringService.dashboard();
     const count = (type: string) => dashboard.events.filter((event) => event.type.includes(type)).length;
-    const recent = dashboard.events.slice(0, 8).map((event) => `• ${event.type} | ${dateFa(event.createdAt)} | ${event.section}`).join("\n") || "خطای اخیر ثبت نشده است.";
+    const recent =
+      dashboard.events
+        .slice(0, 8)
+        .map((event) => `• ${event.type} | ${dateFa(event.createdAt)} | ${event.section}`)
+        .join("\n") || "خطای اخیر ثبت نشده است.";
     const paymentErrors = dashboard.events.filter((event) => event.type.startsWith("PAYMENT") || event.type === "PURCHASE_FAILED").length;
     const ticketErrors = count("TICKET");
     const jobErrors = count("JOB");
@@ -160,7 +210,11 @@ export function registerAdminHandlers(bot: AppBot) {
     const page = "match" in ctx && ctx.match ? Number(ctx.match[1]) : 1;
     const { take, pageSize } = getPagination(page);
     const [users, total] = await AdminService.listUsers(page, take);
-    await ctx.reply(users.map((user) => `👤 ${user.telegramId} @${user.username ?? "-"} | ${user.balance.toLocaleString("fa-IR")} تومان`).join("\n") || "کاربری وجود ندارد.", paginationKeyboard("admin:users", page, getTotalPages(total, pageSize)));
+    await ctx.reply(
+      users.map((user) => `👤 ${user.telegramId} @${user.username ?? "-"} | ${user.balance.toLocaleString("fa-IR")} تومان`).join("\n") ||
+        "کاربری وجود ندارد.",
+      paginationKeyboard("admin:users", page, getTotalPages(total, pageSize)),
+    );
   });
 
   bot.action("admin:users:search", async (ctx) => {
@@ -177,7 +231,18 @@ export function registerAdminHandlers(bot: AppBot) {
     const { take, pageSize } = getPagination(page);
     const [categories, total] = await AdminService.listCategories(page, take);
     const text = `📂 مدیریت دسته‌بندی‌ها\n📊 تعداد: ${total.toLocaleString("fa-IR")}\n\n${categories.map((category) => `${category.icon ?? "📂"} ${category.name} | ${statusFa(category.isActive)} | ترتیب ${category.displayOrder.toLocaleString("fa-IR")} | محصول ${category._count.products.toLocaleString("fa-IR")} | فعال ${category.activeProductCount.toLocaleString("fa-IR")}`).join("\n") || "دسته‌بندی وجود ندارد."}`;
-    await ctx.reply(text, entityListKeyboard(categories.map((category) => [Markup.button.callback(`👁 ${category.name}`, `admin:category:${category.id}`)]), "admin:categories", page, total, pageSize, "admin:dashboard", [[Markup.button.callback("➕ ایجاد دسته‌بندی", "admin:category:create")]]));
+    await ctx.reply(
+      text,
+      entityListKeyboard(
+        categories.map((category) => [Markup.button.callback(`👁 ${category.name}`, `admin:category:${category.id}`)]),
+        "admin:categories",
+        page,
+        total,
+        pageSize,
+        "admin:dashboard",
+        [[Markup.button.callback("➕ ایجاد دسته‌بندی", "admin:category:create")]],
+      ),
+    );
   });
 
   bot.action("admin:categories:search", async (ctx) => {
@@ -202,16 +267,30 @@ export function registerAdminHandlers(bot: AppBot) {
     const detail = await AdminService.categoryDetail(categoryId, productPage, 8);
     if (!detail.category) return void (await ctx.reply("دسته‌بندی پیدا نشد.", navigationKeyboard("admin:categories")));
     const productTotalPages = getTotalPages(detail.productCount, detail.productTake);
-    const products = detail.products.map((product) => `• ${product.title} | ${statusFa(product.isActive)} | فروش ${product._count.orders.toLocaleString("fa-IR")}`).join("\n") || "بدون محصول";
+    const products =
+      detail.products
+        .map((product) => `• ${product.title} | ${statusFa(product.isActive)} | فروش ${product._count.orders.toLocaleString("fa-IR")}`)
+        .join("\n") || "بدون محصول";
     const productNav: InlineKeyboardButton.CallbackButton[] = [];
-    if (productPage > 1) productNav.push(Markup.button.callback("⬅️ محصولات قبلی", `admin:category:products:${detail.category.id}:page:${productPage - 1}`));
-    if (productPage < productTotalPages) productNav.push(Markup.button.callback("محصولات بعدی ➡️", `admin:category:products:${detail.category.id}:page:${productPage + 1}`));
+    if (productPage > 1)
+      productNav.push(Markup.button.callback("⬅️ محصولات قبلی", `admin:category:products:${detail.category.id}:page:${productPage - 1}`));
+    if (productPage < productTotalPages)
+      productNav.push(Markup.button.callback("محصولات بعدی ➡️", `admin:category:products:${detail.category.id}:page:${productPage + 1}`));
     await ctx.reply(
       `${detail.category.icon ?? "📂"} ${detail.category.name}\nتوضیحات: ${detail.category.description ?? "-"}\nترتیب نمایش: ${detail.category.displayOrder.toLocaleString("fa-IR")}\nوضعیت: ${statusFa(detail.category.isActive)}\n\n📊 آمار فروشگاه\nمحصولات: ${detail.productCount.toLocaleString("fa-IR")}\nمحصولات فعال: ${detail.activeProductCount.toLocaleString("fa-IR")}\nتعداد فروش: ${detail.salesCount.toLocaleString("fa-IR")}\n\n📦 محصولات داخل دسته (صفحه ${productPage.toLocaleString("fa-IR")} از ${productTotalPages.toLocaleString("fa-IR")}):\n${products}`,
       Markup.inlineKeyboard([
         ...(productNav.length ? [productNav] : []),
-        [Markup.button.callback("✏️ ویرایش", `admin:category:edit:${detail.category.id}`), Markup.button.callback(detail.category.isActive ? "⏸ غیرفعال" : "▶️ فعال", `admin:category:status:${detail.category.id}:${detail.category.isActive ? "off" : "on"}`)],
-        [Markup.button.callback("🗑 حذف نرم", `admin:category:delete:${detail.category.id}`), Markup.button.callback("🔥 حذف دائمی", `admin:category:hard:${detail.category.id}`)],
+        [
+          Markup.button.callback("✏️ ویرایش", `admin:category:edit:${detail.category.id}`),
+          Markup.button.callback(
+            detail.category.isActive ? "⏸ غیرفعال" : "▶️ فعال",
+            `admin:category:status:${detail.category.id}:${detail.category.isActive ? "off" : "on"}`,
+          ),
+        ],
+        [
+          Markup.button.callback("🗑 حذف نرم", `admin:category:delete:${detail.category.id}`),
+          Markup.button.callback("🔥 حذف دائمی", `admin:category:hard:${detail.category.id}`),
+        ],
         [Markup.button.callback("⬅️ بازگشت", "admin:categories")],
       ]),
     );
@@ -235,7 +314,10 @@ export function registerAdminHandlers(bot: AppBot) {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
     const hard = ctx.match[1] === "hard";
-    await ctx.reply("⚠️ آیا از حذف این مورد مطمئن هستید؟", confirmKeyboard(`admin:category:${hard ? "hard-confirm" : "delete-confirm"}:${ctx.match[2]}`, `admin:category:${ctx.match[2]}`));
+    await ctx.reply(
+      "⚠️ آیا از حذف این مورد مطمئن هستید؟",
+      confirmKeyboard(`admin:category:${hard ? "hard-confirm" : "delete-confirm"}:${ctx.match[2]}`, `admin:category:${ctx.match[2]}`),
+    );
   });
 
   bot.action(/^admin:category:(delete-confirm|hard-confirm):(.+)$/, async (ctx) => {
@@ -257,7 +339,18 @@ export function registerAdminHandlers(bot: AppBot) {
     const { take, pageSize } = getPagination(page);
     const [products, total] = await AdminService.listProducts(page, take);
     const text = `📦 مدیریت محصولات\n📊 تعداد: ${total.toLocaleString("fa-IR")}\n\n${products.map((product) => `📦 ${product.title} | ${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"} | ${product.price.toLocaleString("fa-IR")} تومان | ${product.duration} روز | موجودی ${product.inventoryCount.toLocaleString("fa-IR")} | فروخته ${product.soldCount.toLocaleString("fa-IR")} | فعال ${product.activeCount.toLocaleString("fa-IR")} | ${statusFa(product.isActive)}`).join("\n") || "محصولی وجود ندارد."}`;
-    await ctx.reply(text, entityListKeyboard(products.map((product) => [Markup.button.callback(`👁 ${product.title}`, `admin:product:${product.id}`)]), "admin:products", page, total, pageSize, "admin:dashboard", [[Markup.button.callback("➕ ایجاد محصول", "admin:product:create")]]));
+    await ctx.reply(
+      text,
+      entityListKeyboard(
+        products.map((product) => [Markup.button.callback(`👁 ${product.title}`, `admin:product:${product.id}`)]),
+        "admin:products",
+        page,
+        total,
+        pageSize,
+        "admin:dashboard",
+        [[Markup.button.callback("➕ ایجاد محصول", "admin:product:create")]],
+      ),
+    );
   });
 
   bot.action("admin:products:search", async (ctx) => {
@@ -285,7 +378,14 @@ export function registerAdminHandlers(bot: AppBot) {
   bot.action(/^admin:pe:(tr|du|st|ip|gr|in):(.+)$/, async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
-    const map = { tr: ["traffic", "حجم جدید را به گیگابایت وارد کنید. عدد ۰ یعنی نامحدود."], du: ["duration", "مدت جدید را به روز وارد کنید. عدد ۰ یعنی نامحدود."], st: ["stock", "موجودی کل محصول را وارد کنید. عدد ۰ یعنی ناموجود."], ip: ["limit_ip", "محدودیت IP را وارد کنید. عدد ۰ یعنی نامحدود."], gr: ["group", "نام گروه را وارد کنید یا «بدون گروه» ارسال کنید."], in: ["inbounds", "شناسه اینباندها را با کاما وارد کنید. حداقل یک اینباند لازم است."] } as const;
+    const map = {
+      tr: ["traffic", "حجم جدید را به گیگابایت وارد کنید. عدد ۰ یعنی نامحدود."],
+      du: ["duration", "مدت جدید را به روز وارد کنید. عدد ۰ یعنی نامحدود."],
+      st: ["stock", "موجودی کل محصول را وارد کنید. عدد ۰ یعنی ناموجود."],
+      ip: ["limit_ip", "محدودیت IP را وارد کنید. عدد ۰ یعنی نامحدود."],
+      gr: ["group", "نام گروه را وارد کنید یا «بدون گروه» ارسال کنید."],
+      in: ["inbounds", "شناسه اینباندها را با کاما وارد کنید. حداقل یک اینباند لازم است."],
+    } as const;
     const [field, prompt] = map[ctx.match[1] as keyof typeof map];
     setFlow(ctx, { flow: "product_field_edit", step: field, data: { productId: ctx.match[2], field } });
     await ctx.reply(prompt, navigationKeyboard(`admin:product:${ctx.match[2]}`));
@@ -296,7 +396,10 @@ export function registerAdminHandlers(bot: AppBot) {
     await ctx.answerCbQuery();
     const detail = await AdminService.productDetail(ctx.match[1]);
     const sold = detail.product?.soldCount ?? 0;
-    await ctx.reply(`آیا مطمئن هستید تعداد فروخته‌شده این محصول از ${sold.toLocaleString("fa-IR")} به ۰ تغییر کند؟`, confirmKeyboard(`admin:pe:src:${ctx.match[1]}`, `admin:product:${ctx.match[1]}`));
+    await ctx.reply(
+      `آیا مطمئن هستید تعداد فروخته‌شده این محصول از ${sold.toLocaleString("fa-IR")} به ۰ تغییر کند؟`,
+      confirmKeyboard(`admin:pe:src:${ctx.match[1]}`, `admin:product:${ctx.match[1]}`),
+    );
   });
 
   bot.action(/^admin:pe:src:(.+)$/, async (ctx) => {
@@ -330,7 +433,10 @@ export function registerAdminHandlers(bot: AppBot) {
   bot.action(/^admin:product:(delete|hard):(.+)$/, async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
-    await ctx.reply("⚠️ آیا از حذف این مورد مطمئن هستید؟", confirmKeyboard(`admin:product:${ctx.match[1]}-confirm:${ctx.match[2]}`, `admin:product:${ctx.match[2]}`));
+    await ctx.reply(
+      "⚠️ آیا از حذف این مورد مطمئن هستید؟",
+      confirmKeyboard(`admin:product:${ctx.match[1]}-confirm:${ctx.match[2]}`, `admin:product:${ctx.match[2]}`),
+    );
   });
 
   bot.action(/^admin:product:(delete-confirm|hard-confirm):(.+)$/, async (ctx) => {
@@ -345,40 +451,49 @@ export function registerAdminHandlers(bot: AppBot) {
     }
   });
 
-  bot.action(["admin:accounts", /^admin:accounts:page:(\d+)$/, /^admin:accounts:status:(available|reserved|sold|disabled|expired):page:(\d+)$/], async (ctx) => {
-    if (!(await requireAdmin(ctx))) return;
-    await ctx.answerCbQuery();
-    const status = "match" in ctx && ctx.match?.[1] && !/^\d+$/.test(ctx.match[1]) ? ctx.match[1] as ProductAccountAdminStatus : undefined;
-    const page = "match" in ctx && ctx.match ? Number(status ? ctx.match[2] : ctx.match[1]) || 1 : 1;
-    const { take, pageSize } = getPagination(page);
-    const [accounts, total] = await AdminService.listAccounts(page, take, undefined, status);
-    const stats = await AdminService.accountStats();
-    const prefix = status ? `admin:accounts:status:${status}` : "admin:accounts";
-    const text = `🗄 مدیریت موجودی اکانت‌ها\n📊 ${inventoryStatsLine(stats)}\n${status ? `🔎 فیلتر فعلی: ${statusFa(status)}\n` : ""}\n${accounts.map((account) => `👤 ${account.username} | ${account.product.title} | ${statusFa(account.status)} | کاربر: ${account.assignedUser ? userLabel(account.assignedUser) : "-"} | تاریخ: ${dateFa(account.assignedDate)}`).join("\n") || "اکانتی وجود ندارد."}`;
-    await ctx.reply(
-      text,
-      entityListKeyboard(
-        accounts.map((account) => [Markup.button.callback(`👁 ${account.username}`, `admin:account:${account.id}`)]),
-        prefix,
-        page,
-        total,
-        pageSize,
-        "admin:dashboard",
-        [
-          [Markup.button.callback("➕ افزودن اکانت", "admin:accounts:add"), Markup.button.callback("📊 آمار موجودی", "admin:inventory:stats")],
-          accountStatusFilterKeyboard(status),
-          [Markup.button.callback("نمایش همه", "admin:accounts")],
-        ],
-      ),
-    );
-  });
+  bot.action(
+    ["admin:accounts", /^admin:accounts:page:(\d+)$/, /^admin:accounts:status:(available|reserved|sold|disabled|expired):page:(\d+)$/],
+    async (ctx) => {
+      if (!(await requireAdmin(ctx))) return;
+      await ctx.answerCbQuery();
+      const status = "match" in ctx && ctx.match?.[1] && !/^\d+$/.test(ctx.match[1]) ? (ctx.match[1] as ProductAccountAdminStatus) : undefined;
+      const page = "match" in ctx && ctx.match ? Number(status ? ctx.match[2] : ctx.match[1]) || 1 : 1;
+      const { take, pageSize } = getPagination(page);
+      const [accounts, total] = await AdminService.listAccounts(page, take, undefined, status);
+      const stats = await AdminService.accountStats();
+      const prefix = status ? `admin:accounts:status:${status}` : "admin:accounts";
+      const text = `🗄 مدیریت موجودی اکانت‌ها\n📊 ${inventoryStatsLine(stats)}\n${status ? `🔎 فیلتر فعلی: ${statusFa(status)}\n` : ""}\n${accounts.map((account) => `👤 ${account.username} | ${account.product.title} | ${statusFa(account.status)} | کاربر: ${account.assignedUser ? userLabel(account.assignedUser) : "-"} | تاریخ: ${dateFa(account.assignedDate)}`).join("\n") || "اکانتی وجود ندارد."}`;
+      await ctx.reply(
+        text,
+        entityListKeyboard(
+          accounts.map((account) => [Markup.button.callback(`👁 ${account.username}`, `admin:account:${account.id}`)]),
+          prefix,
+          page,
+          total,
+          pageSize,
+          "admin:dashboard",
+          [
+            [Markup.button.callback("➕ افزودن اکانت", "admin:accounts:add"), Markup.button.callback("📊 آمار موجودی", "admin:inventory:stats")],
+            accountStatusFilterKeyboard(status),
+            [Markup.button.callback("نمایش همه", "admin:accounts")],
+          ],
+        ),
+      );
+    },
+  );
 
   bot.action("admin:inventory:stats", async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
     const stats = await AdminService.accountStats();
-    const productLines = stats.products.map((product) => `• ${product.title} | ${statusFa(product.isActive)} | کل اکانت: ${product._count.accounts.toLocaleString("fa-IR")}`).join("\n") || "محصولی وجود ندارد.";
-    await ctx.reply(`📊 آمار کامل موجودی\n${inventoryStatsLine(stats)}\n\n📦 موجودی بر اساس محصول:\n${productLines}`, navigationKeyboard("admin:accounts"));
+    const productLines =
+      stats.products
+        .map((product) => `• ${product.title} | ${statusFa(product.isActive)} | کل اکانت: ${product._count.accounts.toLocaleString("fa-IR")}`)
+        .join("\n") || "محصولی وجود ندارد.";
+    await ctx.reply(
+      `📊 آمار کامل موجودی\n${inventoryStatsLine(stats)}\n\n📦 موجودی بر اساس محصول:\n${productLines}`,
+      navigationKeyboard("admin:accounts"),
+    );
   });
 
   bot.action(/^admin:product:accounts:([^:]+):page:(\d+)$/, async (ctx) => {
@@ -391,7 +506,18 @@ export function registerAdminHandlers(bot: AppBot) {
     const stats = await AdminService.accountStats(productId);
     const title = accounts[0]?.product.title ?? (await AdminService.productDetail(productId)).product?.title ?? "محصول";
     const text = `🗄 اکانت‌های محصول: ${title}\n📊 ${inventoryStatsLine(stats)}\n\n${accounts.map((account) => `👤 ${account.username} | ${statusFa(account.status)} | کاربر: ${account.assignedUser ? userLabel(account.assignedUser) : "-"}`).join("\n") || "اکانتی برای این محصول وجود ندارد."}`;
-    await ctx.reply(text, entityListKeyboard(accounts.map((account) => [Markup.button.callback(`👁 ${account.username}`, `admin:account:${account.id}`)]), `admin:product:accounts:${productId}`, page, total, pageSize, `admin:product:${productId}`, [[Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${productId}`)]]));
+    await ctx.reply(
+      text,
+      entityListKeyboard(
+        accounts.map((account) => [Markup.button.callback(`👁 ${account.username}`, `admin:account:${account.id}`)]),
+        `admin:product:accounts:${productId}`,
+        page,
+        total,
+        pageSize,
+        `admin:product:${productId}`,
+        [[Markup.button.callback("➕ افزودن اکانت", `admin:account:create:${productId}`)]],
+      ),
+    );
   });
 
   bot.action("admin:accounts:search", async (ctx) => {
@@ -405,7 +531,13 @@ export function registerAdminHandlers(bot: AppBot) {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
     const products = await ProductService.listActiveProducts(25);
-    await ctx.reply("برای کدام محصول اکانت اضافه شود؟", Markup.inlineKeyboard([...products.map((product) => [Markup.button.callback(product.title, `admin:account:create:${product.id}`)]), [Markup.button.callback("⬅️ بازگشت", "admin:accounts")]]));
+    await ctx.reply(
+      "برای کدام محصول اکانت اضافه شود؟",
+      Markup.inlineKeyboard([
+        ...products.map((product) => [Markup.button.callback(product.title, `admin:account:create:${product.id}`)]),
+        [Markup.button.callback("⬅️ بازگشت", "admin:accounts")],
+      ]),
+    );
   });
 
   bot.action(/^admin:account:create:(.+)$/, async (ctx) => {
@@ -420,13 +552,27 @@ export function registerAdminHandlers(bot: AppBot) {
     await ctx.answerCbQuery();
     const account = await AdminService.accountDetail(ctx.match[1]);
     if (!account) return void (await ctx.reply("اکانت پیدا نشد.", navigationKeyboard("admin:accounts")));
-    const history = account.history.map((item) => `• ${dateFa(item.createdAt)} | ${item.action} | ${item.fromValue ?? "-"} → ${item.toValue ?? "-"}`).join("\n") || "بدون تاریخچه";
+    const history =
+      account.history.map((item) => `• ${dateFa(item.createdAt)} | ${item.action} | ${item.fromValue ?? "-"} → ${item.toValue ?? "-"}`).join("\n") ||
+      "بدون تاریخچه";
     await ctx.reply(
       `🗄 جزئیات اکانت\n\nUsername: ${account.username}\nSubscription: ${account.subscriptionLink}\nConfig: ${account.configLink}\nProduct: ${account.product.title}\nStatus: ${statusFa(account.status)}\nAssigned User: ${account.assignedUser ? userLabel(account.assignedUser) : "-"}\nAssigned Date: ${dateFa(account.assignedDate)}\n\n📜 تاریخچه تخصیص/تغییر:\n${history}`,
       Markup.inlineKeyboard([
-        [Markup.button.callback("✏️ ویرایش", `admin:account:edit:${account.id}`), Markup.button.callback("🚚 انتقال", `admin:account:move:${account.id}`)],
-        [Markup.button.callback(account.status === "disabled" ? "▶️ فعال" : "⏸ غیرفعال", `admin:account:status:${account.id}:${account.status === "disabled" ? "available" : "disabled"}`), Markup.button.callback("✅ AVAILABLE", `admin:account:status:${account.id}:available`)],
-        [Markup.button.callback("⏳ EXPIRED", `admin:account:status:${account.id}:expired`), Markup.button.callback("🗑 حذف", `admin:account:delete:${account.id}`)],
+        [
+          Markup.button.callback("✏️ ویرایش", `admin:account:edit:${account.id}`),
+          Markup.button.callback("🚚 انتقال", `admin:account:move:${account.id}`),
+        ],
+        [
+          Markup.button.callback(
+            account.status === "disabled" ? "▶️ فعال" : "⏸ غیرفعال",
+            `admin:account:status:${account.id}:${account.status === "disabled" ? "available" : "disabled"}`,
+          ),
+          Markup.button.callback("✅ AVAILABLE", `admin:account:status:${account.id}:available`),
+        ],
+        [
+          Markup.button.callback("⏳ EXPIRED", `admin:account:status:${account.id}:expired`),
+          Markup.button.callback("🗑 حذف", `admin:account:delete:${account.id}`),
+        ],
         [Markup.button.callback("⬅️ بازگشت", "admin:accounts")],
       ]),
     );
@@ -447,8 +593,16 @@ export function registerAdminHandlers(bot: AppBot) {
     const products = await ProductService.listActiveProducts(50);
     const rows = products
       .filter((product) => product.id !== account.productId)
-      .map((product) => [Markup.button.callback(`${product.title} (${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"})`, `admin:account:move-to:${account.id}:${product.id}`)]);
-    await ctx.reply(`🚚 انتقال اکانت ${account.username}\nمحصول فعلی: ${account.product.title}\n\nمحصول مقصد را انتخاب کنید:`, Markup.inlineKeyboard([...rows, [Markup.button.callback("⬅️ بازگشت", `admin:account:${account.id}`)]]));
+      .map((product) => [
+        Markup.button.callback(
+          `${product.title} (${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"})`,
+          `admin:account:move-to:${account.id}:${product.id}`,
+        ),
+      ]);
+    await ctx.reply(
+      `🚚 انتقال اکانت ${account.username}\nمحصول فعلی: ${account.product.title}\n\nمحصول مقصد را انتخاب کنید:`,
+      Markup.inlineKeyboard([...rows, [Markup.button.callback("⬅️ بازگشت", `admin:account:${account.id}`)]]),
+    );
   });
 
   bot.action(/^admin:account:move-to:([^:]+):([^:]+)$/, async (ctx) => {
@@ -468,7 +622,10 @@ export function registerAdminHandlers(bot: AppBot) {
   bot.action(/^admin:account:delete:(.+)$/, async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
-    await ctx.reply("⚠️ آیا از حذف این مورد مطمئن هستید؟", confirmKeyboard(`admin:account:delete-confirm:${ctx.match[1]}`, `admin:account:${ctx.match[1]}`));
+    await ctx.reply(
+      "⚠️ آیا از حذف این مورد مطمئن هستید؟",
+      confirmKeyboard(`admin:account:delete-confirm:${ctx.match[1]}`, `admin:account:${ctx.match[1]}`),
+    );
   });
 
   bot.action(/^admin:account:delete-confirm:(.+)$/, async (ctx) => {
@@ -485,7 +642,18 @@ export function registerAdminHandlers(bot: AppBot) {
     const { take, pageSize } = getPagination(page);
     const [wallets, total] = await AdminService.listCryptoWallets(page, take);
     const text = `💳 مدیریت کیف پول‌ها\n📊 تعداد: ${total.toLocaleString("fa-IR")}\n\n${wallets.map((wallet) => `💳 ${wallet.displayName ?? wallet.coinName} | ${wallet.coinSymbol ?? wallet.coinName} | ${wallet.networkName} | ${statusFa(wallet.status)} | ترتیب ${wallet.displayOrder.toLocaleString("fa-IR")}`).join("\n") || "کیف پولی وجود ندارد."}`;
-    await ctx.reply(text, entityListKeyboard(wallets.map((wallet) => [Markup.button.callback(`👁 ${wallet.displayName ?? wallet.coinName}`, `admin:wallet:${wallet.id}`)]), "admin:wallets", page, total, pageSize, "admin:dashboard", [[Markup.button.callback("➕ افزودن کیف پول", "admin:wallet:create")]]));
+    await ctx.reply(
+      text,
+      entityListKeyboard(
+        wallets.map((wallet) => [Markup.button.callback(`👁 ${wallet.displayName ?? wallet.coinName}`, `admin:wallet:${wallet.id}`)]),
+        "admin:wallets",
+        page,
+        total,
+        pageSize,
+        "admin:dashboard",
+        [[Markup.button.callback("➕ افزودن کیف پول", "admin:wallet:create")]],
+      ),
+    );
   });
 
   bot.action("admin:wallets:search", async (ctx) => {
@@ -510,7 +678,13 @@ export function registerAdminHandlers(bot: AppBot) {
     await ctx.reply(
       `💳 جزئیات کیف پول\n\nنام ارز: ${detail.wallet.coinName}\nنماد: ${detail.wallet.coinSymbol ?? detail.wallet.coinName}\nشبکه: ${detail.wallet.networkName}\nنام نمایشی: ${detail.wallet.displayName ?? "-"}\nآدرس: ${detail.wallet.walletAddress}\nترتیب: ${detail.wallet.displayOrder.toLocaleString("fa-IR")}\nوضعیت: ${statusFa(detail.wallet.status)}\n\n🛡 ایمنی حذف\nواریزی ساخته‌شده: ${detail.pendingDeposits.toLocaleString("fa-IR")}\nرسید ارسال‌شده: ${detail.submittedDeposits.toLocaleString("fa-IR")}\nپرداخت فعال: ${detail.activePayments.toLocaleString("fa-IR")}\nکل واریزی‌ها: ${detail.deposits.toLocaleString("fa-IR")}`,
       Markup.inlineKeyboard([
-        [Markup.button.callback("✏️ ویرایش", `admin:wallet:edit:${detail.wallet.id}`), Markup.button.callback(detail.wallet.status === "active" ? "⏸ غیرفعال" : "▶️ فعال", `admin:wallet:status:${detail.wallet.id}:${detail.wallet.status === "active" ? "inactive" : "active"}`)],
+        [
+          Markup.button.callback("✏️ ویرایش", `admin:wallet:edit:${detail.wallet.id}`),
+          Markup.button.callback(
+            detail.wallet.status === "active" ? "⏸ غیرفعال" : "▶️ فعال",
+            `admin:wallet:status:${detail.wallet.id}:${detail.wallet.status === "active" ? "inactive" : "active"}`,
+          ),
+        ],
         [Markup.button.callback("🗑 حذف", `admin:wallet:delete:${detail.wallet.id}`), Markup.button.callback("⬅️ بازگشت", "admin:wallets")],
       ]),
     );
@@ -534,8 +708,13 @@ export function registerAdminHandlers(bot: AppBot) {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
     const detail = await AdminService.walletDetail(ctx.match[1]);
-    const warning = detail.activePayments ? `\n\n🛡 این کیف پول ${detail.activePayments.toLocaleString("fa-IR")} پرداخت فعال دارد و تا تعیین وضعیت آن‌ها قابل حذف نیست.` : "";
-    await ctx.reply(`⚠️ آیا از حذف این کیف پول مطمئن هستید؟${warning}`, confirmKeyboard(`admin:wallet:delete-confirm:${ctx.match[1]}`, `admin:wallet:${ctx.match[1]}`));
+    const warning = detail.activePayments
+      ? `\n\n🛡 این کیف پول ${detail.activePayments.toLocaleString("fa-IR")} پرداخت فعال دارد و تا تعیین وضعیت آن‌ها قابل حذف نیست.`
+      : "";
+    await ctx.reply(
+      `⚠️ آیا از حذف این کیف پول مطمئن هستید؟${warning}`,
+      confirmKeyboard(`admin:wallet:delete-confirm:${ctx.match[1]}`, `admin:wallet:${ctx.match[1]}`),
+    );
   });
 
   bot.action(/^admin:wallet:delete-confirm:(.+)$/, async (ctx) => {
@@ -555,7 +734,12 @@ export function registerAdminHandlers(bot: AppBot) {
     const [deposits] = await AdminService.listSubmittedDeposits();
     if (deposits.length === 0) return void (await ctx.reply("واریزی در انتظار بررسی وجود ندارد.", navigationKeyboard("admin:dashboard")));
     for (const deposit of deposits) {
-      const buttons = Markup.inlineKeyboard([[Markup.button.callback("✅ تایید", `admin:deposit:approve:${deposit.id}`), Markup.button.callback("❌ رد", `admin:deposit:reject:${deposit.id}`)]]);
+      const buttons = Markup.inlineKeyboard([
+        [
+          Markup.button.callback("✅ تایید", `admin:deposit:approve:${deposit.id}`),
+          Markup.button.callback("❌ رد", `admin:deposit:reject:${deposit.id}`),
+        ],
+      ]);
       const caption = `💳 واریزی\nکاربر: ${deposit.user.telegramId}\nمبلغ: ${deposit.amount.toLocaleString("fa-IR")} تومان\nارز: ${deposit.cryptoType}`;
       if (deposit.receipt) await ctx.replyWithPhoto(deposit.receipt, { caption, ...buttons });
       else await ctx.reply(caption, buttons);
@@ -580,7 +764,13 @@ export function registerAdminHandlers(bot: AppBot) {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
     const [coupons] = await AdminService.listCoupons();
-    await ctx.reply(`${coupons.map((coupon) => `🎟 ${coupon.code} | ${coupon.type === "percentage" ? `${coupon.value || coupon.discountPercent || 0}%` : `${coupon.value.toLocaleString("fa-IR")} تومان`} | ${coupon.status} | ${coupon.usedCount}/${coupon.maxUses}`).join("\n") || "کوپنی وجود ندارد."}\n\nبرای ایجاد کوپن جدید دکمه زیر را بزنید.`, Markup.inlineKeyboard([[Markup.button.callback("➕ کوپن جدید", "admin:coupon:create")], [Markup.button.callback("⬅️ بازگشت", "admin:dashboard")]]));
+    await ctx.reply(
+      `${coupons.map((coupon) => `🎟 ${coupon.code} | ${coupon.type === "percentage" ? `${coupon.value || coupon.discountPercent || 0}%` : `${coupon.value.toLocaleString("fa-IR")} تومان`} | ${coupon.status} | ${coupon.usedCount}/${coupon.maxUses}`).join("\n") || "کوپنی وجود ندارد."}\n\nبرای ایجاد کوپن جدید دکمه زیر را بزنید.`,
+      Markup.inlineKeyboard([
+        [Markup.button.callback("➕ کوپن جدید", "admin:coupon:create")],
+        [Markup.button.callback("⬅️ بازگشت", "admin:dashboard")],
+      ]),
+    );
   });
 
   bot.action("admin:coupon:create", async (ctx) => {
@@ -594,7 +784,13 @@ export function registerAdminHandlers(bot: AppBot) {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
     const [tickets] = await AdminService.listOpenTickets();
-    await ctx.reply("تیکت‌های باز:", Markup.inlineKeyboard([...tickets.map((ticket) => [Markup.button.callback(`🎧 ${ticket.user.telegramId} - ${ticket.id.slice(-6)}`, `admin:ticket:${ticket.id}`)]), [Markup.button.callback("⬅️ بازگشت", "admin:dashboard")]]));
+    await ctx.reply(
+      "تیکت‌های باز:",
+      Markup.inlineKeyboard([
+        ...tickets.map((ticket) => [Markup.button.callback(`🎧 ${ticket.user.telegramId} - ${ticket.id.slice(-6)}`, `admin:ticket:${ticket.id}`)]),
+        [Markup.button.callback("⬅️ بازگشت", "admin:dashboard")],
+      ]),
+    );
   });
 
   bot.action(/^admin:ticket:([^:]+)$/, async (ctx) => {
@@ -603,8 +799,15 @@ export function registerAdminHandlers(bot: AppBot) {
     const ticket = await SupportService.getTicketWithUser(ctx.match[1]);
     if (!ticket) return void (await ctx.reply("تیکت پیدا نشد.", navigationKeyboard("admin:tickets")));
     ctx.session.liveTicketId = ticket.id;
-    const history = ticket.messages.map((message) => `${message.senderRole === "admin" ? "ادمین" : "کاربر"}: ${message.message}`).join("\n") || "بدون پیام";
-    await ctx.reply(`🎧 تیکت ${ticket.id}\nکاربر: ${ticket.user.telegramId}\n\n${history}\n\n💬 حالت گفتگوی زنده فعال شد. هر پیام شما مستقیم داخل همین تیکت ارسال می‌شود.`, Markup.inlineKeyboard([[Markup.button.callback("✅ بستن تیکت", `admin:ticket:close:${ticket.id}`)], [Markup.button.callback("🚪 خروج از چت", "admin:ticket:leave"), Markup.button.callback("⬅️ بازگشت", "admin:tickets")]]));
+    const history =
+      ticket.messages.map((message) => `${message.senderRole === "admin" ? "ادمین" : "کاربر"}: ${message.message}`).join("\n") || "بدون پیام";
+    await ctx.reply(
+      `🎧 تیکت ${ticket.id}\nکاربر: ${ticket.user.telegramId}\n\n${history}\n\n💬 حالت گفتگوی زنده فعال شد. هر پیام شما مستقیم داخل همین تیکت ارسال می‌شود.`,
+      Markup.inlineKeyboard([
+        [Markup.button.callback("✅ بستن تیکت", `admin:ticket:close:${ticket.id}`)],
+        [Markup.button.callback("🚪 خروج از چت", "admin:ticket:leave"), Markup.button.callback("⬅️ بازگشت", "admin:tickets")],
+      ]),
+    );
   });
 
   bot.action("admin:ticket:leave", async (ctx) => {
@@ -626,6 +829,11 @@ export function registerAdminHandlers(bot: AppBot) {
     if (!(await requireAdmin(ctx))) return;
     await ctx.answerCbQuery();
     const [orders] = await AdminService.listRecentOrders();
-    await ctx.reply(orders.map((order) => `🧾 ${order.id.slice(-6)} | ${order.user.telegramId} | ${order.product.title} | ${order.totalAmount.toLocaleString("fa-IR")}`).join("\n") || "سفارشی وجود ندارد.", navigationKeyboard("admin:dashboard"));
+    await ctx.reply(
+      orders
+        .map((order) => `🧾 ${order.id.slice(-6)} | ${order.user.telegramId} | ${order.product.title} | ${order.totalAmount.toLocaleString("fa-IR")}`)
+        .join("\n") || "سفارشی وجود ندارد.",
+      navigationKeyboard("admin:dashboard"),
+    );
   });
 }

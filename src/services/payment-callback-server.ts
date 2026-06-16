@@ -97,10 +97,22 @@ export async function notifyUser(bot: AppBot, result: unknown) {
       if (payload.xrayClient) {
         const expiry = payload.xrayClient.expiresAt ? new Date(payload.xrayClient.expiresAt).toLocaleDateString("fa-IR") : "ثبت نشده";
         const subscription = payload.account.subscriptionLink ? `\n\n🔗 لینک اشتراک:\n${payload.account.subscriptionLink}` : "";
-        const config = payload.account.configLink || payload.account.config ? `\n\n⚙️ کانفیگ/لینک کانفیگ:\n${payload.account.configLink ?? payload.account.config}` : "";
-        await bot.telegram.sendMessage(Number(user.telegramId), `🎉 Your Xray account is ready\n\n━━━━━━━━━━━━━━━━\n\n👤 Service ID:\n${payload.xrayClient.clientEmail}\n\n⏳ Valid until:\n${expiry}\n\n📦 This service has been added to “My Accounts”.${subscription}${config}`, {
-          reply_markup: { inline_keyboard: [[{ text: "View My Accounts", callback_data: "nav:account.details" }], [{ text: "📦 مشاهده سرویس", callback_data: `nav:account.xray?xid=${payload.xrayClient.id}` }]] },
-        });
+        const config =
+          payload.account.configLink || payload.account.config
+            ? `\n\n⚙️ کانفیگ/لینک کانفیگ:\n${payload.account.configLink ?? payload.account.config}`
+            : "";
+        await bot.telegram.sendMessage(
+          Number(user.telegramId),
+          `🎉 Your Xray account is ready\n\n━━━━━━━━━━━━━━━━\n\n👤 Service ID:\n${payload.xrayClient.clientEmail}\n\n⏳ Valid until:\n${expiry}\n\n📦 This service has been added to “My Accounts”.${subscription}${config}`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "View My Accounts", callback_data: "nav:account.details" }],
+                [{ text: "📦 مشاهده سرویس", callback_data: `nav:account.xray?xid=${payload.xrayClient.id}` }],
+              ],
+            },
+          },
+        );
         await PaymentInvoiceService.markNotification(invoice.id, "SENT", {
           type: "xray_product_purchase",
           productId: payload.product.id,
