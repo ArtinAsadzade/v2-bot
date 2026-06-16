@@ -75,6 +75,21 @@ async function notifyUser(bot, result) {
             return;
         }
         if ("product" in payload && "account" in payload && payload.product && payload.account) {
+            if (payload.xrayClient) {
+                const expiry = payload.xrayClient.expiresAt ? new Date(payload.xrayClient.expiresAt).toLocaleDateString("fa-IR") : "ثبت نشده";
+                const subscription = payload.account.subscriptionLink ? `\n\n🔗 لینک اشتراک:\n${payload.account.subscriptionLink}` : "";
+                const config = payload.account.configLink || payload.account.config ? `\n\n⚙️ کانفیگ/لینک کانفیگ:\n${payload.account.configLink ?? payload.account.config}` : "";
+                await bot.telegram.sendMessage(Number(user.telegramId), `🎉 Your Xray account is ready\n\n━━━━━━━━━━━━━━━━\n\n👤 Service ID:\n${payload.xrayClient.clientEmail}\n\n⏳ Valid until:\n${expiry}\n\n📦 This service has been added to “My Accounts”.${subscription}${config}`, {
+                    reply_markup: { inline_keyboard: [[{ text: "View My Accounts", callback_data: "nav:account.details" }], [{ text: "📦 مشاهده سرویس", callback_data: `nav:account.xray?xid=${payload.xrayClient.id}` }]] },
+                });
+                await payment_service_1.PaymentInvoiceService.markNotification(invoice.id, "SENT", {
+                    type: "xray_product_purchase",
+                    productId: payload.product.id,
+                    accountId: payload.account.id,
+                    xrayClientId: payload.xrayClient.id,
+                });
+                return;
+            }
             const success = (0, custom_emoji_1.composeCustomEmojiMessage)([
                 (0, custom_emoji_1.customEmoji)("✅", "TELEGRAM_EMOJI_SUCCESS_ID"),
                 " ",
