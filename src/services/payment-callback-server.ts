@@ -47,6 +47,14 @@ export async function notifyUser(bot: AppBot, result: unknown) {
   if (!user) return;
 
   try {
+    logger.info("PAYMENT NOTIFY USER", {
+      invoiceId: invoice.id,
+      userId: invoice.userId,
+      payloadType: payload.type,
+      hasProduct: Boolean(payload.product),
+      hasAccount: Boolean(payload.account),
+    });
+
     if ("error" in payload) {
       const failure = composeCustomEmojiMessage([
         customEmoji("❌", "TELEGRAM_EMOJI_ERROR_ID"),
@@ -121,7 +129,7 @@ export function startPaymentCallbackServer(bot: AppBot) {
       remoteAddress: req.socket.remoteAddress,
     });
 
-    if (callbackUrl.pathname === "/test-payment") {
+    if (callbackUrl.pathname === "/test-payment" && process.env.NODE_ENV !== "production" && process.env.ENABLE_TEST_PAYMENT_ROUTE === "true") {
       try {
         const user = await prisma.user.findFirst({
           where: {
@@ -180,6 +188,16 @@ export function startPaymentCallbackServer(bot: AppBot) {
         url: req.url,
         remoteAddress: req.socket.remoteAddress,
         query: callbackQueryMetadata(callbackUrl),
+      });
+      logger.info("PAYMENT CALLBACK RESULT", {
+        reference,
+        statusCode: result.statusCode,
+        text: result.text,
+        hasResult: Boolean(result.result),
+        hasFailed: Boolean(result.failed),
+        resultType: result.result && typeof result.result === "object" ? (result.result as any).type : null,
+        resultKeys: result.result && typeof result.result === "object" ? Object.keys(result.result as any) : [],
+        failedKeys: result.failed && typeof result.failed === "object" ? Object.keys(result.failed as any) : [],
       });
       if (result.result) await notifyUser(bot, result.result);
       if (result.failed) await notifyUser(bot, result.failed);

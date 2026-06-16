@@ -596,6 +596,35 @@ class PaymentService {
         }
         return null;
     }
+    static async existingCompletedResult(invoiceId) {
+        const invoice = await prisma_1.prisma.paymentInvoice.findUnique({ where: { id: invoiceId } });
+        if (!invoice)
+            return null;
+        if (invoice.type === "WALLET_TOPUP" && invoice.status === "COMPLETED") {
+            const user = await prisma_1.prisma.user.findUniqueOrThrow({ where: { id: invoice.userId }, select: { balance: true } });
+            return { invoice, type: "WALLET_TOPUP", user };
+        }
+        if (invoice.type === "XRAY_RENEWAL" && invoice.status === "COMPLETED") {
+            const renewal = invoice.renewalId ? await prisma_1.prisma.xrayRenewal.findUnique({ where: { id: invoice.renewalId }, include: { xrayClient: true } }) : null;
+            return { invoice, type: "XRAY_RENEWAL", renewal: renewal ?? undefined, xrayClient: renewal?.xrayClient ? { id: renewal.xrayClient.id, clientEmail: renewal.xrayClient.clientEmail, expiresAt: renewal.xrayClient.expiresAt } : undefined };
+        }
+        if (invoice.type === "PRODUCT_PURCHASE" && invoice.status === "COMPLETED" && invoice.orderId) {
+            const order = await prisma_1.prisma.order.findUnique({
+                where: { id: invoice.orderId },
+                include: { product: true, items: { include: { productAccount: true, xrayClient: true }, take: 1 } },
+            });
+            const item = order?.items[0];
+            if (!order || !item)
+                return { invoice, type: "PRODUCT_PURCHASE" };
+            const account = item.xrayClient
+                ? { id: item.xrayClient.id, username: item.xrayClient.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }
+                : item.productAccount
+                    ? { id: item.productAccount.id, username: item.productAccount.username, subscriptionLink: item.productAccount.subscriptionLink, configLink: item.productAccount.configLink, config: item.productAccount.config }
+                    : { id: item.id, username: item.deliveredUsername, subscriptionLink: item.deliveredSubscriptionLink, configLink: item.deliveredConfigLink, config: item.deliveredConfig };
+            return { invoice, type: "PRODUCT_PURCHASE", order, product: order.product, account, orderItem: item, xrayClient: item.xrayClient ? { id: item.xrayClient.id, clientEmail: item.xrayClient.clientEmail, expiresAt: item.xrayClient.expiresAt } : undefined };
+        }
+        return null;
+    }
     static async completePayment(reference, metadata = {}) {
         const normalizedReference = normalizeCallbackReference(reference);
         if (!normalizedReference.token && !normalizedReference.invoice && !normalizedReference.invoice_id && !normalizedReference.pay_id) {
@@ -643,12 +672,12 @@ class PaymentService {
         await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_PROCESSING", metadata: { status: invoice.status, type: invoice.type, payId: invoice.payId } });
         paymentLog("PAYMENT_CALLBACK_VALIDATED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, type: invoice.type });
         await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_CALLBACK_VALIDATED", metadata: { status: invoice.status, type: invoice.type } });
-        if (invoice.status === "COMPLETED" || invoice.status === "PAID") {
-            paymentLog("PAYMENT_DUPLICATE_CALLBACK_IGNORED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status });
-            await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_DUPLICATE_CALLBACK_IGNORED", metadata: { status: invoice.status, reference: normalizedReference } });
-            monitoring_service_1.MonitoringService.record({ type: "PAYMENT_DUPLICATE_CALLBACK", section: "Payment Callback", description: `Duplicate callback ignored for ${invoice.status}`, userId: invoice.userId, severity: "warning", suggestedAction: "اگر تکرار زیاد است، retry درگاه را بررسی کنید.", metadata: { invoiceId: invoice.id, status: invoice.status } });
-            if (invoice.status === "COMPLETED")
-                return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+        const deliveryRetryable = invoice.status === "PAID" && (invoice.deliveryStatus === null || invoice.deliveryStatus === "PENDING" || invoice.deliveryStatus === "FAILED_DELIVERY");
+        if (invoice.status === "COMPLETED" || (invoice.status === "PAID" && !deliveryRetryable)) {
+            paymentLog("PAYMENT_DUPLICATE_CALLBACK_IGNORED", { invoiceId: invoice.id, userId: invoice.userId, status: invoice.status, deliveryStatus: invoice.deliveryStatus });
+            await audit(prisma_1.prisma, { userId: invoice.userId, invoiceId: invoice.id, action: "PAYMENT_DUPLICATE_CALLBACK_IGNORED", metadata: { status: invoice.status, deliveryStatus: invoice.deliveryStatus, reference: normalizedReference } });
+            monitoring_service_1.MonitoringService.record({ type: "PAYMENT_DUPLICATE_CALLBACK", section: "Payment Callback", description: `Duplicate callback ignored for ${invoice.status}/${invoice.deliveryStatus ?? "none"}`, userId: invoice.userId, severity: "warning", suggestedAction: "اگر تکرار زیاد است، retry درگاه را بررسی کنید.", metadata: { invoiceId: invoice.id, status: invoice.status, deliveryStatus: invoice.deliveryStatus } });
+            return { statusCode: 200, text: ALREADY_PROCESSED_FA, result: await this.existingCompletedResult(invoice.id) };
         }
         if (invoice.status === "FAILED" || invoice.status === "CANCELED" || invoice.status === "EXPIRED")
             return { statusCode: 409, text: "Payment invoice is not payable." };
@@ -666,18 +695,18 @@ class PaymentService {
                 return fresh;
             });
             if (!markedPaid)
-                return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+                return { statusCode: 200, text: ALREADY_PROCESSED_FA, result: await this.existingCompletedResult(invoice.id) };
             paidInvoice = markedPaid;
             paymentLog("PAYMENT_INVOICE_MARKED_PAID", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, payId: paidInvoice.payId, amount: paidInvoice.amount, type: paidInvoice.type });
             paymentLog("PAYMENT_MARKED_PAID", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, payId: paidInvoice.payId, amount: paidInvoice.amount, type: paidInvoice.type });
         }
         const staleProcessingBefore = new Date(Date.now() - 5 * 60000);
         const fulfillmentLock = await prisma_1.prisma.paymentInvoice.updateMany({
-            where: { id: paidInvoice.id, status: "PAID", OR: [{ deliveryStatus: null }, { deliveryStatus: { in: ["PENDING", "FAILED"] } }, { deliveryStatus: "PROCESSING", updatedAt: { lt: staleProcessingBefore } }] },
+            where: { id: paidInvoice.id, status: "PAID", OR: [{ deliveryStatus: null }, { deliveryStatus: { in: ["PENDING", "FAILED", "FAILED_DELIVERY"] } }, { deliveryStatus: "PROCESSING", updatedAt: { lt: staleProcessingBefore } }] },
             data: { deliveryStatus: "PROCESSING" },
         });
         if (fulfillmentLock.count !== 1)
-            return { statusCode: 200, text: ALREADY_PROCESSED_FA };
+            return { statusCode: 200, text: ALREADY_PROCESSED_FA, result: await this.existingCompletedResult(paidInvoice.id) };
         try {
             paymentLog("PAYMENT_FULFILLMENT_STARTED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
             await audit(prisma_1.prisma, { userId: paidInvoice.userId, invoiceId: paidInvoice.id, action: "PAYMENT_FULFILLMENT_STARTED", metadata: { type: paidInvoice.type } });
@@ -1092,6 +1121,9 @@ class PaymentService {
 exports.PaymentService = PaymentService;
 PaymentService.alreadyProcessedMessage = ALREADY_PROCESSED_FA;
 class PaymentInvoiceService {
+    static async purchaseProductWithWallet(userId, productId, couponCode) {
+        return PaymentService.purchaseProductWithWallet(userId, productId, couponCode);
+    }
     static async buildXrayRenewalQuote(userId, xrayClientId, productId) {
         return PaymentService.buildXrayRenewalQuote(userId, xrayClientId, productId);
     }
