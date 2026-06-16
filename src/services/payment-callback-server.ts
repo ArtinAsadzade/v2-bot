@@ -6,6 +6,7 @@ import type { AppBot } from "../types/bot";
 import { paymentFailureKeyboard, paymentSuccessKeyboard } from "../bot/keyboards/design-system";
 import { composeCustomEmojiMessage, customEmoji } from "../bot/keyboards/custom-emoji";
 import { errorMessage, purchaseSuccessMessage, walletSummaryMessage } from "../utils/messages";
+import { callbackFor } from "../bot/navigation/panel-ui";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
 
@@ -19,10 +20,26 @@ type PaymentNotificationPayload = {
   invoice: { id: string; userId: string; amount: number };
   type?: string;
   user?: { balance: number };
-  product?: { id: string; title: string };
-  account?: { id: string; username: string | null; subscriptionLink: string | null; configLink: string | null; config: string | null };
-  xrayClient?: { id: string; clientEmail: string; expiresAt?: Date };
+  product?: { id: string; title: string; mode?: string };
+  account?: {
+    id: string;
+    username: string | null;
+    subscriptionLink: string | null;
+    configLink: string | null;
+    config: string | null;
+  };
+  order?: unknown;
+  orderItem?: {
+    id?: string;
+    xrayClientId?: string | null;
+    deliveredConfig?: string | null;
+    deliveredConfigLink?: string | null;
+    deliveredSubscriptionLink?: string | null;
+    expiresAt?: Date | string | null;
+  } | null;
+  xrayClient?: { id: string; clientEmail: string; expiresAt?: Date | string | null };
   renewal?: { id: string; newExpiry?: Date };
+  expiresAt?: Date | string | null;
   error?: string;
 };
 
@@ -94,30 +111,66 @@ export async function notifyUser(bot: AppBot, result: unknown) {
     }
 
     if ("product" in payload && "account" in payload && payload.product && payload.account) {
-      if (payload.xrayClient) {
-        const expiry = payload.xrayClient.expiresAt ? new Date(payload.xrayClient.expiresAt).toLocaleDateString("fa-IR") : "ثبت نشده";
-        const subscription = payload.account.subscriptionLink ? `\n\n🔗 لینک اشتراک:\n${payload.account.subscriptionLink}` : "";
-        const config =
-          payload.account.configLink || payload.account.config
-            ? `\n\n⚙️ کانفیگ/لینک کانفیگ:\n${payload.account.configLink ?? payload.account.config}`
-            : "";
+      if (payload.xrayClient || payload.orderItem?.xrayClientId || payload.product?.mode === "xray_auto") {
+        const client =
+          payload.xrayClient ??
+          (payload.orderItem?.xrayClientId
+            ? await prisma.xrayClient.findUnique({
+                where: { id: payload.orderItem.xrayClientId },
+              })
+            : null);
+
+        if (!client) {
+          await bot.telegram.sendMessage(
+            Number(user.telegramId),
+            `✅ خرید با موفقیت انجام شد
+
+سرویس ساخته شده است. لطفاً از بخش «📦 اکانت‌های من» آن را باز کنید.`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") }],
+                  [{ text: "🏠 خانه", callback_data: callbackFor("home") }],
+                ],
+              },
+            },
+          );
+
+          await PaymentInvoiceService.markNotification(invoice.id, "SENT", {
+            type: "xray_product_purchase",
+            productId: payload.product.id,
+            accountId: payload.account.id,
+            xrayClientId: payload.orderItem?.xrayClientId ?? null,
+          });
+          return;
+        }
+
         await bot.telegram.sendMessage(
           Number(user.telegramId),
-          `🎉 Your Xray account is ready\n\n━━━━━━━━━━━━━━━━\n\n👤 Service ID:\n${payload.xrayClient.clientEmail}\n\n⏳ Valid until:\n${expiry}\n\n📦 This service has been added to “My Accounts”.${subscription}${config}`,
+          `✅ خرید با موفقیت انجام شد
+
+سرویس شما ساخته شد و آماده استفاده است.
+
+برای دریافت لینک اشتراک، QR و کانفیگ‌ها از دکمه‌های زیر استفاده کنید.`,
           {
             reply_markup: {
               inline_keyboard: [
-                [{ text: "View My Accounts", callback_data: "nav:account.details" }],
-                [{ text: "📦 مشاهده سرویس", callback_data: `nav:account.xray?xid=${payload.xrayClient.id}` }],
+                [{ text: "📦 مشاهده سرویس", callback_data: callbackFor("account.xray", { xrayClientId: client.id }) }],
+                [
+                  { text: "🔗 دریافت لینک اشتراک", callback_data: `xray:sub:${client.id}` },
+                  { text: "⚙️ دریافت کانفیگ‌ها", callback_data: `xray:configs:${client.id}` },
+                ],
+                [{ text: "🏠 خانه", callback_data: callbackFor("home") }],
               ],
             },
           },
         );
+
         await PaymentInvoiceService.markNotification(invoice.id, "SENT", {
           type: "xray_product_purchase",
           productId: payload.product.id,
           accountId: payload.account.id,
-          xrayClientId: payload.xrayClient.id,
+          xrayClientId: client.id,
         });
         return;
       }
@@ -130,6 +183,7 @@ export async function notifyUser(bot: AppBot, result: unknown) {
           username: payload.account.username,
           subscriptionLink: payload.account.subscriptionLink,
           config: payload.account.configLink ?? payload.account.config,
+          expiresAt: payload.expiresAt ?? payload.orderItem?.expiresAt ?? undefined,
         }),
       ]);
       await bot.telegram.sendMessage(Number(user.telegramId), success.text, { ...paymentSuccessKeyboard("product"), entities: success.entities });
