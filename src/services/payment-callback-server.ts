@@ -113,6 +113,14 @@ export function startPaymentCallbackServer(bot: AppBot) {
   const port = Number(process.env.PAYMENT_CALLBACK_PORT ?? process.env.PORT ?? 3000);
   const server = http.createServer(async (req, res) => {
     const callbackUrl = parsedCallbackUrl(req);
+    logger.info("PAYMENT CALLBACK HIT", {
+      url: req.url,
+      method: req.method,
+      path: callbackUrl.pathname,
+      query: Object.fromEntries(callbackUrl.searchParams.entries()),
+      remoteAddress: req.socket.remoteAddress,
+    });
+
     if (req.method !== "GET" || !["/payments/callback", "/api/payment/callback"].includes(callbackUrl.pathname)) {
       res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("درخواست پیدا نشد.");
