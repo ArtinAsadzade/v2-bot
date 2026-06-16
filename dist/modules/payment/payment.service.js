@@ -749,7 +749,9 @@ class PaymentService {
         try {
             paymentLog("PAYMENT_FULFILLMENT_STARTED", { invoiceId: paidInvoice.id, userId: paidInvoice.userId, type: paidInvoice.type });
             await audit(prisma_1.prisma, { userId: paidInvoice.userId, invoiceId: paidInvoice.id, action: "PAYMENT_FULFILLMENT_STARTED", metadata: { type: paidInvoice.type } });
-            let result = await this.fulfillPaidInvoice(paidInvoice.id);
+            let result = paidInvoice.type === "PRODUCT_PURCHASE"
+                ? await this.finalizePaidProductPurchase({ userId: paidInvoice.userId, productId: paidInvoice.productId ?? "", invoiceId: paidInvoice.id, paymentMethod: "INSTANT" })
+                : await this.fulfillPaidInvoice(paidInvoice.id);
             if (result.needsXrayProvisioning && result.order?.id)
                 result = await this.provisionXrayClient(result.order.id, paidInvoice.id);
             const notificationResult = paidInvoice.type === "WALLET_TOPUP"
@@ -950,7 +952,7 @@ class PaymentService {
         if (isXray) {
             if (data.method === "WALLET") {
                 const duplicate = await tx.xrayClient.findFirst({
-                    where: { userId: data.userId, productId: product.id, status: { in: ["provisioning", "creating", "active"] }, order: { status: { in: ["pending", "panel_creating", "panel_verified", "delivered"] } } },
+                    where: { userId: data.userId, productId: product.id, status: { in: ["provisioning", "creating", "active"] }, order: { status: { in: ["pending", "panel_creating", "panel_verified", "delivered", "completed"] } } },
                     orderBy: { createdAt: "desc" },
                 });
                 if (duplicate)
@@ -1023,7 +1025,7 @@ class PaymentService {
             if (data.method === "WALLET" && totalAmount > 0) {
                 await this.debitWallet(tx, { userId: data.userId, amount: totalAmount, reason: `خرید محصول ${product.title}`, actorId: data.userId, referenceId: `purchase:${order.id}` });
             }
-            await tx.order.update({ where: { id: order.id }, data: { status: "delivered" } });
+            await tx.order.update({ where: { id: order.id }, data: { status: "completed" } });
             await tx.productAccountHistory.create({ data: { accountId: account.id, actorId: data.userId, action: "Inventory Sold", fromValue: "reserved", toValue: "sold", metadata: JSON.stringify({ invoiceId: data.invoice?.id, orderId: order.id, orderItemId: orderItem.id, productId: product.id, soldAt, expiresAt, method: data.method }) } });
             await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Sold", metadata: { accountId: account.id, orderId: order.id } });
         }
@@ -1067,7 +1069,7 @@ class PaymentService {
                         await tx.couponUsage.create({ data: { couponId: freshOrder.couponId, userId: client.userId, orderId, usageSlot: 0 } });
                 }
                 const updatedClient = await tx.xrayClient.update({ where: { id: client.id }, data: { status: "active", clientSubId: verified.subId ?? created.subId, panelClientId: verified.panelClientId ?? created.uuid ?? created.id, lastError: null } });
-                const completedOrder = await tx.order.update({ where: { id: orderId }, data: { status: "delivered" } });
+                const completedOrder = await tx.order.update({ where: { id: orderId }, data: { status: "completed" } });
                 if (invoiceId)
                     await tx.paymentInvoice.update({ where: { id: invoiceId }, data: { deliveryStatus: "COMPLETED", status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), orderId } });
                 await audit(tx, { userId: client.userId, invoiceId, action: "XRAY_PRODUCT_DELIVERED", metadata: { orderId, xrayClientId: client.id, deliveryId: orderId, panelClientId: verified.panelClientId, step: "delivered", status: "success" } });
@@ -1098,12 +1100,27 @@ class PaymentService {
             throw new Error("ساخت اکانت با مشکل مواجه شد. مبلغی از کیف پول شما کسر نشده / سهمیه تست شما مصرف نشده است. لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.");
         }
     }
+    static async finalizePaidProductPurchase(data) {
+        if (data.invoiceId) {
+            const invoice = await prisma_1.prisma.paymentInvoice.findUniqueOrThrow({ where: { id: data.invoiceId } });
+            if (invoice.type !== "PRODUCT_PURCHASE")
+                throw new Error("فاکتور محصول نیست");
+            if (invoice.userId !== data.userId || invoice.productId !== data.productId)
+                throw new Error("فاکتور با خرید همخوانی ندارد");
+            const result = await this.fulfillPaidInvoice(invoice.id);
+            if (result.needsXrayProvisioning && result.order?.id)
+                return this.provisionXrayClient(result.order.id, invoice.id);
+            return result;
+        }
+        const result = await prisma_1.prisma.$transaction((tx) => this.purchaseProduct(tx, { userId: data.userId, productId: data.productId, couponCode: data.couponCode, method: data.paymentMethod }));
+        if (result.xrayClient)
+            return this.provisionXrayClient(result.order.id);
+        return result;
+    }
     static async purchaseProductWithWallet(userId, productId, couponCode) {
         let result;
         try {
-            result = await prisma_1.prisma.$transaction((tx) => this.purchaseProduct(tx, { userId, productId, couponCode, method: "WALLET" }));
-            if (result.xrayClient)
-                result = await this.provisionXrayClient(result.order.id);
+            result = await this.finalizePaidProductPurchase({ userId, productId, couponCode, paymentMethod: "WALLET" });
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
