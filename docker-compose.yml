@@ -1,0 +1,45 @@
+services:
+  mongodb-rs:
+    image: mongo:7
+    container_name: mongodb-rs
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "54321:27017"
+    volumes:
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+
+  mongo-init:
+    image: mongo:7
+    depends_on:
+      - mongodb-rs
+    restart: "no"
+    entrypoint: >
+      bash -c "
+      sleep 5 &&
+      mongosh --host mongodb-rs:27017 --eval '
+        try {
+          rs.status()
+        } catch(e) {
+          rs.initiate({
+            _id: \"rs0\",
+            members: [{ _id: 0, host: \"mongodb-rs:27017\" }]
+          })
+        }
+      '
+      "
+
+  bot:
+    build: .
+    container_name: v2-bot
+    restart: unless-stopped
+    depends_on:
+      - mongodb-rs
+      - mongo-init
+    env_file:
+      - .env
+
+volumes:
+  mongo_data:
+  mongo_config:
