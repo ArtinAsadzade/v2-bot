@@ -17,15 +17,75 @@ async function bootstrap() {
     logger.info("Bot starting...");
     registerHandlers(bot);
 
-    await CryptoRateService.refreshAll().catch((error) => { const message = error instanceof Error ? error.message : String(error); logger.error("Initial crypto rate refresh failed", { error: message }); MonitoringService.record({ type: "CRYPTO_RATE_FAILED", section: "Crypto Rate", description: message, severity: "critical", suggestedAction: "اتصال Coingecko و نرخ USD_TOMAN_RATE را بررسی کنید." }); });
-    await cleanExpiredDeposits().catch((error) => { const message = error instanceof Error ? error.message : String(error); logger.error("Initial deposit cleaner failed", { error: message }); MonitoringService.record({ type: "JOB_FAILED", section: "Deposit Cleaner", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." }); });
-    await deactivateExpiredAccounts().catch((error) => { const message = error instanceof Error ? error.message : String(error); logger.error("Initial account expiration job failed", { error: message }); MonitoringService.record({ type: "JOB_FAILED", section: "Account Expiration", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." }); });
+    await CryptoRateService.refreshAll().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Initial crypto rate refresh failed", { error: message });
+      MonitoringService.record({
+        type: "CRYPTO_RATE_FAILED",
+        section: "Crypto Rate",
+        description: message,
+        severity: "critical",
+        suggestedAction: "اتصال Coingecko و نرخ USD_TOMAN_RATE را بررسی کنید.",
+      });
+    });
+    await cleanExpiredDeposits().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Initial deposit cleaner failed", { error: message });
+      MonitoringService.record({
+        type: "JOB_FAILED",
+        section: "Deposit Cleaner",
+        description: message,
+        severity: "critical",
+        suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
+      });
+    });
+    await deactivateExpiredAccounts().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Initial account expiration job failed", { error: message });
+      MonitoringService.record({
+        type: "JOB_FAILED",
+        section: "Account Expiration",
+        description: message,
+        severity: "critical",
+        suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
+      });
+    });
     setInterval(() => {
-      cleanExpiredDeposits().catch((error) => { const message = error instanceof Error ? error.message : String(error); logger.error("Deposit cleaner failed", { error: message }); MonitoringService.record({ type: "JOB_FAILED", section: "Deposit Cleaner", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." }); });
-      deactivateExpiredAccounts().catch((error) => { const message = error instanceof Error ? error.message : String(error); logger.error("Account expiration job failed", { error: message }); MonitoringService.record({ type: "JOB_FAILED", section: "Account Expiration", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." }); });
+      cleanExpiredDeposits().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error("Deposit cleaner failed", { error: message });
+        MonitoringService.record({
+          type: "JOB_FAILED",
+          section: "Deposit Cleaner",
+          description: message,
+          severity: "critical",
+          suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
+        });
+      });
+      deactivateExpiredAccounts().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error("Account expiration job failed", { error: message });
+        MonitoringService.record({
+          type: "JOB_FAILED",
+          section: "Account Expiration",
+          description: message,
+          severity: "critical",
+          suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
+        });
+      });
     }, 60_000);
     setInterval(() => {
-      CryptoRateService.refreshAll().catch((error) => { const message = error instanceof Error ? error.message : String(error); logger.error("Crypto rate refresh failed", { error: message }); MonitoringService.record({ type: "CRYPTO_RATE_FAILED", section: "Crypto Rate", description: message, severity: "critical", suggestedAction: "اتصال Coingecko و نرخ USD_TOMAN_RATE را بررسی کنید." }); });
+      CryptoRateService.refreshAll().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error("Crypto rate refresh failed", { error: message });
+        MonitoringService.record({
+          type: "CRYPTO_RATE_FAILED",
+          section: "Crypto Rate",
+          description: message,
+          severity: "critical",
+          suggestedAction: "اتصال Coingecko و نرخ USD_TOMAN_RATE را بررسی کنید.",
+        });
+      });
     }, 5 * 60_000);
 
     const paymentServer = startPaymentCallbackServer(bot);
