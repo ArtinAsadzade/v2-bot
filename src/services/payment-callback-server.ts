@@ -121,6 +121,31 @@ export function startPaymentCallbackServer(bot: AppBot) {
       remoteAddress: req.socket.remoteAddress,
     });
 
+    if (callbackUrl.pathname === "/test-payment") {
+      await notifyUser(bot, {
+        invoice: {
+          id: "test",
+          userId: "USER_ID_HERE",
+          amount: 72000,
+        },
+        product: {
+          id: "prod1",
+          title: "10GB | 30 روز",
+        },
+        account: {
+          id: "acc1",
+          username: "testuser",
+          subscriptionLink: "https://example.com/sub",
+          configLink: null,
+          config: "vless://test",
+        },
+      });
+
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("ok");
+      return;
+    }
+
     if (req.method !== "GET" || !["/payments/callback", "/api/payment/callback"].includes(callbackUrl.pathname)) {
       res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("درخواست پیدا نشد.");
