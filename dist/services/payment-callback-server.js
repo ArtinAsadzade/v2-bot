@@ -12,6 +12,7 @@ const logger_1 = require("./logger");
 const design_system_1 = require("../bot/keyboards/design-system");
 const custom_emoji_1 = require("../bot/keyboards/custom-emoji");
 const messages_1 = require("../utils/messages");
+const panel_ui_1 = require("../bot/navigation/panel-ui");
 const money = (value) => `${value.toLocaleString("fa-IR")} تومان`;
 function parsedCallbackUrl(req) {
     return new URL(req.url ?? "/", "http://localhost");
@@ -26,6 +27,11 @@ function callbackReferenceFromUrl(url) {
 }
 function callbackQueryMetadata(url) {
     return Object.fromEntries(url.searchParams.entries());
+}
+function dateValue(value) {
+    if (!value)
+        return undefined;
+    return value instanceof Date ? value : new Date(value);
 }
 async function notifyUser(bot, result) {
     if (!result || typeof result !== "object" || !("invoice" in result))
@@ -75,17 +81,48 @@ async function notifyUser(bot, result) {
             return;
         }
         if ("product" in payload && "account" in payload && payload.product && payload.account) {
-            if (payload.xrayClient) {
-                const expiry = payload.xrayClient.expiresAt ? new Date(payload.xrayClient.expiresAt).toLocaleDateString("fa-IR") : "ثبت نشده";
-                const subscription = payload.account.subscriptionLink ? `\n\n🔗 لینک اشتراک:\n${payload.account.subscriptionLink}` : "";
-                const config = payload.account.configLink || payload.account.config
-                    ? `\n\n⚙️ کانفیگ/لینک کانفیگ:\n${payload.account.configLink ?? payload.account.config}`
-                    : "";
-                await bot.telegram.sendMessage(Number(user.telegramId), `🎉 Your Xray account is ready\n\n━━━━━━━━━━━━━━━━\n\n👤 Service ID:\n${payload.xrayClient.clientEmail}\n\n⏳ Valid until:\n${expiry}\n\n📦 This service has been added to “My Accounts”.${subscription}${config}`, {
+            if (payload.xrayClient || payload.orderItem?.xrayClientId || payload.product?.mode === "xray_auto") {
+                const client = payload.xrayClient ??
+                    (payload.orderItem?.xrayClientId
+                        ? await prisma_1.prisma.xrayClient.findUnique({
+                            where: { id: payload.orderItem.xrayClientId },
+                        })
+                        : null);
+                if (!client) {
+                    await bot.telegram.sendMessage(Number(user.telegramId), `✅ خرید با موفقیت انجام شد
+
+سرویس ساخته شده است. لطفاً از بخش «📦 اکانت‌های من» آن را باز کنید.`, {
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }],
+                                [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }],
+                            ],
+                        },
+                    });
+                    await payment_service_1.PaymentInvoiceService.markNotification(invoice.id, "SENT", {
+                        type: "xray_product_purchase",
+                        productId: payload.product.id,
+                        accountId: payload.account.id,
+                        xrayClientId: payload.orderItem?.xrayClientId ?? null,
+                    });
+                    return;
+                }
+                await bot.telegram.sendMessage(Number(user.telegramId), `✅ خرید با موفقیت انجام شد
+
+سرویس شما ساخته شد و آماده استفاده است.
+
+برای دریافت لینک اشتراک، QR و کانفیگ‌ها از دکمه‌های زیر استفاده کنید.`, {
                     reply_markup: {
                         inline_keyboard: [
-                            [{ text: "View My Accounts", callback_data: "nav:account.details" }],
-                            [{ text: "📦 مشاهده سرویس", callback_data: `nav:account.xray?xid=${payload.xrayClient.id}` }],
+                            [{ text: "📦 مشاهده سرویس", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: client.id }) }],
+                            [
+                                { text: "🔗 دریافت لینک اشتراک", callback_data: `xray:sub:${client.id}` },
+                                { text: "⚙️ دریافت کانفیگ‌ها", callback_data: `xray:configs:${client.id}` },
+                            ],
+                            [
+                                { text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") },
+                                { text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") },
+                            ],
                         ],
                     },
                 });
@@ -93,7 +130,7 @@ async function notifyUser(bot, result) {
                     type: "xray_product_purchase",
                     productId: payload.product.id,
                     accountId: payload.account.id,
-                    xrayClientId: payload.xrayClient.id,
+                    xrayClientId: client.id,
                 });
                 return;
             }
@@ -105,6 +142,7 @@ async function notifyUser(bot, result) {
                     username: payload.account.username,
                     subscriptionLink: payload.account.subscriptionLink,
                     config: payload.account.configLink ?? payload.account.config,
+                    expiresAt: dateValue(payload.expiresAt ?? payload.orderItem?.expiresAt),
                 }),
             ]);
             await bot.telegram.sendMessage(Number(user.telegramId), success.text, { ...(0, design_system_1.paymentSuccessKeyboard)("product"), entities: success.entities });

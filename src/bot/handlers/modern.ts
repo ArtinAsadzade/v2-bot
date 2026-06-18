@@ -504,6 +504,17 @@ export function registerModernHandlers(bot: AppBot) {
     await renderPanel(ctx, { id: "shop.checkout", params: { productId: ctx.match[1] } }, "replace", RenderMode.EDIT_CURRENT);
   });
 
+
+  bot.action(/^buy:cancel_existing:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery("درخواست قبلی لغو شد");
+    if (!ctx.from) return;
+    const user = await UserService.getByTelegramId(ctx.from.id);
+    if (!user) return;
+    const productId = ctx.match[1];
+    await PaymentInvoiceService.cancelExistingPurchaseIntent(user.id, productId);
+    await renderPanel(ctx, { id: "shop.checkout", params: { productId } }, "replace", RenderMode.SEND_NEW);
+  });
+
   bot.action(/^buy:confirm:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     if (!ctx.from) return;
@@ -511,6 +522,16 @@ export function registerModernHandlers(bot: AppBot) {
     if (!user) return;
     const productId = ctx.match[1];
     try {
+      const existing = await PaymentInvoiceService.resolveExistingPurchaseIntent(user.id, productId);
+      if (existing.action === "reuse_invoice") {
+        await ctx.reply("شما از قبل یک فاکتور پرداخت‌نشده برای این محصول دارید. می‌توانید پرداخت را ادامه دهید یا آن را لغو کرده و فاکتور جدید بسازید.", { reply_markup: { inline_keyboard: [[{ text: "Pay previous invoice", url: existing.invoice.paymentLink ?? "" }], [{ text: "Cancel and create new invoice", callback_data: actionFor("buy:cancel_existing", productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+        return;
+      }
+      if (existing.action === "processing") {
+        await ctx.reply("Your previous purchase is still being processed. Please wait or cancel it if it is stuck.", { reply_markup: { inline_keyboard: [[{ text: "Cancel stuck purchase", callback_data: actionFor("buy:cancel_existing", productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+        return;
+      }
+      if (existing.action === "expired_and_released") await ctx.reply("Your previous purchase request expired. You can start a new purchase now.");
       await ctx.editMessageText("⏳ در حال بررسی موجودی کیف پول و آماده‌سازی اکانت...", { reply_markup: { inline_keyboard: [] } });
       const coupon = ctx.session.selectedCoupons?.[productId];
       const result = await PurchaseService.buyProduct(user.id, productId, coupon);
@@ -935,9 +956,19 @@ export function registerModernHandlers(bot: AppBot) {
     const productId = ctx.match[1];
     try {
       await ctx.editMessageText("⏳ در حال ایجاد فاکتور پرداخت آنی...", { reply_markup: { inline_keyboard: [] } });
+      const existing = await PaymentInvoiceService.resolveExistingPurchaseIntent(user.id, productId);
+      if (existing.action === "reuse_invoice") {
+        await ctx.reply("شما از قبل یک فاکتور پرداخت‌نشده برای این محصول دارید. می‌توانید پرداخت را ادامه دهید یا آن را لغو کرده و فاکتور جدید بسازید.", { reply_markup: { inline_keyboard: [[{ text: "Pay previous invoice", url: existing.invoice.paymentLink ?? "" }], [{ text: "Cancel and create new invoice", callback_data: actionFor("buy:cancel_existing", productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+        return;
+      }
+      if (existing.action === "processing") {
+        await ctx.reply("Your previous purchase is still being processed. Please wait or cancel it if it is stuck.", { reply_markup: { inline_keyboard: [[{ text: "Cancel stuck purchase", callback_data: actionFor("buy:cancel_existing", productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+        return;
+      }
+      if (existing.action === "expired_and_released") await ctx.reply("Your previous purchase request expired. You can start a new purchase now.");
       const product = await ProductService.getProduct(productId);
       const coupon = ctx.session.selectedCoupons?.[productId];
-      const invoice = await PaymentInvoiceService.createProductInvoice(user.id, productId, coupon);
+      const invoice = await PaymentInvoiceService.createProductInvoice(user.id, productId, coupon, { ignoreExisting: true });
       delete ctx.session.selectedCoupons?.[productId];
       await ctx.editMessageText("✅ فاکتور پرداخت آنی ساخته شد. جزئیات پرداخت در پیام بعدی ارسال شد.", { reply_markup: { inline_keyboard: [] } });
       await ctx.reply(

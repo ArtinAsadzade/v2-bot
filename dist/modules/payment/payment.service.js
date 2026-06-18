@@ -16,6 +16,12 @@ const logger_1 = require("../../services/logger");
 const monitoring_service_1 = require("../../services/monitoring.service");
 const visibility_1 = require("../product/visibility");
 const xray_service_1 = require("../xray/xray.service");
+function envSeconds(name, fallback) {
+    const value = Number(process.env[name]);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+function purchasePendingTtlSeconds() { return envSeconds("PURCHASE_PENDING_TTL_SECONDS", 15 * 60); }
+function invoicePendingTtlSeconds() { return envSeconds("INVOICE_PENDING_TTL_SECONDS", 30 * 60); }
 class GatewayHttpError extends Error {
     constructor(status, message) {
         super(message);
@@ -400,6 +406,70 @@ class PaymentService {
             throw new GatewayHttpError(response.status, `Gateway error ${response.status}: ${safeJson(raw)}`);
         return { parsed: parseGatewayResponse(raw), raw, payload };
     }
+    static async confirmCouponUsage(tx, data) {
+        const existingForOrder = await tx.couponUsage.findFirst({ where: { couponId: data.couponId, orderId: data.orderId } });
+        if (existingForOrder)
+            return existingForOrder;
+        const coupon = await tx.coupon.findUniqueOrThrow({ where: { id: data.couponId }, select: { maxUses: true, perUserLimit: true, status: true, deletedAt: true, expiresAt: true } });
+        const userUsageCount = await tx.couponUsage.count({ where: { couponId: data.couponId, userId: data.userId } });
+        if (userUsageCount >= coupon.perUserLimit) {
+            await audit(tx, { userId: data.userId, invoiceId: data.invoiceId, action: "COUPON_USAGE_RACE_BLOCKED", metadata: { couponId: data.couponId, reason: "per_user_limit" } });
+            throw new Error("سقف استفاده شما از این کد تخفیف تکمیل شده است");
+        }
+        const couponUpdated = await tx.coupon.updateMany({ where: { id: data.couponId, status: "active", deletedAt: null, usedCount: { lt: coupon.maxUses }, expiresAt: { gt: new Date() } }, data: { usedCount: { increment: 1 } } });
+        if (couponUpdated.count !== 1) {
+            await audit(tx, { userId: data.userId, invoiceId: data.invoiceId, action: "COUPON_USAGE_RACE_BLOCKED", metadata: { couponId: data.couponId, reason: "global_limit_or_expired" } });
+            throw new Error("کد تخفیف دیگر قابل استفاده نیست");
+        }
+        const usage = await tx.couponUsage.create({ data: { couponId: data.couponId, userId: data.userId, orderId: data.orderId, usageSlot: userUsageCount } });
+        await audit(tx, { userId: data.userId, invoiceId: data.invoiceId, action: "COUPON_USAGE_RECORDED", metadata: { couponId: data.couponId, orderId: data.orderId, usageSlot: userUsageCount, originalAmount: data.originalAmount, discountAmount: data.discountAmount, finalAmount: data.finalAmount } });
+        return usage;
+    }
+    static async resolveExistingPurchaseIntent(userId, productId) {
+        const now = new Date();
+        const invoiceCutoff = new Date(now.getTime() - invoicePendingTtlSeconds() * 1000);
+        const purchaseCutoff = new Date(now.getTime() - purchasePendingTtlSeconds() * 1000);
+        const invoice = await prisma_1.prisma.paymentInvoice.findFirst({ where: { userId, productId, type: "PRODUCT_PURCHASE", status: { in: ["PENDING", "PAID"] } }, orderBy: { createdAt: "desc" } });
+        if (invoice) {
+            if (invoice.status === "PENDING" && invoice.createdAt < invoiceCutoff) {
+                await prisma_1.prisma.paymentInvoice.updateMany({ where: { id: invoice.id, status: "PENDING" }, data: { status: "EXPIRED", deliveryStatus: "EXPIRED" } });
+                await audit(prisma_1.prisma, { userId, invoiceId: invoice.id, action: "PURCHASE_INTENT_EXPIRED", metadata: { reason: "invoice_ttl", productId, invoicePendingTtlSeconds: invoicePendingTtlSeconds() } });
+                await this.releaseExpiredReservations(Math.ceil(purchasePendingTtlSeconds() / 60));
+                return { action: "expired_and_released", invoice };
+            }
+            if (invoice.status === "PENDING" && invoice.paymentLink)
+                return { action: "reuse_invoice", invoice };
+            if (invoice.status === "PENDING")
+                return { action: "processing", invoice, canCancel: true };
+            if (invoice.status === "PAID")
+                return { action: "processing", invoice, canCancel: false };
+        }
+        const order = await prisma_1.prisma.order.findFirst({ where: { userId, productId, status: { in: ["pending", "reserving", "panel_creating", "panel_verified"] } }, include: { xrayClients: true, items: true }, orderBy: { createdAt: "desc" } });
+        if (order) {
+            if (order.createdAt < purchaseCutoff) {
+                const hasPanelWork = order.xrayClients.some((client) => client.status === "creating" || client.status === "active" || client.panelClientId);
+                await prisma_1.prisma.order.update({ where: { id: order.id }, data: { status: hasPanelWork ? "failed_delivery" : "cancelled" } });
+                await prisma_1.prisma.xrayClient.updateMany({ where: { orderId: order.id, status: { in: ["provisioning", "creating"] } }, data: { status: hasPanelWork ? "orphaned_panel_client" : "failed", lastError: hasPanelWork ? "stale_purchase_orphaned_panel_client" : "stale_purchase_expired" } });
+                await this.releaseExpiredReservations(Math.ceil(purchasePendingTtlSeconds() / 60));
+                await prisma_1.prisma.auditLog.create({ data: { actorId: userId, action: hasPanelWork ? "purchase.delivery_requires_admin" : "purchase.expired", metadata: JSON.stringify({ orderId: order.id, productId, purchasePendingTtlSeconds: purchasePendingTtlSeconds() }) } });
+                return { action: "expired_and_released", order };
+            }
+            return { action: "processing", order, canCancel: true };
+        }
+        return { action: "none" };
+    }
+    static async cancelExistingPurchaseIntent(userId, productId) {
+        const invoice = await prisma_1.prisma.paymentInvoice.findFirst({ where: { userId, productId, type: "PRODUCT_PURCHASE", status: "PENDING" }, orderBy: { createdAt: "desc" } });
+        if (invoice) {
+            await prisma_1.prisma.paymentInvoice.update({ where: { id: invoice.id }, data: { status: "CANCELED", deliveryStatus: "CANCELED" } });
+            await audit(prisma_1.prisma, { userId, invoiceId: invoice.id, action: "PURCHASE_INTENT_CANCELED_BY_USER", metadata: { productId } });
+        }
+        const order = await prisma_1.prisma.order.findFirst({ where: { userId, productId, status: { in: ["pending", "reserving"] } }, orderBy: { createdAt: "desc" } });
+        if (order)
+            await prisma_1.prisma.order.update({ where: { id: order.id }, data: { status: "cancelled" } });
+        await this.releaseExpiredReservations(Math.ceil(purchasePendingTtlSeconds() / 60));
+        return { invoice, order };
+    }
     static async quoteProductInvoice(tx, data) {
         const product = await this.validateProductForPurchase(data.userId, data.productId, undefined, tx);
         const originalAmount = product.price;
@@ -608,10 +678,7 @@ class PaymentService {
         return {
             invoice: this.notificationInvoice(invoice),
             type: "PRODUCT_PURCHASE",
-            product: {
-                id: delivery.product.id,
-                title: delivery.product.title,
-            },
+            product: delivery.product,
             account: {
                 id: account.id,
                 username: account.username,
@@ -619,6 +686,8 @@ class PaymentService {
                 configLink: account.configLink,
                 config: account.config,
             },
+            order: delivery.order,
+            orderItem: delivery.orderItem,
             xrayClient: xrayClient
                 ? {
                     id: xrayClient.id,
@@ -635,6 +704,8 @@ class PaymentService {
             type: "PRODUCT_PURCHASE",
             product: notification.product,
             account: notification.account,
+            order: purchaseResult.order,
+            orderItem: purchaseResult.orderItem,
             xrayClient: notification.xrayClient,
             purchaseResult,
         };
@@ -807,7 +878,20 @@ class PaymentService {
                 return { invoice: completed, user, type: fresh.type };
             }
             if (fresh.orderId) {
-                const existingOrder = await tx.order.findUnique({ where: { id: fresh.orderId }, include: { product: true, items: { include: { productAccount: true, xrayClient: true }, take: 1 } } });
+                const existingOrder = await tx.order.findUnique({ where: { id: fresh.orderId }, include: { product: true, items: { include: { productAccount: true, xrayClient: true }, take: 1 }, xrayClients: { take: 1 } } });
+                if (existingOrder && !existingOrder.items[0] && existingOrder.xrayClients[0]) {
+                    const existingClient = existingOrder.xrayClients[0];
+                    if (existingClient.status === "active") {
+                        const item = await tx.orderItem.findFirst({ where: { xrayClientId: existingClient.id } });
+                        if (item) {
+                            const completed = await tx.paymentInvoice.update({ where: { id: fresh.id }, data: { status: "COMPLETED", completedAt: fresh.completedAt ?? new Date(), verifiedAt: new Date(), deliveryStatus: "COMPLETED", orderId: existingOrder.id } });
+                            return { invoice: completed, order: existingOrder, product: existingOrder.product, account: { id: existingClient.id, username: existingClient.clientEmail, subscriptionLink: null, configLink: null, config: item.deliveredConfig }, orderItem: item, xrayClient: existingClient, type: fresh.type };
+                        }
+                    }
+                    if (existingClient.status === "failed")
+                        throw new Error("تحویل Xray قبلاً ناموفق شده و نیازمند بررسی مدیر است");
+                    return { invoice: fresh, order: existingOrder, product: existingOrder.product, account: { id: existingClient.id, username: existingClient.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" }, orderItem: null, xrayClient: existingClient, needsXrayProvisioning: existingClient.status === "provisioning" || existingClient.status === "creating", type: fresh.type };
+                }
                 if (existingOrder?.items[0]) {
                     const existingClient = existingOrder.items[0].xrayClient;
                     if (existingClient && existingClient.status !== "active") {
@@ -987,19 +1071,6 @@ class PaymentService {
             await tx.productAccountHistory.create({ data: { accountId: account.id, actorId: data.userId, action: "Inventory Reserved", fromValue: "available", toValue: "reserved", metadata: JSON.stringify({ invoiceId: data.invoice?.id, productId: product.id, reservedAt, method: data.method }) } });
             await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Reserved", metadata: { accountId: account.id, productId: product.id, method: data.method } });
         }
-        if (couponId && !isXray) {
-            const couponLimit = await tx.coupon.findUniqueOrThrow({ where: { id: couponId }, select: { maxUses: true, perUserLimit: true, status: true, deletedAt: true, expiresAt: true } });
-            const usageCount = await tx.couponUsage.count({ where: { couponId, userId: data.userId } });
-            if (usageCount >= couponLimit.perUserLimit) {
-                await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "COUPON_USAGE_RACE_BLOCKED", metadata: { couponId, reason: "per_user_limit" } });
-                throw new Error("سقف استفاده شما از این کد تخفیف تکمیل شده است");
-            }
-            const couponUpdated = await tx.coupon.updateMany({ where: { id: couponId, status: "active", deletedAt: null, usedCount: { lt: couponLimit.maxUses }, expiresAt: { gt: new Date() } }, data: { usedCount: { increment: 1 } } });
-            if (couponUpdated.count !== 1) {
-                await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "COUPON_USAGE_RACE_BLOCKED", metadata: { couponId, reason: "global_limit_or_expired" } });
-                throw new Error("کد تخفیف دیگر قابل استفاده نیست");
-            }
-        }
         const order = await tx.order.create({ data: { userId: data.userId, productId: product.id, couponId, originalAmount, totalAmount, finalPaidAmount: totalAmount, discountAmount, status: "pending" } });
         const purchaseDate = new Date();
         const durationDays = isXray ? (product.durationDays ?? product.duration) : (account.durationDays ?? product.duration);
@@ -1019,11 +1090,6 @@ class PaymentService {
         else {
             orderItem = await tx.orderItem.create({ data: { orderId: order.id, productId: product.id, productAccountId: account.id, deliveredUsername: account.username, deliveredPassword: account.password, deliveredSubscriptionLink: account.subscriptionLink, deliveredConfigLink: account.configLink, deliveredConfig: account.configLink || account.config, purchaseDate, expiresAt, isActive: true } });
         }
-        if (couponId && !isXray) {
-            const usageSlot = await tx.couponUsage.count({ where: { couponId, userId: data.userId } });
-            await tx.couponUsage.create({ data: { couponId, userId: data.userId, orderId: order.id, usageSlot } });
-            await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "COUPON_USAGE_RECORDED", metadata: { couponId, orderId: order.id, usageSlot, originalAmount, discountAmount, finalAmount: totalAmount } });
-        }
         if (!isXray) {
             const soldAt = new Date();
             const sold = await tx.productAccount.updateMany({ where: { id: account.id, productId: product.id, status: "reserved", reservedBy: data.userId, AND: [(0, visibility_1.unassignedInventoryWhere)()] }, data: { status: "sold", soldTo: data.userId, soldAt, assignedTo: data.userId, assignedAt: soldAt, expiresAt, reservedBy: null, reservedAt: null } });
@@ -1037,6 +1103,8 @@ class PaymentService {
                 await this.debitWallet(tx, { userId: data.userId, amount: totalAmount, reason: `خرید محصول ${product.title}`, actorId: data.userId, referenceId: `purchase:${order.id}` });
             }
             await tx.order.update({ where: { id: order.id }, data: { status: "completed" } });
+            if (couponId)
+                await this.confirmCouponUsage(tx, { couponId, userId: data.userId, orderId: order.id, invoiceId: data.invoice?.id, originalAmount, discountAmount, finalAmount: totalAmount });
             await tx.productAccountHistory.create({ data: { accountId: account.id, actorId: data.userId, action: "Inventory Sold", fromValue: "reserved", toValue: "sold", metadata: JSON.stringify({ invoiceId: data.invoice?.id, orderId: order.id, orderItemId: orderItem.id, productId: product.id, soldAt, expiresAt, method: data.method }) } });
             await audit(tx, { userId: data.userId, invoiceId: data.invoice?.id, action: "Inventory Sold", metadata: { accountId: account.id, orderId: order.id } });
         }
@@ -1074,12 +1142,10 @@ class PaymentService {
                 let item = await tx.orderItem.findFirst({ where: { xrayClientId: client.id } });
                 if (!item)
                     item = await tx.orderItem.create({ data: { orderId, productId: product.id, xrayClientId: client.id, deliveredUsername: client.clientEmail, deliveredSubscriptionLink: null, deliveredConfigLink: null, deliveredConfig: "XRAY_LIVE_LINKS", purchaseDate: new Date(), expiresAt: client.expiresAt, isActive: true } });
-                if (freshOrder.couponId) {
-                    const used = await tx.couponUsage.count({ where: { couponId: freshOrder.couponId, userId: client.userId } });
-                    if (used === 0)
-                        await tx.couponUsage.create({ data: { couponId: freshOrder.couponId, userId: client.userId, orderId, usageSlot: 0 } });
-                }
+                if (freshOrder.couponId)
+                    await this.confirmCouponUsage(tx, { couponId: freshOrder.couponId, userId: client.userId, orderId, invoiceId, originalAmount: freshOrder.originalAmount, discountAmount: freshOrder.discountAmount, finalAmount: freshOrder.finalPaidAmount });
                 const updatedClient = await tx.xrayClient.update({ where: { id: client.id }, data: { status: "active", clientSubId: verified.subId ?? created.subId, panelClientId: verified.panelClientId ?? created.uuid ?? created.id, lastError: null } });
+                await tx.order.update({ where: { id: orderId }, data: { status: "delivered" } });
                 const completedOrder = await tx.order.update({ where: { id: orderId }, data: { status: "completed" } });
                 if (invoiceId)
                     await tx.paymentInvoice.update({ where: { id: invoiceId }, data: { deliveryStatus: "COMPLETED", status: "COMPLETED", completedAt: new Date(), verifiedAt: new Date(), orderId } });
@@ -1206,7 +1272,14 @@ class PaymentInvoiceService {
     static async createWalletTopupInvoice(userId, amount) {
         return PaymentService.createInvoice({ userId, amount, originalAmount: amount, discountAmount: 0, type: "WALLET_TOPUP" });
     }
-    static async createProductInvoice(userId, productId, couponCode) {
+    static async createProductInvoice(userId, productId, couponCode, options = {}) {
+        if (!options.ignoreExisting) {
+            const existing = await PaymentService.resolveExistingPurchaseIntent(userId, productId);
+            if (existing.action === "reuse_invoice")
+                return existing.invoice;
+            if (existing.action === "processing")
+                throw new Error("Your previous purchase is still being processed. Please wait or cancel it if it is stuck.");
+        }
         const quote = await prisma_1.prisma.$transaction((tx) => PaymentService.quoteProductInvoice(tx, { userId, productId, couponCode }));
         return PaymentService.createInvoice({
             userId,
@@ -1221,6 +1294,12 @@ class PaymentInvoiceService {
     }
     static async createXrayRenewalInvoice(userId, xrayClientId, productId) {
         return PaymentService.createXrayRenewalInvoice(userId, xrayClientId, productId);
+    }
+    static async resolveExistingPurchaseIntent(userId, productId) {
+        return PaymentService.resolveExistingPurchaseIntent(userId, productId);
+    }
+    static async cancelExistingPurchaseIntent(userId, productId) {
+        return PaymentService.cancelExistingPurchaseIntent(userId, productId);
     }
     static async processCallback(reference, metadata = {}) {
         return PaymentService.completePayment(reference, metadata);

@@ -6,10 +6,15 @@ const logger_1 = require("../../services/logger");
 const monitoring_service_1 = require("../../services/monitoring.service");
 const WARNING_TEXT = "⚠️ لطفاً کمی آهسته‌تر ادامه دهید.\nبرای جلوگیری از اسپم، چند ثانیه صبر کنید و دوباره تلاش کنید.";
 const WARNING_COOLDOWN_MS = 10000;
+function envSeconds(name, fallback) {
+    const value = Number(process.env[name]);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+}
 const RULES = {
     message: { limit: 5, windowMs: 5000, blockMs: 10000 },
     callback: { limit: 8, windowMs: 5000, blockMs: 10000 },
     payment: { limit: 2, windowMs: 30000, blockMs: 30000 },
+    wallet_topup: { limit: 1, windowMs: envSeconds("WALLET_TOPUP_RATE_LIMIT_SECONDS", 8) * 1000, blockMs: envSeconds("WALLET_TOPUP_RATE_LIMIT_SECONDS", 8) * 1000 },
     ticket: { limit: 5, windowMs: 60000, blockMs: 30000 },
     admin: { limit: 20, windowMs: 10000, blockMs: 10000 },
 };
@@ -48,8 +53,11 @@ function callbackData(ctx) {
     const callbackQuery = ctx.callbackQuery;
     return callbackQuery && "data" in callbackQuery ? callbackQuery.data : undefined;
 }
+function isWalletTopupAction(data) {
+    return Boolean(data && (/^(deposit:wallet:|dep:wallet:)/.test(data) || data === "nav:deposit" || data === "flow:start:instant_topup"));
+}
 function isPaymentAction(data) {
-    return Boolean(data && (/^(buy:(confirm|instant):|deposit:wallet:|dep:wallet:)/.test(data) || data === "nav:deposit"));
+    return Boolean(data && /^buy:(confirm|instant):/.test(data));
 }
 function isAdminAction(data) {
     return Boolean(data?.startsWith("admin:") || data?.startsWith("nav:admin."));
@@ -62,6 +70,8 @@ function actionType(ctx) {
         return undefined;
     const data = callbackData(ctx);
     if (data) {
+        if (isWalletTopupAction(data))
+            return "wallet_topup";
         if (isPaymentAction(data))
             return "payment";
         if (isAdminAction(data))
@@ -76,17 +86,18 @@ function actionType(ctx) {
         if (ctx.session.liveTicketRole === "admin" || ctx.session.flow?.name.startsWith("admin") || ctx.session.adminFlow)
             return "admin";
         if (ctx.session.state?.name === "deposit_amount" || ctx.session.state?.name === "deposit_receipt" || ctx.session.flow?.name === "deposit_submit" || ctx.session.flow?.name === "instant_topup")
-            return "payment";
+            return "wallet_topup";
         return "message";
     }
     return undefined;
 }
-async function warnUser(ctx, type) {
+async function warnUser(ctx, type, remainingSeconds) {
+    const text = type === "wallet_topup" ? `⚠️ برای جلوگیری از ثبت پرداخت تکراری، لطفاً ${remainingSeconds ?? "چند"} ثانیه صبر کنید و دوباره تلاش کنید.` : WARNING_TEXT;
     if (callbackData(ctx)) {
-        await ctx.answerCbQuery(WARNING_TEXT, { show_alert: type === "payment" || type === "admin" }).catch(() => undefined);
+        await ctx.answerCbQuery(text, { show_alert: type === "payment" || type === "wallet_topup" || type === "admin" }).catch(() => undefined);
         return;
     }
-    await ctx.reply(WARNING_TEXT).catch(() => undefined);
+    await ctx.reply(text).catch(() => undefined);
 }
 function rateLimitMiddleware() {
     return async (ctx, next) => {
@@ -111,7 +122,7 @@ function rateLimitMiddleware() {
         monitoring_service_1.MonitoringService.rateLimitHit({ telegramId: String(telegramId), userId: ctx.state.userId, actionType: type, count: result.count, limit: result.limit });
         if (result.warningAllowed) {
             store.markWarned(key, now);
-            await warnUser(ctx, type);
+            await warnUser(ctx, type, result.blockedUntil ? Math.max(1, Math.ceil((result.blockedUntil - now) / 1000)) : undefined);
         }
         else if (callbackData(ctx)) {
             await ctx.answerCbQuery().catch(() => undefined);

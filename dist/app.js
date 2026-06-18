@@ -8,6 +8,7 @@ dotenv_1.default.config();
 const bot_1 = require("./bot/bot");
 const handlers_1 = require("./bot/handlers");
 const depositCleaner_1 = require("./jobs/depositCleaner");
+const purchaseCleaner_1 = require("./jobs/purchaseCleaner");
 const accountExpiration_1 = require("./jobs/accountExpiration");
 const logger_1 = require("./services/logger");
 const system_service_1 = require("./modules/system/system.service");
@@ -40,6 +41,11 @@ async function bootstrap() {
                 suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
             });
         });
+        await (0, purchaseCleaner_1.cleanStalePurchases)().catch((error) => {
+            const message = error instanceof Error ? error.message : String(error);
+            logger_1.logger.error("Initial purchase cleaner failed", { error: message });
+            monitoring_service_1.MonitoringService.record({ type: "JOB_FAILED", section: "Purchase Cleaner", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." });
+        });
         await (0, accountExpiration_1.deactivateExpiredAccounts)().catch((error) => {
             const message = error instanceof Error ? error.message : String(error);
             logger_1.logger.error("Initial account expiration job failed", { error: message });
@@ -62,6 +68,11 @@ async function bootstrap() {
                     severity: "critical",
                     suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
                 });
+            });
+            (0, purchaseCleaner_1.cleanStalePurchases)().catch((error) => {
+                const message = error instanceof Error ? error.message : String(error);
+                logger_1.logger.error("Purchase cleaner failed", { error: message });
+                monitoring_service_1.MonitoringService.record({ type: "JOB_FAILED", section: "Purchase Cleaner", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." });
             });
             (0, accountExpiration_1.deactivateExpiredAccounts)().catch((error) => {
                 const message = error instanceof Error ? error.message : String(error);
