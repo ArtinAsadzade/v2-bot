@@ -695,7 +695,7 @@ function registerAdminHandlers(bot) {
         await ctx.answerCbQuery();
         const [orders] = await admin_service_1.AdminService.listRecentOrders();
         await ctx.reply(orders
-            .map((order) => `🧾 ${order.id.slice(-6)} | ${order.user.telegramId} | ${order.product.title} | ${order.totalAmount.toLocaleString("fa-IR")}`)
+            .map((order) => `🧾 ${order.id.slice(-6)} | ${order.user.telegramId} | ${order.product.title} | ${order.finalPaidAmount.toLocaleString("fa-IR")}`)
             .join("\n") || "سفارشی وجود ندارد.", (0, main_keyboard_1.navigationKeyboard)("admin:dashboard"));
     });
 }

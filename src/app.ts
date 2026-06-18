@@ -5,6 +5,7 @@ dotenv.config();
 import { bot } from "./bot/bot";
 import { registerHandlers } from "./bot/handlers";
 import { cleanExpiredDeposits } from "./jobs/depositCleaner";
+import { cleanStalePurchases } from "./jobs/purchaseCleaner";
 import { deactivateExpiredAccounts } from "./jobs/accountExpiration";
 import { logger } from "./services/logger";
 import { CryptoRateService } from "./modules/system/system.service";
@@ -39,6 +40,11 @@ async function bootstrap() {
         suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
       });
     });
+    await cleanStalePurchases().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Initial purchase cleaner failed", { error: message });
+      MonitoringService.record({ type: "JOB_FAILED", section: "Purchase Cleaner", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." });
+    });
     await deactivateExpiredAccounts().catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       logger.error("Initial account expiration job failed", { error: message });
@@ -61,6 +67,11 @@ async function bootstrap() {
           severity: "critical",
           suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
         });
+      });
+      cleanStalePurchases().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error("Purchase cleaner failed", { error: message });
+        MonitoringService.record({ type: "JOB_FAILED", section: "Purchase Cleaner", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." });
       });
       deactivateExpiredAccounts().catch((error) => {
         const message = error instanceof Error ? error.message : String(error);

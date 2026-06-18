@@ -54,7 +54,14 @@ function registerModernHandlers(bot) {
 
 تیکت: #${ticket.id.slice(-6).toUpperCase()}
 
-پیام خود را ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: (0, panel_ui_1.actionFor)("support:close", ticket.id) }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+پیام خود را ارسال کنید.`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "✅ بستن تیکت", callback_data: (0, panel_ui_1.actionFor)("support:close", ticket.id) }],
+                        [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }],
+                    ],
+                },
+            });
             return true;
         }
         if (target.id.startsWith("admin") && (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))) {
@@ -137,13 +144,21 @@ function registerModernHandlers(bot) {
         publicPlansCooldown.set(chatId, now);
         const categories = await public_plans_service_1.PublicPlansService.listPublicPlans();
         const botInfo = await ctx.telegram.getMe();
-        const planLines = categories.map((category) => `📂 ${category.name}\n\n${category.products.map((product) => {
+        const planLines = categories
+            .map((category) => `📂 ${category.name}\n\n${category.products
+            .map((product) => {
             const duration = product.mode === "xray_auto" ? (product.durationDays ?? product.duration) : product.duration;
-            const traffic = product.mode === "xray_auto" && product.trafficBytes ? `\nحجم: ${(Number(product.trafficBytes) / 1073741824).toLocaleString("fa-IR")} GB` : "";
+            const traffic = product.mode === "xray_auto" && product.trafficBytes
+                ? `\nحجم: ${(Number(product.trafficBytes) / 1073741824).toLocaleString("fa-IR")} GB`
+                : "";
             return `▫️ ${product.title}${traffic}\nمدت: ${duration.toLocaleString("fa-IR")} روز\nقیمت: ${product.price.toLocaleString("fa-IR")} تومان\nموجودی: ${product.availableStock.toLocaleString("fa-IR")}`;
-        }).join("\n\n")}`).join("\n\n━━━━━━━━━━━━━━\n\n");
+        })
+            .join("\n\n")}`)
+            .join("\n\n━━━━━━━━━━━━━━\n\n");
         const text = `🛒 پلن‌های فعال فروشگاه\n\n━━━━━━━━━━━━━━\n\n${planLines || "در حال حاضر پلن آماده فروشی وجود ندارد."}\n\n━━━━━━━━━━━━━━\nبرای خرید و مشاهده جزئیات، وارد ربات شوید.`;
-        await ctx.reply(text.slice(0, 3900), { reply_markup: { inline_keyboard: [[{ text: "🛒 خرید سرویس", url: `https://t.me/${botInfo.username}?start=shop` }]] } });
+        await ctx.reply(text.slice(0, 3900), {
+            reply_markup: { inline_keyboard: [[{ text: "🛒 خرید سرویس", url: `https://t.me/${botInfo.username}?start=shop` }]] },
+        });
     }
     bot.command(["plans", "plan", "products"], handlePublicPlansCommand);
     const userCommands = [
@@ -198,7 +213,15 @@ function registerModernHandlers(bot) {
             return (0, panel_ui_1.goBack)(ctx);
         const state = (0, panel_ui_1.parseNavAction)(`nav:${ctx.match[1]}`);
         if (!state) {
-            monitoring_service_1.MonitoringService.record({ type: "BUTTON_DATA_INVALID", section: "Telegram Callback", description: `Invalid nav callback: nav:${ctx.match[1]}`, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined, userId: ctx.state.userId, severity: "warning", suggestedAction: "callback_data دکمه‌های منتشرشده را بررسی کنید." });
+            monitoring_service_1.MonitoringService.record({
+                type: "BUTTON_DATA_INVALID",
+                section: "Telegram Callback",
+                description: `Invalid nav callback: nav:${ctx.match[1]}`,
+                telegramId: ctx.from?.id ? String(ctx.from.id) : undefined,
+                userId: ctx.state.userId,
+                severity: "warning",
+                suggestedAction: "callback_data دکمه‌های منتشرشده را بررسی کنید.",
+            });
             return;
         }
         if (state.id.startsWith("admin") && (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))) {
@@ -217,18 +240,37 @@ function registerModernHandlers(bot) {
     });
     async function sendPurchaseDelivery(ctx, result) {
         if (result.product.mode === "xray_auto") {
-            const client = result.xrayClient ?? (result.orderItem?.xrayClientId ? await prisma_1.prisma.xrayClient.findUnique({ where: { id: result.orderItem.xrayClientId } }) : null);
+            const client = result.xrayClient ??
+                (result.orderItem?.xrayClientId ? await prisma_1.prisma.xrayClient.findUnique({ where: { id: result.orderItem.xrayClientId } }) : null);
             if (!client) {
                 await ctx.reply(`✅ خرید با موفقیت انجام شد
 
-سرویس ساخته شده است. لطفاً از بخش «📦 اکانت‌های من» آن را باز کنید.`, { reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+سرویس ساخته شده است. لطفاً از بخش «📦 اکانت‌های من» آن را باز کنید.`, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }],
+                            [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }],
+                        ],
+                    },
+                });
                 return;
             }
             await ctx.reply(`✅ خرید با موفقیت انجام شد
 
 سرویس شما ساخته شد و آماده استفاده است.
 
-برای دریافت لینک اشتراک، QR و کانفیگ‌ها از دکمه‌های زیر استفاده کنید.`, { reply_markup: { inline_keyboard: [[{ text: "📦 مشاهده سرویس", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: client.id }) }], [{ text: "🔗 دریافت لینک اشتراک", callback_data: `xray:sub:${client.id}` }, { text: "⚙️ دریافت کانفیگ‌ها", callback_data: `xray:configs:${client.id}` }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+برای دریافت لینک اشتراک، QR و کانفیگ‌ها از دکمه‌های زیر استفاده کنید.`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "📦 مشاهده سرویس", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: client.id }) }],
+                        [
+                            { text: "🔗 دریافت لینک اشتراک", callback_data: `xray:sub:${client.id}` },
+                            { text: "⚙️ دریافت کانفیگ‌ها", callback_data: `xray:configs:${client.id}` },
+                        ],
+                        [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }],
+                    ],
+                },
+            });
             return;
         }
         await ctx.reply((0, messages_1.purchaseSuccessMessage)({
@@ -237,7 +279,17 @@ function registerModernHandlers(bot) {
             subscriptionLink: result.account.subscriptionLink,
             config: result.account.configLink,
             expiresAt: result.expiresAt,
-        }), { reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }, { text: "🛒 خرید مجدد", callback_data: (0, panel_ui_1.callbackFor)("shop.categories") }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+        }), {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") },
+                        { text: "🛒 خرید مجدد", callback_data: (0, panel_ui_1.callbackFor)("shop.categories") },
+                    ],
+                    [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }],
+                ],
+            },
+        });
     }
     async function ownedXrayClient(ctx, id) {
         if (!ctx.from)
@@ -251,11 +303,21 @@ function registerModernHandlers(bot) {
         await ctx.answerCbQuery();
         const client = await ownedXrayClient(ctx, ctx.match[1]);
         if (!client)
-            return void await ctx.reply("⚠️ سرویس پیدا نشد.");
+            return void (await ctx.reply("⚠️ سرویس پیدا نشد."));
         try {
             const url = await xray_service_1.XrayClientService.subscriptionUrl(client);
             await xray_service_1.XrayClientService.subLinks(client.clientSubId).catch(() => null);
-            await ctx.reply(`🔗 لینک اشتراک شما\n\n${url}\n\nاین لینک را داخل برنامه‌هایی مثل v2rayNG, Streisand, Hiddify یا Nekobox وارد کنید.`, { reply_markup: { inline_keyboard: [[{ text: "📲 نمایش QR", callback_data: `xray:qr:${client.id}` }, { text: "⚙️ دریافت کانفیگ‌ها", callback_data: `xray:configs:${client.id}` }], [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: client.id }) }]] } });
+            await ctx.reply(`🔗 لینک اشتراک شما\n\n${url}\n\nاین لینک را داخل برنامه‌هایی مثل v2rayNG, Streisand, Hiddify یا Nekobox وارد کنید.`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: "📲 نمایش QR", callback_data: `xray:qr:${client.id}` },
+                            { text: "⚙️ دریافت کانفیگ‌ها", callback_data: `xray:configs:${client.id}` },
+                        ],
+                        [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: client.id }) }],
+                    ],
+                },
+            });
         }
         catch (error) {
             await ctx.reply(`⚠️ لینک اشتراک در دسترس نیست\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
@@ -265,7 +327,7 @@ function registerModernHandlers(bot) {
         await ctx.answerCbQuery();
         const client = await ownedXrayClient(ctx, ctx.match[1]);
         if (!client)
-            return void await ctx.reply("⚠️ سرویس پیدا نشد.");
+            return void (await ctx.reply("⚠️ سرویس پیدا نشد."));
         try {
             const url = await xray_service_1.XrayClientService.subscriptionUrl(client);
             const qr = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(url)}`;
@@ -279,15 +341,30 @@ function registerModernHandlers(bot) {
         await ctx.answerCbQuery("در حال دریافت کانفیگ‌ها...");
         const client = await ownedXrayClient(ctx, ctx.match[1]);
         if (!client)
-            return void await ctx.reply("⚠️ سرویس پیدا نشد.");
+            return void (await ctx.reply("⚠️ سرویس پیدا نشد."));
         try {
             const raw = await xray_service_1.XrayClientService.links(client.clientEmail);
-            const configs = Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(/\r?\n/).filter(Boolean) : Object.values(raw ?? {}).flat().map(String);
+            const configs = Array.isArray(raw)
+                ? raw
+                : typeof raw === "string"
+                    ? raw.split(/\r?\n/).filter(Boolean)
+                    : Object.values(raw ?? {})
+                        .flat()
+                        .map(String);
             if (!configs.length)
-                return void await ctx.reply("⚠️ کانفیگی از پنل دریافت نشد.");
+                return void (await ctx.reply("⚠️ کانفیگی از پنل دریافت نشد."));
             for (let i = 0; i < configs.length; i++)
                 await ctx.reply(`⚙️ کانفیگ ${i + 1}\n\n${configs[i]}`);
-            await ctx.reply(`✅ تمام کانفیگ‌های شما ارسال شد.\n\nتعداد کانفیگ‌ها:\n${configs.length.toLocaleString("fa-IR")}`, { reply_markup: { inline_keyboard: [[{ text: "🔗 لینک اشتراک", callback_data: `xray:sub:${client.id}` }, { text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: client.id }) }]] } });
+            await ctx.reply(`✅ تمام کانفیگ‌های شما ارسال شد.\n\nتعداد کانفیگ‌ها:\n${configs.length.toLocaleString("fa-IR")}`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: "🔗 لینک اشتراک", callback_data: `xray:sub:${client.id}` },
+                            { text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: client.id }) },
+                        ],
+                    ],
+                },
+            });
         }
         catch (error) {
             await ctx.reply(`⚠️ دریافت کانفیگ‌ها ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
@@ -302,7 +379,9 @@ function registerModernHandlers(bot) {
         try {
             await ctx.editMessageText("⏳ در حال تمدید سرویس از کیف پول...", { reply_markup: { inline_keyboard: [] } });
             const renewal = await payment_service_1.PaymentInvoiceService.renewXrayWithWallet(user.id, xrayClientId, productId);
-            await ctx.reply(`✅ سرویس با موفقیت تمدید شد.\n\nاعتبار جدید: ${renewal.newExpiry.toLocaleDateString("fa-IR")}`, { reply_markup: { inline_keyboard: [[{ text: "🧩 مشاهده سرویس", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId }) }]] } });
+            await ctx.reply(`✅ سرویس با موفقیت تمدید شد.\n\nاعتبار جدید: ${renewal.newExpiry.toLocaleDateString("fa-IR")}`, {
+                reply_markup: { inline_keyboard: [[{ text: "🧩 مشاهده سرویس", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId }) }]] },
+            });
         }
         catch (error) {
             await ctx.reply(`⚠️ تمدید ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
@@ -316,7 +395,14 @@ function registerModernHandlers(bot) {
             return;
         try {
             const invoice = await payment_service_1.PaymentInvoiceService.createXrayRenewalInvoice(user.id, xrayClientId, productId);
-            await ctx.reply(`🧾 فاکتور تمدید آماده شد\n\n💰 مبلغ: ${invoice.amount.toLocaleString("fa-IR")} تومان\n\nبرای پرداخت روی دکمه زیر بزنید.`, { reply_markup: { inline_keyboard: [[{ text: "⚡ پرداخت", url: invoice.paymentLink ?? "" }], [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId }) }]] } });
+            await ctx.reply(`🧾 فاکتور تمدید آماده شد\n\n💰 مبلغ: ${invoice.amount.toLocaleString("fa-IR")} تومان\n\nبرای پرداخت روی دکمه زیر بزنید.`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "⚡ پرداخت", url: invoice.paymentLink ?? "" }],
+                        [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId }) }],
+                    ],
+                },
+            });
         }
         catch (error) {
             await ctx.reply(`⚠️ ایجاد فاکتور تمدید ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
@@ -326,21 +412,21 @@ function registerModernHandlers(bot) {
         await ctx.answerCbQuery();
         const payload = (0, callback_tokens_1.resolveCallbackToken)(ctx, "renewal", ctx.match[1]);
         if (!payload)
-            return void await ctx.reply("⚠️ این دکمه منقضی شده است. لطفاً لیست تمدید را دوباره باز کنید.");
+            return void (await ctx.reply("⚠️ این دکمه منقضی شده است. لطفاً لیست تمدید را دوباره باز کنید."));
         return (0, panel_ui_1.renderPanel)(ctx, { id: "account.renew.summary", params: payload }, "push", panel_ui_1.RenderMode.EDIT_CURRENT);
     });
     bot.action(/^xr:r:w:([^:]+)$/, async (ctx) => {
         await ctx.answerCbQuery();
         const payload = (0, callback_tokens_1.resolveCallbackToken)(ctx, "renewal", ctx.match[1]);
         if (!payload)
-            return void await ctx.reply("⚠️ این دکمه منقضی شده است. لطفاً خلاصه تمدید را دوباره باز کنید.");
+            return void (await ctx.reply("⚠️ این دکمه منقضی شده است. لطفاً خلاصه تمدید را دوباره باز کنید."));
         return renewWithWallet(ctx, payload.xrayClientId, payload.productId);
     });
     bot.action(/^xr:r:i:([^:]+)$/, async (ctx) => {
         await ctx.answerCbQuery();
         const payload = (0, callback_tokens_1.resolveCallbackToken)(ctx, "renewal", ctx.match[1]);
         if (!payload)
-            return void await ctx.reply("⚠️ این دکمه منقضی شده است. لطفاً خلاصه تمدید را دوباره باز کنید.");
+            return void (await ctx.reply("⚠️ این دکمه منقضی شده است. لطفاً خلاصه تمدید را دوباره باز کنید."));
         return renewWithInstantInvoice(ctx, payload.xrayClientId, payload.productId);
     });
     bot.action(/^xray:renew:wallet:([^:]+):([^:]+)$/, async (ctx) => {
@@ -352,7 +438,16 @@ function registerModernHandlers(bot) {
         return renewWithInstantInvoice(ctx, ctx.match[1], ctx.match[2]);
     });
     async function showExpiredCheckoutRecovery(ctx) {
-        await ctx.reply("این پیش‌فاکتور منقضی شده است.\nلطفاً محصول را دوباره انتخاب کنید.", { reply_markup: { inline_keyboard: [[{ text: "🛒 بازگشت به فروشگاه", callback_data: (0, panel_ui_1.callbackFor)("shop.categories") }, { text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+        await ctx.reply("این پیش‌فاکتور منقضی شده است.\nلطفاً محصول را دوباره انتخاب کنید.", {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "🛒 بازگشت به فروشگاه", callback_data: (0, panel_ui_1.callbackFor)("shop.categories") },
+                        { text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") },
+                    ],
+                ],
+            },
+        });
     }
     bot.action(/^coupon:remove:(.+)$/, async (ctx) => {
         await ctx.answerCbQuery();
@@ -384,6 +479,17 @@ function registerModernHandlers(bot) {
         await ctx.answerCbQuery();
         await (0, panel_ui_1.renderPanel)(ctx, { id: "shop.checkout", params: { productId: ctx.match[1] } }, "replace", panel_ui_1.RenderMode.EDIT_CURRENT);
     });
+    bot.action(/^buy:cancel_existing:(.+)$/, async (ctx) => {
+        await ctx.answerCbQuery("درخواست قبلی لغو شد");
+        if (!ctx.from)
+            return;
+        const user = await user_service_1.UserService.getByTelegramId(ctx.from.id);
+        if (!user)
+            return;
+        const productId = ctx.match[1];
+        await payment_service_1.PaymentInvoiceService.cancelExistingPurchaseIntent(user.id, productId);
+        await (0, panel_ui_1.renderPanel)(ctx, { id: "shop.checkout", params: { productId } }, "replace", panel_ui_1.RenderMode.SEND_NEW);
+    });
     bot.action(/^buy:confirm:(.+)$/, async (ctx) => {
         await ctx.answerCbQuery();
         if (!ctx.from)
@@ -393,28 +499,69 @@ function registerModernHandlers(bot) {
             return;
         const productId = ctx.match[1];
         try {
+            const existing = await payment_service_1.PaymentInvoiceService.resolveExistingPurchaseIntent(user.id, productId);
+            if (existing.action === "reuse_invoice") {
+                await ctx.reply("شما از قبل یک فاکتور پرداخت‌نشده برای این محصول دارید. می‌توانید پرداخت را ادامه دهید یا آن را لغو کرده و فاکتور جدید بسازید.", { reply_markup: { inline_keyboard: [[{ text: "Pay previous invoice", url: existing.invoice.paymentLink ?? "" }], [{ text: "Cancel and create new invoice", callback_data: (0, panel_ui_1.actionFor)("buy:cancel_existing", productId) }], [{ text: "Back", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }]] } });
+                return;
+            }
+            if (existing.action === "processing") {
+                await ctx.reply("Your previous purchase is still being processed. Please wait or cancel it if it is stuck.", { reply_markup: { inline_keyboard: [[{ text: "Cancel stuck purchase", callback_data: (0, panel_ui_1.actionFor)("buy:cancel_existing", productId) }], [{ text: "Back", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }]] } });
+                return;
+            }
+            if (existing.action === "expired_and_released")
+                await ctx.reply("Your previous purchase request expired. You can start a new purchase now.");
             await ctx.editMessageText("⏳ در حال بررسی موجودی کیف پول و آماده‌سازی اکانت...", { reply_markup: { inline_keyboard: [] } });
             const coupon = ctx.session.selectedCoupons?.[productId];
             const result = await purchase_service_1.PurchaseService.buyProduct(user.id, productId, coupon);
             delete ctx.session.selectedCoupons?.[productId];
-            await ctx.editMessageText(result.product.mode === "xray_auto" ? "✅ خرید با موفقیت تکمیل شد. سرویس Xray آماده مشاهده است." : "✅ خرید با موفقیت تکمیل شد. اطلاعات اکانت در پیام بعدی ارسال شد.", { reply_markup: { inline_keyboard: [] } });
+            await ctx.editMessageText(result.product.mode === "xray_auto"
+                ? "✅ خرید با موفقیت تکمیل شد. سرویس Xray آماده مشاهده است."
+                : "✅ خرید با موفقیت تکمیل شد. اطلاعات اکانت در پیام بعدی ارسال شد.", { reply_markup: { inline_keyboard: [] } });
             await sendPurchaseDelivery(ctx, result);
         }
         catch (error) {
             const message = error instanceof Error ? error.message : "در انجام درخواست مشکلی پیش آمد. لطفاً چند لحظه دیگر دوباره تلاش کنید.";
             if (/کد تخفیف|کوپن|تخفیف/.test(message)) {
-                await ctx.reply(`⚠️ کد تخفیف دیگر قابل استفاده نیست\n\nاین کد بعد از اعمال اولیه منقضی یا مصرف شده است.`, { reply_markup: { inline_keyboard: [[{ text: "🎟 کد تخفیف جدید", callback_data: (0, panel_ui_1.actionFor)("flow:start", "coupon_code", productId) }, { text: "🗑 حذف کد تخفیف", callback_data: (0, panel_ui_1.actionFor)("coupon:remove", productId) }], [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }]] } });
+                await ctx.reply(`⚠️ کد تخفیف دیگر قابل استفاده نیست\n\nاین کد بعد از اعمال اولیه منقضی یا مصرف شده است.`, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: "🎟 کد تخفیف جدید", callback_data: (0, panel_ui_1.actionFor)("flow:start", "coupon_code", productId) },
+                                { text: "🗑 حذف کد تخفیف", callback_data: (0, panel_ui_1.actionFor)("coupon:remove", productId) },
+                            ],
+                            [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }],
+                        ],
+                    },
+                });
             }
             else {
-                await ctx.reply(`⚠️ خرید تکمیل نشد\n\n${message}`, { reply_markup: { inline_keyboard: [[{ text: "💳 شارژ کیف پول", callback_data: (0, panel_ui_1.callbackFor)("deposit") }, { text: "⬅️ بازگشت به پیش‌فاکتور", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }], [{ text: "🎫 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") }]] } });
+                await ctx.reply(`⚠️ خرید تکمیل نشد\n\n${message}`, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: "💳 شارژ کیف پول", callback_data: (0, panel_ui_1.callbackFor)("deposit") },
+                                { text: "⬅️ بازگشت به پیش‌فاکتور", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) },
+                            ],
+                            [{ text: "🎫 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") }],
+                        ],
+                    },
+                });
             }
         }
     });
     function freeTestInboundKeyboard(inbounds, selectedIds) {
         const selected = new Set(selectedIds);
-        const rows = inbounds.map((inbound) => [{ text: `${selected.has(inbound.id) ? "☑" : "☐"} ${inbound.remark ?? inbound.tag ?? `inbound-${inbound.id}`} | ${inbound.protocol ?? "—"} · port ${inbound.port ?? "—"}`, callback_data: `admin:free_test:inbound:toggle:${inbound.id}` }]);
+        const rows = inbounds.map((inbound) => [
+            {
+                text: `${selected.has(inbound.id) ? "☑" : "☐"} ${inbound.remark ?? inbound.tag ?? `inbound-${inbound.id}`} | ${inbound.protocol ?? "—"} · port ${inbound.port ?? "—"}`,
+                callback_data: `admin:free_test:inbound:toggle:${inbound.id}`,
+            },
+        ]);
         rows.push([{ text: "✅ ذخیره اینباندها", callback_data: "admin:free_test:inbounds:save" }]);
-        rows.push([{ text: "🔄 بروزرسانی لیست", callback_data: "admin:free_test:inbounds" }, { text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("admin.freeAccounts") }]);
+        rows.push([
+            { text: "🔄 بروزرسانی لیست", callback_data: "admin:free_test:inbounds" },
+            { text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("admin.freeAccounts") },
+        ]);
         return { inline_keyboard: rows };
     }
     async function showFreeTestInboundSelector(ctx) {
@@ -453,11 +600,28 @@ function registerModernHandlers(bot) {
     function xrayInboundPickerKeyboard(ctxForKeyboard, target, inbounds, selectedIds, productId) {
         const selected = new Set(selectedIds);
         const targetAlias = pickerAlias(target);
-        const token = target === "product_edit" && productId ? (0, callback_tokens_1.createCallbackToken)(ctxForKeyboard, "xrayPickerProduct", { target: "product_edit", productId }) : undefined;
+        const token = target === "product_edit" && productId
+            ? (0, callback_tokens_1.createCallbackToken)(ctxForKeyboard, "xrayPickerProduct", { target: "product_edit", productId })
+            : undefined;
         const suffix = productId ? `:${token ?? productId}` : "";
-        const rows = inbounds.map((inbound) => [{ text: `${selected.has(inbound.id) ? "☑" : "☐"} ${inbound.remark ?? inbound.tag ?? `inbound-${inbound.id}`} | ${inbound.protocol ?? "—"} · port ${inbound.port ?? "—"}`, callback_data: `xpi:t:${targetAlias}:${inbound.id}${suffix}` }]);
+        const rows = inbounds.map((inbound) => [
+            {
+                text: `${selected.has(inbound.id) ? "☑" : "☐"} ${inbound.remark ?? inbound.tag ?? `inbound-${inbound.id}`} | ${inbound.protocol ?? "—"} · port ${inbound.port ?? "—"}`,
+                callback_data: `xpi:t:${targetAlias}:${inbound.id}${suffix}`,
+            },
+        ]);
         rows.push([{ text: "✅ ذخیره اینباندها", callback_data: `xpi:s:${targetAlias}${suffix}` }]);
-        rows.push([{ text: "🔄 بروزرسانی لیست", callback_data: `xpi:l:${targetAlias}${suffix}` }, { text: "🔙 بازگشت", callback_data: target === "free_test" ? (0, panel_ui_1.callbackFor)("admin.freeAccounts") : productId ? (0, panel_ui_1.callbackFor)("admin.product", { productId }) : (0, panel_ui_1.callbackFor)("admin.products") }]);
+        rows.push([
+            { text: "🔄 بروزرسانی لیست", callback_data: `xpi:l:${targetAlias}${suffix}` },
+            {
+                text: "🔙 بازگشت",
+                callback_data: target === "free_test"
+                    ? (0, panel_ui_1.callbackFor)("admin.freeAccounts")
+                    : productId
+                        ? (0, panel_ui_1.callbackFor)("admin.product", { productId })
+                        : (0, panel_ui_1.callbackFor)("admin.products"),
+            },
+        ]);
         return { inline_keyboard: rows };
     }
     async function showXrayInboundPicker(ctx, target, productId) {
@@ -482,10 +646,24 @@ function registerModernHandlers(bot) {
         const refreshToken = target === "product_edit" && productId ? (0, callback_tokens_1.createCallbackToken)(ctx, "xrayPickerProduct", { target: "product_edit", productId }) : undefined;
         const refreshSuffix = productId ? `:${refreshToken ?? productId}` : "";
         const noneToken = (0, callback_tokens_1.createCallbackToken)(ctx, "xrayGroupSelect", { target, selected: null, productId });
-        const rows = [[{ text: "بدون گروه", callback_data: (0, callback_tokens_1.tokenAction)("xpg:s", noneToken) }], ...groups.map((g) => {
+        const rows = [
+            [{ text: "بدون گروه", callback_data: (0, callback_tokens_1.tokenAction)("xpg:s", noneToken) }],
+            ...groups.map((g) => {
                 const selectToken = (0, callback_tokens_1.createCallbackToken)(ctx, "xrayGroupSelect", { target, selected: g.name, productId });
                 return [{ text: `${g.name} (${g.clientCount ?? 0})`, callback_data: (0, callback_tokens_1.tokenAction)("xpg:s", selectToken) }];
-            }), [{ text: "🔄 بروزرسانی گروه‌ها", callback_data: `xpg:l:${targetAlias}${refreshSuffix}` }, { text: "🔙 بازگشت", callback_data: target === "free_test" ? (0, panel_ui_1.callbackFor)("admin.freeAccounts") : productId ? (0, panel_ui_1.callbackFor)("admin.product", { productId }) : (0, panel_ui_1.callbackFor)("admin.products") }]];
+            }),
+            [
+                { text: "🔄 بروزرسانی گروه‌ها", callback_data: `xpg:l:${targetAlias}${refreshSuffix}` },
+                {
+                    text: "🔙 بازگشت",
+                    callback_data: target === "free_test"
+                        ? (0, panel_ui_1.callbackFor)("admin.freeAccounts")
+                        : productId
+                            ? (0, panel_ui_1.callbackFor)("admin.product", { productId })
+                            : (0, panel_ui_1.callbackFor)("admin.products"),
+                },
+            ],
+        ];
         await ctx.reply(`👥 انتخاب گروه کلاینت\n\n${target === "product_edit" ? "⚠️ تغییر گروه فقط روی خریدهای جدید اعمال می‌شود.\n\n" : ""}${groups.length ? groups.map((g) => `• ${g.name} (${g.clientCount ?? 0})`).join("\n") : "گروهی در پنل تعریف نشده است.\nمی‌توانید «بدون گروه» را انتخاب کنید."}`, { reply_markup: { inline_keyboard: rows } });
     }
     async function completeProductCreateFromPicker(ctx) {
@@ -495,7 +673,21 @@ function registerModernHandlers(bot) {
         const categoryId = String(flow.data.categoryId ?? "");
         if (!categoryId)
             throw new Error("دسته‌بندی محصول مشخص نیست");
-        await product_service_1.ProductService.create({ mode: "xray_auto", categoryId, title: String(flow.data.title), price: Number(flow.data.price), duration: Number(flow.data.durationDays ?? flow.data.duration), durationDays: Number(flow.data.durationDays ?? flow.data.duration), trafficGB: Number(flow.data.trafficGB), stockLimit: Number(flow.data.stockLimit), inboundIds: flow.data.inboundIds, inboundSnapshot: String(flow.data.inboundSnapshot), limitIp: Number(flow.data.limitIp ?? 0), xrayGroupName: flow.data.xrayGroupName ? String(flow.data.xrayGroupName) : null, actorId: String(ctx.from?.id ?? "admin") });
+        await product_service_1.ProductService.create({
+            mode: "xray_auto",
+            categoryId,
+            title: String(flow.data.title),
+            price: Number(flow.data.price),
+            duration: Number(flow.data.durationDays ?? flow.data.duration),
+            durationDays: Number(flow.data.durationDays ?? flow.data.duration),
+            trafficGB: Number(flow.data.trafficGB),
+            stockLimit: Number(flow.data.stockLimit),
+            inboundIds: flow.data.inboundIds,
+            inboundSnapshot: String(flow.data.inboundSnapshot),
+            limitIp: Number(flow.data.limitIp ?? 0),
+            xrayGroupName: flow.data.xrayGroupName ? String(flow.data.xrayGroupName) : null,
+            actorId: String(ctx.from?.id ?? "admin"),
+        });
         ctx.session.flow = undefined;
     }
     bot.action(/^xpg:l:(f|pc|pe)(?::([^:]+))?$/, async (ctx) => {
@@ -526,7 +718,7 @@ function registerModernHandlers(bot) {
             return (0, panel_ui_1.renderPanel)(ctx, { id: "admin.product", params: { productId } }, "replace");
         }
         if (!ctx.session.flow || ctx.session.flow.name !== "product_create")
-            return void await ctx.reply("⚠️ فرم ساخت محصول فعال نیست.");
+            return void (await ctx.reply("⚠️ فرم ساخت محصول فعال نیست."));
         ctx.session.flow.data.xrayGroupName = selected ?? undefined;
         ctx.session.flow.step = "inbounds";
         await showXrayInboundPicker(ctx, "product_create");
@@ -535,16 +727,18 @@ function registerModernHandlers(bot) {
         await ctx.answerCbQuery();
         const payload = (0, callback_tokens_1.resolveCallbackToken)(ctx, "xrayGroupSelect", ctx.match[1]);
         if (!payload)
-            return void await ctx.reply("⚠️ این دکمه منقضی شده است. لطفاً لیست گروه‌ها را بروزرسانی کنید.");
+            return void (await ctx.reply("⚠️ این دکمه منقضی شده است. لطفاً لیست گروه‌ها را بروزرسانی کنید."));
         return saveXrayGroupSelection(ctx, payload.target, payload.selected, payload.productId);
     });
     bot.action(/^xpg:s:(f|pc|pe):(n|\d+)(?::([^:]+))?$/, async (ctx) => {
         await ctx.answerCbQuery();
         const target = pickerTargetFromAlias[ctx.match[1]];
-        const groups = ctx.session.xrayPicker?.groups ? JSON.parse(ctx.session.xrayPicker.groups) : [];
+        const groups = ctx.session.xrayPicker?.groups
+            ? JSON.parse(ctx.session.xrayPicker.groups)
+            : [];
         const selected = ctx.match[2] === "n" ? null : groups[Number(ctx.match[2])]?.name;
         if (ctx.match[2] !== "n" && !selected)
-            return void await ctx.reply("⚠️ گروه انتخابی پیدا نشد. لیست را بروزرسانی کنید.");
+            return void (await ctx.reply("⚠️ گروه انتخابی پیدا نشد. لیست را بروزرسانی کنید."));
         return saveXrayGroupSelection(ctx, target, selected, resolvePickerProductId(ctx, ctx.match[3]));
     });
     bot.action(/^admin:xray_picker:group:select:(free_test|product_create|product_edit):([^:]+)(?::([^:]+))?$/, async (ctx) => {
@@ -579,9 +773,13 @@ function registerModernHandlers(bot) {
             return showXrayInboundPicker(ctx, target, resolvePickerProductId(ctx, ctx.match[3]));
         const inbounds = JSON.parse(state.inboundOptions);
         if (!inbounds.some((inbound) => inbound.id === id))
-            return void await ctx.reply("⚠️ اینباند انتخابی در لیست زنده وجود ندارد.");
-        state.selectedIds = (state.selectedIds ?? []).includes(id) ? (state.selectedIds ?? []).filter((item) => item !== id) : [...(state.selectedIds ?? []), id];
-        await ctx.editMessageReplyMarkup(xrayInboundPickerKeyboard(ctx, target, inbounds, state.selectedIds, resolvePickerProductId(ctx, ctx.match[3]))).catch(() => undefined);
+            return void (await ctx.reply("⚠️ اینباند انتخابی در لیست زنده وجود ندارد."));
+        state.selectedIds = (state.selectedIds ?? []).includes(id)
+            ? (state.selectedIds ?? []).filter((item) => item !== id)
+            : [...(state.selectedIds ?? []), id];
+        await ctx
+            .editMessageReplyMarkup(xrayInboundPickerKeyboard(ctx, target, inbounds, state.selectedIds, resolvePickerProductId(ctx, ctx.match[3])))
+            .catch(() => undefined);
     });
     bot.action(/^admin:xray_picker:inbound:toggle:(free_test|product_create|product_edit):(\d+)(?::([^:]+))?$/, async (ctx) => {
         await ctx.answerCbQuery();
@@ -593,9 +791,13 @@ function registerModernHandlers(bot) {
             return showXrayInboundPicker(ctx, ctx.match[1], ctx.match[3]);
         const inbounds = JSON.parse(state.inboundOptions);
         if (!inbounds.some((inbound) => inbound.id === id))
-            return void await ctx.reply("⚠️ اینباند انتخابی در لیست زنده وجود ندارد.");
-        state.selectedIds = (state.selectedIds ?? []).includes(id) ? (state.selectedIds ?? []).filter((item) => item !== id) : [...(state.selectedIds ?? []), id];
-        await ctx.editMessageReplyMarkup(xrayInboundPickerKeyboard(ctx, ctx.match[1], inbounds, state.selectedIds, ctx.match[3])).catch(() => undefined);
+            return void (await ctx.reply("⚠️ اینباند انتخابی در لیست زنده وجود ندارد."));
+        state.selectedIds = (state.selectedIds ?? []).includes(id)
+            ? (state.selectedIds ?? []).filter((item) => item !== id)
+            : [...(state.selectedIds ?? []), id];
+        await ctx
+            .editMessageReplyMarkup(xrayInboundPickerKeyboard(ctx, ctx.match[1], inbounds, state.selectedIds, ctx.match[3]))
+            .catch(() => undefined);
     });
     bot.action(/^xpi:s:(f|pc|pe)(?::([^:]+))?$/, async (ctx) => {
         await ctx.answerCbQuery();
@@ -607,12 +809,12 @@ function registerModernHandlers(bot) {
         const productId = resolvePickerProductId(ctx, ctx.match[2]);
         const state = ctx.session.xrayPicker;
         if (!state?.selectedIds?.length)
-            return void await ctx.reply("⚠️ حداقل یک اینباند لازم است");
+            return void (await ctx.reply("⚠️ حداقل یک اینباند لازم است"));
         const live = await xray_service_1.XrayClientService.listInbounds();
         const liveIds = new Set(live.map((i) => i.id));
         const selectedIds = [...new Set(state.selectedIds)].filter((id) => liveIds.has(id));
         if (!selectedIds.length || selectedIds.length !== state.selectedIds.length)
-            return void await ctx.reply("⚠️ یکی از اینباندهای انتخاب‌شده دیگر در پنل وجود ندارد. لیست را بروزرسانی کنید.");
+            return void (await ctx.reply("⚠️ یکی از اینباندهای انتخاب‌شده دیگر در پنل وجود ندارد. لیست را بروزرسانی کنید."));
         const inboundSnapshot = (0, xray_service_1.xrayInboundSnapshot)(live, selectedIds);
         if (target === "free_test") {
             await free_account_service_1.FreeAccountService.updateXrayConfig({ inboundIds: selectedIds, inboundSnapshot }, String(ctx.from.id));
@@ -627,7 +829,7 @@ function registerModernHandlers(bot) {
             return (0, panel_ui_1.renderPanel)(ctx, { id: "admin.product", params: { productId } }, "replace");
         }
         if (!ctx.session.flow || ctx.session.flow.name !== "product_create")
-            return void await ctx.reply("⚠️ فرم ساخت محصول فعال نیست.");
+            return void (await ctx.reply("⚠️ فرم ساخت محصول فعال نیست."));
         ctx.session.flow.data.inboundIds = selectedIds;
         ctx.session.flow.data.inboundSnapshot = inboundSnapshot;
         await completeProductCreateFromPicker(ctx);
@@ -656,7 +858,7 @@ function registerModernHandlers(bot) {
         const id = Number(ctx.match[1]);
         const inbounds = JSON.parse(state.inboundOptions);
         if (!inbounds.some((inbound) => inbound.id === id))
-            return void await ctx.reply("⚠️ اینباند انتخابی در لیست زنده وجود ندارد.");
+            return void (await ctx.reply("⚠️ اینباند انتخابی در لیست زنده وجود ندارد."));
         state.selectedIds = state.selectedIds.includes(id) ? state.selectedIds.filter((item) => item !== id) : [...state.selectedIds, id];
         await ctx.editMessageReplyMarkup(freeTestInboundKeyboard(inbounds, state.selectedIds)).catch(() => undefined);
     });
@@ -666,7 +868,7 @@ function registerModernHandlers(bot) {
             return;
         const state = ctx.session.freeTestInboundSelection;
         if (!state?.selectedIds.length)
-            return void await ctx.reply("⚠️ حداقل یک اینباند لازم است");
+            return void (await ctx.reply("⚠️ حداقل یک اینباند لازم است"));
         try {
             await free_account_service_1.FreeAccountService.updateXrayConfig({ inboundIds: state.selectedIds }, String(ctx.from.id));
             ctx.session.freeTestInboundSelection = undefined;
@@ -695,7 +897,7 @@ function registerModernHandlers(bot) {
             return;
         const config = await prisma_1.prisma.xrayPanelConfig.findFirst({ orderBy: { updatedAt: "desc" } });
         if (!config)
-            return void await ctx.reply("ابتدا تنظیمات پنل Xray را ثبت کنید.");
+            return void (await ctx.reply("ابتدا تنظیمات پنل Xray را ثبت کنید."));
         await prisma_1.prisma.xrayPanelConfig.update({ where: { id: config.id }, data: { enabled: ctx.match[1] === "1" } });
         await (0, panel_ui_1.renderPanel)(ctx, { id: "admin.xraySettings" }, "replace");
     });
@@ -721,9 +923,20 @@ function registerModernHandlers(bot) {
         const productId = ctx.match[1];
         try {
             await ctx.editMessageText("⏳ در حال ایجاد فاکتور پرداخت آنی...", { reply_markup: { inline_keyboard: [] } });
+            const existing = await payment_service_1.PaymentInvoiceService.resolveExistingPurchaseIntent(user.id, productId);
+            if (existing.action === "reuse_invoice") {
+                await ctx.reply("شما از قبل یک فاکتور پرداخت‌نشده برای این محصول دارید. می‌توانید پرداخت را ادامه دهید یا آن را لغو کرده و فاکتور جدید بسازید.", { reply_markup: { inline_keyboard: [[{ text: "Pay previous invoice", url: existing.invoice.paymentLink ?? "" }], [{ text: "Cancel and create new invoice", callback_data: (0, panel_ui_1.actionFor)("buy:cancel_existing", productId) }], [{ text: "Back", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }]] } });
+                return;
+            }
+            if (existing.action === "processing") {
+                await ctx.reply("Your previous purchase is still being processed. Please wait or cancel it if it is stuck.", { reply_markup: { inline_keyboard: [[{ text: "Cancel stuck purchase", callback_data: (0, panel_ui_1.actionFor)("buy:cancel_existing", productId) }], [{ text: "Back", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }]] } });
+                return;
+            }
+            if (existing.action === "expired_and_released")
+                await ctx.reply("Your previous purchase request expired. You can start a new purchase now.");
             const product = await product_service_1.ProductService.getProduct(productId);
             const coupon = ctx.session.selectedCoupons?.[productId];
-            const invoice = await payment_service_1.PaymentInvoiceService.createProductInvoice(user.id, productId, coupon);
+            const invoice = await payment_service_1.PaymentInvoiceService.createProductInvoice(user.id, productId, coupon, { ignoreExisting: true });
             delete ctx.session.selectedCoupons?.[productId];
             await ctx.editMessageText("✅ فاکتور پرداخت آنی ساخته شد. جزئیات پرداخت در پیام بعدی ارسال شد.", { reply_markup: { inline_keyboard: [] } });
             await ctx.reply(`🧾 فاکتور پرداخت آماده شد
@@ -734,9 +947,11 @@ ${product?.title ?? "-"}
 💰 مبلغ:
 ${invoice.originalAmount.toLocaleString("fa-IR")} تومان
 🎟 تخفیف:
-${invoice.discountAmount.toLocaleString("fa-IR")} تومان${invoice.couponCode ? `
+${invoice.discountAmount.toLocaleString("fa-IR")} تومان${invoice.couponCode
+                ? `
 🏷 کد تخفیف:
-${invoice.couponCode}` : ""}
+${invoice.couponCode}`
+                : ""}
 ✅ مبلغ نهایی:
 ${invoice.amount.toLocaleString("fa-IR")} تومان
 
@@ -748,10 +963,29 @@ ${invoice.amount.toLocaleString("fa-IR")} تومان
         catch (error) {
             const message = error instanceof Error ? error.message : "ایجاد پرداخت ناموفق بود";
             if (/کد تخفیف|کوپن|تخفیف/.test(message)) {
-                await ctx.reply(`⚠️ کد تخفیف دیگر قابل استفاده نیست\n\nاین کد بعد از اعمال اولیه منقضی یا مصرف شده است.`, { reply_markup: { inline_keyboard: [[{ text: "🎟 کد تخفیف جدید", callback_data: (0, panel_ui_1.actionFor)("flow:start", "coupon_code", productId) }, { text: "🗑 حذف کد تخفیف", callback_data: (0, panel_ui_1.actionFor)("coupon:remove", productId) }], [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }]] } });
+                await ctx.reply(`⚠️ کد تخفیف دیگر قابل استفاده نیست\n\nاین کد بعد از اعمال اولیه منقضی یا مصرف شده است.`, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: "🎟 کد تخفیف جدید", callback_data: (0, panel_ui_1.actionFor)("flow:start", "coupon_code", productId) },
+                                { text: "🗑 حذف کد تخفیف", callback_data: (0, panel_ui_1.actionFor)("coupon:remove", productId) },
+                            ],
+                            [{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }],
+                        ],
+                    },
+                });
             }
             else {
-                await ctx.reply(`⚠️ ایجاد فاکتور ممکن نیست\n\n${message}`, { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) }, { text: "🎫 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") }]] } });
+                await ctx.reply(`⚠️ ایجاد فاکتور ممکن نیست\n\n${message}`, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: "🔙 بازگشت", callback_data: (0, panel_ui_1.callbackFor)("shop.checkout", { productId }) },
+                                { text: "🎫 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") },
+                            ],
+                        ],
+                    },
+                });
             }
         }
     });
@@ -849,7 +1083,17 @@ ${quote.cryptoAmount.toLocaleString("fa-IR", { maximumFractionDigits: 8 })} ${qu
 ${quote.wallet.walletAddress}
 
 ⏳ مهلت پرداخت: ۳۰ دقیقه
-📤 پس از پرداخت، تصویر رسید را همین‌جا ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: (0, panel_ui_1.actionFor)("flow:back", "deposit", "amount") }, { text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }], [{ text: "❌ لغو عملیات", callback_data: "flow:cancel" }]] } });
+📤 پس از پرداخت، تصویر رسید را همین‌جا ارسال کنید.`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: "🔙 بازگشت", callback_data: (0, panel_ui_1.actionFor)("flow:back", "deposit", "amount") },
+                            { text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") },
+                        ],
+                        [{ text: "❌ لغو عملیات", callback_data: "flow:cancel" }],
+                    ],
+                },
+            });
         }
         catch (error) {
             await ctx.reply(`⚠️ ${error instanceof Error ? error.message : "ایجاد درخواست شارژ ناموفق بود. لطفاً دوباره تلاش کنید."}`);
@@ -875,12 +1119,24 @@ ${client.clientEmail}
 ${client.expiresAt.toLocaleDateString("fa-IR")}
 
 📦 این سرویس به بخش «اکانت‌های من» اضافه شد.`, {
-                reply_markup: { inline_keyboard: [[{ text: "📦 مشاهده اکانت", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: client.id }) }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] },
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "📦 مشاهده اکانت", callback_data: (0, panel_ui_1.callbackFor)("account.xray", { xrayClientId: client.id }) }],
+                        [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }],
+                    ],
+                },
             });
         }
         catch (error) {
             const failedProvision = !(error instanceof free_account_service_1.FreeAccountError);
-            await ctx.reply(failedProvision ? "درخواست ثبت شد اما ساخت اکانت تست نیازمند بررسی است." : (0, free_account_service_1.formatFreeAccountError)(error), { reply_markup: { inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }], [{ text: "🎫 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") }]] } });
+            await ctx.reply(failedProvision ? "درخواست ثبت شد اما ساخت اکانت تست نیازمند بررسی است." : (0, free_account_service_1.formatFreeAccountError)(error), {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "📦 اکانت‌های من", callback_data: (0, panel_ui_1.callbackFor)("account.details") }],
+                        [{ text: "🎫 پشتیبانی", callback_data: (0, panel_ui_1.callbackFor)("support") }],
+                    ],
+                },
+            });
         }
     });
     bot.action(/^admin:free_account:view:([^:]+)$/, async (ctx) => {
@@ -893,7 +1149,9 @@ ${client.expiresAt.toLocaleDateString("fa-IR")}
             return;
         }
         const assignment = account.assignment;
-        const expiresAt = assignment ? assignment.expiresAt ?? (0, free_account_service_1.freeAccountExpiresAt)(assignment.assignedAt ?? assignment.createdAt, account.durationDays) : undefined;
+        const expiresAt = assignment
+            ? (assignment.expiresAt ?? (0, free_account_service_1.freeAccountExpiresAt)(assignment.assignedAt ?? assignment.createdAt, account.durationDays))
+            : undefined;
         await ctx.reply(`🆓 جزئیات اکانت تست
 
 ━━━━━━━━━━━━━━━━
@@ -917,7 +1175,10 @@ ${account.configLink}
             reply_markup: {
                 inline_keyboard: [
                     [{ text: "✏️ ویرایش", callback_data: (0, panel_ui_1.actionFor)("flow:start", "free_account_edit", account.id) }],
-                    [{ text: "✅ آماده", callback_data: (0, panel_ui_1.actionFor)("admin:free_account:status", account.id, "available") }, { text: "🚫 منقضی/غیرفعال", callback_data: (0, panel_ui_1.actionFor)("admin:free_account:status", account.id, "expired") }],
+                    [
+                        { text: "✅ آماده", callback_data: (0, panel_ui_1.actionFor)("admin:free_account:status", account.id, "available") },
+                        { text: "🚫 منقضی/غیرفعال", callback_data: (0, panel_ui_1.actionFor)("admin:free_account:status", account.id, "expired") },
+                    ],
                     [{ text: "🗑 حذف", callback_data: (0, panel_ui_1.actionFor)("admin:free_account:delete", account.id) }],
                     [{ text: "🔙 مدیریت اکانت تست", callback_data: (0, panel_ui_1.callbackFor)("admin.freeAccounts") }],
                 ],
@@ -997,7 +1258,14 @@ ${link}
 
 تیکت: #${ticket.id.slice(-6).toUpperCase()}
 
-پیام خود را ارسال کنید. محدودیتی در تعداد پیام‌ها وجود ندارد.`, { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: (0, panel_ui_1.actionFor)("support:close", ticket.id) }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+پیام خود را ارسال کنید. محدودیتی در تعداد پیام‌ها وجود ندارد.`, {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "✅ بستن تیکت", callback_data: (0, panel_ui_1.actionFor)("support:close", ticket.id) }],
+                    [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }],
+                ],
+            },
+        });
     });
     bot.action(/^support:chat:([^:]+)$/, async (ctx) => {
         await ctx.answerCbQuery();
@@ -1018,7 +1286,14 @@ ${link}
         await ctx.reply(`💬 گفتگو باز شد
 
 تیکت: #${ticket.id.slice(-6).toUpperCase()}
-پیام بعدی خود را ارسال کنید.`, { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: (0, panel_ui_1.actionFor)("support:close", ticket.id) }], [{ text: "📜 مشاهده تاریخچه", callback_data: (0, panel_ui_1.callbackFor)("support") }]] } });
+پیام بعدی خود را ارسال کنید.`, {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "✅ بستن تیکت", callback_data: (0, panel_ui_1.actionFor)("support:close", ticket.id) }],
+                    [{ text: "📜 مشاهده تاریخچه", callback_data: (0, panel_ui_1.callbackFor)("support") }],
+                ],
+            },
+        });
     });
     bot.action(/^support:close:([^:]+)$/, async (ctx) => {
         await ctx.answerCbQuery();
@@ -1055,7 +1330,17 @@ ${link}
 تیکت: #${ticket.id.slice(-6).toUpperCase()}
 کاربر: ${ticket.user.telegramId}
 
-پاسخ خود را ارسال کنید. هر پیام جداگانه برای کاربر ارسال می‌شود.`, { reply_markup: { inline_keyboard: [[{ text: "👁 مشاهده تاریخچه", callback_data: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: ticket.id }) }, { text: "✅ بستن", callback_data: (0, panel_ui_1.actionFor)("admin:ticket:close", ticket.id) }], [{ text: "🛡 پنل مدیریت", callback_data: (0, panel_ui_1.callbackFor)("admin.dashboard") }]] } });
+پاسخ خود را ارسال کنید. هر پیام جداگانه برای کاربر ارسال می‌شود.`, {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "👁 مشاهده تاریخچه", callback_data: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: ticket.id }) },
+                        { text: "✅ بستن", callback_data: (0, panel_ui_1.actionFor)("admin:ticket:close", ticket.id) },
+                    ],
+                    [{ text: "🛡 پنل مدیریت", callback_data: (0, panel_ui_1.callbackFor)("admin.dashboard") }],
+                ],
+            },
+        });
     });
     bot.action(/^admin:store:status:(active|inactive)$/, async (ctx) => {
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
@@ -1082,7 +1367,16 @@ ${link}
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
             return ctx.answerCbQuery("دسترسی غیرمجاز");
         await ctx.answerCbQuery();
-        await ctx.reply("⚠️ حذف دائمی دسته‌بندی غیرقابل بازگشت است و محصولات وابسته را هم حذف می‌کند.", { reply_markup: { inline_keyboard: [[{ text: "تایید حذف دائمی", callback_data: (0, panel_ui_1.actionFor)("admin:category:hard_delete:force", ctx.match[1]) }, { text: "لغو", callback_data: (0, panel_ui_1.callbackFor)("admin.category", { categoryId: ctx.match[1] }) }]] } });
+        await ctx.reply("⚠️ حذف دائمی دسته‌بندی غیرقابل بازگشت است و محصولات وابسته را هم حذف می‌کند.", {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "تایید حذف دائمی", callback_data: (0, panel_ui_1.actionFor)("admin:category:hard_delete:force", ctx.match[1]) },
+                        { text: "لغو", callback_data: (0, panel_ui_1.callbackFor)("admin.category", { categoryId: ctx.match[1] }) },
+                    ],
+                ],
+            },
+        });
     });
     bot.action(/^admin:category:hard_delete:force:([^:]+)$/, async (ctx) => {
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
@@ -1109,7 +1403,16 @@ ${link}
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
             return ctx.answerCbQuery("دسترسی غیرمجاز");
         await ctx.answerCbQuery();
-        await ctx.reply("⚠️ این اکانت از موجودی حذف شود؟", { reply_markup: { inline_keyboard: [[{ text: "تایید حذف", callback_data: (0, panel_ui_1.actionFor)("admin:account:delete:force", ctx.match[1]) }, { text: "لغو", callback_data: (0, panel_ui_1.callbackFor)("admin.account", { accountId: ctx.match[1] }) }]] } });
+        await ctx.reply("⚠️ این اکانت از موجودی حذف شود؟", {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "تایید حذف", callback_data: (0, panel_ui_1.actionFor)("admin:account:delete:force", ctx.match[1]) },
+                        { text: "لغو", callback_data: (0, panel_ui_1.callbackFor)("admin.account", { accountId: ctx.match[1] }) },
+                    ],
+                ],
+            },
+        });
     });
     bot.action(/^admin:account:delete:force:([^:]+)$/, async (ctx) => {
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
@@ -1129,7 +1432,16 @@ ${link}
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
             return ctx.answerCbQuery("دسترسی غیرمجاز");
         await ctx.answerCbQuery();
-        await ctx.reply("⚠️ این کیف پول حذف شود؟ اگر پرداخت فعال داشته باشد حذف انجام نمی‌شود.", { reply_markup: { inline_keyboard: [[{ text: "تایید حذف", callback_data: (0, panel_ui_1.actionFor)("admin:wallet:delete:force", ctx.match[1]) }, { text: "لغو", callback_data: (0, panel_ui_1.callbackFor)("admin.wallet", { walletId: ctx.match[1] }) }]] } });
+        await ctx.reply("⚠️ این کیف پول حذف شود؟ اگر پرداخت فعال داشته باشد حذف انجام نمی‌شود.", {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "تایید حذف", callback_data: (0, panel_ui_1.actionFor)("admin:wallet:delete:force", ctx.match[1]) },
+                        { text: "لغو", callback_data: (0, panel_ui_1.callbackFor)("admin.wallet", { walletId: ctx.match[1] }) },
+                    ],
+                ],
+            },
+        });
     });
     bot.action(/^admin:wallet:delete:force:([^:]+)$/, async (ctx) => {
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
@@ -1221,7 +1533,16 @@ ${link}
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
             return ctx.answerCbQuery("دسترسی غیرمجاز");
         await ctx.answerCbQuery();
-        await ctx.reply("⚠️ حذف دائمی محصول غیرقابل بازگشت است. اگر محصول سفارش فعال داشته باشد با تایید نهایی هم حذف می‌شود.", { reply_markup: { inline_keyboard: [[{ text: "تایید حذف دائمی", callback_data: (0, panel_ui_1.actionFor)("admin:product:hard_delete:force", ctx.match[1]) }, { text: "لغو", callback_data: (0, panel_ui_1.callbackFor)("admin.product", { productId: ctx.match[1] }) }]] } });
+        await ctx.reply("⚠️ حذف دائمی محصول غیرقابل بازگشت است. اگر محصول سفارش فعال داشته باشد با تایید نهایی هم حذف می‌شود.", {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "تایید حذف دائمی", callback_data: (0, panel_ui_1.actionFor)("admin:product:hard_delete:force", ctx.match[1]) },
+                        { text: "لغو", callback_data: (0, panel_ui_1.callbackFor)("admin.product", { productId: ctx.match[1] }) },
+                    ],
+                ],
+            },
+        });
     });
     bot.action(/^admin:product:hard_delete:force:([^:]+)$/, async (ctx) => {
         if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
@@ -1287,19 +1608,44 @@ ${link}
                     if (!ctx.from || !(await (0, admin_middleware_1.isAdminByTelegramId)(ctx.from.id)))
                         return next();
                     await support_service_1.SupportService.addAdminReply(ctx.session.liveTicketId, String(ctx.from.id), text);
-                    await ctx.reply("✅ پاسخ ارسال شد. برای ادامه گفتگو، پیام بعدی را ارسال کنید.", { reply_markup: { inline_keyboard: [[{ text: "👁 مشاهده تیکت", callback_data: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: ctx.session.liveTicketId }) }, { text: "✅ بستن", callback_data: (0, panel_ui_1.actionFor)("admin:ticket:close", ctx.session.liveTicketId) }]] } });
+                    await ctx.reply("✅ پاسخ ارسال شد. برای ادامه گفتگو، پیام بعدی را ارسال کنید.", {
+                        reply_markup: {
+                            inline_keyboard: [
+                                [
+                                    { text: "👁 مشاهده تیکت", callback_data: (0, panel_ui_1.callbackFor)("admin.ticket", { ticketId: ctx.session.liveTicketId }) },
+                                    { text: "✅ بستن", callback_data: (0, panel_ui_1.actionFor)("admin:ticket:close", ctx.session.liveTicketId) },
+                                ],
+                            ],
+                        },
+                    });
                     return;
                 }
                 const user = ctx.from ? await user_service_1.UserService.getByTelegramId(ctx.from.id) : undefined;
                 if (!user)
                     return next();
                 await support_service_1.SupportService.addUserMessage(ctx.session.liveTicketId, user.id, text);
-                await ctx.reply("📩 پیام شما ارسال شد. برای ادامه گفتگو، پیام بعدی را ارسال کنید.", { reply_markup: { inline_keyboard: [[{ text: "✅ بستن تیکت", callback_data: (0, panel_ui_1.actionFor)("support:close", ctx.session.liveTicketId) }], [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }]] } });
+                await ctx.reply("📩 پیام شما ارسال شد. برای ادامه گفتگو، پیام بعدی را ارسال کنید.", {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "✅ بستن تیکت", callback_data: (0, panel_ui_1.actionFor)("support:close", ctx.session.liveTicketId) }],
+                            [{ text: "🏠 خانه", callback_data: (0, panel_ui_1.callbackFor)("home") }],
+                        ],
+                    },
+                });
                 return;
             }
             catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
-                monitoring_service_1.MonitoringService.record({ type: "TICKET_HANDLER_FAILED", section: "Ticket Handler", description: message, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined, userId: ctx.state.userId, severity: "critical", suggestedAction: "وضعیت تیکت، دسترسی پیام‌رسانی ربات و دیتابیس را بررسی کنید.", metadata: { ticketId: ctx.session.liveTicketId, role: ctx.session.liveTicketRole } });
+                monitoring_service_1.MonitoringService.record({
+                    type: "TICKET_HANDLER_FAILED",
+                    section: "Ticket Handler",
+                    description: message,
+                    telegramId: ctx.from?.id ? String(ctx.from.id) : undefined,
+                    userId: ctx.state.userId,
+                    severity: "critical",
+                    suggestedAction: "وضعیت تیکت، دسترسی پیام‌رسانی ربات و دیتابیس را بررسی کنید.",
+                    metadata: { ticketId: ctx.session.liveTicketId, role: ctx.session.liveTicketRole },
+                });
                 await ctx.reply(`⚠️ ${error instanceof Error ? error.message : "ارسال پیام ناموفق بود."}`);
                 return;
             }

@@ -3,7 +3,7 @@ import type { AppContext } from "../../types/bot";
 import { logger } from "../../services/logger";
 import { MonitoringService } from "../../services/monitoring.service";
 
-export type RateLimitAction = "message" | "callback" | "payment" | "ticket" | "admin";
+export type RateLimitAction = "message" | "callback" | "payment" | "wallet_topup" | "ticket" | "admin";
 
 type RateLimitRule = {
   limit: number;
@@ -33,10 +33,16 @@ interface RateLimitStore {
 const WARNING_TEXT = "⚠️ لطفاً کمی آهسته‌تر ادامه دهید.\nبرای جلوگیری از اسپم، چند ثانیه صبر کنید و دوباره تلاش کنید.";
 const WARNING_COOLDOWN_MS = 10_000;
 
+function envSeconds(name: string, fallback: number) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 const RULES: Record<RateLimitAction, RateLimitRule> = {
   message: { limit: 5, windowMs: 5_000, blockMs: 10_000 },
   callback: { limit: 8, windowMs: 5_000, blockMs: 10_000 },
   payment: { limit: 2, windowMs: 30_000, blockMs: 30_000 },
+  wallet_topup: { limit: 1, windowMs: envSeconds("WALLET_TOPUP_RATE_LIMIT_SECONDS", 8) * 1000, blockMs: envSeconds("WALLET_TOPUP_RATE_LIMIT_SECONDS", 8) * 1000 },
   ticket: { limit: 5, windowMs: 60_000, blockMs: 30_000 },
   admin: { limit: 20, windowMs: 10_000, blockMs: 10_000 },
 };
@@ -84,8 +90,12 @@ function callbackData(ctx: AppContext) {
   return callbackQuery && "data" in callbackQuery ? callbackQuery.data : undefined;
 }
 
+function isWalletTopupAction(data?: string) {
+  return Boolean(data && (/^(deposit:wallet:|dep:wallet:)/.test(data) || data === "nav:deposit" || data === "flow:start:instant_topup"));
+}
+
 function isPaymentAction(data?: string) {
-  return Boolean(data && (/^(buy:(confirm|instant):|deposit:wallet:|dep:wallet:)/.test(data) || data === "nav:deposit"));
+  return Boolean(data && /^buy:(confirm|instant):/.test(data));
 }
 
 function isAdminAction(data?: string) {
@@ -101,6 +111,7 @@ function actionType(ctx: AppContext): RateLimitAction | undefined {
 
   const data = callbackData(ctx);
   if (data) {
+    if (isWalletTopupAction(data)) return "wallet_topup";
     if (isPaymentAction(data)) return "payment";
     if (isAdminAction(data)) return "admin";
     if (isTicketAction(data)) return "ticket";
@@ -110,19 +121,20 @@ function actionType(ctx: AppContext): RateLimitAction | undefined {
   if (ctx.message) {
     if (ctx.session.liveTicketId || ctx.session.state?.name === "support_message" || ctx.session.state?.name === "admin_ticket_reply") return "ticket";
     if (ctx.session.liveTicketRole === "admin" || ctx.session.flow?.name.startsWith("admin") || ctx.session.adminFlow) return "admin";
-    if (ctx.session.state?.name === "deposit_amount" || ctx.session.state?.name === "deposit_receipt" || ctx.session.flow?.name === "deposit_submit" || ctx.session.flow?.name === "instant_topup") return "payment";
+    if (ctx.session.state?.name === "deposit_amount" || ctx.session.state?.name === "deposit_receipt" || ctx.session.flow?.name === "deposit_submit" || ctx.session.flow?.name === "instant_topup") return "wallet_topup";
     return "message";
   }
 
   return undefined;
 }
 
-async function warnUser(ctx: AppContext, type: RateLimitAction) {
+async function warnUser(ctx: AppContext, type: RateLimitAction, remainingSeconds?: number) {
+  const text = type === "wallet_topup" ? `⚠️ برای جلوگیری از ثبت پرداخت تکراری، لطفاً ${remainingSeconds ?? "چند"} ثانیه صبر کنید و دوباره تلاش کنید.` : WARNING_TEXT;
   if (callbackData(ctx)) {
-    await ctx.answerCbQuery(WARNING_TEXT, { show_alert: type === "payment" || type === "admin" }).catch(() => undefined);
+    await ctx.answerCbQuery(text, { show_alert: type === "payment" || type === "wallet_topup" || type === "admin" }).catch(() => undefined);
     return;
   }
-  await ctx.reply(WARNING_TEXT).catch(() => undefined);
+  await ctx.reply(text).catch(() => undefined);
 }
 
 export function rateLimitMiddleware(): MiddlewareFn<AppContext> {
@@ -150,7 +162,7 @@ export function rateLimitMiddleware(): MiddlewareFn<AppContext> {
 
     if (result.warningAllowed) {
       store.markWarned(key, now);
-      await warnUser(ctx, type);
+      await warnUser(ctx, type, result.blockedUntil ? Math.max(1, Math.ceil((result.blockedUntil - now) / 1000)) : undefined);
     } else if (callbackData(ctx)) {
       await ctx.answerCbQuery().catch(() => undefined);
     }
