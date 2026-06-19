@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { parseKeyValueLines } from "../src/bot/flows/flow-engine";
 import { mergeXrayConfigPatch, normalizeBaseUrl, normalizeSubscriptionBaseUrl } from "../src/modules/xray/xray.service";
 

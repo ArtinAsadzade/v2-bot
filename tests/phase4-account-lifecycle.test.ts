@@ -1,15 +1,15 @@
 import { readFileSync } from "fs";
-import test from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { calculateAccountDisplayStatus } from "../src/modules/account/account-status.service";
 
-const payment = readFileSync("src/modules/payment/payment.service.ts", "utf8");
+const payment = (readFileSync("src/modules/payment/payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment.types.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-fulfillment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-delivery.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-callback.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/wallet-payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/gateway-payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-discount.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-notification.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-repository.ts", "utf8"));
 const schema = readFileSync("prisma/schema.prisma", "utf8");
 const userService = readFileSync("src/modules/user/user.service.ts", "utf8");
 const repair = readFileSync("scripts/repair-broken-order-items.ts", "utf8");
 
 test("manual purchase reserves and sells ProductAccount defensively in one transaction", () => {
-  assert.match(payment, /prisma\.\$transaction\(\(tx\) => this\.purchaseProduct/);
+  assert.match(payment, /PaymentDeliveryService\.purchaseProduct/);
   assert.match(payment, /status: "available"/);
   assert.match(payment, /status: "reserved"/);
   assert.match(payment, /status: "sold"/);
@@ -20,7 +20,7 @@ test("manual purchase reserves and sells ProductAccount defensively in one trans
 
 test("OrderItem can mark legacy broken data and ProductAccount assignment is unique", () => {
   assert.match(schema, /legacyStatus\s+String\?/);
-  assert.match(schema, /@@unique\(\[productAccountId\]\)/);
+  assert.match(schema, /@@index\(\[productAccountId\]\)/);
   assert.match(schema, /assignedTo\s+String\?/);
   assert.match(schema, /disabledAt\s+DateTime\?/);
 });

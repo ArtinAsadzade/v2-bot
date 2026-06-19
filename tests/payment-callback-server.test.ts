@@ -20,6 +20,14 @@ vi.mock("../src/modules/payment/payment.service", () => ({
 vi.mock("../src/bot/keyboards/design-system", () => ({
   paymentSuccessKeyboard: vi.fn(() => ({ reply_markup: { inline_keyboard: [] } })),
   paymentFailureKeyboard: vi.fn(() => ({ reply_markup: { inline_keyboard: [] } })),
+  PaymentKeyboard: vi.fn(() => ({ keyboard: [] })),
+  MainMenuKeyboard: vi.fn(() => ({ keyboard: [] })),
+  ShopKeyboard: vi.fn(() => ({ keyboard: [] })),
+  UserKeyboard: vi.fn(() => ({ keyboard: [] })),
+  WalletKeyboard: vi.fn(() => ({ keyboard: [] })),
+  SupportKeyboard: vi.fn(() => ({ keyboard: [] })),
+  AdminKeyboard: vi.fn(() => ({ keyboard: [] })),
+  SettingsKeyboard: vi.fn(() => ({ keyboard: [] })),
 }));
 
 vi.mock("../src/bot/keyboards/custom-emoji", () => ({

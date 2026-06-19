@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { validateFreeTestActivation, validateFreeTestInboundSelection, FreeAccountError } from "../src/modules/free-account/free-account.service";
 import { xrayInboundSnapshot } from "../src/modules/xray/xray.service";
 

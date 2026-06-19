@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { callbackFor, isValidCallbackData, parseNavAction } from "../src/bot/navigation/panel-ui";
 
 const productId = "6a2fcc310a407cdaca894bc9";

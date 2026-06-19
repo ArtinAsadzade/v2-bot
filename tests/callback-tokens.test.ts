@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { createCallbackToken, resolveCallbackToken, tokenAction } from "../src/bot/navigation/callback-tokens";
 import type { AppContext } from "../src/types/bot";
 import { isValidCallbackData } from "../src/bot/navigation/panel-ui";

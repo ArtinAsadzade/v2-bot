@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
-import test from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 
 const schema = readFileSync("prisma/schema.prisma", "utf8");
 const xrayService = readFileSync("src/modules/xray/xray.service.ts", "utf8");
 const flow = readFileSync("src/bot/flows/flow-engine.ts", "utf8");
-const payment = readFileSync("src/modules/payment/payment.service.ts", "utf8");
+const payment = (readFileSync("src/modules/payment/payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment.types.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-fulfillment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-delivery.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-callback.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/wallet-payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/gateway-payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-discount.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-notification.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-repository.ts", "utf8"));
 const product = readFileSync("src/modules/product/product.service.ts", "utf8");
-const views = readFileSync("src/bot/views/modern.views.ts", "utf8");
+const views = (readFileSync("src/bot/views/modern.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/home.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/product.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/purchase.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/account.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/wallet.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/support.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/free-account.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/admin.views.ts", "utf8"));
 
 test("xray products and clients persist IP limit and group metadata", () => {
   assert.match(schema, /xrayLimitIp\s+Int\s+@default\(0\)/);
