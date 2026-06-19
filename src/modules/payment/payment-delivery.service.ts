@@ -93,58 +93,18 @@ export class PaymentDeliveryService {
     let account: Awaited<ReturnType<typeof tx.productAccount.findFirst>> | null = null;
     const reservedAt = new Date();
     if (isXray) {
-      if (data.method === "WALLET") {
-        const duplicate = await tx.xrayClient.findFirst({
-          where: {
-            userId: data.userId,
-            productId: product.id,
-            status: { in: ["provisioning", "creating", "active"] },
-            order: { status: { in: ["pending", "panel_creating", "panel_verified", "delivered", "completed"] } },
-          },
-          orderBy: { createdAt: "desc" },
-        });
-        if (duplicate) {
-          await audit(tx, {
-            userId: data.userId,
-            invoiceId: data.invoice?.id,
-            action: "XRAY_DUPLICATE_PURCHASE_REUSED",
-            metadata: {
-              productId: product.id,
-              existingClientId: duplicate.id,
-              existingOrderId: duplicate.orderId,
-              method: data.method,
-            },
-          });
-
-          const duplicateOrder = duplicate.orderId ? await tx.order.findUnique({ where: { id: duplicate.orderId } }) : null;
-          const duplicateItem = await tx.orderItem.findFirst({ where: { xrayClientId: duplicate.id } });
-          if (duplicate.status === "active" && duplicateOrder && duplicateItem) {
-            return {
-              ok: true,
-              reused: true,
-              order: duplicateOrder,
-              product,
-              account: { id: duplicate.id, username: duplicate.clientEmail, subscriptionLink: null, configLink: null, config: duplicateItem.deliveredConfig },
-              orderItem: duplicateItem,
-              xrayClient: duplicate,
-              totalAmount: duplicateOrder.totalAmount,
-              originalAmount: duplicateOrder.originalAmount,
-              discountAmount: duplicateOrder.discountAmount,
-              couponId: duplicateOrder.couponId,
-              couponCode: data.couponCode,
-              expiresAt: duplicate.expiresAt,
-            };
-          }
-          return {
-            ok: false,
-            error: "درخواست قبلی شما برای این محصول هنوز در حال پردازش است. لطفاً چند دقیقه دیگر اکانت‌های من را بررسی کنید.",
-            reason: "processing",
-            recoverable: true,
-            orderId: duplicate.orderId,
-            xrayClientId: duplicate.id,
-          };
-        }
-      }
+      paymentLog("XRAY_REPEAT_PURCHASE_STARTED", {
+        userId: data.userId,
+        productId: product.id,
+        invoiceId: data.invoice?.id,
+        method: data.method,
+      });
+      await audit(tx, {
+        userId: data.userId,
+        invoiceId: data.invoice?.id,
+        action: "XRAY_NEW_CLIENT_REQUIRED",
+        metadata: { productId: product.id, reason: "new_purchase_scope", method: data.method },
+      });
       if (!product.trafficBytes || !product.durationDays || !product.stockLimit || !product.inboundIds.length)
         throw new Error("تنظیمات محصول Xray کامل نیست");
       await audit(tx, {
@@ -208,10 +168,8 @@ export class PaymentDeliveryService {
     if (isXray) {
       const user = await tx.user.findUniqueOrThrow({ where: { id: data.userId }, select: { telegramId: true } });
       const email = xrayClientEmail({ telegramId: user.telegramId, productId: product.id, orderId: order.id });
-      xrayClient = await tx.xrayClient.upsert({
-        where: { clientEmail: email },
-        update: {},
-        create: {
+      xrayClient = await tx.xrayClient.create({
+        data: {
           userId: data.userId,
           telegramId: user.telegramId,
           productId: product.id,
@@ -224,6 +182,20 @@ export class PaymentDeliveryService {
           trafficBytes: product.trafficBytes!,
           status: "provisioning",
         },
+      });
+      paymentLog("XRAY_NEW_CLIENT_CREATED", {
+        userId: data.userId,
+        productId: product.id,
+        orderId: order.id,
+        invoiceId: data.invoice?.id,
+        xrayClientId: xrayClient.id,
+        clientEmail: xrayClient.clientEmail,
+      });
+      await audit(tx, {
+        userId: data.userId,
+        invoiceId: data.invoice?.id,
+        action: "XRAY_NEW_CLIENT_CREATED",
+        metadata: { productId: product.id, orderId: order.id, xrayClientId: xrayClient.id, clientEmail: xrayClient.clientEmail },
       });
       orderItem = null;
     } else {
@@ -343,8 +315,14 @@ export class PaymentDeliveryService {
 
   static async provisionXrayClient(deps: DeliveryDeps, orderId: string, invoiceId?: string) {
     const client = await prisma.xrayClient.findFirstOrThrow({ where: { orderId }, include: { order: true, product: true } });
+    paymentLog("XRAY_IDEMPOTENCY_REUSE_CHECK", { orderId, invoiceId, xrayClientId: client.id, existingOrderId: client.orderId, status: client.status });
+    if (client.orderId !== orderId) {
+      logger.error("XRAY_IDEMPOTENCY_REUSE_REJECTED_DIFFERENT_ORDER", { orderId, invoiceId, xrayClientId: client.id, existingOrderId: client.orderId });
+      throw new Error("Xray idempotency scope mismatch: existing client belongs to another order");
+    }
     if (client.status === "active") {
-      const orderItem = await prisma.orderItem.findFirst({ where: { xrayClientId: client.id } });
+      paymentLog("XRAY_IDEMPOTENCY_REUSE_ALLOWED_SAME_ORDER", { orderId, invoiceId, xrayClientId: client.id });
+      const orderItem = await prisma.orderItem.findFirst({ where: { xrayClientId: client.id, orderId } });
       const product = client.product ?? (await prisma.product.findUniqueOrThrow({ where: { id: client.productId ?? "" } }));
       return {
         ok: true,
@@ -399,7 +377,7 @@ export class PaymentDeliveryService {
             actorId: client.userId,
             referenceId: `purchase:${orderId}`,
           });
-        let item = await tx.orderItem.findFirst({ where: { xrayClientId: client.id } });
+        let item = await tx.orderItem.findFirst({ where: { xrayClientId: client.id, orderId } });
         if (!item)
           item = await tx.orderItem.create({
             data: {
