@@ -28,6 +28,48 @@ type AuditData = { userId?: string | null; invoiceId?: string | null; action: st
 
 type PurchaseMethod = "WALLET" | "GATEWAY";
 
+type DeliveredAccount = {
+  id: string;
+  username: string | null;
+  subscriptionLink: string | null;
+  configLink: string | null;
+  config: string | null;
+};
+
+type ProductDeliverySuccess = {
+  ok: true;
+  order: Prisma.OrderGetPayload<{}>;
+  product: Prisma.ProductGetPayload<{}>;
+  account: DeliveredAccount;
+  orderItem: Prisma.OrderItemGetPayload<{}> | null;
+  xrayClient?: Prisma.XrayClientGetPayload<{}> | null;
+  totalAmount: number;
+  originalAmount: number;
+  discountAmount: number;
+  couponId: string | null;
+  couponCode?: string | null;
+  expiresAt: Date;
+  reused?: boolean;
+};
+
+type ProductDeliveryFailure = {
+  ok: false;
+  error: string;
+  reason: "processing" | "pending_payment" | "failed";
+  recoverable: boolean;
+  invoice?: PaymentInvoice;
+  paymentLink?: string | null;
+  orderId?: string | null;
+  xrayClientId?: string | null;
+};
+
+type ProductDeliveryResult = ProductDeliverySuccess | ProductDeliveryFailure;
+
+function assertProductDeliverySuccess(result: ProductDeliveryResult): ProductDeliverySuccess {
+  if (!result.ok) throw new Error(result.error);
+  return result;
+}
+
 function envSeconds(name: string, fallback: number) {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -1591,13 +1633,14 @@ export class PaymentService {
         }
       }
 
-      const delivered = await this.purchaseProduct(tx, {
+      const deliveredResult = await this.purchaseProduct(tx, {
         userId: fresh.userId,
         productId: fresh.productId ?? "",
         couponCode: fresh.couponCode ?? undefined,
         method: "GATEWAY",
         invoice: fresh,
       });
+      const delivered = assertProductDeliverySuccess(deliveredResult);
       if (delivered.xrayClient) {
         const processing = await tx.paymentInvoice.update({
           where: { id: fresh.id },
@@ -1839,14 +1882,14 @@ export class PaymentService {
     data: {
       userId: string;
       productId: string;
-      couponCode?: string;
+      couponCode?: string | null;
       method: PurchaseMethod;
       invoice?: Pick<
         PaymentInvoice,
         "id" | "amount" | "originalAmount" | "discountAmount" | "couponId" | "couponCode" | "productId" | "userId" | "status"
       >;
     },
-  ) {
+  ): Promise<ProductDeliveryResult> {
     if (!data.productId) throw new Error("محصول فاکتور مشخص نیست");
     await this.assertUserCanPay(data.userId, tx);
     const product = await this.validateProductForPurchase(data.userId, data.productId, undefined, tx);
@@ -1922,11 +1965,32 @@ export class PaymentService {
             },
           });
 
+          const duplicateOrder = duplicate.orderId ? await tx.order.findUnique({ where: { id: duplicate.orderId } }) : null;
+          const duplicateItem = await tx.orderItem.findFirst({ where: { xrayClientId: duplicate.id } });
+          if (duplicate.status === "active" && duplicateOrder && duplicateItem) {
+            return {
+              ok: true,
+              reused: true,
+              order: duplicateOrder,
+              product,
+              account: { id: duplicate.id, username: duplicate.clientEmail, subscriptionLink: null, configLink: null, config: duplicateItem.deliveredConfig },
+              orderItem: duplicateItem,
+              xrayClient: duplicate,
+              totalAmount: duplicateOrder.totalAmount,
+              originalAmount: duplicateOrder.originalAmount,
+              discountAmount: duplicateOrder.discountAmount,
+              couponId: duplicateOrder.couponId,
+              couponCode: data.couponCode,
+              expiresAt: duplicate.expiresAt,
+            };
+          }
           return {
-            reused: true,
+            ok: false,
+            error: "درخواست قبلی شما برای این محصول هنوز در حال پردازش است. لطفاً چند دقیقه دیگر اکانت‌های من را بررسی کنید.",
+            reason: "processing",
+            recoverable: true,
             orderId: duplicate.orderId,
             xrayClientId: duplicate.id,
-            message: "درخواست قبلی شما برای این محصول پیدا شد و همان ادامه داده می‌شود.",
           };
         }
       }
@@ -2111,6 +2175,7 @@ export class PaymentService {
       ? await tx.productAccount.findUniqueOrThrow({ where: { id: account.id } })
       : { id: xrayClient!.id, username: xrayClient!.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" };
     return {
+      ok: true,
       order,
       product,
       account: deliveredAccount,
@@ -2131,6 +2196,7 @@ export class PaymentService {
       const orderItem = await prisma.orderItem.findFirst({ where: { xrayClientId: client.id } });
       const product = client.product ?? (await prisma.product.findUniqueOrThrow({ where: { id: client.productId ?? "" } }));
       return {
+        ok: true,
         order: client.order!,
         product,
         account: { id: client.id, username: client.clientEmail, subscriptionLink: null, configLink: null, config: "XRAY_LIVE_LINKS" },
@@ -2240,6 +2306,7 @@ export class PaymentService {
         return { order: completedOrder, orderItem: item, xrayClient: updatedClient };
       });
       return {
+        ok: true,
         order: result.order,
         product,
         account: {
@@ -2333,7 +2400,7 @@ export class PaymentService {
     productId: string;
     invoiceId?: string;
     paymentSource: PurchaseMethod;
-    couponCode?: string;
+    couponCode?: string | null;
   }): Promise<any> {
     if (data.invoiceId) {
       const invoice = await prisma.paymentInvoice.findUniqueOrThrow({ where: { id: data.invoiceId } });
@@ -2347,8 +2414,9 @@ export class PaymentService {
     const result = await prisma.$transaction((tx) =>
       this.purchaseProduct(tx, { userId: data.userId, productId: data.productId, couponCode: data.couponCode, method: data.paymentSource }),
     );
-    if (result.xrayClient) return this.provisionXrayClient(result.order.id);
-    return result;
+    const delivered = assertProductDeliverySuccess(result);
+    if (delivered.xrayClient) return this.provisionXrayClient(delivered.order.id);
+    return delivered;
   }
 
   static async purchaseProductWithWallet(userId: string, productId: string, couponCode?: string) {
