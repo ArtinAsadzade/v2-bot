@@ -1,9 +1,9 @@
 import { readFileSync } from "fs";
-import test from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 
 const schema = readFileSync("prisma/schema.prisma", "utf8");
-const payment = readFileSync("src/modules/payment/payment.service.ts", "utf8");
+const payment = (readFileSync("src/modules/payment/payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment.types.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-fulfillment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-delivery.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-callback.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/wallet-payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/gateway-payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-discount.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-notification.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-repository.ts", "utf8"));
 const free = readFileSync("src/modules/free-account/free-account.service.ts", "utf8");
 const xray = readFileSync("src/modules/xray/xray.service.ts", "utf8");
 const cleanup = readFileSync("src/jobs/deliveryCleanup.ts", "utf8");
@@ -16,12 +16,12 @@ test("delivery state machine and reservation expiry fields exist", () => {
 });
 
 test("xray paid purchase debits wallet only after panel verification", () => {
-  const provision = payment.match(/private static async provisionXrayClient[\s\S]*?static async purchaseProductWithWallet/)?.[0] ?? "";
+  const provision = payment.match(/static async provisionXrayClient\(deps[\s\S]*?\n\n}/)?.[0] ?? "";
   assert.match(provision, /verifyPanelClient/);
   assert.match(provision, /status: "panel_verified"/);
   assert.match(provision, /debitWallet/);
   assert.ok(provision.indexOf("verifyPanelClient") < provision.indexOf("debitWallet"));
-  const purchase = payment.match(/static async purchaseProduct[\s\S]*?private static async provisionXrayClient/)?.[0] ?? "";
+  const purchase = payment.match(/static async purchaseProduct\(deps[\s\S]*?static async provisionXrayClient/)?.[0] ?? "";
   assert.match(purchase, /status: "pending"/);
   assert.match(purchase, /data\.method === "WALLET" && totalAmount > 0/);
   assert.doesNotMatch(purchase.match(/if \(isXray\)[\s\S]*?\} else \{/)?.[0] ?? "", /soldCount:\s*\{\s*increment/);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import test from "node:test";
+import { test } from "vitest";
 
 const productService = readFileSync("src/modules/product/product.service.ts", "utf8");
 const adminService = readFileSync("src/modules/admin/admin.service.ts", "utf8");

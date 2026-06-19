@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { actionFor, callbackFor, isValidCallbackData } from "../src/bot/navigation/panel-ui";
 
 export function assertTelegramCallbackData(value: string) {

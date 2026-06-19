@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
-import test from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 
-const payment = readFileSync("src/modules/payment/payment.service.ts", "utf8");
+const payment = (readFileSync("src/modules/payment/payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment.types.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-fulfillment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-delivery.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-callback.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/wallet-payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/gateway-payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-discount.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-notification.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-repository.ts", "utf8"));
 const xray = readFileSync("src/modules/xray/xray.service.ts", "utf8");
 const schema = readFileSync("prisma/schema.prisma", "utf8");
 
-const purchase = payment.match(/static async purchaseProduct[\s\S]*?private static async provisionXrayClient/)?.[0] ?? "";
-const provision = payment.match(/private static async provisionXrayClient[\s\S]*?static async purchaseProductWithWallet/)?.[0] ?? "";
+const purchase = payment.match(/static async purchaseProduct\(deps[\s\S]*?static async provisionXrayClient/)?.[0] ?? "";
+const provision = payment.match(/static async provisionXrayClient\(deps[\s\S]*?\n\n}/)?.[0] ?? "";
 
 test("wallet insufficient stops before reservation, order delivery, and panel calls", () => {
   assert.match(purchase, /walletUser\.balance < totalAmount[\s\S]*موجودی کیف پول کافی نیست/);
@@ -28,7 +28,7 @@ test("wallet sufficient and panel success verifies before debit, completion, and
 });
 
 test("wallet sufficient but panel timeout or verify failure does not debit and marks failed cleanup", () => {
-  const catchBlock = provision.match(/catch \(error\)[\s\S]*?throw new Error\("ساخت اکانت/)?.[0] ?? "";
+  const catchBlock = provision.match(/catch \(error\)[\s\S]*?throw new Error\([\s\S]*?ساخت اکانت/)?.[0] ?? "";
   assert.match(catchBlock, /deleteClient/);
   assert.match(catchBlock, /orphaned_panel_client/);
   assert.match(catchBlock, /status: "failed_delivery"/);
@@ -44,7 +44,7 @@ test("panel client created but verify fails is deleted or flagged for admin audi
 });
 
 test("double-click wallet purchase is guarded before duplicate panel create or debit", () => {
-  assert.match(purchase, /xrayClient\.findFirst[\s\S]*درخواست خرید قبلی/);
+  assert.match(purchase, /xrayClient\.findFirst[\s\S]*درخواست قبلی/);
   assert.match(provision, /xrayClient\.updateMany\([\s\S]*status: "provisioning"[\s\S]*status: "creating"/);
   assert.ok(provision.indexOf("updateMany") < provision.indexOf("createClient"));
   assert.ok(provision.indexOf("updateMany") < provision.indexOf("debitWallet"));

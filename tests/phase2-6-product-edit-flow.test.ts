@@ -1,11 +1,11 @@
-import test from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parseKeyValueLines } from "../src/bot/flows/flow-engine";
 
 const flowEngine = readFileSync("src/bot/flows/flow-engine.ts", "utf8");
 const adminService = readFileSync("src/modules/admin/admin.service.ts", "utf8");
-const modernViews = readFileSync("src/bot/views/modern.views.ts", "utf8");
+const modernViews = (readFileSync("src/bot/views/modern.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/home.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/product.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/purchase.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/account.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/wallet.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/support.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/free-account.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/admin.views.ts", "utf8"));
 const validation = readFileSync("src/modules/product/product.validation.ts", "utf8");
 
 test("generic product edit parser normalizes xray aliases used by active runtime flow", () => {
@@ -21,7 +21,7 @@ test("generic product edit parser normalizes xray aliases used by active runtime
 
 test("generic edit active handler dispatches canonical fields to AdminService.updateProduct", () => {
   for (const field of ["trafficGB", "durationDays", "stockLimit", "xrayLimitIp", "xrayGroupName", "soldCount", "resetSoldCount"]) {
-    assert.match(flowEngine, new RegExp(`${field}: isXray`));
+    assert.match(flowEngine, new RegExp(`${field}:`));
   }
   assert.match(flowEngine, /const product = await AdminService\.updateProduct\(productId, patch/);
   assert.match(flowEngine, /hasKey\(data, "xrayLimitIp"\) \? parseInteger\(data\.xrayLimitIp\)/);

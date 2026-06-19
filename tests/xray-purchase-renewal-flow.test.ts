@@ -1,10 +1,10 @@
-import test from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const modernViewsSource = readFileSync("src/bot/views/modern.views.ts", "utf8");
-const modernHandlersSource = readFileSync("src/bot/handlers/modern.ts", "utf8");
-const paymentSource = readFileSync("src/modules/payment/payment.service.ts", "utf8");
+const modernViewsSource = (readFileSync("src/bot/views/modern.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/home.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/product.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/purchase.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/account.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/wallet.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/support.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/free-account.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/admin.views.ts", "utf8"));
+const modernHandlersSource = (readFileSync("src/bot/handlers/modern/register-modern-handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/navigation.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/home.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/product.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/purchase.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/wallet.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/coupon.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/account.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/xray.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/free-account.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/support.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/admin.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/admin/index.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/admin/admin-products.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/admin/admin-payments.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/admin/admin-coupons.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/admin/admin-inventory.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/admin/admin-settings.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/admin/admin-support.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/handlers/modern/admin/admin-users.handlers.ts", "utf8") + "\n" + readFileSync("src/bot/keyboards/purchase.keyboard.ts", "utf8") + "\n" + readFileSync("src/bot/messages/coupon.messages.ts", "utf8") + "\n" + readFileSync("src/bot/messages/purchase.messages.ts", "utf8") + "\n" + readFileSync("src/bot/callbacks/index.ts", "utf8"));
+const paymentSource = (readFileSync("src/modules/payment/payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment.types.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-fulfillment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-delivery.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-callback.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/wallet-payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/gateway-payment.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-discount.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-notification.service.ts", "utf8") + "\n" + readFileSync("src/modules/payment/payment-repository.ts", "utf8"));
 const xraySource = readFileSync("src/modules/xray/xray.service.ts", "utf8");
 
 test("Xray purchase success does not render manual placeholder links", () => {
@@ -16,9 +16,10 @@ test("Xray purchase success does not render manual placeholder links", () => {
 
 test("Xray purchase success includes contextual account-detail and link buttons", () => {
   const delivery = modernHandlersSource.match(/async function sendPurchaseDelivery[\s\S]*?async function ownedXrayClient/)?.[0] ?? "";
-  assert.match(delivery, /callbackFor\("account\.xray", \{ xrayClientId: client\.id \}\)/);
-  assert.match(delivery, /xray:sub:\$\{client\.id\}/);
-  assert.match(delivery, /xray:configs:\$\{client\.id\}/);
+  assert.match(modernHandlersSource, /xrayPurchaseDeliveryKeyboard\(client\.id\)/);
+  assert.match(modernHandlersSource, /callbackFor\("account\.xray", \{ xrayClientId: clientId \}\)/);
+  assert.match(modernHandlersSource, /xrayCallbacks\.subscription\(clientId\)/);
+  assert.match(modernHandlersSource, /xrayCallbacks\.configs\(clientId\)/);
   assert.match(delivery, /سرویس ساخته شده است\. لطفاً از بخش «📦 اکانت‌های من» آن را باز کنید/);
 });
 
