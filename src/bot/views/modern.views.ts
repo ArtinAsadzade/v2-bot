@@ -9,7 +9,6 @@ import {
   FreeAccountService,
   FREE_ACCOUNT_STATUS_LABELS,
   formatFreeAccountDate,
-  freeAccountExpiresAt,
 } from "../../modules/free-account/free-account.service";
 import { SupportService } from "../../modules/support/support.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
@@ -28,40 +27,33 @@ import {
 } from "../../modules/xray/xray.service";
 import type { PaymentInvoiceStatus } from "@prisma/client";
 import { accountSummaryMessage, errorMessage, walletSummaryMessage } from "../../utils/messages";
+import { formatToman } from "../../utils/money";
+import {
+  accountStatusLabel,
+  divider,
+  formatPageCount,
+  formatStockLabel,
+  formatUserLine,
+  getPageParam,
+  paymentStatusLabel,
+  progressBar,
+  purchasedAccountStatusLabel,
+  resolveFreeAccountExpiry,
+  shortId,
+  walletStatusLabel,
+  yesNoStatus,
+} from "../../utils/formatters";
+import { homeKeyboard } from "../keyboards/common.keyboard";
 import { MonitoringService } from "../../services/monitoring.service";
 import { prisma } from "../../services/prisma";
 
-const divider = "━━━━━━━━━━━━━━━━";
-const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
-const page = (params: Record<string, string>) => Math.max(Number(params.page ?? 1), 1);
-const pages = (total: number, take: number) => Math.max(Math.ceil(total / take), 1).toLocaleString("fa-IR");
-const userLine = (user: { telegramId: string; username?: string | null; firstName?: string | null }) =>
-  `${user.firstName ?? "کاربر"} ${user.username ? `@${user.username}` : user.telegramId}`;
-const stockLabel = (count: number) => (count > 5 ? "آماده تحویل" : count > 0 ? `فقط ${count.toLocaleString("fa-IR")} عدد` : "ناموجود");
-const shortId = (id: string) => id.slice(-6).toUpperCase();
-const freeAccountExpiry = (item: { assignedAt?: Date | null; createdAt: Date; expiresAt?: Date | null; account: { durationDays: number } }) =>
-  item.expiresAt ?? freeAccountExpiresAt(item.assignedAt ?? item.createdAt, item.account.durationDays);
-const yesNo = (value: boolean) => (value ? "فعال ✅" : "غیرفعال ⛔");
-const accountStatusLabel = (status: string) =>
-  ({ available: "آماده", reserved: "رزرو", sold: "فروخته", disabled: "غیرفعال", expired: "منقضی" })[status] ?? status;
-const walletStatusLabel = (status: string) => (status === "active" ? "فعال ✅" : "غیرفعال ⛔");
-const paymentStatusLabel = (value: string) =>
-  (
-    ({ PENDING: "در انتظار بررسی", PAID: "پرداخت‌شده، آماده تحویل", CANCELED: "لغو شده", FAILED: "ناموفق", COMPLETED: "تکمیل شده" }) as Record<
-      string,
-      string
-    >
-  )[value] ?? value;
-const progressBar = (current: number, target: number) => {
-  const safeTarget = Math.max(target, 1);
-  const filled = Math.min(Math.floor((Math.max(current, 0) / safeTarget) * 10), 10);
-  return `${"●".repeat(filled)}${"○".repeat(10 - filled)} ${Math.min(Math.round((current / safeTarget) * 100), 100).toLocaleString("fa-IR")}٪`;
-};
-const purchasedAccountStatusLabel = (item: { isActive: boolean; expiresAt?: Date | null; productAccount?: { status: string } | null }) => {
-  if (item.productAccount?.status === "disabled") return "غیرفعال";
-  if (item.productAccount?.status === "expired" || !item.isActive || (item.expiresAt && item.expiresAt <= new Date())) return "منقضی شده";
-  return "فعال";
-};
+const money = formatToman;
+const page = getPageParam;
+const pages = formatPageCount;
+const userLine = formatUserLine;
+const stockLabel = formatStockLabel;
+const freeAccountExpiry = resolveFreeAccountExpiry;
+const yesNo = yesNoStatus;
 
 export function registerModernViews() {
   registerView("home", async (ctx) => {
@@ -69,25 +61,7 @@ export function registerModernViews() {
     const isAdmin = ctx.from ? await isAdminByTelegramId(ctx.from.id) : false;
     const dashboard = user ? await UserService.dashboard(user.id) : undefined;
     const activeCount = (dashboard?.activeAccounts.length ?? 0) + (dashboard?.activeFreeAccounts.length ?? 0);
-    const keyboard: UiKeyboard = [
-      [
-        { text: "🛒 فروشگاه", action: callbackFor("shop.categories") },
-        { text: "📦 اکانت‌های من", action: callbackFor("account.details") },
-      ],
-      [
-        { text: "💳 کیف پول", action: callbackFor("wallet") },
-        { text: "🆓 اکانت تست", action: callbackFor("freeAccount") },
-      ],
-      [
-        { text: "📘 راهنما", action: callbackFor("productGuide") },
-        { text: "🎫 پشتیبانی", action: callbackFor("support") },
-      ],
-      [
-        { text: "🎁 دعوت دوستان", action: callbackFor("referral") },
-        { text: "👤 حساب کاربری", action: callbackFor("account") },
-      ],
-    ];
-    if (isAdmin) keyboard.push([{ text: "🛡 پنل مدیریت", action: callbackFor("admin.dashboard") }]);
+    const keyboard = homeKeyboard(isAdmin);
 
     return {
       text: `سلام ${ctx.from?.first_name ?? "دوست عزیز"} 🌿
