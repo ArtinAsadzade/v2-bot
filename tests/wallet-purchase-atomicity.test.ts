@@ -43,8 +43,10 @@ test("panel client created but verify fails is deleted or flagged for admin audi
   assert.match(provision, /cleanupStatus: "failed" \| "orphaned_panel_client"/);
 });
 
-test("double-click wallet purchase is guarded before duplicate panel create or debit", () => {
-  assert.match(purchase, /xrayClient\.findFirst[\s\S]*درخواست قبلی/);
+test("double-click same Xray delivery is guarded by order-scoped provisioning claim before panel create or debit", () => {
+  assert.doesNotMatch(purchase, /xrayClient\.findFirst\(\{\s*where:\s*\{\s*userId:[\s\S]*?productId:/);
+  assert.match(provision, /where: \{ orderId \}/);
+  assert.match(provision, /client\.orderId !== orderId/);
   assert.match(provision, /xrayClient\.updateMany\([\s\S]*status: "provisioning"[\s\S]*status: "creating"/);
   assert.ok(provision.indexOf("updateMany") < provision.indexOf("createClient"));
   assert.ok(provision.indexOf("updateMany") < provision.indexOf("debitWallet"));
