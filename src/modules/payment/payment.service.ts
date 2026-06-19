@@ -11,64 +11,39 @@ import { logger } from "../../services/logger";
 import { MonitoringService } from "../../services/monitoring.service";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, unassignedInventoryWhere } from "../product/visibility";
 import { XrayClientService, sanitizePanelError, xrayTrafficSnapshot } from "../xray/xray.service";
-
-export type PaymentGatewayInput = {
-  enabled?: boolean;
-  apiBaseUrl?: string;
-  apiKey?: string;
-  callbackUrl?: string;
-  gatewayName?: string;
-  displayOrder?: number;
-};
-
-type TxClient = Prisma.TransactionClient;
-type DbClient = TxClient | typeof prisma;
-
-type AuditData = { userId?: string | null; invoiceId?: string | null; action: string; metadata?: Record<string, unknown>; actorId?: string };
-
-type PurchaseMethod = "WALLET" | "GATEWAY";
-
-type DeliveredAccount = {
-  id: string;
-  username: string | null;
-  subscriptionLink: string | null;
-  configLink: string | null;
-  config: string | null;
-};
-
-type ProductDeliverySuccess = {
-  ok: true;
-  order: Prisma.OrderGetPayload<{}>;
-  product: Prisma.ProductGetPayload<{}>;
-  account: DeliveredAccount;
-  orderItem: Prisma.OrderItemGetPayload<{}> | null;
-  xrayClient?: Prisma.XrayClientGetPayload<{}> | null;
-  totalAmount: number;
-  originalAmount: number;
-  discountAmount: number;
-  couponId: string | null;
-  couponCode?: string | null;
-  expiresAt: Date;
-  reused?: boolean;
-};
-
-type ProductDeliveryFailure = {
-  ok: false;
-  error: string;
-  reason: "processing" | "pending_payment" | "failed";
-  recoverable: boolean;
-  invoice?: PaymentInvoice;
-  paymentLink?: string | null;
-  orderId?: string | null;
-  xrayClientId?: string | null;
-};
-
-type ProductDeliveryResult = ProductDeliverySuccess | ProductDeliveryFailure;
-
-function assertProductDeliverySuccess(result: ProductDeliveryResult): ProductDeliverySuccess {
-  if (!result.ok) throw new Error(result.error);
-  return result;
-}
+import {
+  assertProductDeliverySuccess,
+  type InvoiceNotificationPayload,
+  type PaymentGatewayInput,
+  type ProductDeliveryFailure,
+  type ProductDeliveryResult,
+  type ProductDeliverySuccess,
+  type ProductInvoiceQuote,
+  type PurchaseMethod,
+  type TxClient,
+} from "./payment.types";
+import { assertInvoiceAmountIntegrity, assertPositiveAmount, resolveInvoiceAmounts } from "./payment-amounts";
+import { audit, rawPaymentInvoiceProjection, type DbClient } from "./payment-repository";
+import {
+  assertValidHttpUrl,
+  DuplicateGatewayPayIdError,
+  GatewayConnectionError,
+  GatewayHttpError,
+  invoiceCallbackUrl,
+  normalizeBaseUrl,
+  requestGatewayInvoice,
+  safeJson,
+} from "./gateway-payment.service";
+export type {
+  DeliveredAccount,
+  InvoiceNotificationPayload,
+  PaymentGatewayInput,
+  ProductDeliveryFailure,
+  ProductDeliveryResult,
+  ProductDeliverySuccess,
+  ProductInvoiceQuote,
+  PurchaseMethod,
+} from "./payment.types";
 
 function envSeconds(name: string, fallback: number) {
   const value = Number(process.env[name]);
@@ -82,149 +57,11 @@ function invoicePendingTtlSeconds() {
   return envSeconds("INVOICE_PENDING_TTL_SECONDS", 30 * 60);
 }
 
-type ProductInvoiceQuote = {
-  originalAmount: number;
-  discountAmount: number;
-  finalAmount: number;
-  couponId: string | null;
-  couponCode: string | null;
-};
 
-type InvoiceNotificationPayload =
-  | {
-      invoice: Pick<PaymentInvoice, "id" | "userId" | "amount">;
-      type: "WALLET_TOPUP";
-      user: { balance: number };
-    }
-  | {
-      invoice: Pick<PaymentInvoice, "id" | "userId" | "amount">;
-      type: "PRODUCT_PURCHASE" | "XRAY_RENEWAL";
-      product?: { id: string; title: string };
-      account?: { id: string; username: string | null; subscriptionLink: string | null; configLink: string | null; config: string | null };
-      order?: unknown;
-      orderItem?: unknown;
-      xrayClient?: { id: string; clientEmail: string; expiresAt?: Date };
-      renewal?: unknown;
-    };
-
-class GatewayHttpError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-class GatewayConnectionError extends Error {
-  constructor(message: string) {
-    super(message);
-  }
-}
-
-class DuplicateGatewayPayIdError extends Error {
-  constructor(
-    public readonly payId: string,
-    public readonly existingInvoiceId: string,
-  ) {
-    super("شناسه پرداخت تکراری از درگاه دریافت شد");
-  }
-}
-
-const CALLBACK_TOKEN_PARAM = "token";
-const CALLBACK_INVOICE_PARAM = "invoice_id";
 const ALREADY_PROCESSED_FA = "⚠️ این پرداخت قبلاً پردازش شده است.";
 const DEFAULT_GATEWAY_API_BASE_URL = "http://136.244.104.77:5000/api/v1";
-function slugify(value: string) {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 32) || "svc"
-  );
-}
-
-function assertPositiveAmount(amount: number) {
-  if (!Number.isInteger(amount) || amount <= 0) throw new Error("مبلغ پرداخت معتبر نیست");
-}
-
-function normalizeBaseUrl(url: string) {
-  return url.trim().replace(/\/+$/, "");
-}
-
-function localGatewayUrlsAllowed() {
-  return process.env.PAYMENT_GATEWAY_ALLOW_LOCAL_URLS === "true";
-}
-
-function isLocalHostname(hostname: string) {
-  const normalized = hostname.toLowerCase();
-  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized.endsWith(".localhost");
-}
-
-function assertValidHttpUrl(value: string, label: string, options: { normalizeBase?: boolean } = {}) {
-  const raw = value.trim();
-  if (!raw) throw new Error(`${label} الزامی است`);
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    throw new Error(`${label} معتبر نیست`);
-  }
-  if (!/^https?:$/.test(parsed.protocol)) throw new Error(`${label} معتبر نیست`);
-  if (!parsed.hostname || parsed.hostname.length < 3) throw new Error(`${label} معتبر نیست`);
-  if (isLocalHostname(parsed.hostname) && !localGatewayUrlsAllowed()) throw new Error(`${label} localhost مجاز نیست`);
-  if (!localGatewayUrlsAllowed() && !parsed.hostname.includes(".") && !/^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname))
-    throw new Error(`${label} معتبر نیست`);
-  return options.normalizeBase ? normalizeBaseUrl(parsed.toString()) : parsed.toString();
-}
-
-function validateUrl(value: string, label: string) {
-  assertValidHttpUrl(value, label);
-}
-
-function parseGatewayResponse(body: unknown) {
-  if (!body || typeof body !== "object") throw new Error("پاسخ درگاه معتبر نیست");
-  const data = body as Record<string, unknown>;
-  if (String(data.status ?? "").toLowerCase() !== "true") throw new Error(String(data.message ?? "درگاه ایجاد فاکتور را تأیید نکرد"));
-  const payId = String(data.pay_id ?? "").trim();
-  const paymentLink = String(data.payment_link ?? "").trim();
-  if (!payId || !paymentLink) throw new Error("شناسه یا لینک پرداخت از درگاه دریافت نشد");
-  validateUrl(paymentLink, "لینک پرداخت");
-  return { payId, paymentLink };
-}
-
-function invoiceCallbackUrl(baseCallbackUrl: string, data: { invoiceId: string; callbackToken: string }) {
-  const withId = baseCallbackUrl.includes("{invoiceId}")
-    ? baseCallbackUrl.split("{invoiceId}").join(encodeURIComponent(data.invoiceId))
-    : baseCallbackUrl;
-  const withToken = withId.includes("{token}") ? withId.split("{token}").join(encodeURIComponent(data.callbackToken)) : withId;
-  const url = new URL(withToken);
-  url.searchParams.set(CALLBACK_INVOICE_PARAM, data.invoiceId);
-  url.searchParams.set(CALLBACK_TOKEN_PARAM, data.callbackToken);
-  return url.toString();
-}
-
 function isValidObjectId(value: string) {
   return /^[a-f\d]{24}$/i.test(value);
-}
-
-async function rawPaymentInvoiceProjection(invoiceId: string) {
-  try {
-    const result = await prisma.$runCommandRaw({
-      find: "PaymentInvoice",
-      filter: { _id: { $oid: invoiceId } },
-      projection: { _id: 1, status: 1, payId: 1 },
-      limit: 1,
-    });
-    const cursor =
-      result && typeof result === "object" && "cursor" in result ? (result as { cursor?: { firstBatch?: unknown[] } }).cursor : undefined;
-    const document = cursor?.firstBatch?.[0];
-    return document && typeof document === "object" ? (document as Record<string, unknown>) : null;
-  } catch (error) {
-    paymentLog("PAYMENT_INVOICE_RAW_PROJECTION_FAILED", { invoiceId, error: error instanceof Error ? error.message : String(error) });
-    return null;
-  }
 }
 
 type CallbackReference = { token?: string; invoice?: string; invoice_id?: string; pay_id?: string };
@@ -250,14 +87,6 @@ function metadataAmount(metadata: Record<string, unknown>) {
   return undefined;
 }
 
-function safeJson(value: unknown) {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return JSON.stringify({ error: "unserializable" });
-  }
-}
-
 export function maskApiKey(apiKey?: string | null) {
   if (!apiKey) return "ثبت نشده";
   const suffix = apiKey.slice(-4).toUpperCase();
@@ -273,40 +102,6 @@ function xrayClientEmail(input: { telegramId: string; productId: string; orderId
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, "")
     .slice(0, 64);
-}
-
-async function audit(tx: DbClient, data: AuditData) {
-  try {
-    if (data.invoiceId) {
-      await tx.paymentAuditLog.create({
-        data: {
-          userId: data.userId ?? undefined,
-          invoiceId: data.invoiceId,
-          action: data.action,
-          metadata: data.metadata
-            ? JSON.stringify({ ...data.metadata, actorId: data.actorId })
-            : data.actorId
-              ? JSON.stringify({ actorId: data.actorId })
-              : undefined,
-        },
-      });
-    }
-    await tx.auditLog.create({
-      data: {
-        actorId: data.actorId ?? data.userId ?? "system",
-        action: data.action,
-        metadata: JSON.stringify({ invoiceId: data.invoiceId, userId: data.userId, ...(data.metadata ?? {}) }),
-      },
-    });
-  } catch (error) {
-    logger.error("PAYMENT_AUDIT_LOG_FAILED", {
-      event: "PAYMENT_AUDIT_LOG_FAILED",
-      action: data.action,
-      invoiceId: data.invoiceId,
-      userId: data.userId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
 }
 
 export class PaymentGatewayService {
@@ -526,27 +321,7 @@ export class PaymentService {
   static alreadyProcessedMessage = ALREADY_PROCESSED_FA;
 
   static async requestGatewayInvoice(gateway: { apiBaseUrl: string; apiKey: string }, price: number, callbackUrl: string) {
-    const payload = { price, callback_url: callbackUrl };
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15_000);
-    let response: Response;
-    try {
-      response = await fetch(`${normalizeBaseUrl(gateway.apiBaseUrl)}/invoice/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-API-KEY": gateway.apiKey },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      throw new GatewayConnectionError(
-        error instanceof Error && error.name === "AbortError" ? "درخواست درگاه timeout شد" : "سرور درگاه در دسترس نیست",
-      );
-    } finally {
-      clearTimeout(timeout);
-    }
-    const raw = await response.json().catch(() => ({}));
-    if (!response.ok) throw new GatewayHttpError(response.status, `Gateway error ${response.status}: ${safeJson(raw)}`);
-    return { parsed: parseGatewayResponse(raw), raw, payload };
+    return requestGatewayInvoice(gateway, price, callbackUrl);
   }
 
   private static async confirmCouponUsage(
@@ -720,11 +495,7 @@ export class PaymentService {
   }
 
   private static assertInvoiceAmountIntegrity(invoice: Pick<PaymentInvoice, "amount" | "originalAmount" | "discountAmount" | "gatewayAmount">) {
-    const expectedAmount = invoice.originalAmount > 0 ? invoice.originalAmount - invoice.discountAmount : invoice.amount;
-    if (expectedAmount !== invoice.amount) return { ok: false as const, reason: "stored_final_amount_mismatch", expectedAmount };
-    if (invoice.gatewayAmount !== null && invoice.gatewayAmount !== undefined && invoice.gatewayAmount !== invoice.amount)
-      return { ok: false as const, reason: "gateway_amount_mismatch", expectedAmount };
-    return { ok: true as const, expectedAmount };
+    return assertInvoiceAmountIntegrity(invoice);
   }
 
   private static isUniqueConstraintError(error: unknown, field: string) {
@@ -848,9 +619,7 @@ export class PaymentService {
     await this.assertUserCanPay(data.userId);
     if (data.type === "PRODUCT_PURCHASE") await this.validateProductForPurchase(data.userId, data.productId, undefined);
 
-    const originalAmount = data.originalAmount ?? data.amount;
-    const discountAmount = data.discountAmount ?? 0;
-    if (originalAmount - discountAmount !== data.amount) throw new Error("مبلغ نهایی فاکتور با تخفیف همخوانی ندارد");
+    const { originalAmount, discountAmount } = resolveInvoiceAmounts(data);
 
     const createPayload: Prisma.PaymentInvoiceCreateInput = {
       user: { connect: { id: data.userId } },
