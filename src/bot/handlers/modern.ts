@@ -23,6 +23,9 @@ import { PaymentGatewayService, PaymentInvoiceService } from "../../modules/paym
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 import { quickReplyTarget } from "../keyboards/reply.keyboard";
 import { InvoiceActionKeyboard } from "../keyboards/design-system";
+import { supportCloseHomeInlineKeyboard } from "../keyboards/common.keyboard";
+import { buyCallbacks, nav, xrayCallbacks } from "../callbacks";
+import { pendingInvoiceExistsMessage, previousPurchaseProcessingMessage, unauthorizedMessage } from "../messages/purchase.messages";
 import { purchaseSuccessMessage } from "../../utils/messages";
 import { MonitoringService } from "../../services/monitoring.service";
 import { ProductGuideService } from "../../modules/system/product-guide.service";
@@ -61,18 +64,13 @@ export function registerModernHandlers(bot: AppBot) {
 
 پیام خود را ارسال کنید.`,
         {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "✅ بستن تیکت", callback_data: actionFor("support:close", ticket.id) }],
-              [{ text: "🏠 خانه", callback_data: callbackFor("home") }],
-            ],
-          },
+          reply_markup: supportCloseHomeInlineKeyboard(ticket.id),
         },
       );
       return true;
     }
     if (target.id.startsWith("admin") && (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))) {
-      await ctx.reply("⛔ دسترسی غیرمجاز");
+      await ctx.reply(unauthorizedMessage());
       return true;
     }
     if (target.id === "home") {
@@ -272,8 +270,8 @@ export function registerModernHandlers(bot: AppBot) {
           {
             reply_markup: {
               inline_keyboard: [
-                [{ text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") }],
-                [{ text: "🏠 خانه", callback_data: callbackFor("home") }],
+                [{ text: "📦 اکانت‌های من", callback_data: nav.accountDetails() }],
+                [{ text: "🏠 خانه", callback_data: nav.home() }],
               ],
             },
           },
@@ -291,10 +289,10 @@ export function registerModernHandlers(bot: AppBot) {
             inline_keyboard: [
               [{ text: "📦 مشاهده سرویس", callback_data: callbackFor("account.xray", { xrayClientId: client.id }) }],
               [
-                { text: "🔗 دریافت لینک اشتراک", callback_data: `xray:sub:${client.id}` },
-                { text: "⚙️ دریافت کانفیگ‌ها", callback_data: `xray:configs:${client.id}` },
+                { text: "🔗 دریافت لینک اشتراک", callback_data: xrayCallbacks.subscription(client.id) },
+                { text: "⚙️ دریافت کانفیگ‌ها", callback_data: xrayCallbacks.configs(client.id) },
               ],
-              [{ text: "🏠 خانه", callback_data: callbackFor("home") }],
+              [{ text: "🏠 خانه", callback_data: nav.home() }],
             ],
           },
         },
@@ -313,10 +311,10 @@ export function registerModernHandlers(bot: AppBot) {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") },
-              { text: "🛒 خرید مجدد", callback_data: callbackFor("shop.categories") },
+              { text: "📦 اکانت‌های من", callback_data: nav.accountDetails() },
+              { text: "🛒 خرید مجدد", callback_data: nav.shopCategories() },
             ],
-            [{ text: "🏠 خانه", callback_data: callbackFor("home") }],
+            [{ text: "🏠 خانه", callback_data: nav.home() }],
           ],
         },
       },
@@ -341,8 +339,8 @@ export function registerModernHandlers(bot: AppBot) {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "📲 نمایش QR", callback_data: `xray:qr:${client.id}` },
-              { text: "⚙️ دریافت کانفیگ‌ها", callback_data: `xray:configs:${client.id}` },
+              { text: "📲 نمایش QR", callback_data: xrayCallbacks.qr(client.id) },
+              { text: "⚙️ دریافت کانفیگ‌ها", callback_data: xrayCallbacks.configs(client.id) },
             ],
             [{ text: "🔙 بازگشت", callback_data: callbackFor("account.xray", { xrayClientId: client.id }) }],
           ],
@@ -385,7 +383,7 @@ export function registerModernHandlers(bot: AppBot) {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "🔗 لینک اشتراک", callback_data: `xray:sub:${client.id}` },
+              { text: "🔗 لینک اشتراک", callback_data: xrayCallbacks.subscription(client.id) },
               { text: "🔙 بازگشت", callback_data: callbackFor("account.xray", { xrayClientId: client.id }) },
             ],
           ],
@@ -466,8 +464,8 @@ export function registerModernHandlers(bot: AppBot) {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "🛒 بازگشت به فروشگاه", callback_data: callbackFor("shop.categories") },
-            { text: "🏠 خانه", callback_data: callbackFor("home") },
+            { text: "🛒 بازگشت به فروشگاه", callback_data: nav.shopCategories() },
+            { text: "🏠 خانه", callback_data: nav.home() },
           ],
         ],
       },
@@ -524,11 +522,11 @@ export function registerModernHandlers(bot: AppBot) {
     try {
       const existing = await PaymentInvoiceService.resolveExistingPurchaseIntent(user.id, productId);
       if (existing.action === "reuse_invoice") {
-        await ctx.reply("شما از قبل یک فاکتور پرداخت‌نشده برای این محصول دارید. می‌توانید پرداخت را ادامه دهید یا آن را لغو کرده و فاکتور جدید بسازید.", { reply_markup: { inline_keyboard: [[{ text: "Pay previous invoice", url: existing.invoice.paymentLink ?? "" }], [{ text: "Cancel and create new invoice", callback_data: actionFor("buy:cancel_existing", productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+        await ctx.reply(pendingInvoiceExistsMessage(), { reply_markup: { inline_keyboard: [[{ text: "Pay previous invoice", url: existing.invoice.paymentLink ?? "" }], [{ text: "Cancel and create new invoice", callback_data: buyCallbacks.cancelExisting(productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
         return;
       }
       if (existing.action === "processing") {
-        await ctx.reply("Your previous purchase is still being processed. Please wait or cancel it if it is stuck.", { reply_markup: { inline_keyboard: [[{ text: "Cancel stuck purchase", callback_data: actionFor("buy:cancel_existing", productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+        await ctx.reply(previousPurchaseProcessingMessage(), { reply_markup: { inline_keyboard: [[{ text: "Cancel stuck purchase", callback_data: buyCallbacks.cancelExisting(productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
         return;
       }
       if (existing.action === "expired_and_released") await ctx.reply("Your previous purchase request expired. You can start a new purchase now.");
@@ -565,7 +563,7 @@ export function registerModernHandlers(bot: AppBot) {
                 { text: "💳 شارژ کیف پول", callback_data: callbackFor("deposit") },
                 { text: "⬅️ بازگشت به پیش‌فاکتور", callback_data: callbackFor("shop.checkout", { productId }) },
               ],
-              [{ text: "🎫 پشتیبانی", callback_data: callbackFor("support") }],
+              [{ text: "🎫 پشتیبانی", callback_data: nav.support() }],
             ],
           },
         });
@@ -958,11 +956,11 @@ export function registerModernHandlers(bot: AppBot) {
       await ctx.editMessageText("⏳ در حال ایجاد فاکتور پرداخت آنی...", { reply_markup: { inline_keyboard: [] } });
       const existing = await PaymentInvoiceService.resolveExistingPurchaseIntent(user.id, productId);
       if (existing.action === "reuse_invoice") {
-        await ctx.reply("شما از قبل یک فاکتور پرداخت‌نشده برای این محصول دارید. می‌توانید پرداخت را ادامه دهید یا آن را لغو کرده و فاکتور جدید بسازید.", { reply_markup: { inline_keyboard: [[{ text: "Pay previous invoice", url: existing.invoice.paymentLink ?? "" }], [{ text: "Cancel and create new invoice", callback_data: actionFor("buy:cancel_existing", productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+        await ctx.reply(pendingInvoiceExistsMessage(), { reply_markup: { inline_keyboard: [[{ text: "Pay previous invoice", url: existing.invoice.paymentLink ?? "" }], [{ text: "Cancel and create new invoice", callback_data: buyCallbacks.cancelExisting(productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
         return;
       }
       if (existing.action === "processing") {
-        await ctx.reply("Your previous purchase is still being processed. Please wait or cancel it if it is stuck.", { reply_markup: { inline_keyboard: [[{ text: "Cancel stuck purchase", callback_data: actionFor("buy:cancel_existing", productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+        await ctx.reply(previousPurchaseProcessingMessage(), { reply_markup: { inline_keyboard: [[{ text: "Cancel stuck purchase", callback_data: buyCallbacks.cancelExisting(productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
         return;
       }
       if (existing.action === "expired_and_released") await ctx.reply("Your previous purchase request expired. You can start a new purchase now.");
@@ -1016,7 +1014,7 @@ ${invoice.amount.toLocaleString("fa-IR")} تومان
             inline_keyboard: [
               [
                 { text: "🔙 بازگشت", callback_data: callbackFor("shop.checkout", { productId }) },
-                { text: "🎫 پشتیبانی", callback_data: callbackFor("support") },
+                { text: "🎫 پشتیبانی", callback_data: nav.support() },
               ],
             ],
           },
@@ -1124,7 +1122,7 @@ ${quote.wallet.walletAddress}
             inline_keyboard: [
               [
                 { text: "🔙 بازگشت", callback_data: actionFor("flow:back", "deposit", "amount") },
-                { text: "🏠 خانه", callback_data: callbackFor("home") },
+                { text: "🏠 خانه", callback_data: nav.home() },
               ],
               [{ text: "❌ لغو عملیات", callback_data: "flow:cancel" }],
             ],
@@ -1159,7 +1157,7 @@ ${client.expiresAt.toLocaleDateString("fa-IR")}
           reply_markup: {
             inline_keyboard: [
               [{ text: "📦 مشاهده اکانت", callback_data: callbackFor("account.xray", { xrayClientId: client.id }) }],
-              [{ text: "🏠 خانه", callback_data: callbackFor("home") }],
+              [{ text: "🏠 خانه", callback_data: nav.home() }],
             ],
           },
         },
@@ -1169,8 +1167,8 @@ ${client.expiresAt.toLocaleDateString("fa-IR")}
       await ctx.reply(failedProvision ? "درخواست ثبت شد اما ساخت اکانت تست نیازمند بررسی است." : formatFreeAccountError(error), {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") }],
-            [{ text: "🎫 پشتیبانی", callback_data: callbackFor("support") }],
+            [{ text: "📦 اکانت‌های من", callback_data: nav.accountDetails() }],
+            [{ text: "🎫 پشتیبانی", callback_data: nav.support() }],
           ],
         },
       });
@@ -1301,7 +1299,7 @@ ${link}
         reply_markup: {
           inline_keyboard: [
             [{ text: "✅ بستن تیکت", callback_data: actionFor("support:close", ticket.id) }],
-            [{ text: "🏠 خانه", callback_data: callbackFor("home") }],
+            [{ text: "🏠 خانه", callback_data: nav.home() }],
           ],
         },
       },
@@ -1330,7 +1328,7 @@ ${link}
         reply_markup: {
           inline_keyboard: [
             [{ text: "✅ بستن تیکت", callback_data: actionFor("support:close", ticket.id) }],
-            [{ text: "📜 مشاهده تاریخچه", callback_data: callbackFor("support") }],
+            [{ text: "📜 مشاهده تاریخچه", callback_data: nav.support() }],
           ],
         },
       },
@@ -1663,7 +1661,7 @@ ${link}
           reply_markup: {
             inline_keyboard: [
               [{ text: "✅ بستن تیکت", callback_data: actionFor("support:close", ctx.session.liveTicketId) }],
-              [{ text: "🏠 خانه", callback_data: callbackFor("home") }],
+              [{ text: "🏠 خانه", callback_data: nav.home() }],
             ],
           },
         });
