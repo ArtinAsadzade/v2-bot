@@ -1,0 +1,88 @@
+import { registerView, callbackFor, actionFor, type UiKeyboard } from "../navigation/panel-ui";
+import { createCallbackToken, tokenAction } from "../navigation/callback-tokens";
+import { isAdminByTelegramId } from "../middlewares/admin.middleware";
+import { UserService } from "../../modules/user/user.service";
+import { ProductService } from "../../modules/product/product.service";
+import { AdminService } from "../../modules/admin/admin.service";
+import { ReferralService } from "../../modules/referral/referral.service";
+import {
+  FreeAccountService,
+  FREE_ACCOUNT_STATUS_LABELS,
+  formatFreeAccountDate,
+} from "../../modules/free-account/free-account.service";
+import { SupportService } from "../../modules/support/support.service";
+import { CouponService } from "../../modules/coupon/coupon.service";
+import { BroadcastService, BROADCAST_TARGET_LABELS } from "../../modules/broadcast/broadcast.service";
+import { PaymentGatewayService, PaymentInvoiceService, maskApiKey } from "../../modules/payment/payment.service";
+import { ProductGuideService } from "../../modules/system/product-guide.service";
+import { ForcedJoinService } from "../../modules/system/forced-join.service";
+import { PublicPlansService } from "../../modules/product/public-plans.service";
+import {
+  formatXrayBytes,
+  maskToken,
+  normalizeXrayStatus,
+  XrayClientService,
+  XrayPanelService,
+  xrayTrafficSnapshot,
+} from "../../modules/xray/xray.service";
+import type { PaymentInvoiceStatus } from "@prisma/client";
+import { accountSummaryMessage, errorMessage, walletSummaryMessage } from "../../utils/messages";
+import { formatToman } from "../../utils/money";
+import {
+  accountStatusLabel,
+  divider,
+  formatPageCount,
+  formatStockLabel,
+  formatUserLine,
+  getPageParam,
+  paymentStatusLabel,
+  progressBar,
+  purchasedAccountStatusLabel,
+  resolveFreeAccountExpiry,
+  shortId,
+  walletStatusLabel,
+  yesNoStatus,
+} from "../../utils/formatters";
+import { homeKeyboard } from "../keyboards/common.keyboard";
+import { MonitoringService } from "../../services/monitoring.service";
+import { prisma } from "../../services/prisma";
+
+const money = formatToman;
+const page = getPageParam;
+const pages = formatPageCount;
+const userLine = formatUserLine;
+const stockLabel = formatStockLabel;
+const freeAccountExpiry = resolveFreeAccountExpiry;
+const yesNo = yesNoStatus;
+
+export function registerSupportViews() {
+  registerView("support", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.", keyboard: [] };
+    const tickets = await SupportService.listUserTickets(user.id);
+    const latestOpen = tickets.find((ticket) => ticket.status === "open");
+    return {
+      replyKeyboard: "support",
+      text: `🎫 پشتیبانی
+
+${divider}
+
+💬 برای ارتباط با پشتیبانی وارد گفتگو شوید و پیام خود را ارسال کنید. پاسخ‌ها در همین چت برای شما نمایش داده می‌شود.
+
+📌 وضعیت آخرین تیکت: ${latestOpen ? `باز (#${shortId(latestOpen.id)})` : "تیکت باز ندارید"}
+
+${
+  tickets
+    .map(
+      (ticket) => `• #${shortId(ticket.id)} · ${ticket.status === "open" ? "باز ✅" : "بسته 🔒"} · ${ticket.updatedAt.toLocaleString("fa-IR")}
+  ${ticket.messages[0]?.message ?? "بدون پیام"}`,
+    )
+    .join("\n") || "هنوز تیکتی ثبت نشده است."
+}`,
+      keyboard: [
+        [{ text: latestOpen ? "💬 ادامه گفتگو" : "✉️ ایجاد تیکت جدید", action: "support:chat:start" }],
+        ...tickets.slice(0, 3).map((ticket) => [{ text: `👁 تیکت #${shortId(ticket.id)}`, action: `support:chat:${ticket.id}` }]),
+      ],
+    };
+  });
+}

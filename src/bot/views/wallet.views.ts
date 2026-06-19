@@ -1,0 +1,124 @@
+import { registerView, callbackFor, actionFor, type UiKeyboard } from "../navigation/panel-ui";
+import { createCallbackToken, tokenAction } from "../navigation/callback-tokens";
+import { isAdminByTelegramId } from "../middlewares/admin.middleware";
+import { UserService } from "../../modules/user/user.service";
+import { ProductService } from "../../modules/product/product.service";
+import { AdminService } from "../../modules/admin/admin.service";
+import { ReferralService } from "../../modules/referral/referral.service";
+import {
+  FreeAccountService,
+  FREE_ACCOUNT_STATUS_LABELS,
+  formatFreeAccountDate,
+} from "../../modules/free-account/free-account.service";
+import { SupportService } from "../../modules/support/support.service";
+import { CouponService } from "../../modules/coupon/coupon.service";
+import { BroadcastService, BROADCAST_TARGET_LABELS } from "../../modules/broadcast/broadcast.service";
+import { PaymentGatewayService, PaymentInvoiceService, maskApiKey } from "../../modules/payment/payment.service";
+import { ProductGuideService } from "../../modules/system/product-guide.service";
+import { ForcedJoinService } from "../../modules/system/forced-join.service";
+import { PublicPlansService } from "../../modules/product/public-plans.service";
+import {
+  formatXrayBytes,
+  maskToken,
+  normalizeXrayStatus,
+  XrayClientService,
+  XrayPanelService,
+  xrayTrafficSnapshot,
+} from "../../modules/xray/xray.service";
+import type { PaymentInvoiceStatus } from "@prisma/client";
+import { accountSummaryMessage, errorMessage, walletSummaryMessage } from "../../utils/messages";
+import { formatToman } from "../../utils/money";
+import {
+  accountStatusLabel,
+  divider,
+  formatPageCount,
+  formatStockLabel,
+  formatUserLine,
+  getPageParam,
+  paymentStatusLabel,
+  progressBar,
+  purchasedAccountStatusLabel,
+  resolveFreeAccountExpiry,
+  shortId,
+  walletStatusLabel,
+  yesNoStatus,
+} from "../../utils/formatters";
+import { homeKeyboard } from "../keyboards/common.keyboard";
+import { MonitoringService } from "../../services/monitoring.service";
+import { prisma } from "../../services/prisma";
+
+const money = formatToman;
+const page = getPageParam;
+const pages = formatPageCount;
+const userLine = formatUserLine;
+const stockLabel = formatStockLabel;
+const freeAccountExpiry = resolveFreeAccountExpiry;
+const yesNo = yesNoStatus;
+
+export function registerWalletViews() {
+  registerView("wallet", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    const dashboard = user ? await UserService.dashboard(user.id) : undefined;
+    const recent =
+      dashboard?.walletTransactions
+        .slice(0, 3)
+        .map(
+          (tx) =>
+            `• ${tx.type === "credit" || tx.type === "transfer_in" ? "افزایش" : "کاهش"}: ${money(tx.amount)} · ${tx.createdAt.toLocaleDateString("fa-IR")}`,
+        )
+        .join("\n") || "تراکنش اخیری ثبت نشده است.";
+    return {
+      replyKeyboard: "wallet",
+      text: `💳 کیف پول
+
+${divider}
+💰 موجودی فعلی: ${money(user?.balance ?? 0)}
+
+📜 خلاصه تراکنش‌های اخیر:
+${recent}
+${divider}
+
+روش شارژ یا گزارش مالی موردنظر را انتخاب کنید.`,
+      keyboard: [
+        [
+          { text: "➕ شارژ کیف پول", action: callbackFor("deposit") },
+          { text: "📜 تاریخچه تراکنش‌ها", action: callbackFor("wallet.history") },
+        ],
+        [
+          { text: "⚡ پرداخت آنی", action: "flow:start:instant_topup" },
+          { text: "💎 شارژ با رمزارز", action: "flow:start:deposit_submit" },
+        ],
+      ],
+    };
+  });
+  registerView("wallet.history", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+    const dashboard = await UserService.dashboard(user.id);
+    return {
+      text: `📜 گردش کیف پول\n\n${dashboard.walletTransactions.map((tx) => `${tx.type === "credit" || tx.type === "transfer_in" ? "🟢" : "🔴"} ${tx.description}\n${money(tx.amount)} · ${tx.createdAt.toLocaleString("fa-IR")}`).join("\n\n") || "هنوز تراکنشی ثبت نشده است."}`,
+      keyboard: [[{ text: "➕ شارژ کیف پول", action: callbackFor("deposit") }]],
+    };
+  });
+  registerView("deposit", async () => {
+    const gateway = await PaymentGatewayService.get();
+    const keyboard: UiKeyboard = [[{ text: "💎 پرداخت با رمزارز", action: "flow:start:deposit_submit" }]];
+    if (gateway.enabled) keyboard[0].push({ text: "⚡ پرداخت آنی", action: "flow:start:instant_topup" });
+    return {
+      text: `➕ شارژ کیف پول
+
+${divider}
+💰 مبلغ
+در مرحله بعد مبلغ شارژ را وارد می‌کنید.
+
+⚡ روش پرداخت
+${gateway.enabled ? "پرداخت آنی و پرداخت با رمزارز فعال هستند." : "در حال حاضر پرداخت با رمزارز فعال است."}
+
+🔒 وضعیت پرداخت
+موجودی فقط پس از تأیید نهایی پرداخت به کیف پول اضافه می‌شود.
+
+روش دلخواه را انتخاب کنید.`,
+      keyboard,
+    };
+  });
+}
