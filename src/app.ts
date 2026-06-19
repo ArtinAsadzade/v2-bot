@@ -7,6 +7,7 @@ import { registerHandlers } from "./bot/handlers";
 import { cleanExpiredDeposits } from "./jobs/depositCleaner";
 import { cleanStalePurchases } from "./jobs/purchaseCleaner";
 import { deactivateExpiredAccounts } from "./jobs/accountExpiration";
+import { cleanupExpiredDeliveryReservations } from "./jobs/deliveryCleanup";
 import { logger } from "./services/logger";
 import { CryptoRateService } from "./modules/system/system.service";
 import { prisma } from "./services/prisma";
@@ -56,6 +57,11 @@ async function bootstrap() {
         suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
       });
     });
+    await cleanupExpiredDeliveryReservations().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Initial delivery cleanup job failed", { error: message });
+      MonitoringService.record({ type: "JOB_FAILED", section: "Delivery Cleanup", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." });
+    });
     setInterval(() => {
       cleanExpiredDeposits().catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -83,6 +89,11 @@ async function bootstrap() {
           severity: "critical",
           suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
         });
+      });
+      cleanupExpiredDeliveryReservations().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error("Delivery cleanup job failed", { error: message });
+        MonitoringService.record({ type: "JOB_FAILED", section: "Delivery Cleanup", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." });
       });
     }, 60_000);
     setInterval(() => {
