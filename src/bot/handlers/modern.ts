@@ -24,8 +24,13 @@ import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 import { quickReplyTarget } from "../keyboards/reply.keyboard";
 import { InvoiceActionKeyboard } from "../keyboards/design-system";
 import { supportCloseHomeInlineKeyboard } from "../keyboards/common.keyboard";
+import { xraySubscriptionKeyboard, xrayConfigsSentKeyboard, xrayRenewedKeyboard, xrayRenewalInvoiceKeyboard } from "../keyboards/account.keyboard";
+import { accountHomeInlineKeyboard, expiredCheckoutRecoveryKeyboard, pendingInvoiceRecoveryKeyboard, processingPurchaseRecoveryKeyboard, standardPurchaseDeliveryKeyboard, xrayPurchaseDeliveryKeyboard } from "../keyboards/purchase.keyboard";
 import { buyCallbacks, nav, xrayCallbacks } from "../callbacks";
 import { pendingInvoiceExistsMessage, previousPurchaseProcessingMessage, unauthorizedMessage } from "../messages/purchase.messages";
+import { serviceNotFoundMessage, xrayConfigsSentMessage, xrayRenewalInvoiceMessage, xrayRenewedMessage, xraySubscriptionMessage } from "../messages/account.messages";
+import { adminOnlyCommandMessage, publicPlansDisabledInGroupsMessage } from "../messages/common.messages";
+import { couponApplyFromProductMessage, couponRemovedMessage } from "../messages/coupon.messages";
 import { purchaseSuccessMessage } from "../../utils/messages";
 import { MonitoringService } from "../../services/monitoring.service";
 import { ProductGuideService } from "../../modules/system/product-guide.service";
@@ -144,7 +149,7 @@ export function registerModernHandlers(bot: AppBot) {
     }
     const setting = await PublicPlansService.getSetting();
     if (!setting.enabled) {
-      if (isPrivate) await ctx.reply("نمایش پلن‌ها در گروه‌ها فعلاً غیرفعال است.");
+      if (isPrivate) await ctx.reply(publicPlansDisabledInGroupsMessage());
       return;
     }
     const now = Date.now();
@@ -205,7 +210,7 @@ export function registerModernHandlers(bot: AppBot) {
   for (const [command, state] of adminCommands) {
     bot.command(command, async (ctx) => {
       if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) {
-        await ctx.reply("⛔ این دستور مخصوص مدیران است. اگر فکر می‌کنید اشتباهی رخ داده، با پشتیبانی تماس بگیرید.");
+        await ctx.reply(adminOnlyCommandMessage());
         return;
       }
       await renderPanel(ctx, state, "replace");
@@ -268,12 +273,7 @@ export function registerModernHandlers(bot: AppBot) {
 
 سرویس ساخته شده است. لطفاً از بخش «📦 اکانت‌های من» آن را باز کنید.`,
           {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "📦 اکانت‌های من", callback_data: nav.accountDetails() }],
-                [{ text: "🏠 خانه", callback_data: nav.home() }],
-              ],
-            },
+            reply_markup: accountHomeInlineKeyboard(),
           },
         );
         return;
@@ -285,16 +285,7 @@ export function registerModernHandlers(bot: AppBot) {
 
 برای دریافت لینک اشتراک، QR و کانفیگ‌ها از دکمه‌های زیر استفاده کنید.`,
         {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "📦 مشاهده سرویس", callback_data: callbackFor("account.xray", { xrayClientId: client.id }) }],
-              [
-                { text: "🔗 دریافت لینک اشتراک", callback_data: xrayCallbacks.subscription(client.id) },
-                { text: "⚙️ دریافت کانفیگ‌ها", callback_data: xrayCallbacks.configs(client.id) },
-              ],
-              [{ text: "🏠 خانه", callback_data: nav.home() }],
-            ],
-          },
+          reply_markup: xrayPurchaseDeliveryKeyboard(client.id),
         },
       );
       return;
@@ -308,15 +299,7 @@ export function registerModernHandlers(bot: AppBot) {
         expiresAt: result.expiresAt,
       }),
       {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "📦 اکانت‌های من", callback_data: nav.accountDetails() },
-              { text: "🛒 خرید مجدد", callback_data: nav.shopCategories() },
-            ],
-            [{ text: "🏠 خانه", callback_data: nav.home() }],
-          ],
-        },
+        reply_markup: standardPurchaseDeliveryKeyboard(),
       },
     );
   }
@@ -331,21 +314,11 @@ export function registerModernHandlers(bot: AppBot) {
   bot.action(/^xray:sub:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     const client = await ownedXrayClient(ctx, ctx.match[1]);
-    if (!client) return void (await ctx.reply("⚠️ سرویس پیدا نشد."));
+    if (!client) return void (await ctx.reply(serviceNotFoundMessage()));
     try {
       const url = await XrayClientService.subscriptionUrl(client);
       await XrayClientService.subLinks(client.clientSubId!).catch(() => null);
-      await ctx.reply(`🔗 لینک اشتراک شما\n\n${url}\n\nاین لینک را داخل برنامه‌هایی مثل v2rayNG, Streisand, Hiddify یا Nekobox وارد کنید.`, {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "📲 نمایش QR", callback_data: xrayCallbacks.qr(client.id) },
-              { text: "⚙️ دریافت کانفیگ‌ها", callback_data: xrayCallbacks.configs(client.id) },
-            ],
-            [{ text: "🔙 بازگشت", callback_data: callbackFor("account.xray", { xrayClientId: client.id }) }],
-          ],
-        },
-      });
+      await ctx.reply(xraySubscriptionMessage(url), { reply_markup: xraySubscriptionKeyboard(client.id) });
     } catch (error) {
       await ctx.reply(`⚠️ لینک اشتراک در دسترس نیست\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
     }
@@ -354,7 +327,7 @@ export function registerModernHandlers(bot: AppBot) {
   bot.action(/^xray:qr:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     const client = await ownedXrayClient(ctx, ctx.match[1]);
-    if (!client) return void (await ctx.reply("⚠️ سرویس پیدا نشد."));
+    if (!client) return void (await ctx.reply(serviceNotFoundMessage()));
     try {
       const url = await XrayClientService.subscriptionUrl(client);
       const qr = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(url)}`;
@@ -367,7 +340,7 @@ export function registerModernHandlers(bot: AppBot) {
   bot.action(/^xray:configs:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery("در حال دریافت کانفیگ‌ها...");
     const client = await ownedXrayClient(ctx, ctx.match[1]);
-    if (!client) return void (await ctx.reply("⚠️ سرویس پیدا نشد."));
+    if (!client) return void (await ctx.reply(serviceNotFoundMessage()));
     try {
       const raw = await XrayClientService.links(client.clientEmail);
       const configs = Array.isArray(raw)
@@ -379,16 +352,7 @@ export function registerModernHandlers(bot: AppBot) {
               .map(String);
       if (!configs.length) return void (await ctx.reply("⚠️ کانفیگی از پنل دریافت نشد."));
       for (let i = 0; i < configs.length; i++) await ctx.reply(`⚙️ کانفیگ ${i + 1}\n\n${configs[i]}`);
-      await ctx.reply(`✅ تمام کانفیگ‌های شما ارسال شد.\n\nتعداد کانفیگ‌ها:\n${configs.length.toLocaleString("fa-IR")}`, {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "🔗 لینک اشتراک", callback_data: xrayCallbacks.subscription(client.id) },
-              { text: "🔙 بازگشت", callback_data: callbackFor("account.xray", { xrayClientId: client.id }) },
-            ],
-          ],
-        },
-      });
+      await ctx.reply(xrayConfigsSentMessage(configs.length), { reply_markup: xrayConfigsSentKeyboard(client.id) });
     } catch (error) {
       await ctx.reply(`⚠️ دریافت کانفیگ‌ها ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
     }
@@ -401,9 +365,7 @@ export function registerModernHandlers(bot: AppBot) {
     try {
       await ctx.editMessageText("⏳ در حال تمدید سرویس از کیف پول...", { reply_markup: { inline_keyboard: [] } });
       const renewal = await PaymentInvoiceService.renewXrayWithWallet(user.id, xrayClientId, productId);
-      await ctx.reply(`✅ سرویس با موفقیت تمدید شد.\n\nاعتبار جدید: ${renewal.newExpiry.toLocaleDateString("fa-IR")}`, {
-        reply_markup: { inline_keyboard: [[{ text: "🧩 مشاهده سرویس", callback_data: callbackFor("account.xray", { xrayClientId }) }]] },
-      });
+      await ctx.reply(xrayRenewedMessage(renewal.newExpiry), { reply_markup: xrayRenewedKeyboard(xrayClientId) });
     } catch (error) {
       await ctx.reply(`⚠️ تمدید ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
     }
@@ -415,14 +377,7 @@ export function registerModernHandlers(bot: AppBot) {
     if (!user) return;
     try {
       const invoice = await PaymentInvoiceService.createXrayRenewalInvoice(user.id, xrayClientId, productId);
-      await ctx.reply(`🧾 فاکتور تمدید آماده شد\n\n💰 مبلغ: ${invoice.amount.toLocaleString("fa-IR")} تومان\n\nبرای پرداخت روی دکمه زیر بزنید.`, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "⚡ پرداخت", url: invoice.paymentLink ?? "" }],
-            [{ text: "🔙 بازگشت", callback_data: callbackFor("account.xray", { xrayClientId }) }],
-          ],
-        },
-      });
+      await ctx.reply(xrayRenewalInvoiceMessage(invoice.amount), { reply_markup: xrayRenewalInvoiceKeyboard(xrayClientId, invoice.paymentLink) });
     } catch (error) {
       await ctx.reply(`⚠️ ایجاد فاکتور تمدید ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
     }
@@ -461,14 +416,7 @@ export function registerModernHandlers(bot: AppBot) {
 
   async function showExpiredCheckoutRecovery(ctx: AppContext) {
     await ctx.reply("این پیش‌فاکتور منقضی شده است.\nلطفاً محصول را دوباره انتخاب کنید.", {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "🛒 بازگشت به فروشگاه", callback_data: nav.shopCategories() },
-            { text: "🏠 خانه", callback_data: nav.home() },
-          ],
-        ],
-      },
+      reply_markup: expiredCheckoutRecoveryKeyboard(),
     });
   }
 
@@ -478,7 +426,7 @@ export function registerModernHandlers(bot: AppBot) {
     const product = await ProductService.getProduct(productId);
     if (!product) return showExpiredCheckoutRecovery(ctx);
     if (ctx.session.selectedCoupons?.[productId]) delete ctx.session.selectedCoupons[productId];
-    await ctx.reply("✅ کد تخفیف از فاکتور حذف شد.");
+    await ctx.reply(couponRemovedMessage());
     await renderPanel(ctx, { id: "shop.checkout", params: { productId } }, "replace", RenderMode.EDIT_CURRENT);
   });
 
@@ -494,7 +442,7 @@ export function registerModernHandlers(bot: AppBot) {
   bot.action(/^coupon:(?!remove:|change:)(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     await renderPanel(ctx, { id: "shop.product", params: { productId: ctx.match[1] } }, "replace", RenderMode.EDIT_CURRENT);
-    await ctx.reply("برای اعمال کد تخفیف از دکمه «🎟 اعمال کد تخفیف» در صفحه محصول استفاده کنید.");
+    await ctx.reply(couponApplyFromProductMessage());
   });
 
   bot.action(/^buy:(?!confirm:|instant:)(.+)$/, async (ctx) => {
@@ -522,11 +470,11 @@ export function registerModernHandlers(bot: AppBot) {
     try {
       const existing = await PaymentInvoiceService.resolveExistingPurchaseIntent(user.id, productId);
       if (existing.action === "reuse_invoice") {
-        await ctx.reply(pendingInvoiceExistsMessage(), { reply_markup: { inline_keyboard: [[{ text: "Pay previous invoice", url: existing.invoice.paymentLink ?? "" }], [{ text: "Cancel and create new invoice", callback_data: buyCallbacks.cancelExisting(productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+        await ctx.reply(pendingInvoiceExistsMessage(), { reply_markup: pendingInvoiceRecoveryKeyboard(productId, existing.invoice.paymentLink) });
         return;
       }
       if (existing.action === "processing") {
-        await ctx.reply(previousPurchaseProcessingMessage(), { reply_markup: { inline_keyboard: [[{ text: "Cancel stuck purchase", callback_data: buyCallbacks.cancelExisting(productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+        await ctx.reply(previousPurchaseProcessingMessage(), { reply_markup: processingPurchaseRecoveryKeyboard(productId) });
         return;
       }
       if (existing.action === "expired_and_released") await ctx.reply("Your previous purchase request expired. You can start a new purchase now.");
@@ -956,11 +904,11 @@ export function registerModernHandlers(bot: AppBot) {
       await ctx.editMessageText("⏳ در حال ایجاد فاکتور پرداخت آنی...", { reply_markup: { inline_keyboard: [] } });
       const existing = await PaymentInvoiceService.resolveExistingPurchaseIntent(user.id, productId);
       if (existing.action === "reuse_invoice") {
-        await ctx.reply(pendingInvoiceExistsMessage(), { reply_markup: { inline_keyboard: [[{ text: "Pay previous invoice", url: existing.invoice.paymentLink ?? "" }], [{ text: "Cancel and create new invoice", callback_data: buyCallbacks.cancelExisting(productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+        await ctx.reply(pendingInvoiceExistsMessage(), { reply_markup: pendingInvoiceRecoveryKeyboard(productId, existing.invoice.paymentLink) });
         return;
       }
       if (existing.action === "processing") {
-        await ctx.reply(previousPurchaseProcessingMessage(), { reply_markup: { inline_keyboard: [[{ text: "Cancel stuck purchase", callback_data: buyCallbacks.cancelExisting(productId) }], [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }]] } });
+        await ctx.reply(previousPurchaseProcessingMessage(), { reply_markup: processingPurchaseRecoveryKeyboard(productId) });
         return;
       }
       if (existing.action === "expired_and_released") await ctx.reply("Your previous purchase request expired. You can start a new purchase now.");
