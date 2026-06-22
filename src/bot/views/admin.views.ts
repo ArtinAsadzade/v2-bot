@@ -619,14 +619,14 @@ ${inboundSnapshot.length ? inboundSnapshot.map((i) => `• ${i.remark ?? `inboun
 وضعیت: ${detail.product.isActive ? "فعال" : "غیرفعال"}`,
       keyboard: [
         [
-          { text: "✏️ ویرایش", action: `flow:start:product_edit:${detail.product.id}` },
-          { text: "📋 کپی محصول", action: `admin:product:duplicate:${detail.product.id}` },
+          { text: "✏️ ویرایش عنوان", action: `flow:start:product_edit:${detail.product.id}:title` },
+          { text: "💰 تغییر قیمت", action: `flow:start:product_edit:${detail.product.id}:price` },
         ],
         [
           { text: "🔐 افزودن اکانت", action: `flow:start:account_create:${detail.product.id}` },
-          { text: "💰 تغییر قیمت", action: `flow:start:product_price:${detail.product.id}` },
+          { text: "📅 تغییر مدت", action: `flow:start:product_edit:${detail.product.id}:duration` },
         ],
-        [{ text: "🗄 اکانت‌های محصول", action: callbackFor("admin.accounts", { productId: detail.product.id }) }],
+        [{ text: "🗂 تغییر دسته‌بندی", action: `flow:start:product_edit:${detail.product.id}:category` }, { text: "🗄 اکانت‌های محصول", action: callbackFor("admin.accounts", { productId: detail.product.id }) }],
         [
           {
             text: detail.product.isActive ? "غیرفعال‌سازی" : "فعال‌سازی",
@@ -678,47 +678,26 @@ ${inboundSnapshot.length ? inboundSnapshot.map((i) => `• ${i.remark ?? `inboun
 ${detail.products.map((product) => `• ${product.title} · ${product.isActive ? "فعال" : "غیرفعال"} · فروش ${product._count.orders.toLocaleString("fa-IR")}`).join("\n") || "محصولی در این دسته نیست."}`,
       keyboard: [
         [
-          {
-            text: "✏️ ویرایش",
-            action: `flow:start:category_edit:${detail.category.id}`,
-          },
-          {
-            text: detail.category.isActive ? "غیرفعال‌سازی" : "فعال‌سازی",
-            action: `admin:category:status:${detail.category.id}:${detail.category.isActive ? "0" : "1"}`,
-          },
+          { text: "✏️ ویرایش نام", action: `flow:start:category_edit:${detail.category.id}:name` },
+          { text: "📝 ویرایش توضیحات", action: `flow:start:category_edit:${detail.category.id}:description` },
         ],
         [
-          {
-            text: "🗑 حذف نرم",
-            action: `admin:category:delete:${detail.category.id}`,
-          },
-          {
-            text: "🧨 حذف دائمی",
-            action: `admin:category:hard_delete:confirm:${detail.category.id}`,
-          },
+          { text: "🎨 تغییر آیکون", action: `flow:start:category_edit:${detail.category.id}:icon` },
+          { text: "🔢 تغییر ترتیب", action: `flow:start:category_edit:${detail.category.id}:order` },
         ],
         [
-          {
-            text: "◀️ محصولات قبلی",
-            action: callbackFor("admin.category", {
-              categoryId: detail.category.id,
-              productPage: Math.max(productPage - 1, 1),
-            }),
-          },
-          {
-            text: "محصولات بعدی ▶️",
-            action: callbackFor("admin.category", {
-              categoryId: detail.category.id,
-              productPage: productPage + 1,
-            }),
-          },
+          { text: detail.category.isActive ? "⛔ غیرفعال" : "✅ فعال", action: `admin:category:status:${detail.category.id}:${detail.category.isActive ? "0" : "1"}` },
+          { text: "📦 محصولات دسته", action: callbackFor("admin.products") },
         ],
         [
-          {
-            text: "📂 همه دسته‌بندی‌ها",
-            action: callbackFor("admin.categories"),
-          },
+          { text: "🗑 حذف نرم", action: `admin:category:delete:${detail.category.id}` },
+          { text: "🧨 حذف دائمی", action: `admin:category:hard_delete:confirm:${detail.category.id}` },
         ],
+        [
+          { text: "◀️ محصولات قبلی", action: callbackFor("admin.category", { categoryId: detail.category.id, productPage: Math.max(productPage - 1, 1) }) },
+          { text: "محصولات بعدی ▶️", action: callbackFor("admin.category", { categoryId: detail.category.id, productPage: productPage + 1 }) },
+        ],
+        [{ text: "🔙 همه دسته‌بندی‌ها", action: callbackFor("admin.categories") }],
       ],
     };
   });
