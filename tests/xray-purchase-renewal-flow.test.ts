@@ -33,7 +33,7 @@ test("account detail opens by xrayClientId and reuses live Xray fetchers", () =>
 });
 
 test("renewal start loads selected XrayClient and lists active xray_auto categories", () => {
-  const start = modernViewsSource.match(/registerView\("account\.renew"[\s\S]*?registerView\("account\.renew\.products"/)?.[0] ?? "";
+  const start = modernViewsSource.match(/const renderRenewService[\s\S]*?registerView\("account\.renew", renderRenewService\)/)?.[0] ?? "";
   assert.match(start, /id: params\.xrayClientId, userId: user\.id/);
   assert.match(start, /این سرویس برای تمدید پیدا نشد/);
   assert.match(start, /mode: "xray_auto"/);

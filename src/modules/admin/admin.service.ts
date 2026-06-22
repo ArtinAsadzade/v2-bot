@@ -6,7 +6,7 @@ import { SystemSettingsService } from "../system/system.service";
 import { CouponService } from "../coupon/coupon.service";
 import { ForcedJoinService } from "../system/forced-join.service";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, categoryNotDeletedWhere, productNotDeletedWhere, unassignedInventoryWhere } from "../product/visibility";
-import { gbToBytes, XrayClientService } from "../xray/xray.service";
+import { XrayClientService } from "../xray/xray.service";
 import { productValidationError, validateProductName, validatePositiveInteger, validateNonNegativeInteger, validateNonNegativeNumber } from "../product/product.validation";
 
 const DASHBOARD_CACHE_TTL_MS = 30_000;

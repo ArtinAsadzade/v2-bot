@@ -2,14 +2,13 @@ import type { PaymentInvoice } from "@prisma/client";
 import { prisma } from "../../services/prisma";
 import { logger } from "../../services/logger";
 import { MonitoringService } from "../../services/monitoring.service";
-import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, unassignedInventoryWhere } from "../product/visibility";
+import { availableInventoryWhere, unassignedInventoryWhere } from "../product/visibility";
 import { CouponService, normalizeCouponCode } from "../coupon/coupon.service";
 import { XrayClientService, sanitizePanelError } from "../xray/xray.service";
 import { XrayDiagnosticsService } from "../xray/xray-diagnostics.service";
 import { audit, type DbClient } from "./payment-repository";
 import { paymentLog } from "./payment-logging";
 import type { ProductDeliveryResult, PurchaseMethod, TxClient } from "./payment.types";
-import { assertProductDeliverySuccess } from "./payment.types";
 import { PaymentDiscountService } from "./payment-discount.service";
 
 type DeliveryDeps = {

@@ -131,8 +131,12 @@ export class XrayDiagnosticsService {
       if (verify.ok) continue;
       if (verify.reason === "client_missing") missing++;
       if (verify.reason === "stale_inbounds") stale++;
-      if (["client_missing", "stale_inbounds"].includes(verify.reason)) {
-        await prisma.xrayClient.update({ where: { id: client.id }, data: { status: verify.reason === "client_missing" ? "missing_on_panel" : "deleted", lastError: verify.reason } });
+      if (verify.reason === "client_missing") {
+        await prisma.xrayClient.update({ where: { id: client.id }, data: { lastError: "client_missing_pending_admin_review" } });
+        continue;
+      }
+      if (verify.reason === "stale_inbounds") {
+        await prisma.xrayClient.update({ where: { id: client.id }, data: { status: "deleted", lastError: verify.reason } });
         const items = await prisma.orderItem.updateMany({ where: { xrayClientId: client.id }, data: { isActive: false } });
         deactivatedItems += items.count;
       }

@@ -41,6 +41,5 @@ test("renewal list and missing panel sync stay xray-specific", () => {
   assert.match(product, /trafficBytes: \{ gt: 0n \}/);
   assert.doesNotMatch(product.match(/private static renewalProductWhere[\s\S]*?static async listRenewalCategories/)?.[0] ?? "", /ProductAccount|accounts/);
   assert.match(xrayService, /XRAY_CLIENT_MISSING_ON_PANEL/);
-  assert.match(views, /if \(!exists\.exists\) continue/);
   assert.match(views, /missing_on_panel/);
 });

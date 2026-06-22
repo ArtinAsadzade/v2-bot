@@ -33,8 +33,9 @@ test("repair does not activate until verification succeeds", () => {
   assert.match(repair, /status: "active"/);
 });
 
-test("cleanup hides broken clients instead of hard-deleting orders", () => {
-  assert.match(diagnostics, /status: verify\.reason === "client_missing" \? "missing_on_panel" : "deleted"/);
+test("cleanup avoids aggressive missing-on-panel marking from one failed check", () => {
+  assert.match(diagnostics, /lastError: "client_missing_pending_admin_review"/);
+  assert.doesNotMatch(diagnostics.match(/static async cleanupBrokenClients[\s\S]*?static async syncReport/)?.[0] ?? "", /status: "missing_on_panel"/);
   assert.match(diagnostics, /orderItem\.updateMany[\s\S]*isActive: false/);
   assert.doesNotMatch(diagnostics, /order\.delete/);
 });
@@ -46,9 +47,12 @@ test("delivery does not complete if Xray verification fails", () => {
   assert.match(payment, /XrayDiagnosticsService\.listPanelInbounds\(\)/);
 });
 
-test("admin Xray Center UI exposes required actions", () => {
-  for (const label of ["🧩 Xray Center", "🔄 Test Panel API", "🔗 Test Subscription URL", "📡 Inbounds", "🔍 Verify Client", "🛠 Repair Client", "🧹 Cleanup Broken Clients", "📊 Sync Report"]) {
+test("admin Xray Center UI exposes Persian grouped actions", () => {
+  for (const label of ["🧩 مرکز Xray", "📡 وضعیت پنل‌ها", "👥 کاربران Xray", "🔄 همگام‌سازی", "🧪 تست اتصال", "⚙️ تنظیمات Xray", "📊 گزارش مصرف", "⚠️ خطاها"]) {
     assert.match(views, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  for (const removed of ["Test Panel API", "Test Subscription URL", "Verify Client", "Repair Client", "Cleanup Broken Clients", "Sync Report"]) {
+    assert.doesNotMatch(views, new RegExp(removed));
   }
   assert.match(handlers, /cleanupBrokenClients/);
   assert.match(handlers, /repairClient/);
