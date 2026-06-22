@@ -31,6 +31,7 @@ import { pendingInvoiceExistsMessage, previousPurchaseProcessingMessage, unautho
 import { serviceNotFoundMessage, xrayConfigsSentMessage, xrayRenewalInvoiceMessage, xrayRenewedMessage, xraySubscriptionMessage } from "../../messages/account.messages";
 import { adminOnlyCommandMessage, publicPlansDisabledInGroupsMessage } from "../../messages/common.messages";
 import { couponApplyFromProductMessage, couponRemovedMessage } from "../../messages/coupon.messages";
+import { errorUxMessages } from "../../messages/error.messages";
 import { purchaseSuccessMessage } from "../../../utils/messages";
 import { MonitoringService } from "../../../services/monitoring.service";
 import { ProductGuideService } from "../../../modules/system/product-guide.service";
@@ -56,7 +57,7 @@ export function registerXrayHandlers(bot: AppBot) {
       await XrayClientService.subLinks(client.clientSubId!).catch(() => null);
       await ctx.reply(xraySubscriptionMessage(url), { reply_markup: xraySubscriptionKeyboard(client.id) });
     } catch (error) {
-      await ctx.reply(`⚠️ لینک اشتراک در دسترس نیست\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
+      await ctx.reply(`${errorUxMessages.subscriptionUnavailable}\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
     }
   });
 
@@ -69,7 +70,7 @@ export function registerXrayHandlers(bot: AppBot) {
       const qr = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(url)}`;
       await ctx.replyWithPhoto(qr, { caption: "📲 QR لینک اشتراک\n\nبا اسکن این کد، لینک اشتراک شما در برنامه قابل افزودن است." });
     } catch (error) {
-      await ctx.reply(`⚠️ ساخت QR ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
+      await ctx.reply(`${errorUxMessages.subscriptionUnavailable}\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
     }
   });
 
@@ -90,7 +91,7 @@ export function registerXrayHandlers(bot: AppBot) {
       for (let i = 0; i < configs.length; i++) await ctx.reply(`⚙️ کانفیگ ${i + 1}\n\n${configs[i]}`);
       await ctx.reply(xrayConfigsSentMessage(configs.length), { reply_markup: xrayConfigsSentKeyboard(client.id) });
     } catch (error) {
-      await ctx.reply(`⚠️ دریافت کانفیگ‌ها ناموفق بود\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
+      await ctx.reply(`${errorUxMessages.xrayApiDownUser}\n\n${error instanceof Error ? error.message : "خطای نامشخص"}`);
     }
   });
 

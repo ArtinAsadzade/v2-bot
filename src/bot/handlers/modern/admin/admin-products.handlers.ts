@@ -24,6 +24,8 @@ import { isAdminByTelegramId } from "../../../middlewares/admin.middleware";
 import { quickReplyTarget } from "../../../keyboards/reply.keyboard";
 import { InvoiceActionKeyboard } from "../../../keyboards/design-system";
 import { supportCloseHomeInlineKeyboard } from "../../../keyboards/common.keyboard";
+import { adminDangerConfirmKeyboard } from "../../../keyboards/admin-danger.keyboard";
+import { adminDangerConfirmMessage } from "../../../messages/admin.messages";
 import { xraySubscriptionKeyboard, xrayConfigsSentKeyboard, xrayRenewedKeyboard, xrayRenewalInvoiceKeyboard } from "../../../keyboards/account.keyboard";
 import { accountHomeInlineKeyboard, expiredCheckoutRecoveryKeyboard, pendingInvoiceRecoveryKeyboard, processingPurchaseRecoveryKeyboard, standardPurchaseDeliveryKeyboard, xrayPurchaseDeliveryKeyboard } from "../../../keyboards/purchase.keyboard";
 import { buyCallbacks, nav, xrayCallbacks } from "../../../callbacks";
@@ -56,16 +58,14 @@ export function registerAdminProductsHandlers(bot: AppBot) {
   bot.action(/^admin:category:hard_delete:confirm:([^:]+)$/, async (ctx) => {
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
     await ctx.answerCbQuery();
-    await ctx.reply("⚠️ حذف دائمی دسته‌بندی غیرقابل بازگشت است و محصولات وابسته را هم حذف می‌کند.", {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "تایید حذف دائمی", callback_data: actionFor("admin:category:hard_delete:force", ctx.match[1]) },
-            { text: "لغو", callback_data: callbackFor("admin.category", { categoryId: ctx.match[1] }) },
-          ],
-        ],
-      },
-    });
+    await ctx.reply(
+      adminDangerConfirmMessage({
+        action: "حذف دائمی دسته‌بندی",
+        item: ctx.match[1],
+        note: "این عملیات محصولات وابسته را هم حذف می‌کند و قابل بازگشت نیست.",
+      }),
+      adminDangerConfirmKeyboard(actionFor("admin:category:hard_delete:force", ctx.match[1]), callbackFor("admin.category", { categoryId: ctx.match[1] })),
+    );
   });
 
   bot.action(/^admin:category:hard_delete:force:([^:]+)$/, async (ctx) => {
@@ -99,16 +99,14 @@ export function registerAdminProductsHandlers(bot: AppBot) {
   bot.action(/^admin:product:hard_delete:confirm:([^:]+)$/, async (ctx) => {
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
     await ctx.answerCbQuery();
-    await ctx.reply("⚠️ حذف دائمی محصول غیرقابل بازگشت است. اگر محصول سفارش فعال داشته باشد با تایید نهایی هم حذف می‌شود.", {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "تایید حذف دائمی", callback_data: actionFor("admin:product:hard_delete:force", ctx.match[1]) },
-            { text: "لغو", callback_data: callbackFor("admin.product", { productId: ctx.match[1] }) },
-          ],
-        ],
-      },
-    });
+    await ctx.reply(
+      adminDangerConfirmMessage({
+        action: "حذف دائمی محصول",
+        item: ctx.match[1],
+        note: "اگر محصول سفارش فعال داشته باشد، با تایید نهایی هم حذف می‌شود.",
+      }),
+      adminDangerConfirmKeyboard(actionFor("admin:product:hard_delete:force", ctx.match[1]), callbackFor("admin.product", { productId: ctx.match[1] })),
+    );
   });
 
   bot.action(/^admin:product:hard_delete:force:([^:]+)$/, async (ctx) => {
