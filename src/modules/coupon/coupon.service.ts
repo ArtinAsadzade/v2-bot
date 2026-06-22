@@ -1,4 +1,5 @@
 import { prisma } from "../../services/prisma";
+import { isValidObjectId } from "../../utils/object-id";
 import type { Coupon, CouponType, Prisma } from "@prisma/client";
 
 export type CouponCreateInput = {
@@ -18,12 +19,18 @@ export type CouponCalculation = {
   finalAmount: number;
 };
 
+export type CouponCart = { productId?: string | null; originalAmount: number };
+
 export type CouponCheckoutValidation =
   | { ok: true; coupon: Coupon; originalAmount: number; discountAmount: number; finalAmount: number }
   | { ok: false; reason: string };
 
 function normalizeCode(code: string) {
-  return code.trim().toUpperCase();
+  return String(code ?? "").trim().toUpperCase();
+}
+
+function couponNeedsProduct(coupon: Pick<Coupon, "productIds" | "categoryIds">) {
+  return coupon.productIds.length > 0 || coupon.categoryIds.length > 0;
 }
 
 function assertCoupon(data: CouponCreateInput | Partial<CouponCreateInput>) {
@@ -162,21 +169,35 @@ export class CouponService {
     return null;
   }
 
-  static async validateForCheckout(data: { code: string; userId: string; originalAmount: number; now?: Date; tx?: Prisma.TransactionClient | typeof prisma }): Promise<CouponCheckoutValidation> {
+  static async validateForCheckout(data: { code: string; userId: string; originalAmount: number; productId?: string | null; now?: Date; tx?: Prisma.TransactionClient | typeof prisma }): Promise<CouponCheckoutValidation> {
     const tx = data.tx ?? prisma;
     const now = data.now ?? new Date();
     if (!Number.isInteger(data.originalAmount) || data.originalAmount < 0) return { ok: false, reason: "مبلغ سفارش معتبر نیست" };
     const normalizedCode = normalizeCode(data.code);
     if (!normalizedCode) return { ok: false, reason: "کد تخفیف وارد نشده است" };
     const coupon = await tx.coupon.findUnique({ where: { code: normalizedCode } });
-    if (!coupon) return { ok: false, reason: "کد تخفیف پیدا نشد" };
+    if (!coupon) return { ok: false, reason: "کد تخفیف نامعتبر است." };
     const shapeError = this.validateCouponShape(coupon, data.originalAmount, now);
     if (shapeError) return { ok: false, reason: shapeError };
+    let product: { id: string; categoryId: string } | null = null;
+    if (couponNeedsProduct(coupon)) {
+      if (!data.productId) return { ok: false, reason: "برای استفاده از کد تخفیف، ابتدا یک سرویس را انتخاب کنید." };
+      if (!isValidObjectId(data.productId)) return { ok: false, reason: "این کد برای سرویس انتخاب‌شده قابل استفاده نیست." };
+      product = await tx.product.findUnique({ where: { id: data.productId }, select: { id: true, categoryId: true } });
+      if (!product) return { ok: false, reason: "این کد برای سرویس انتخاب‌شده قابل استفاده نیست." };
+      const productMatches = coupon.productIds.length === 0 || coupon.productIds.includes(product.id);
+      const categoryMatches = coupon.categoryIds.length === 0 || coupon.categoryIds.includes(product.categoryId);
+      if (!productMatches || !categoryMatches) return { ok: false, reason: "این کد برای سرویس انتخاب‌شده قابل استفاده نیست." };
+    }
     const usedByUser = await tx.couponUsage.count({ where: { couponId: coupon.id, userId: data.userId } });
-    if (usedByUser >= coupon.perUserLimit) return { ok: false, reason: "❌ این کد قبلاً توسط شما استفاده شده است." };
+    if (usedByUser >= coupon.perUserLimit) return { ok: false, reason: "شما قبلاً از این کد استفاده کرده‌اید." };
     const calculation = this.calculate(coupon, data.originalAmount);
-    if (calculation.finalAmount < 0) return { ok: false, reason: "مبلغ نهایی معتبر نیست" };
+    if (calculation.discountAmount > data.originalAmount || calculation.finalAmount < 0) return { ok: false, reason: "مبلغ نهایی معتبر نیست" };
     return { ok: true, coupon, ...calculation };
+  }
+
+  static async validateCouponForCart(userId: string, code: string, cart: CouponCart, tx: Prisma.TransactionClient | typeof prisma = prisma) {
+    return this.validateForCheckout({ code, userId, originalAmount: cart.originalAmount, productId: cart.productId, tx });
   }
 
   static async validateForUser(code: string, userId: string, tx: Prisma.TransactionClient = prisma, originalAmount = 0) {

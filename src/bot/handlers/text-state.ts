@@ -5,6 +5,8 @@ import { UserService } from "../../modules/user/user.service";
 import { currencyKeyboard } from "./deposit/start";
 import { navigationKeyboard } from "../keyboards/main.keyboard";
 import { AdminService } from "../../modules/admin/admin.service";
+import { ProductService } from "../../modules/product/product.service";
+import { isValidObjectId } from "../../utils/object-id";
 
 export async function handleStateText(ctx: AppContext, next: () => Promise<void>) {
   const state = ctx.session.state;
@@ -38,7 +40,12 @@ export async function handleStateText(ctx: AppContext, next: () => Promise<void>
     case "coupon_code": {
       const user = await UserService.findOrCreateUser(ctx);
       try {
-        const coupon = await CouponService.validateForUser(text, user.id);
+        if (!isValidObjectId(state.productId)) throw new Error("برای استفاده از کد تخفیف، ابتدا یک سرویس را انتخاب کنید.");
+        const product = await ProductService.getProduct(state.productId);
+        if (!product) throw new Error("برای استفاده از کد تخفیف، ابتدا یک سرویس را انتخاب کنید.");
+        const validation = await CouponService.validateForCheckout({ code: text, userId: user.id, originalAmount: product.price, productId: state.productId });
+        if (!validation.ok) throw new Error(validation.reason);
+        const coupon = validation.coupon;
         ctx.session.selectedCoupons = { ...(ctx.session.selectedCoupons ?? {}), [state.productId]: coupon.code };
         ctx.session.state = undefined;
         await ctx.reply(`✅ کد تخفیف ${coupon.type === "percentage" ? `${coupon.value || coupon.discountPercent || 0}%` : `${coupon.value.toLocaleString("fa-IR")} تومان`} برای این خرید ثبت شد.`, navigationKeyboard(`product:${state.productId}`));

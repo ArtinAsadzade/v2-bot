@@ -420,6 +420,8 @@ model Coupon {
   usedCount             Int          @default(0)
   perUserLimit          Int          @default(1)
   minimumPurchaseAmount Int          @default(0)
+  productIds            String[]     @db.ObjectId @default([])
+  categoryIds           String[]     @db.ObjectId @default([])
   status                CouponStatus @default(active)
   expiresAt             DateTime
   deletedAt             DateTime?
@@ -438,9 +440,15 @@ model CouponUsage {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   couponId  String   @db.ObjectId
   userId    String   @db.ObjectId
-  orderId   String?  @db.ObjectId
-  usageSlot Int      @default(0)
-  createdAt DateTime @default(now())
+  orderId        String?  @db.ObjectId
+  paymentId      String?  @db.ObjectId
+  productId      String?  @db.ObjectId
+  couponCode     String
+  originalAmount Int
+  discountAmount Int
+  finalAmount    Int
+  usageSlot      Int      @default(0)
+  createdAt      DateTime @default(now())
 
   coupon Coupon @relation(fields: [couponId], references: [id])
   user   User   @relation(fields: [userId], references: [id])
@@ -448,6 +456,9 @@ model CouponUsage {
   @@unique([couponId, userId, usageSlot])
   @@index([couponId, userId])
   @@index([userId, createdAt])
+  @@index([orderId])
+  @@index([paymentId])
+  @@index([productId])
 }
 
 model Category {

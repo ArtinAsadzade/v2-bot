@@ -3,6 +3,7 @@ import { renderPanel, callbackFor, panelKeyboard, actionFor, RenderMode, type Ui
 import { UserService } from "../../modules/user/user.service";
 import { ProductService } from "../../modules/product/product.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
+import { isValidObjectId } from "../../utils/object-id";
 import { CryptoWalletService, DepositService, FinancialSettingsService } from "../../modules/deposit/deposit.service";
 import { SupportService } from "../../modules/support/support.service";
 import { AdminService, type ProductAccountAdminStatus } from "../../modules/admin/admin.service";
@@ -322,13 +323,14 @@ ${invoice.paymentLink}`,
     prompt: "🎟 کد تخفیف را وارد کنید:",
     async handleText(ctx, text) {
       const user = await requireUser(ctx);
-      const productId = String(ctx.session.flow?.data.productId ?? "");
+      const productId = String(ctx.session.flow?.data.productId ?? "").trim();
 
       try {
+        if (!isValidObjectId(productId)) return { text: "❌ برای استفاده از کد تخفیف، ابتدا یک سرویس را انتخاب کنید." };
         const product = await ProductService.getProduct(productId);
-        if (!product) throw new Error("محصول پیدا نشد");
+        if (!product) return { text: "❌ برای استفاده از کد تخفیف، ابتدا یک سرویس را انتخاب کنید." };
         if (ctx.session.selectedCoupons?.[productId]) delete ctx.session.selectedCoupons[productId];
-        const validation = await CouponService.validateForCheckout({ code: text.trim(), userId: user.id, originalAmount: product.price });
+        const validation = await CouponService.validateForCheckout({ code: text.trim(), userId: user.id, originalAmount: product.price, productId });
         if (!validation.ok) {
           return {
             text: `❌ کد تخفیف قابل استفاده نیست\n\nدلیل:\n${validation.reason}`,

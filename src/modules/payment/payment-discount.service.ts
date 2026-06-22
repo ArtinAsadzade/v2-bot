@@ -9,6 +9,7 @@ export class PaymentDiscountService {
       userId: string;
       orderId: string;
       invoiceId?: string;
+      productId?: string | null;
       originalAmount: number;
       discountAmount: number;
       finalAmount: number;
@@ -18,8 +19,10 @@ export class PaymentDiscountService {
     if (existingForOrder) return existingForOrder;
     const coupon = await tx.coupon.findUniqueOrThrow({
       where: { id: data.couponId },
-      select: { maxUses: true, perUserLimit: true, status: true, deletedAt: true, expiresAt: true },
+      select: { code: true, maxUses: true, perUserLimit: true, status: true, deletedAt: true, expiresAt: true, minimumPurchaseAmount: true },
     });
+    if (coupon.status !== "active" || coupon.deletedAt || coupon.expiresAt <= new Date()) throw new Error("این کد منقضی شده است.");
+    if (data.originalAmount < coupon.minimumPurchaseAmount) throw new Error("حداقل مبلغ خرید برای این کد رعایت نشده است");
     const userUsageCount = await tx.couponUsage.count({ where: { couponId: data.couponId, userId: data.userId } });
     if (userUsageCount >= coupon.perUserLimit) {
       await audit(tx, {
@@ -44,7 +47,18 @@ export class PaymentDiscountService {
       throw new Error("کد تخفیف دیگر قابل استفاده نیست");
     }
     const usage = await tx.couponUsage.create({
-      data: { couponId: data.couponId, userId: data.userId, orderId: data.orderId, usageSlot: userUsageCount },
+      data: {
+        couponId: data.couponId,
+        userId: data.userId,
+        orderId: data.orderId,
+        paymentId: data.invoiceId,
+        productId: data.productId ?? null,
+        couponCode: coupon.code,
+        originalAmount: data.originalAmount,
+        discountAmount: data.discountAmount,
+        finalAmount: data.finalAmount,
+        usageSlot: userUsageCount,
+      },
     });
     await audit(tx, {
       userId: data.userId,
@@ -53,6 +67,9 @@ export class PaymentDiscountService {
       metadata: {
         couponId: data.couponId,
         orderId: data.orderId,
+        paymentId: data.invoiceId,
+        productId: data.productId,
+        couponCode: coupon.code,
         usageSlot: userUsageCount,
         originalAmount: data.originalAmount,
         discountAmount: data.discountAmount,
