@@ -44,6 +44,10 @@ import {
   yesNoStatus,
 } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
+import { card, joinSections, section } from "../ui/layout";
+import { sectionTitles } from "../ui/sections";
+import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
+import { uiIcons } from "../ui/icons";
 import { MonitoringService } from "../../services/monitoring.service";
 import { prisma } from "../../services/prisma";
 
@@ -64,17 +68,7 @@ export function registerHomeViews() {
     const keyboard = homeKeyboard(isAdmin);
 
     return {
-      text: `سلام ${ctx.from?.first_name ?? "دوست عزیز"} 🌿
-
-${divider}
-🏠 داشبورد کاربر
-
-💰 موجودی کیف پول: ${money(user?.balance ?? 0)}
-📦 اکانت‌های فعال: ${activeCount.toLocaleString("fa-IR")}
-👥 دعوت‌های موفق: ${(dashboard?.referralCount ?? 0).toLocaleString("fa-IR")} نفر
-${divider}
-
-از مسیرهای سریع زیر وارد بخش موردنظر شوید. محصولات فقط از مسیر «فروشگاه ← دسته‌بندی ← محصول» نمایش داده می‌شوند.`,
+      text: joinSections([card(`${uiIcons.home} سلام ${ctx.from?.first_name ?? "دوست عزیز"} 🌿`, [`${uiIcons.wallet} موجودی کیف پول: ${money(user?.balance ?? 0)}`, `${uiIcons.account} اکانت‌های فعال: ${activeCount.toLocaleString("fa-IR")}`, `${uiIcons.users} دعوت‌های موفق: ${(dashboard?.referralCount ?? 0).toLocaleString("fa-IR")} نفر`]), section(sectionTitles.quickActions, ["از مسیرهای سریع زیر وارد بخش موردنظر شوید. محصولات فقط از مسیر «فروشگاه ← دسته‌بندی ← محصول» نمایش داده می‌شوند."])]),
       keyboard,
       replyKeyboard: "home",
     };

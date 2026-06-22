@@ -44,6 +44,10 @@ import {
   yesNoStatus,
 } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
+import { card, joinSections, section } from "../ui/layout";
+import { sectionTitles } from "../ui/sections";
+import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
+import { uiIcons } from "../ui/icons";
 import { MonitoringService } from "../../services/monitoring.service";
 import { prisma } from "../../services/prisma";
 
@@ -75,7 +79,7 @@ export function registerFreeAccountViews() {
               : "آماده دریافت";
     return {
       replyKeyboard: "freeAccount",
-      text: `🎁 اکانت تست رایگان Xray\n\n${divider}\n\n📌 وضعیت شما:\n${reason}\n\n📅 آخرین دریافت:\n${formatFreeAccountDate(e.lastClaimAt)}\n\n⏳ دریافت بعدی:\n${formatFreeAccountDate(e.nextAvailableAt && e.nextAvailableAt > new Date() ? e.nextAvailableAt : undefined)}\n\n📦 موجودی:\n${cfg.available.toLocaleString("fa-IR")} از ${cfg.stockLimit.toLocaleString("fa-IR")}\n\n📊 حجم تست:\n${formatXrayBytes(cfg.trafficBytes)}\n\n📅 مدت:\n${cfg.durationDays.toLocaleString("fa-IR")} روز\n\nاکانت تست به‌صورت خودکار در پنل Xray ساخته می‌شود و از بخش «اکانت‌های من» قابل مشاهده است.`,
+      text: joinSections([card(userLabels.freeAccount, [`📌 وضعیت شما: ${reason}`, `📅 آخرین دریافت: ${formatFreeAccountDate(e.lastClaimAt)}`, `⏳ دریافت بعدی: ${formatFreeAccountDate(e.nextAvailableAt && e.nextAvailableAt > new Date() ? e.nextAvailableAt : undefined)}`]), section(sectionTitles.serviceSpecs, [`${uiIcons.product} موجودی: ${cfg.available.toLocaleString("fa-IR")} از ${cfg.stockLimit.toLocaleString("fa-IR")}`, `${sectionTitles.traffic}: ${formatXrayBytes(cfg.trafficBytes)}`, `${sectionTitles.duration}: ${cfg.durationDays.toLocaleString("fa-IR")} روز`]), card(`${uiIcons.info} راهنما`, ["اکانت تست به‌صورت خودکار در پنل Xray ساخته می‌شود و از بخش «اکانت‌های من» قابل مشاهده است."])]),
       keyboard: blocked
         ? [
             [

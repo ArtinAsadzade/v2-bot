@@ -82,7 +82,7 @@ export type ViewRenderResult = {
   parseMode?: "HTML";
   replyKeyboard?: ReplyKeyboardScope;
   renderMode?: RenderMode;
-  navigation?: { back?: boolean; home?: boolean };
+  navigation?: { back?: boolean; home?: boolean; cancel?: boolean };
 };
 export type ViewRenderer = (ctx: AppContext, params: Record<string, string>) => Promise<ViewRenderResult>;
 
@@ -262,7 +262,7 @@ export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?
     )
     .filter((row) => row.length > 0);
   const nav: InlineKeyboardButton.CallbackButton[] = [];
-  if (options.back && !seenNav.has("nav:back")) nav.push(Markup.button.callback("🔙 بازگشت", ensureCallbackData("nav:back")));
+  if (options.back && !seenNav.has("nav:back")) nav.push(Markup.button.callback("↩️ برگشت", ensureCallbackData("nav:back")));
   if (options.home && !seenNav.has(callbackFor("home"))) nav.push(Markup.button.callback("🏠 خانه", callbackFor("home")));
   if (nav.length) normalized.push(nav);
   if (options.cancel) normalized.push([Markup.button.callback("❌ لغو عملیات", "flow:cancel")]);
@@ -313,7 +313,7 @@ export async function renderPanel(
   }
 
   const isHome = state.id === "home";
-  const keyboard = panelKeyboard(result.keyboard, { back: result.navigation?.back ?? !isHome, home: result.navigation?.home ?? !isHome });
+  const keyboard = panelKeyboard(result.keyboard, { back: result.navigation?.back ?? !isHome, home: result.navigation?.home ?? !isHome, cancel: result.navigation?.cancel });
   const extra = { parse_mode: result.parseMode, ...keyboard };
   const fallbackReply = async () => {
     try {

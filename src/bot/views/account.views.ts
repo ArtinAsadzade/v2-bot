@@ -44,6 +44,11 @@ import {
   yesNoStatus,
 } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
+import { accountListViewKeyboard } from "../keyboards/view-keyboards";
+import { card, joinSections, section } from "../ui/layout";
+import { sectionTitles } from "../ui/sections";
+import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
+import { uiIcons } from "../ui/icons";
 import { MonitoringService } from "../../services/monitoring.service";
 import { prisma } from "../../services/prisma";
 
@@ -64,17 +69,7 @@ export function registerAccountViews() {
     const username = ctx.from?.username ? `@${ctx.from.username}` : user.username ? `@${user.username}` : "ثبت نشده";
     return {
       replyKeyboard: "profile",
-      text: `👤 حساب کاربری
-
-${divider}
-🆔 Telegram ID: ${user.telegramId}
-👤 Username: ${username}
-💰 موجودی: ${money(dashboard.user.balance)}
-📦 اکانت‌های فعال: ${activeCount.toLocaleString("fa-IR")}
-🧾 کل خریدها: ${dashboard.recentOrders.length.toLocaleString("fa-IR")}
-${divider}
-
-برای مدیریت حساب، یکی از بخش‌های زیر را انتخاب کنید.`,
+      text: joinSections([card(userLabels.myAccounts, [`🆔 Telegram ID: ${user.telegramId}`, `👤 Username: ${username}`, `${uiIcons.wallet} موجودی: ${money(dashboard.user.balance)}`, `${uiIcons.account} اکانت‌های فعال: ${activeCount.toLocaleString("fa-IR")}`, `${uiIcons.invoice} کل خریدها: ${dashboard.recentOrders.length.toLocaleString("fa-IR")}`]), section(sectionTitles.quickActions, ["برای مدیریت حساب، یکی از بخش‌های زیر را انتخاب کنید."])]),
       keyboard: [
         [
           { text: "📦 اکانت‌های من", action: callbackFor("account.details") },
@@ -114,43 +109,31 @@ ${divider}
           if (!exists.exists) continue;
         }
         const days = client ? Math.max(Math.ceil((client.expiresAt.getTime() - Date.now()) / 86_400_000), 0) : 0;
-        lines.push(
-          `${index}. ${item.product.title}\n   وضعیت: ${normalizeXrayStatus(client?.status)}\n   اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`,
-        );
+        lines.push(card(`${uiIcons.product} ${index}. ${item.product.title}`, [`${uiIcons.active} وضعیت: ${normalizeXrayStatus(client?.status)}`, `⏳ اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`, `${uiIcons.dashboard} حجم: ${client ? formatXrayBytes(client.usedBytes ?? 0n) : "—"}`, client && !client.isFreeTest ? `${uiIcons.renew} تمدید از جزئیات سرویس` : undefined]));
         if (client)
           keyboard.push([{ text: `🧩 ${item.product.title}`.slice(0, 60), action: callbackFor("account.xray", { xrayClientId: client.id }) }]);
       } else {
         const days = item.expiresAt ? Math.max(Math.ceil((item.expiresAt.getTime() - Date.now()) / 86_400_000), 0) : undefined;
-        lines.push(
-          `${index}. ${item.product.title}\n   وضعیت: ${purchasedAccountStatusLabel(item)}\n   اعتبار: ${days === undefined ? "نامحدود" : `${days.toLocaleString("fa-IR")} روز باقی‌مانده`}`,
-        );
+        lines.push(card(`${uiIcons.product} ${index}. ${item.product.title}`, [`${uiIcons.active} وضعیت: ${purchasedAccountStatusLabel(item)}`, `⏳ اعتبار: ${days === undefined ? "نامحدود" : `${days.toLocaleString("fa-IR")} روز باقی‌مانده`}`, `${uiIcons.dashboard} حجم: موجودی دستی`, `${uiIcons.renew} تمدید از جزئیات سرویس`]));
         keyboard.push([{ text: `🧩 ${item.product.title}`.slice(0, 60), action: callbackFor("account", { accountId: item.id }) }]);
       }
       index++;
     }
     for (const client of visibleFreeXrayClients) {
       const days = Math.max(Math.ceil((client.expiresAt.getTime() - Date.now()) / 86_400_000), 0);
-      lines.push(
-        `${index}. 🆓 اکانت تست\n   وضعیت: ${normalizeXrayStatus(client.status)}\n   اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`,
-      );
+      lines.push(card(`${userLabels.freeAccount} ${index}`, [`${uiIcons.active} وضعیت: ${normalizeXrayStatus(client.status)}`, `⏳ اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`, `${uiIcons.dashboard} حجم: ${formatXrayBytes(client.trafficBytes, { unlimitedIfZero: true })}`]));
       keyboard.push([{ text: `🆓 اکانت تست ${client.clientEmail}`.slice(0, 60), action: callbackFor("account.xray", { xrayClientId: client.id }) }]);
       index++;
     }
     for (const item of activeFreeAccounts) {
       const days = Math.max(Math.ceil((freeAccountExpiry(item).getTime() - Date.now()) / 86_400_000), 0);
-      lines.push(`${index}. اکانت تست قدیمی\n   وضعیت: فعال ✅\n   اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`);
+      lines.push(card(`${userLabels.freeAccount} قدیمی ${index}`, [`${statusLabels.active}`, `⏳ اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`, `${uiIcons.dashboard} حجم: —`]));
       index++;
     }
     return {
       replyKeyboard: "profile",
-      text: `📦 اکانت‌های من\n\nسرویس‌های فعال شما:\n\n${lines.join("\n\n") || "هنوز اکانتی برای نمایش وجود ندارد."}`,
-      keyboard: [
-        ...keyboard,
-        [
-          { text: "🛒 خرید", action: callbackFor("shop.categories") },
-          { text: "🎫 پشتیبانی", action: callbackFor("support") },
-        ],
-      ],
+      text: joinSections([section(sectionTitles.accounts, ["سرویس‌های فعال شما:"]), lines.join("\n\n") || "هنوز اکانتی برای نمایش وجود ندارد."]),
+      keyboard: accountListViewKeyboard(keyboard),
     };
   });
   registerView("account.xray", async (ctx, params) => {

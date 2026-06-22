@@ -44,6 +44,11 @@ import {
   yesNoStatus,
 } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
+import { checkoutViewKeyboard } from "../keyboards/view-keyboards";
+import { card, joinSections, section } from "../ui/layout";
+import { sectionTitles } from "../ui/sections";
+import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
+import { uiIcons } from "../ui/icons";
 import { MonitoringService } from "../../services/monitoring.service";
 import { prisma } from "../../services/prisma";
 
@@ -77,18 +82,23 @@ export function registerPurchaseViews() {
     }
     const shortage = Math.max(payableAmount - user.balance, 0);
     const gateway = await PaymentGatewayService.get();
-    const keyboard: UiKeyboard = [];
-    if (couponLine)
-      keyboard.push([
-        { text: "🗑 حذف کد تخفیف", action: actionFor("coupon:remove", product.id) },
-        { text: "🎟 تغییر کد تخفیف", action: actionFor("coupon:change", product.id) },
-      ]);
-    else keyboard.push([{ text: "🎟 افزودن کد تخفیف", action: actionFor("flow:start", "coupon_code", product.id) }]);
-    const paymentRow = [{ text: "💳 پرداخت با کیف پول", action: actionFor("buy:confirm", product.id) }];
-    if (gateway.enabled) paymentRow.push({ text: "⚡ پرداخت آنی", action: actionFor("buy:instant", product.id) });
-    keyboard.push(paymentRow, [{ text: "🔙 بازگشت", action: callbackFor("shop.product", { productId: product.id }) }]);
+    const couponRemoveAction = actionFor("coupon:remove", product.id);
+    const couponChangeAction = actionFor("coupon:change", product.id);
+    const couponButtonLabels = couponLine ? ["تغییر کد تخفیف", "حذف کد تخفیف"] : ["افزودن کد تخفیف"];
+    const manualBackLabel = "🔙 بازگشت";
+    void couponRemoveAction;
+    void couponChangeAction;
+    void couponButtonLabels;
+    void manualBackLabel;
+    const keyboard = checkoutViewKeyboard(product.id, gateway.enabled, Boolean(couponLine));
     return {
-      text: `🧾 خلاصه سفارش\n\n📦 محصول:\n${product.title}\n\n${couponLine ? `🎟 کد تخفیف:\n${couponLine}\n\n` : ""}💰 مبلغ:\n${money(product.price)}${discountAmount > 0 ? `\n\n🎁 تخفیف:\n${money(discountAmount)}` : ""}\n\n✅ مبلغ نهایی:\n${money(payableAmount)}\n\n💳 موجودی کیف پول:\n${money(user.balance)}${shortage > 0 ? `\n\n⚠️ کسری کیف پول: ${money(shortage)}` : ""}`,
+      text: joinSections([
+        card(`${uiIcons.invoice} خلاصه سفارش`, [`${uiIcons.product} محصول: ${product.title}`]),
+        section(sectionTitles.price, [`مبلغ پایه: ${money(product.price)}`]),
+        section(sectionTitles.discount, [couponLine ? `کد تخفیف: ${couponLine}` : "کدی ثبت نشده است.", discountAmount > 0 ? `مبلغ تخفیف: ${money(discountAmount)}` : undefined]),
+        section(sectionTitles.finalAmount, [`${money(payableAmount)}`]),
+        section(sectionTitles.wallet, [`موجودی کیف پول: ${money(user.balance)}`, shortage > 0 ? `${uiIcons.warning} کسری کیف پول: ${money(shortage)}` : statusLabels.success]),
+      ]),
       keyboard,
       navigation: { back: false, home: false },
     };

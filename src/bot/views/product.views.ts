@@ -44,6 +44,11 @@ import {
   yesNoStatus,
 } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
+import { productDetailViewKeyboard } from "../keyboards/view-keyboards";
+import { card, joinSections, section } from "../ui/layout";
+import { sectionTitles } from "../ui/sections";
+import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
+import { uiIcons } from "../ui/icons";
 import { MonitoringService } from "../../services/monitoring.service";
 import { prisma } from "../../services/prisma";
 
@@ -60,7 +65,7 @@ export function registerProductViews() {
     const categories = await ProductService.getCategories();
     return {
       replyKeyboard: "shop",
-      text: `🛍 فروشگاه نیمه‌شب\n\n${divider}\nدسته‌بندی موردنظر را انتخاب کنید. همه سرویس‌های نمایش‌داده‌شده فعال و آماده تحویل خودکار هستند.`,
+      text: joinSections([card(`${uiIcons.product} فروشگاه نیمه‌شب`, ["دسته‌بندی موردنظر را انتخاب کنید."]), section(sectionTitles.serviceSpecs, ["همه سرویس‌های نمایش‌داده‌شده فعال و آماده تحویل خودکار هستند."])]),
       keyboard: [
         [{ text: "🔎 جستجوی محصول", action: "flow:start:product_search" }],
         ...categories.map((category) => [
@@ -75,7 +80,7 @@ export function registerProductViews() {
   registerView("shop.products", async (_ctx, params) => {
     const products = await ProductService.getProductsByCategory(params.categoryId);
     return {
-      text: `📦 انتخاب سرویس\n\n${divider}\nیک سرویس را انتخاب کنید تا جزئیات، موجودی و پیش‌فاکتور را ببینید.`,
+      text: joinSections([card(userLabels.services, ["یک سرویس را انتخاب کنید تا جزئیات، موجودی و پیش‌فاکتور را ببینید."])]),
       keyboard: products.map((product) => [
         {
           text: product.title,
@@ -88,7 +93,7 @@ export function registerProductViews() {
     const query = params.q || ctx.session.productSearchQuery || "";
     const products = await ProductService.searchActiveProducts(query, 10);
     return {
-      text: `🔎 نتیجه جستجو\n\nعبارت: ${query || "—"}\n${divider}\n${products.length ? "از نتایج زیر یک محصول را انتخاب کنید:" : "موردی پیدا نشد. لطفاً با نام کوتاه‌تر سرویس یا دسته‌بندی دوباره جستجو کنید."}`,
+      text: joinSections([card(`${uiIcons.info} نتیجه جستجو`, [`عبارت: ${query || "—"}`, products.length ? "از نتایج زیر یک محصول را انتخاب کنید:" : "موردی پیدا نشد. لطفاً با نام کوتاه‌تر سرویس یا دسته‌بندی دوباره جستجو کنید."])]),
       keyboard: [
         ...products.map((product) => [
           {
@@ -113,11 +118,23 @@ export function registerProductViews() {
       6,
     );
     return {
-      text: `📦 ${product.title}\n\n${divider}\n🏷 دسته‌بندی: ${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}\n⚙️ نوع محصول: ${product.mode === "xray_auto" ? "ساخت خودکار از پنل Xray" : "موجودی دستی"}\n${product.mode === "xray_auto" ? `📊 حجم: ${formatXrayBytes(product.trafficBytes)}\n📅 اعتبار سرویس: ${(product.durationDays ?? product.duration).toLocaleString("fa-IR")} روز` : `📅 اعتبار سرویس: ${product.duration.toLocaleString("fa-IR")} روز`}\n💰 قیمت نهایی: ${money(product.price)}\n🚀 تحویل: فوری و خودکار\n📊 موجودی: ${stockLabel(stock)}\n${divider}\n\nپس از پرداخت، اطلاعات اکانت همین‌جا نمایش داده می‌شود و همیشه از بخش «اکانت‌های من» قابل مشاهده است.`,
-      keyboard: [
-        ...(stock > 0 ? [[{ text: "✅ ادامه خرید", action: callbackFor("shop.checkout", { productId: product.id }) }]] : []),
-        [{ text: "🎟 کد تخفیف", action: actionFor("flow:start", "coupon_code", product.id) }],
-      ],
+      text: joinSections([
+        card(`${uiIcons.product} ${product.title}`, [
+          `🏷 دسته‌بندی: ${product.category?.name ?? "دسته‌بندی نامعتبر یا حذف‌شده"}`,
+          `⚙️ نوع محصول: ${product.mode === "xray_auto" ? "ساخت خودکار از پنل Xray" : "موجودی دستی"}`,
+          `🚀 تحویل: فوری و خودکار`,
+          `📊 موجودی: ${stockLabel(stock)}`,
+          `📅 اعتبار سرویس: ${(product.durationDays ?? product.duration).toLocaleString("fa-IR")} روز`,
+          `📊 حجم: ${product.mode === "xray_auto" ? formatXrayBytes(product.trafficBytes) : "—"}`,
+        ]),
+        section(sectionTitles.traffic, [product.mode === "xray_auto" ? formatXrayBytes(product.trafficBytes) : undefined]),
+        section(sectionTitles.duration, [`${(product.durationDays ?? product.duration).toLocaleString("fa-IR")} روز`]),
+        section(sectionTitles.price, [`قیمت پایه: ${money(product.price)}`]),
+        section(sectionTitles.discount, ["در مرحله بعد می‌توانید کد تخفیف وارد کنید."]),
+        section(sectionTitles.finalAmount, [`💰 قیمت نهایی: ${money(product.price)}`]),
+        card(`${uiIcons.info} راهنما`, ["پس از پرداخت، اطلاعات اکانت همین‌جا نمایش داده می‌شود و همیشه از بخش «اکانت‌های من» قابل مشاهده است."]),
+      ]),
+      keyboard: productDetailViewKeyboard(product.id, stock),
     };
   });
 }

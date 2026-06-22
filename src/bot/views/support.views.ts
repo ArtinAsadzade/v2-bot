@@ -44,6 +44,10 @@ import {
   yesNoStatus,
 } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
+import { card, joinSections, section } from "../ui/layout";
+import { sectionTitles } from "../ui/sections";
+import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
+import { uiIcons } from "../ui/icons";
 import { MonitoringService } from "../../services/monitoring.service";
 import { prisma } from "../../services/prisma";
 
@@ -63,22 +67,10 @@ export function registerSupportViews() {
     const latestOpen = tickets.find((ticket) => ticket.status === "open");
     return {
       replyKeyboard: "support",
-      text: `🎫 پشتیبانی
-
-${divider}
-
-💬 برای ارتباط با پشتیبانی وارد گفتگو شوید و پیام خود را ارسال کنید. پاسخ‌ها در همین چت برای شما نمایش داده می‌شود.
-
-📌 وضعیت آخرین تیکت: ${latestOpen ? `باز (#${shortId(latestOpen.id)})` : "تیکت باز ندارید"}
-
-${
-  tickets
-    .map(
-      (ticket) => `• #${shortId(ticket.id)} · ${ticket.status === "open" ? "باز ✅" : "بسته 🔒"} · ${ticket.updatedAt.toLocaleString("fa-IR")}
-  ${ticket.messages[0]?.message ?? "بدون پیام"}`,
-    )
-    .join("\n") || "هنوز تیکتی ثبت نشده است."
-}`,
+      text: joinSections([
+        card(userLabels.support, ["برای ارتباط با پشتیبانی وارد گفتگو شوید و پیام خود را ارسال کنید. پاسخ‌ها در همین چت برای شما نمایش داده می‌شود.", `📌 وضعیت آخرین تیکت: ${latestOpen ? `باز (#${shortId(latestOpen.id)})` : "تیکت باز ندارید"}`]),
+        section(`${uiIcons.invoice} تیکت‌های اخیر`, [tickets.map((ticket) => `• #${shortId(ticket.id)} · ${ticket.status === "open" ? statusLabels.active : "🔒 بسته"} · ${ticket.updatedAt.toLocaleString("fa-IR")}\n  ${ticket.messages[0]?.message ?? "بدون پیام"}`).join("\n") || "هنوز تیکتی ثبت نشده است."]),
+      ]),
       keyboard: [
         [{ text: latestOpen ? "💬 ادامه گفتگو" : "✉️ ایجاد تیکت جدید", action: "support:chat:start" }],
         ...tickets.slice(0, 3).map((ticket) => [{ text: `👁 تیکت #${shortId(ticket.id)}`, action: `support:chat:${ticket.id}` }]),
