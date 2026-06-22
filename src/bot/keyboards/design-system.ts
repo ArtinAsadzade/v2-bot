@@ -30,10 +30,10 @@ export const labels = {
   buyAgain: "🛒 خرید مجدد",
   coupon: "🎟 تخفیف‌ها",
   account: "👤 حساب من",
-  freeAccount: "🆓 اکانت تست",
+  freeAccount: "🎁 دریافت تست رایگان",
   referral: "🎁 دعوت دوستان",
   orders: "🧩 سرویس‌های من",
-  support: "🎫 پشتیبانی",
+  support: "🆘 پشتیبانی",
   guide: "📘 راهنما",
   settings: "⚙️ تنظیمات",
   retry: "🔄 تلاش مجدد",
@@ -99,8 +99,11 @@ export function buildInlineKeyboard(rows: InlineButton[][]): { reply_markup: Inl
 
 export function MainMenuKeyboard(isAdmin = false) {
   const rows: ReplyButton[][] = [
-    [{ text: labels.shop }, { text: labels.account }],
-    [{ text: labels.support }, { text: labels.guide }],
+    [{ text: labels.shop }, { text: labels.freeAccount }],
+    [{ text: labels.orders }, { text: "♻️ تمدید سرویس" }],
+    [{ text: labels.account }, { text: labels.wallet }],
+    [{ text: labels.support }, { text: "📢 اطلاعیه‌ها" }],
+    [{ text: labels.guide }],
   ];
   if (isAdmin) rows.push([{ text: labels.adminDashboard }]);
   return buildReplyKeyboard(rows);
@@ -195,10 +198,12 @@ export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record
   [labels.shop]: { id: "shop.categories" },
   [labels.buyAgain]: { id: "shop.categories" },
   [labels.orders]: { id: "account.details" },
+  "♻️ تمدید سرویس": { id: "account.renew" },
   [labels.account]: { id: "account" },
   [labels.freeAccount]: { id: "freeAccount" },
   [labels.guide]: { id: "productGuide" },
   [labels.referral]: { id: "referral" },
+  "📢 اطلاعیه‌ها": { id: "referral" },
   "🎁 اکانت تست": { id: "freeAccount" },
   [labels.refresh]: "refresh",
   [labels.retry]: { id: "deposit" },
@@ -241,6 +246,6 @@ export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record
 export function privateTopicArchitecture() {
   return {
     enabled: process.env.TELEGRAM_PRIVATE_TOPICS_ENABLED === "true",
-    topics: { payments: "💳 پرداخت‌ها", support: "🎫 پشتیبانی", orders: "📦 سفارش‌ها", announcements: "📢 اطلاعیه‌ها" },
+    topics: { payments: "💳 پرداخت‌ها", support: "🆘 پشتیبانی", orders: "📦 سفارش‌ها", announcements: "📢 اطلاعیه‌ها" },
   };
 }
