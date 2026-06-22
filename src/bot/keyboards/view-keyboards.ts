@@ -3,11 +3,11 @@ import { actionLabels, adminLabels, userLabels } from "../ui/labels";
 
 export function productDetailViewKeyboard(productId: string, stock: number): UiKeyboard {
   return [
-    ...(stock > 0 ? [[{ text: actionLabels.buy, action: callbackFor("shop.checkout", { productId }) }]] : []),
-    [{ text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId) }],
+    ...(stock > 0 ? [[{ text: actionLabels.buy, action: callbackFor("shop.checkout", { productId }), tone: "success" as const }]] : []),
+    [{ text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId), tone: "primary" as const }],
     [
-      { text: "↩️ برگشت", action: callbackFor("shop.categories") },
-      { text: actionLabels.home, action: callbackFor("home") },
+      { text: "↩️ برگشت", action: callbackFor("shop.categories"), tone: "neutral" as const },
+      { text: actionLabels.home, action: callbackFor("home"), tone: "neutral" as const },
     ],
   ];
 }
@@ -16,19 +16,19 @@ export function checkoutViewKeyboard(productId: string, gatewayEnabled: boolean,
   return [
     hasCoupon
       ? [
-          { text: actionLabels.removeCoupon, action: actionFor("coupon:remove", productId) },
-          { text: actionLabels.enterCoupon, action: actionFor("coupon:change", productId) },
+          { text: actionLabels.removeCoupon, action: actionFor("coupon:remove", productId), tone: "danger" as const },
+          { text: actionLabels.enterCoupon, action: actionFor("coupon:change", productId), tone: "primary" as const },
         ]
-      : [{ text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId) }],
+      : [{ text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId), tone: "primary" as const }],
     [
-      { text: actionLabels.walletPurchase, action: actionFor("buy:confirm", productId) },
-      ...(gatewayEnabled ? [{ text: actionLabels.instantPayment, action: actionFor("buy:instant", productId) }] : []),
+      { text: actionLabels.walletPurchase, action: actionFor("buy:confirm", productId), tone: "success" as const },
+      ...(gatewayEnabled ? [{ text: actionLabels.instantPayment, action: actionFor("buy:instant", productId), tone: "success" as const }] : []),
     ],
     [
-      { text: "🔙 بازگشت", action: callbackFor("shop.product", { productId }) },
-      { text: actionLabels.home, action: callbackFor("home") },
+      { text: "🔙 بازگشت", action: callbackFor("shop.product", { productId }), tone: "neutral" as const },
+      { text: actionLabels.home, action: callbackFor("home"), tone: "neutral" as const },
     ],
-    [{ text: "لغو", action: "flow:cancel" }],
+    [{ text: "لغو", action: "flow:cancel", tone: "danger" as const }],
   ];
 }
 
@@ -39,27 +39,27 @@ export function accountListViewKeyboard(rows: UiKeyboard): UiKeyboard {
       { text: userLabels.buyService, action: callbackFor("shop.categories") },
       { text: userLabels.support, action: callbackFor("support") },
     ],
-    [{ text: actionLabels.home, action: callbackFor("home") }],
+    [{ text: actionLabels.home, action: callbackFor("home"), tone: "neutral" as const }],
   ];
 }
 
 export function adminDashboardViewKeyboard(): UiKeyboard {
   return [
     [
-      { text: "👥 کاربران", action: callbackFor("admin.usersSupport") },
-      { text: "🛍 فروشگاه", action: callbackFor("admin.store") },
+      { text: "👥 کاربران", action: callbackFor("admin.usersSupport"), tone: "primary" as const },
+      { text: "🛍 فروشگاه", action: callbackFor("admin.store"), tone: "success" as const },
     ],
     [
-      { text: "🧩 مرکز Xray", action: callbackFor("admin.xrayCenter") },
-      { text: "💳 مالی", action: callbackFor("admin.finance") },
+      { text: "🧩 مرکز Xray", action: callbackFor("admin.xrayCenter"), tone: "primary" as const },
+      { text: "💳 مالی", action: callbackFor("admin.finance"), tone: "primary" as const },
     ],
     [
-      { text: "🎫 پشتیبانی", action: callbackFor("admin.tickets") },
-      { text: "📣 اطلاع‌رسانی", action: callbackFor("admin.content") },
+      { text: "🎫 پشتیبانی", action: callbackFor("admin.tickets"), tone: "primary" as const },
+      { text: "📣 اطلاع‌رسانی", action: callbackFor("admin.content"), tone: "primary" as const },
     ],
     [
-      { text: "⚙️ تنظیمات", action: callbackFor("admin.botSettings") },
-      { text: "🏠 خانه", action: callbackFor("home") },
+      { text: "⚙️ تنظیمات", action: callbackFor("admin.botSettings"), tone: "neutral" as const },
+      { text: "🏠 خانه", action: callbackFor("home"), tone: "neutral" as const },
     ],
   ];
 }
