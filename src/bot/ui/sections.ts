@@ -12,4 +12,5 @@ export const sectionTitles = {
   accounts: `${uiIcons.account} اکانت‌های من`,
   adminMetrics: `${uiIcons.dashboard} شاخص‌های امروز`,
   xrayHealth: `${uiIcons.xray} وضعیت Xray`,
+  dangerZone: "⚠️ نکات مهم",
 } as const;
