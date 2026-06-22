@@ -206,7 +206,7 @@ ${divider}
         card("🔗 لینک اختصاصی شما", [link]),
       ]),
       keyboard: [
-        [{ text: "📤 متن آماده ارسال", action: callbackFor("referral.link") }],
+        [{ text: "📤 ارسال متن دعوت", action: callbackFor("referral.link") }],
         navRow({ text: "👥 دعوت‌شده‌ها", view: "referral.users" }, { text: "💎 پاداش‌ها", view: "referral.rewards", tone: "success" }),
         navRow({ text: "📜 قوانین دعوت", view: "referral.rules" }, { text: "🏠 خانه", view: "home" }),
       ],
@@ -237,18 +237,22 @@ ${divider}
 برای شروع از لینک زیر وارد شو 👇
 ${link}`;
 
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(shareText)}`;
+
     return {
       text: joinSections([
-        card("📤 متن آماده ارسال", [
+        card("📤 ارسال متن دعوت", [
           "متن زیر برای ارسال به دوستان آماده شده است.",
-          "آن را کپی کنید و در گروه‌ها یا چت‌های خود به اشتراک بگذارید:",
+          "آن را کپی کنید یا از دکمه اشتراک‌گذاری استفاده کنید:",
           "",
           shareText,
         ]),
       ]),
-      keyboard: [[{ text: "🎁 بازگشت به دعوت دوستان", action: callbackFor("referral") }], [{ text: "🏠 خانه", action: callbackFor("home") }]],
+      keyboard: [
+        [{ text: "📤 اشتراک گذاری", url: shareUrl }],
+        [{ text: "🏠 خانه", action: callbackFor("home") }],
+      ],
     };
-  });
 
   registerView("referral.users", async (ctx) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
@@ -265,7 +269,7 @@ ${link}`;
         "دعوت زمانی ثبت می‌شود که کاربر از لینک اختصاصی شما وارد ربات شود.",
       ]),
       keyboard: [
-        [{ text: "📤 متن آماده ارسال", action: callbackFor("referral.link") }],
+        [{ text: "📤 ارسال متن دعوت", action: callbackFor("referral.link") }],
         [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }],
       ],
     };
@@ -300,6 +304,6 @@ ${link}`;
       "پاداش‌های تأییدشده در بخش پاداش‌ها نمایش داده می‌شوند.",
       "در صورت ثبت دعوت غیرواقعی یا سوءاستفاده، پاداش قابل تأیید نخواهد بود.",
     ]),
-    keyboard: [[{ text: "📤 متن آماده ارسال", action: callbackFor("referral.link") }], [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }]],
+    keyboard: [[{ text: "📤 ارسال متن دعوت", action: callbackFor("referral.link") }], [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }]],
   }));
 }

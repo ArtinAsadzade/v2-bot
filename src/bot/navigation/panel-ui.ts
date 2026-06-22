@@ -5,7 +5,11 @@ import { replyKeyboard, replyKeyboardSignature, type ReplyKeyboardScope } from "
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 
 export type UiButtonTone = "primary" | "success" | "danger" | "neutral";
-export type UiButton = { text: string; action: string; tone?: UiButtonTone };
+export type UiButton = {
+  text: string;
+  action?: string;
+  url?: string;
+};
 export type UiKeyboard = UiButton[][];
 export type PanelViewId =
   | "home"
@@ -316,13 +320,23 @@ export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?
         })
         .flatMap((button) => {
           try {
+            if (button.url) {
+              return [Markup.button.url(button.text, button.url)];
+            }
+
+            if (!button.action) {
+              return [];
+            }
+
             return [Markup.button.callback(button.text, ensureCallbackData(button.action))];
           } catch (error) {
-            console.error("CALLBACK_DATA_INVALID_PREVENTED", {
+            console.error("BUTTON_BUILD_FAILED", {
               text: button.text,
               action: button.action,
+              url: button.url,
               error: error instanceof Error ? error.message : String(error),
             });
+
             return [];
           }
         }),
@@ -380,7 +394,11 @@ export async function renderPanel(
   }
 
   const isHome = state.id === "home";
-  const keyboard = panelKeyboard(result.keyboard, { back: result.navigation?.back ?? !isHome, home: result.navigation?.home ?? !isHome, cancel: result.navigation?.cancel });
+  const keyboard = panelKeyboard(result.keyboard, {
+    back: result.navigation?.back ?? !isHome,
+    home: result.navigation?.home ?? !isHome,
+    cancel: result.navigation?.cancel,
+  });
   const extra = { parse_mode: result.parseMode, ...keyboard };
   const fallbackReply = async () => {
     try {
