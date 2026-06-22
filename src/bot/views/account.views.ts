@@ -68,28 +68,24 @@ export function registerAccountViews() {
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.", keyboard: [] };
     const dashboard = await UserService.dashboard(user.id);
     const activeCount = dashboard.activeAccounts.length + dashboard.activeFreeAccounts.length;
-    const username = ctx.from?.username ? `@${ctx.from.username}` : user.username ? `@${user.username}` : "ثبت نشده";
     return {
       replyKeyboard: "profile",
-      text: joinSections([uxCopy.account({ balance: money(dashboard.user.balance), activeServices: activeCount.toLocaleString("fa-IR") }), section("اطلاعات کاربری", [`Telegram ID: ${user.telegramId}`, `Username: ${username}`]), section(sectionTitles.quickActions, ["بخش موردنظر را انتخاب کنید."])]),
+      text: joinSections([
+        "👤 حساب من",
+        `${uiIcons.wallet} موجودی کیف پول: ${money(dashboard.user.balance)}`,
+        `🧩 تعداد سرویس‌های فعال: ${activeCount.toLocaleString("fa-IR")}`,
+        `📅 تاریخ عضویت: ${user.createdAt.toLocaleDateString("fa-IR")}`,
+      ]),
       keyboard: [
         [
-          { text: userLabels.myServices, action: callbackFor("account.details") },
           { text: userLabels.wallet, action: callbackFor("wallet") },
-        ],
-        [
-          { text: userLabels.topup, action: callbackFor("deposit") },
           { text: userLabels.transactions, action: callbackFor("wallet.history") },
         ],
         [
           { text: userLabels.coupon, action: callbackFor("coupon.info") },
           { text: userLabels.userInfo, action: callbackFor("account") },
         ],
-        [
-          { text: userLabels.referral, action: callbackFor("referral") },
-          { text: userLabels.support, action: callbackFor("support") },
-        ],
-        [{ text: "↩️ برگشت", action: callbackFor("home") }, { text: userLabels.home, action: callbackFor("home") }],
+        [{ text: userLabels.home, action: callbackFor("home") }],
       ],
     };
   });
@@ -187,6 +183,26 @@ export function registerAccountViews() {
   registerView("account.renew", async (ctx, params) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [], navigation: { back: false, home: false } };
+    if (!params.xrayClientId) {
+      const clients = await prisma.xrayClient.findMany({
+        where: { userId: user.id, isFreeTest: false, status: { in: ["active", "provisioning", "creating", "expired"] } },
+        include: { product: true },
+        orderBy: { expiresAt: "asc" },
+        take: 20,
+      });
+      return {
+        text: joinSections([
+          "♻️ تمدید سرویس",
+          clients.length ? "سرویس موردنظر برای تمدید را انتخاب کنید." : "در حال حاضر سرویس قابل تمدیدی پیدا نشد.",
+        ]),
+        keyboard: [
+          ...clients.map((client) => [{ text: `♻️ ${client.product?.title ?? client.clientEmail}`.slice(0, 60), action: callbackFor("account.renew", { xrayClientId: client.id }) }]),
+          [{ text: "🧩 سرویس‌های من", action: callbackFor("account.details") }, { text: "🛒 خرید سرویس", action: callbackFor("shop.categories") }],
+          [{ text: userLabels.home, action: callbackFor("home") }],
+        ],
+        navigation: { back: false, home: false },
+      };
+    }
     const client = await prisma.xrayClient.findFirst({
       where: { id: params.xrayClientId, userId: user.id },
       include: { product: true, order: true, user: true },

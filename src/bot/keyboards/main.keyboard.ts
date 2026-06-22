@@ -5,13 +5,15 @@ type HomeButton = { text: string; action: string; tone?: ButtonTone };
 
 export function homeKeyboard(isAdmin = false) {
   const rows: HomeButton[][] = [
-    [{ text: labels.shop, action: callbackFor("shop.categories"), tone: "primary" as const }, { text: labels.wallet, action: callbackFor("wallet"), tone: "primary" as const }],
-    [{ text: labels.orders, action: callbackFor("account.details"), tone: "success" as const }, { text: labels.support, action: callbackFor("support") }],
-    [{ text: "🆓 اکانت تست", action: callbackFor("freeAccount") }, { text: "🎁 دعوت دوستان", action: callbackFor("referral") }],
+    [{ text: "📦 خرید سرویس", action: callbackFor("shop.categories"), tone: "primary" as const }, { text: "🎁 دریافت تست رایگان", action: callbackFor("freeAccount"), tone: "primary" as const }],
+    [{ text: "🧩 سرویس‌های من", action: callbackFor("account.details"), tone: "success" as const }, { text: "♻️ تمدید سرویس", action: callbackFor("account.renew"), tone: "success" as const }],
+    [{ text: "👤 حساب من", action: callbackFor("account") }, { text: "💳 کیف پول", action: callbackFor("wallet") }],
+    [{ text: "🆘 پشتیبانی", action: callbackFor("support") }, { text: "📢 اطلاعیه‌ها", action: callbackFor("referral") }],
+    [{ text: "📘 راهنما", action: callbackFor("productGuide") }],
   ];
 
   if (isAdmin) {
-    rows.push([{ text: labels.adminDashboard, action: callbackFor("admin.dashboard"), tone: "primary" as const }]);
+    rows.push([{ text: "🛠 پنل مدیریت", action: callbackFor("admin.dashboard"), tone: "primary" as const }]);
   }
 
   return buildInlineKeyboard(rows);

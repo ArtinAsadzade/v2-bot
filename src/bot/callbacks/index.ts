@@ -24,6 +24,7 @@ export const nav = {
   referral: () => callbackFor("referral"),
   account: () => callbackFor("account"),
   accountDetails: () => callbackFor("account.details"),
+  renewService: () => callbackFor("account.renew"),
   accountXray: (xrayClientId: string) => callbackFor("account.xray", { xrayClientId }),
   freeAccount: () => callbackFor("freeAccount"),
   adminDashboard: () => callbackFor("admin.dashboard"),

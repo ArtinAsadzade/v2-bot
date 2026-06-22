@@ -6,6 +6,7 @@ export const userLabels = {
   services: `${uiIcons.product} سرویس‌ها`,
   myAccounts: `${uiIcons.account} حساب من`,
   myServices: `🧩 سرویس‌های من`,
+  renewService: `♻️ تمدید سرویس`,
   wallet: `${uiIcons.wallet} کیف پول`,
   topup: `➕ شارژ کیف پول`,
   transactions: `📜 تراکنش‌ها`,
@@ -13,7 +14,7 @@ export const userLabels = {
   coupon: `${uiIcons.coupon} کد تخفیف`,
   support: `${uiIcons.support} پشتیبانی`,
   guide: `${uiIcons.guide} راهنما`,
-  freeAccount: "🆓 اکانت تست",
+  freeAccount: "🎁 دریافت تست رایگان",
   referral: "🎁 دعوت دوستان",
 } as const;
 

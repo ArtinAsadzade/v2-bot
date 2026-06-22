@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
 import { callbackFor } from "../src/bot/navigation/panel-ui";
 import { buildInlineKeyboard } from "../src/bot/keyboards/design-system";
 import { homeKeyboard } from "../src/bot/keyboards/common.keyboard";
@@ -13,13 +14,36 @@ import { adminDangerConfirmMessage } from "../src/bot/messages/admin.messages";
 const texts = (keyboard: { reply_markup: { inline_keyboard: Array<Array<{ text: string }>> } }) => keyboard.reply_markup.inline_keyboard.map((row) => row.map((button) => button.text));
 const actions = (keyboard: { reply_markup: { inline_keyboard: Array<Array<{ callback_data?: string }>> } }) => keyboard.reply_markup.inline_keyboard.flatMap((row) => row.map((button) => button.callback_data));
 const inlineFromView = (rows: Parameters<typeof buildInlineKeyboard>[0]) => buildInlineKeyboard(rows);
+const accountViewsSource = readFileSync("src/bot/views/account.views.ts", "utf8");
+const navigationHandlersSource = readFileSync("src/bot/handlers/modern/navigation.handlers.ts", "utf8");
 
 describe("Telegram UI redesign keyboards", () => {
   test("home keyboard groups primary user actions", () => {
-    expect(texts(inlineFromView(homeKeyboard(false)))).toEqual([
-      ["📦 خرید سرویس", "👤 حساب من"],
-      ["🆘 پشتیبانی", "📘 راهنما"],
+    const rows = texts(inlineFromView(homeKeyboard(false)));
+    expect(rows).toEqual([
+      ["📦 خرید سرویس", "🎁 دریافت تست رایگان"],
+      ["🧩 سرویس‌های من", "♻️ تمدید سرویس"],
+      ["👤 حساب من", "💳 کیف پول"],
+      ["🆘 پشتیبانی", "📢 اطلاعیه‌ها"],
+      ["📘 راهنما"],
     ]);
+    expect(rows.flat()).toContain("🎁 دریافت تست رایگان");
+    expect(rows.flat()).toContain("🧩 سرویس‌های من");
+    expect(rows.flat()).toContain("♻️ تمدید سرویس");
+    expect(rows.flat()).not.toContain("🎟 کد تخفیف");
+  });
+
+  test("account menu keeps wallet, transactions, and coupon below account", () => {
+    const accountBlock = accountViewsSource.slice(accountViewsSource.indexOf('registerView("account"'), accountViewsSource.indexOf('registerView("account.details"'));
+    expect(accountBlock).toContain('userLabels.wallet');
+    expect(accountBlock).toContain('userLabels.transactions');
+    expect(accountBlock).toContain('userLabels.coupon');
+  });
+
+  test("old callbacks route to new VPN-first screens", () => {
+    expect(navigationHandlersSource).toContain('["accounts", { id: "account.details" }]');
+    expect(navigationHandlersSource).toContain('["renew", { id: "account.renew" }]');
+    expect(navigationHandlersSource).toContain('["account:renew", { id: "account.renew" }]');
   });
 
   test("product detail keyboard has payment, coupon, back, and home actions", () => {

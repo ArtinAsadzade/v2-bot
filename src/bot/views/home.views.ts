@@ -66,10 +66,18 @@ export function registerHomeViews() {
     const isAdmin = ctx.from ? await isAdminByTelegramId(ctx.from.id) : false;
     const dashboard = user ? await UserService.dashboard(user.id) : undefined;
     const activeCount = (dashboard?.activeAccounts.length ?? 0) + (dashboard?.activeFreeAccounts.length ?? 0);
+    const expiringCount = (dashboard?.activeAccounts ?? []).filter((item) => {
+      const expiresAt = item.xrayClient?.expiresAt ?? item.expiresAt ?? item.productAccount?.expiresAt;
+      return expiresAt ? expiresAt.getTime() > Date.now() && expiresAt.getTime() <= Date.now() + 7 * 86_400_000 : false;
+    }).length;
     const keyboard = homeKeyboard(isAdmin);
 
     return {
-      text: joinSections([uxCopy.home(ctx.from?.first_name ?? "دوست عزیز"), card("خلاصه حساب", [`${uiIcons.wallet} موجودی کیف پول: ${money(user?.balance ?? 0)}`, `${uiIcons.account} سرویس‌های فعال: ${activeCount.toLocaleString("fa-IR")}`])]),
+      text: [
+        `${uiIcons.wallet} موجودی کیف پول: ${money(user?.balance ?? 0)}`,
+        `🧩 سرویس فعال: ${activeCount.toLocaleString("fa-IR")}`,
+        expiringCount > 0 ? `⏳ نزدیک انقضا: ${expiringCount.toLocaleString("fa-IR")}` : undefined,
+      ].filter(Boolean).join("\n\n"),
       keyboard,
       replyKeyboard: "home",
     };
