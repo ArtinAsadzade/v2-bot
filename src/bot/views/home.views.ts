@@ -73,14 +73,16 @@ export function registerHomeViews() {
 
     return {
       text: joinSections([
-        `✨ سلام ${firstName}، خوش آمدی`,
-        card("🏠 خانه", [
-          `${uiIcons.wallet} موجودی: ${money(user?.balance ?? 0)}`,
-          `🧩 سرویس‌های فعال: ${activeCount.toLocaleString("fa-IR")}`,
-          `🤝 دعوت‌های موفق: ${referralCount.toLocaleString("fa-IR")}`,
-          expiringCount > 0 ? `⏳ نزدیک انقضا: ${expiringCount.toLocaleString("fa-IR")}` : "✅ وضعیت سرویس‌ها: پایدار",
+        card(`👋 سلام ${firstName}`, ["به پنل مدیریت سرویس‌های خود خوش آمدید."]),
+
+        card("📊 وضعیت حساب", [
+          `💰 موجودی کیف پول: ${money(user?.balance ?? 0)}`,
+          `📦 سرویس‌های فعال: ${activeCount.toLocaleString("fa-IR")}`,
+          `🤝 دعوت موفق: ${referralCount.toLocaleString("fa-IR")}`,
+          expiringCount > 0 ? `⚠️ ${expiringCount.toLocaleString("fa-IR")} سرویس نزدیک انقضا` : "✅ همه سرویس‌ها فعال هستند",
         ]),
-        section(sectionTitles.quickActions, ["یکی از گزینه‌های پایین را انتخاب کن؛ همه مسیرها کوتاه و بدون دکمه اضافه چیده شده‌اند."]),
+
+        card("⚡ دسترسی سریع", ["خرید، تمدید، مدیریت سرویس و پشتیبانی از منوی پایین در دسترس است."]),
       ]),
       keyboard,
       replyKeyboard: "home",
@@ -97,19 +99,46 @@ export function registerHomeViews() {
   }));
   registerView("help", async () => ({
     replyKeyboard: "home",
-    text: card("📘 راهنما", ["موضوع راهنما را انتخاب کنید."]),
+    text: joinSections([card("📚 مرکز راهنما", ["راهنمای کامل استفاده از سرویس‌ها", "آموزش خرید، اتصال و رفع مشکلات متداول"])]),
     keyboard: [
-      navRow({ text: "🛒 راهنمای خرید", view: "help.buy" }, { text: "🔌 راهنمای اتصال", view: "help.connection" }),
-      navRow({ text: "❓ سوالات پرتکرار", view: "help.faq" }, { text: "📜 قوانین استفاده", view: "help.rules" }),
+      navRow({ text: "🟢 خرید سرویس", view: "help.buy", tone: "success" }, { text: "🔵 آموزش اتصال", view: "help.connection", tone: "primary" }),
+      navRow({ text: "🟣 سوالات متداول", view: "help.faq" }, { text: "🟠 قوانین سرویس", view: "help.rules" }),
+      navRow({ text: "🔴 پشتیبانی", view: "support", tone: "danger" }),
     ],
   }));
   registerView("help.buy", async () => ({
-    text: card("🛒 راهنمای خرید", ["از خرید سرویس، دسته‌بندی را انتخاب کنید، سرویس را ببینید و پرداخت را کامل کنید."]),
-    keyboard: [navRow({ text: "🛒 خرید سرویس", view: "shop" })],
+    text: card("🛒 راهنمای خرید سرویس", [
+      "1️⃣ وارد فروشگاه شوید",
+      "2️⃣ سرویس موردنظر را انتخاب کنید",
+      "3️⃣ پرداخت را انجام دهید",
+      "4️⃣ سرویس بلافاصله فعال می‌شود",
+      "",
+      "⚡ تحویل کاملاً خودکار و فوری است.",
+    ]),
+    keyboard: [
+      navRow({
+        text: "🛒 ورود به فروشگاه",
+        view: "shop",
+        tone: "success",
+      }),
+    ],
   }));
   registerView("help.connection", async () => ({
-    text: card("🔌 راهنمای اتصال", ["پس از خرید، لینک اشتراک یا کانفیگ را از سرویس‌های من دریافت و در اپلیکیشن وارد کنید."]),
-    keyboard: [navRow({ text: "📦 سرویس‌های من", view: "services" })],
+    text: card("🔌 راهنمای اتصال", [
+      "1️⃣ وارد بخش سرویس‌های من شوید",
+      "2️⃣ سرویس موردنظر را باز کنید",
+      "3️⃣ لینک اشتراک یا کانفیگ را دریافت کنید",
+      "4️⃣ آن را در برنامه وارد نمایید",
+      "",
+      "📱 تمامی اپلیکیشن‌های V2Ray و Clash پشتیبانی می‌شوند.",
+    ]),
+    keyboard: [
+      navRow({
+        text: "📦 سرویس‌های من",
+        view: "services",
+        tone: "primary",
+      }),
+    ],
   }));
   registerView("help.faq", async () => ({
     text: card("❓ سوالات پرتکرار", ["اگر پاسخ سؤال خود را پیدا نکردید، از پشتیبانی پیام بدهید."]),
