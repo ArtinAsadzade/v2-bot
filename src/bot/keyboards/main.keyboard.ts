@@ -7,25 +7,20 @@ export function homeKeyboard(isAdmin = false) {
   const rows: HomeButton[][] = [
     [
       { text: "📦 خرید سرویس", action: callbackFor("shop.categories"), tone: "primary" as const },
-      { text: "🎁 دریافت تست رایگان", action: callbackFor("freeAccount"), tone: "primary" as const },
+      { text: "🎁 تست رایگان", action: callbackFor("freeAccount"), tone: "primary" as const },
     ],
     [
       { text: "🧩 سرویس‌های من", action: callbackFor("account.details"), tone: "success" as const },
-      { text: "♻️ تمدید سرویس", action: callbackFor("account.renew"), tone: "success" as const },
+      { text: "👤 حساب من", action: callbackFor("account"), tone: "success" as const },
     ],
     [
-      { text: "👤 حساب من", action: callbackFor("account") },
-      { text: "💳 کیف پول", action: callbackFor("wallet") },
+      { text: "🆘 پشتیبانی", action: callbackFor("support"), tone: "primary" as const },
+      { text: "📘 راهنما", action: callbackFor("productGuide"), tone: "primary" as const },
     ],
-    [
-      { text: "🆘 پشتیبانی", action: callbackFor("support") },
-      { text: "🎁 دعوت دوستان", action: callbackFor("referral") },
-    ],
-    [{ text: "📘 راهنما", action: callbackFor("productGuide") }],
   ];
 
   if (isAdmin) {
-    rows.push([{ text: "🛠 پنل مدیریت", action: callbackFor("admin.dashboard"), tone: "primary" as const }]);
+    rows.push([{ text: "🛠 پنل مدیریت", action: callbackFor("admin.dashboard"), tone: "danger" as const }]);
   }
 
   return buildInlineKeyboard(rows);
