@@ -58,15 +58,12 @@ const stockLabel = formatStockLabel;
 const freeAccountExpiry = resolveFreeAccountExpiry;
 const yesNo = yesNoStatus;
 
-
 export function registerAdminViews() {
   registerView("admin.xrayCenter", async () => {
     const vm = await xrayCenterViewModel();
     return {
       text: joinSections([
-        card("🧩 مرکز مدیریت Xray", [
-          "داشبورد عملیات سرویس‌های خودکار",
-        ]),
+        card("🧩 مرکز مدیریت Xray", ["داشبورد عملیات سرویس‌های خودکار"]),
         section("📡 وضعیت پنل", [
           `وضعیت اتصال: ${vm.connectionLabel}`,
           `تعداد پنل‌ها: ${vm.panelCount.toLocaleString("fa-IR")} کل / ${vm.enabledPanelCount.toLocaleString("fa-IR")} فعال`,
@@ -120,12 +117,17 @@ export function registerAdminViews() {
           panels.length ? `تعداد پنل‌ها: ${panels.length.toLocaleString("fa-IR")}` : "هنوز پنلی ثبت نشده است.",
           "تست اتصال فقط با دکمه‌های همین صفحه اجرا می‌شود.",
         ]),
-        section("📋 پنل‌ها", panels.map((panel) => `• ${panel.name}
+        section(
+          "📋 پنل‌ها",
+          panels.map(
+            (panel) => `• ${panel.name}
   آدرس پنل: ${panel.apiBaseUrl}
   وضعیت اتصال: ${panel.enabled ? "✅ فعال" : "⛔ غیرفعال"}
   تعداد inbound: ${panel.lastInboundCount.toLocaleString("fa-IR")}
   آخرین تست اتصال: ${panel.lastSuccessAt ? panel.lastSuccessAt.toLocaleString("fa-IR") : "انجام نشده"}
-  آخرین خطا: ${panel.lastError ?? "—"}`)),
+  آخرین خطا: ${panel.lastError ?? "—"}`,
+          ),
+        ),
       ]),
       keyboard: [
         [
@@ -208,10 +210,7 @@ export function registerAdminViews() {
       ]),
       section("⚠️ تأیید لازم است", ["تا زمانی که دکمه تأیید نهایی را نزنید، هیچ محصولی تغییر نمی‌کند."]),
     ]),
-    keyboard: [
-      [{ text: "✅ تأیید سینک", action: "admin:xray:sync:confirm" }],
-      [{ text: "🔙 سینک محصولات", action: callbackFor("admin.xraySync") }],
-    ],
+    keyboard: [[{ text: "✅ تأیید سینک", action: "admin:xray:sync:confirm" }], [{ text: "🔙 سینک محصولات", action: callbackFor("admin.xraySync") }]],
   }));
 
   registerView("admin.xraySettings", async () => {
@@ -255,7 +254,9 @@ export function registerAdminViews() {
   });
   registerView("admin.xrayClients", async (_ctx, params) => {
     const current = page(params);
-    const status = ["provisioning", "creating", "active", "failed", "expired", "missing_on_panel", "deleted", "renewal_failed"].includes(params.status)
+    const status = ["provisioning", "creating", "active", "failed", "expired", "missing_on_panel", "deleted", "renewal_failed"].includes(
+      params.status,
+    )
       ? (params.status as any)
       : undefined;
     const productId = params.productId || undefined;
@@ -295,7 +296,9 @@ export function registerAdminViews() {
           { text: "🔄 همگام‌سازی کاربران", action: "admin:xray:center:cleanup" },
           { text: "↩️ بازگشت به مرکز Xray", action: callbackFor("admin.xrayCenter") },
         ],
-        ...clients.map((client) => [{ text: `👁 ${client.clientEmail}`.slice(0, 60), action: callbackFor("admin.xrayClient", { xrayClientId: client.id }) }]),
+        ...clients.map((client) => [
+          { text: `👁 ${client.clientEmail}`.slice(0, 60), action: callbackFor("admin.xrayClient", { xrayClientId: client.id }) },
+        ]),
         [
           { text: "◀️ قبلی", action: callbackFor("admin.xrayClients", { ...filterParams(status), page: Math.max(current - 1, 1) }) },
           { text: "بعدی ▶️", action: callbackFor("admin.xrayClients", { ...filterParams(status), page: current + 1 }) },
@@ -305,7 +308,8 @@ export function registerAdminViews() {
   });
   registerView("admin.xrayClient", async (_ctx, params) => {
     const client = await prisma.xrayClient.findUnique({ where: { id: params.xrayClientId }, include: { product: true, user: true } });
-    if (!client) return { text: "⚠️ کاربر Xray پیدا نشد.", keyboard: [[{ text: "↩️ بازگشت به کاربران Xray", action: callbackFor("admin.xrayClients") }]] };
+    if (!client)
+      return { text: "⚠️ کاربر Xray پیدا نشد.", keyboard: [[{ text: "↩️ بازگشت به کاربران Xray", action: callbackFor("admin.xrayClients") }]] };
     const days = Math.ceil((client.expiresAt.getTime() - Date.now()) / 86_400_000);
     return {
       text: joinSections([
@@ -464,7 +468,6 @@ ${divider}
           { text: "📢 اطلاع‌رسانی", action: callbackFor("admin.notifications") },
           { text: "📘 راهنمای محصولات", action: callbackFor("admin.productGuides") },
         ],
-        [{ text: "📦 پیام پلن‌ها", action: callbackFor("admin.productGuides") }],
       ],
     };
   });
@@ -686,8 +689,10 @@ ${inboundSnapshot.length ? inboundSnapshot.map((i) => `• ${i.remark ?? `inboun
               ),
             },
           ],
-          [{ text: "🔗 اتصال به Xray", action: callbackFor("admin.xrayClients", { productId: detail.product.id }) },
-            { text: "🔄 سینک با 3x-ui", action: callbackFor("admin.xraySync") }],
+          [
+            { text: "🔗 اتصال به Xray", action: callbackFor("admin.xrayClients", { productId: detail.product.id }) },
+            { text: "🔄 سینک با 3x-ui", action: callbackFor("admin.xraySync") },
+          ],
           [
             {
               text: detail.product.isActive ? "⛔ غیرفعال" : "✅ فعال",
@@ -723,7 +728,10 @@ ${inboundSnapshot.length ? inboundSnapshot.map((i) => `• ${i.remark ?? `inboun
           { text: "🔐 افزودن اکانت", action: `flow:start:account_create:${detail.product.id}` },
           { text: "📅 تغییر مدت", action: `flow:start:product_edit:${detail.product.id}:duration` },
         ],
-        [{ text: "🗂 تغییر دسته‌بندی", action: `flow:start:product_edit:${detail.product.id}:category` }, { text: "🗄 اکانت‌های محصول", action: callbackFor("admin.accounts", { productId: detail.product.id }) }],
+        [
+          { text: "🗂 تغییر دسته‌بندی", action: `flow:start:product_edit:${detail.product.id}:category` },
+          { text: "🗄 اکانت‌های محصول", action: callbackFor("admin.accounts", { productId: detail.product.id }) },
+        ],
         [
           {
             text: detail.product.isActive ? "⛔ غیرفعال" : "✅ فعال",
@@ -786,14 +794,18 @@ ${detail.products.map((product) => `• ${product.title} · ${product.isActive ?
           { text: "🔢 تغییر ترتیب", action: `flow:start:category_edit:${detail.category.id}:order` },
         ],
         [
-          { text: detail.category.isActive ? "⛔ غیرفعال" : "✅ فعال", action: `admin:category:status:${detail.category.id}:${detail.category.isActive ? "0" : "1"}` },
+          {
+            text: detail.category.isActive ? "⛔ غیرفعال" : "✅ فعال",
+            action: `admin:category:status:${detail.category.id}:${detail.category.isActive ? "0" : "1"}`,
+          },
           { text: "📦 محصولات دسته", action: callbackFor("admin.products") },
         ],
+        [{ text: "🗑 آرشیو دسته", action: `admin:category:delete:${detail.category.id}` }],
         [
-          { text: "🗑 آرشیو دسته", action: `admin:category:delete:${detail.category.id}` },
-        ],
-        [
-          { text: "◀️ محصولات قبلی", action: callbackFor("admin.category", { categoryId: detail.category.id, productPage: Math.max(productPage - 1, 1) }) },
+          {
+            text: "◀️ محصولات قبلی",
+            action: callbackFor("admin.category", { categoryId: detail.category.id, productPage: Math.max(productPage - 1, 1) }),
+          },
           { text: "محصولات بعدی ▶️", action: callbackFor("admin.category", { categoryId: detail.category.id, productPage: productPage + 1 }) },
         ],
         [
