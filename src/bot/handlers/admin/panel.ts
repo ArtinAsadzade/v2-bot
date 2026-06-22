@@ -139,19 +139,19 @@ function entityListKeyboard(
 }
 
 function productInputHelp() {
-  return "هر خط را به شکل key:value ارسال کنید.\nمثال:\ntitle:VIP\nprice:250000\nduration:30\ncategoryId: شناسه دسته\nactive:true";
+  return "لطفاً ویرایش محصول را از پنل جدید و دکمه‌های اختصاصی هر فیلد انجام دهید.";
 }
 
 function categoryInputHelp() {
-  return "هر خط را به شکل key:value ارسال کنید.\nمثال:\ntitle:VIP\ndescription:اکانت‌های ویژه\nicon:📂\norder:1\nactive:true";
+  return "لطفاً ویرایش دسته‌بندی را از پنل جدید و دکمه‌های اختصاصی هر فیلد انجام دهید.";
 }
 
 function walletInputHelp() {
-  return "هر خط را به شکل key:value ارسال کنید.\nمثال:\ncoinName:USDT\nsymbol:USDT\nnetwork:TRC20\ndisplayName:Tether TRC20\naddress:TX...\norder:1\nactive:true";
+  return "لطفاً تنظیمات کیف پول را مرحله‌به‌مرحله از دکمه‌های پنل مدیریت انجام دهید.";
 }
 
 function accountInputHelp() {
-  return "هر خط را به شکل key:value ارسال کنید.\nمثال:\nusername:user1\nsubscriptionLink:https://...\nconfigLink:vless://...\nproductId:شناسه محصول مقصد برای انتقال\nstatus:available";
+  return "لطفاً ویرایش اکانت را مرحله‌به‌مرحله از دکمه‌های پنل مدیریت انجام دهید.";
 }
 
 function inventoryStatsLine(stats: { total: number; available: number; reserved: number; sold: number; disabled: number; expired: number }) {

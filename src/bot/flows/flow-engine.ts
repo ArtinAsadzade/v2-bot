@@ -19,6 +19,37 @@ import { MainMenuKeyboard } from "../keyboards/design-system";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
 const parseInteger = (value: string) => Number(normalizeNumericInput(value));
+
+function validateLength(value: string, label: string, min: number, max: number, optional = false) {
+  const trimmed = value.trim();
+  if (!trimmed && optional) return trimmed;
+  if (trimmed.length < min || trimmed.length > max) throw productValidationError(`${label} باید بین ${min.toLocaleString("fa-IR")} تا ${max.toLocaleString("fa-IR")} کاراکتر باشد.`);
+  return trimmed;
+}
+
+function parsePositiveIntegerInput(text: string, label: string) {
+  const value = parseInteger(text.replace(/[,،\s]/g, ""));
+  if (!Number.isInteger(value) || value <= 0) throw productValidationError(`${label} باید عددی مثبت باشد.`);
+  return value;
+}
+
+function parseNonNegativeIntegerInput(text: string, label: string) {
+  const value = parseInteger(text.replace(/[,،\s]/g, ""));
+  if (!Number.isInteger(value) || value < 0) throw productValidationError(`${label} باید عدد صفر یا بزرگ‌تر باشد.`);
+  return value;
+}
+
+function parseTrafficGbInput(text: string) {
+  const normalized = String(normalizeNumericInput(text)).trim().toLowerCase().replace(/،/g, ".");
+  const match = normalized.match(/^(\d+(?:\.\d+)?)\s*(gb|g|گیگ|گیگابایت|mb|m|مگ|مگابایت|b|byte|bytes|بایت)?$/i);
+  if (!match) throw productValidationError("حجم باید به‌صورت عدد مثبت وارد شود؛ مثال: 50GB یا 512MB.");
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) throw productValidationError("حجم باید عددی مثبت باشد.");
+  const unit = match[2] ?? "gb";
+  const gb = ["mb", "m", "مگ", "مگابایت"].includes(unit) ? amount / 1024 : ["b", "byte", "bytes", "بایت"].includes(unit) ? amount / 1_073_741_824 : amount;
+  if (!Number.isFinite(gb) || gb <= 0) throw productValidationError("حجم واردشده معتبر نیست.");
+  return Math.max(1, Math.round(gb));
+}
 const parseStatus = (value?: string) => {
   if (!value) return undefined;
   const normalized = value.trim().toLowerCase();
@@ -109,7 +140,7 @@ export function parseKeyValueLines(text: string): Record<string, string> {
     const line = rawLine.trim();
     if (!line) continue;
     const index = line.indexOf(":");
-    if (index <= 0) throw productValidationError(`خط نامعتبر است: ${line}\nفرمت صحیح: key: value`);
+    if (index <= 0) throw productValidationError(`خط نامعتبر است: ${line}\nورودی مرحله‌ای معتبر نیست`);
     const key = line.slice(0, index).trim();
     const value = line.slice(index + 1).trim();
     if (!allowed.has(key)) throw productValidationError(`کلید «${key}» پشتیبانی نمی‌شود.`);
@@ -445,63 +476,65 @@ ${message}
     },
   },
   category_create: {
-    firstStep: "fields",
-    prompt: `📂 اطلاعات دسته‌بندی را ارسال کنید.
-
-هر خط به شکل field: value
-
-name: عنوان
-description: توضیحات
-icon: 📂
-order: 1
-active: true`,
+    firstStep: "name",
+    prompt: "📂 ساخت دسته‌بندی جدید\n\n✏️ نام دسته‌بندی را ارسال کنید.",
     async handleText(ctx, text) {
-      const data = parseKeyValueLines(text);
-      const category = await AdminService.saveCategory(
-        {
-          name: data.name ?? data.title ?? data["عنوان"] ?? text.trim(),
-          description: data.description ?? data["توضیحات"],
-          icon: data.icon ?? data.emoji ?? data["آیکون"],
-          displayOrder: data.order || data.sort || data["ترتیب"] ? parseInteger(data.order ?? data.sort ?? data["ترتیب"] ?? "0") : undefined,
-          isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
-        },
-        String(ctx.from?.id ?? "admin"),
-      );
-      return { done: true, text: "✅ دسته‌بندی ذخیره شد.", returnTo: { id: "admin.category", params: { categoryId: category.id } } };
+      const flow = ctx.session.flow!;
+      if (flow.step === "name") {
+        flow.data.name = validateLength(text, "نام دسته‌بندی", 2, 64);
+        flow.step = "description";
+        return { text: "📝 توضیحات دسته‌بندی را ارسال کنید. برای رد کردن، «-» را بفرستید." };
+      }
+      if (flow.step === "description") {
+        flow.data.description = text.trim() === "-" ? "" : validateLength(text, "توضیحات", 0, 500, true);
+        flow.step = "icon";
+        return { text: "🎨 آیکون دسته‌بندی را ارسال کنید. برای رد کردن، «-» را بفرستید." };
+      }
+      if (flow.step === "icon") {
+        const icon = text.trim() === "-" ? "" : text.trim();
+        if (icon.length > 4) return { text: "⚠️ آیکون حداکثر ۴ کاراکتر است. دوباره ارسال کنید یا «-» را بفرستید." };
+        flow.data.icon = icon;
+        flow.step = "order";
+        return { text: "🔢 ترتیب نمایش را به‌صورت عدد صفر یا بزرگ‌تر ارسال کنید." };
+      }
+      if (flow.step === "order") {
+        const displayOrder = parseNonNegativeIntegerInput(text, "ترتیب نمایش");
+        const category = await AdminService.saveCategory(
+          { name: String(flow.data.name), description: String(flow.data.description ?? ""), icon: String(flow.data.icon ?? ""), displayOrder, isActive: true },
+          String(ctx.from?.id ?? "admin"),
+        );
+        return { done: true, text: "✅ دسته‌بندی با موفقیت ذخیره شد.", returnTo: { id: "admin.category", params: { categoryId: category.id } } };
+      }
+      return { text: "⚠️ مرحله نامعتبر است. از دکمه لغو استفاده کنید." };
     },
   },
   category_edit: {
-    firstStep: "fields",
+    firstStep: "value",
     prompt: async (ctx) => {
-      const categoryId = String(ctx.session.flow?.data.categoryId ?? "");
-      const detail = categoryId ? await AdminService.categoryDetail(categoryId) : undefined;
-      if (!detail?.category) return "⚠️ دسته‌بندی پیدا نشد.";
-      return `✏️ ویرایش دسته‌بندی ${detail.category.name}
-
-هر فیلدی را که می‌خواهید تغییر کند در یک خط بفرستید.
-
-name: ${detail.category.name}
-description: ${detail.category.description ?? ""}
-icon: ${detail.category.icon ?? ""}
-order: ${detail.category.displayOrder}
-active: ${detail.category.isActive}`;
+      const field = String(ctx.session.flow?.data.field ?? "");
+      const prompts: Record<string, string> = {
+        name: "✏️ نام جدید دسته‌بندی را ارسال کنید.",
+        description: "📝 توضیحات جدید دسته‌بندی را ارسال کنید. برای خالی کردن، «-» را بفرستید.",
+        icon: "🎨 آیکون جدید دسته‌بندی را ارسال کنید. برای خالی کردن، «-» را بفرستید.",
+        order: "🔢 ترتیب نمایش جدید را به‌صورت عدد صفر یا بزرگ‌تر ارسال کنید.",
+      };
+      return prompts[field] ?? "⚠️ فیلد ویرایش دسته‌بندی معتبر نیست.";
     },
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
-      const data = parseKeyValueLines(text);
       const categoryId = String(flow.data.categoryId);
-      const category = await AdminService.saveCategory(
-        {
-          name: data.name ?? data.title ?? data["عنوان"],
-          description: data.description ?? data["توضیحات"],
-          icon: data.icon ?? data.emoji ?? data["آیکون"],
-          displayOrder: data.order || data.sort || data["ترتیب"] ? parseInteger(data.order ?? data.sort ?? data["ترتیب"] ?? "0") : undefined,
-          isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
-        },
-        String(ctx.from?.id ?? "admin"),
-        categoryId,
-      );
-      return { done: true, text: "✅ دسته‌بندی به‌روزرسانی شد.", returnTo: { id: "admin.category", params: { categoryId: category.id } } };
+      const field = String(flow.data.field ?? "");
+      const patch: any = {};
+      if (field === "name") patch.name = validateLength(text, "نام دسته‌بندی", 2, 64);
+      else if (field === "description") patch.description = text.trim() === "-" ? "" : validateLength(text, "توضیحات", 0, 500, true);
+      else if (field === "icon") {
+        const icon = text.trim() === "-" ? "" : text.trim();
+        if (icon.length > 4) return { text: "⚠️ آیکون حداکثر ۴ کاراکتر است. دوباره ارسال کنید یا «-» را بفرستید." };
+        patch.icon = icon;
+      } else if (field === "order") patch.displayOrder = parseNonNegativeIntegerInput(text, "ترتیب نمایش");
+      else return { done: true, text: "⚠️ فیلد ویرایش دسته‌بندی معتبر نیست.", returnTo: { id: "admin.category", params: { categoryId } } };
+      const category = await AdminService.saveCategory(patch, String(ctx.from?.id ?? "admin"), categoryId);
+      return { done: true, text: "✅ تغییرات دسته‌بندی ذخیره شد.", returnTo: { id: "admin.category", params: { categoryId: category.id } } };
     },
   },
   // Product create group buttons are populated by showXrayGroupPicker via XrayClientService.listGroups().
@@ -585,103 +618,50 @@ active: ${detail.category.isActive}`;
     },
   },
   product_edit: {
-    firstStep: "fields",
-    initialKeyboard: productCategoryKeyboard,
+    firstStep: "value",
+    initialKeyboard: async (ctx) => (String(ctx.session.flow?.data.field ?? "") === "category" ? productCategoryKeyboard() : []),
     prompt: async (ctx) => {
-      const productId = String(ctx.session.flow?.data.productId ?? "");
-      const detail = productId ? await AdminService.productDetail(productId) : undefined;
-      if (!detail?.product) return "⚠️ محصول پیدا نشد.";
-      return `✏️ ویرایش محصول ${detail.product.title}
-
-هر فیلدی را که می‌خواهید تغییر کند در یک خط بفرستید.
-
-title: ${detail.product.title}
-categoryId: ${detail.product.categoryId}
-price: ${detail.product.price}
-duration: ${detail.product.duration}
-active: ${detail.product.isActive}
-${
-  detail.product.mode === "xray_auto"
-    ? `trafficGB: ${detail.product.trafficBytes ? Number(detail.product.trafficBytes) / 1_073_741_824 : ""}
-durationDays: ${detail.product.durationDays ?? detail.product.duration}
-stockLimit: ${detail.product.stockLimit ?? ""}
-limitIp: ${detail.product.xrayLimitIp ?? 0}
-group: ${detail.product.xrayGroupName ?? ""}
-
-نکته: تغییر حجم/مدت/اینباند فقط روی خریدهای بعدی اعمال می‌شود و سرویس‌های قبلی را تغییر نمی‌دهد.`
-    : ""
-}
-
-برای تغییر دسته‌بندی می‌توانید یکی از دکمه‌های دسته‌بندی فعال را انتخاب کنید.`;
+      const field = String(ctx.session.flow?.data.field ?? "");
+      const prompts: Record<string, string> = {
+        title: "✏️ عنوان جدید محصول را ارسال کنید.",
+        description: "📝 توضیحات جدید محصول را ارسال کنید. برای خالی کردن، «-» را بفرستید.",
+        price: "💰 قیمت جدید را به تومان و فقط به‌صورت عدد مثبت ارسال کنید.",
+        durationDays: "📅 مدت سرویس را به روز و فقط به‌صورت عدد مثبت ارسال کنید.",
+        duration: "📅 مدت سرویس را به روز و فقط به‌صورت عدد مثبت ارسال کنید.",
+        trafficGB: "📊 حجم سرویس را ارسال کنید؛ مثال: 50GB یا 512MB.",
+        stockLimit: "📦 موجودی جدید را ارسال کنید. عدد ۰ یعنی ناموجود/بدون ظرفیت فروش.",
+        limitIp: "🌐 محدودیت IP را ارسال کنید. عدد ۰ یعنی نامحدود.",
+        xrayLimitIp: "🌐 محدودیت IP را ارسال کنید. عدد ۰ یعنی نامحدود.",
+        soldCount: "♻️ مقدار جدید تعداد فروخته‌شده را ارسال کنید. عدد صفر یا بزرگ‌تر.",
+        category: "🗂 دسته‌بندی جدید محصول را از دکمه‌های زیر انتخاب کنید.",
+      };
+      return prompts[field] ?? "⚠️ فیلد ویرایش محصول معتبر نیست.";
     },
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
       const productId = String(flow.data.productId);
-      const selectedCategoryId = flow.data.categoryId ? String(flow.data.categoryId) : undefined;
-      const field = flow.data.field ? String(flow.data.field) : undefined;
+      const field = String(flow.data.field ?? "");
       const detail = await AdminService.productDetail(productId);
       const isXray = detail.product?.mode === "xray_auto";
-      // Legacy audit: validFields = new Set(["title", "price", "category", "trafficGB", "durationDays", "stockLimit", "limitIp"]);
-      const validFields = new Set([
-        "title",
-        "price",
-        "category",
-        "trafficGB",
-        "durationDays",
-        "stockLimit",
-        "limitIp",
-        "xrayLimitIp",
-        "group",
-        "xrayGroupName",
-        "soldCount",
-        "resetSoldCount",
-      ]);
-      if (field && !validFields.has(field))
-        return { done: true, text: "⚠️ فیلد ویرایش معتبر نیست.", returnTo: { id: "admin.product", params: { productId } } };
+      const xrayOnly = ["trafficGB", "durationDays", "stockLimit", "limitIp", "xrayLimitIp", "soldCount"];
+      if (!field) return { done: true, text: "⚠️ برای ویرایش محصول از دکمه‌های اختصاصی هر فیلد استفاده کنید.", returnTo: { id: "admin.product", params: { productId } } };
+      if (xrayOnly.includes(field) && !isXray) return { done: true, text: "⚠️ این گزینه فقط برای محصولات Xray فعال است.", returnTo: { id: "admin.product", params: { productId } } };
+      const selectedCategoryId = flow.data.categoryId ? String(flow.data.categoryId) : undefined;
       const patch: any = {};
-      if (field) {
-        if (
-          ["trafficGB", "durationDays", "stockLimit", "limitIp", "xrayLimitIp", "group", "xrayGroupName", "soldCount", "resetSoldCount"].includes(
-            field,
-          ) &&
-          !isXray
-        )
-          return { done: true, text: "⚠️ این فیلد فقط برای محصولات Xray است.", returnTo: { id: "admin.product", params: { productId } } };
-        if (field === "title") patch.title = text.trim();
-        if (field === "price") patch.price = parseInteger(text);
-        if (field === "category") patch.categoryId = selectedCategoryId || text.trim();
-        if (field === "trafficGB") patch.trafficGB = parseInteger(text);
-        if (field === "durationDays") patch.durationDays = parseInteger(text);
-        if (field === "stockLimit") patch.stockLimit = parseInteger(text);
-        if (field === "limitIp" || field === "xrayLimitIp") patch.xrayLimitIp = parseInteger(text);
-        if (field === "group" || field === "xrayGroupName") patch.xrayGroupName = parseResetGroup(text);
-        if (field === "soldCount") patch.soldCount = parseInteger(text);
-        if (field === "resetSoldCount") patch.resetSoldCount = parseActive(text) === true;
-      } else {
-        const data = parseKeyValueLines(text);
-        Object.assign(patch, {
-          title: data.title ?? data.name ?? data["عنوان"],
-          categoryId: data.categoryId ?? data.category ?? data["دسته"] ?? selectedCategoryId,
-          price: data.price || data["قیمت"] ? parseInteger(data.price ?? data["قیمت"] ?? "0") : undefined,
-          duration:
-            hasKey(data, "duration") || (!isXray && hasKey(data, "durationDays"))
-              ? parseInteger(data.duration ?? data.durationDays ?? "0")
-              : undefined,
-          trafficGB: isXray && hasKey(data, "trafficGB") ? parseInteger(data.trafficGB) : undefined,
-          durationDays:
-            isXray && (hasKey(data, "durationDays") || hasKey(data, "duration"))
-              ? parseInteger(data.durationDays ?? data.duration ?? "0")
-              : undefined,
-          stockLimit: isXray && hasKey(data, "stockLimit") ? parseInteger(data.stockLimit) : undefined,
-          isActive: parseActive(data.active ?? data.status ?? data["وضعیت"]),
-          xrayLimitIp: isXray && hasKey(data, "xrayLimitIp") ? parseInteger(data.xrayLimitIp) : undefined,
-          xrayGroupName: isXray && hasKey(data, "xrayGroupName") ? parseResetGroup(data.xrayGroupName) : undefined,
-          soldCount: isXray && hasKey(data, "soldCount") ? parseInteger(data.soldCount) : undefined,
-          resetSoldCount: isXray && parseActive(data.resetSoldCount) === true ? true : undefined,
-        });
-      }
+      if (field === "title") patch.title = validateLength(text, "عنوان محصول", 2, 100);
+      else if (field === "description") patch.description = text.trim() === "-" ? "" : validateLength(text, "توضیحات", 0, 1000, true);
+      else if (field === "price") patch.price = parsePositiveIntegerInput(text, "قیمت");
+      else if (field === "duration" || field === "durationDays") { const v = parsePositiveIntegerInput(text, "مدت"); patch[isXray ? "durationDays" : "duration"] = v; }
+      else if (field === "trafficGB") patch.trafficGB = parseTrafficGbInput(text);
+      else if (field === "stockLimit") patch.stockLimit = parseNonNegativeIntegerInput(text, "موجودی");
+      else if (field === "limitIp" || field === "xrayLimitIp") patch.xrayLimitIp = parseNonNegativeIntegerInput(text, "محدودیت IP");
+      else if (field === "soldCount") patch.soldCount = parseNonNegativeIntegerInput(text, "تعداد فروخته‌شده");
+      else if (field === "category") {
+        if (!selectedCategoryId) return { text: "🗂 لطفاً دسته‌بندی را فقط از دکمه‌های زیر انتخاب کنید.", keyboard: await productCategoryKeyboard() };
+        patch.categoryId = selectedCategoryId;
+      } else return { done: true, text: "⚠️ فیلد ویرایش محصول معتبر نیست.", returnTo: { id: "admin.product", params: { productId } } };
       const product = await AdminService.updateProduct(productId, patch, String(ctx.from?.id ?? "admin"));
-      return { done: true, text: "✅ محصول به‌روزرسانی شد.", returnTo: { id: "admin.product", params: { productId: product.id } } };
+      return { done: true, text: "✅ تغییرات محصول ذخیره شد.", returnTo: { id: "admin.product", params: { productId: product.id } } };
     },
   },
 
@@ -747,7 +727,7 @@ group: ${detail.product.xrayGroupName ?? ""}
       if (!account) return "⚠️ اکانت پیدا نشد.";
       return `✏️ ویرایش اکانت ${account.username}
 
-هر فیلدی را که می‌خواهید تغییر کند در یک خط بفرستید.
+برای ویرایش، از دکمه اختصاصی هر فیلد در صفحه جزئیات استفاده کنید.
 
 username: ${account.username}
 subscriptionLink: ${account.subscriptionLink}
@@ -818,7 +798,7 @@ status: ${account.status}
       if (!account) return "⚠️ اکانت تست پیدا نشد.";
       return `✏️ ویرایش اکانت تست
 
-هر فیلدی را که می‌خواهید تغییر کند در یک خط بفرستید. فیلدهای مجاز:
+برای ویرایش، از دکمه اختصاصی هر فیلد در صفحه جزئیات استفاده کنید. فیلدهای مجاز:
 
 username: ${account.username}
 subscriptionLink: ${account.subscriptionLink}
@@ -921,7 +901,7 @@ status: ${account.status}
       if (!coupon) return "⚠️ کوپن پیدا نشد.";
       return `✏️ ویرایش کوپن ${coupon.code}
 
-هر فیلدی را که می‌خواهید تغییر کند در یک خط و به شکل field: value بفرستید.
+برای ویرایش کوپن، از دکمه اختصاصی هر فیلد در صفحه جزئیات استفاده کنید.
 
 فیلدهای مجاز:
 code: ${coupon.code}
@@ -1014,7 +994,7 @@ status: ${coupon.status} (active/inactive)`;
       if (!detail?.wallet) return "⚠️ کیف پول پیدا نشد.";
       return `✏️ ویرایش کیف پول ${detail.wallet.displayName ?? detail.wallet.coinName}
 
-هر فیلدی را که می‌خواهید تغییر کند در یک خط بفرستید.
+برای ویرایش، از دکمه اختصاصی هر فیلد در صفحه جزئیات استفاده کنید.
 
 coinName: ${detail.wallet.coinName}
 coinSymbol: ${detail.wallet.coinSymbol ?? detail.wallet.coinName}
@@ -1314,14 +1294,7 @@ status: ${detail.wallet.status}`;
         return `🔗 لینک پایه اشتراک را وارد کنید (اختیاری):
 
 مثال: https://domain.com:2096/sub/`;
-      return `⚙️ تنظیمات پنل Xray را به شکل key:value ارسال کنید.
-
-apiBaseUrl: https://panel.example.com
-apiToken: TOKEN
-subscriptionBaseUrl: https://sub.example.com
-enabled: true
-
-توکن کامل در پنل نمایش داده نمی‌شود.`;
+      return "⚙️ برای تنظیم پنل Xray از دکمه‌های اختصاصی آدرس پنل، توکن API و لینک اشتراک استفاده کنید. توکن کامل در پنل نمایش داده نمی‌شود.";
     },
     async handleText(ctx, text) {
       try {
@@ -1452,10 +1425,14 @@ export function registerFlowEngine(bot: AppBot) {
         return;
       }
       flow.data.categoryId = category.id;
-      await flowPrompt(
-        ctx,
-        `✅ دسته‌بندی انتخاب شد: ${category.name}\n\nحالا سایر فیلدهای محصول را ارسال کنید یا فقط برای تغییر دسته‌بندی بنویسید: ذخیره`,
-      );
+      if (String(flow.data.field ?? "") === "category") {
+        const product = await AdminService.updateProduct(String(flow.data.productId), { categoryId: category.id }, String(ctx.from?.id ?? "admin"));
+        ctx.session.flow = undefined;
+        await ctx.reply(`✅ دسته‌بندی محصول به «${category.name}» تغییر کرد.`);
+        await renderPanel(ctx, { id: "admin.product", params: { productId: product.id } }, "replace", RenderMode.SEND_NEW);
+        return;
+      }
+      await flowPrompt(ctx, `✅ دسته‌بندی انتخاب شد: ${category.name}`);
     } catch {
       await flowPrompt(ctx, "⚠️ دسته‌بندی نامعتبر یا حذف‌شده است. لطفاً دوباره انتخاب کنید.", await productCategoryKeyboard());
     }
@@ -1577,7 +1554,7 @@ export function registerFlowEngine(bot: AppBot) {
         target: ctx.match[2],
       });
     }
-    if (name === "category_edit") return startFlow(ctx, "category_edit", { categoryId: ctx.match[2] });
+    if (name === "category_edit") return startFlow(ctx, "category_edit", { categoryId: ctx.match[2], field: ctx.match[3] });
     if (name === "product_edit") return startFlow(ctx, "product_edit", { productId: ctx.match[2], field: ctx.match[3] });
     if (name === "free_test_config") return startFlow(ctx, "free_test_config", { field: ctx.match[2] });
     if (name === "account_create") return startFlow(ctx, "account_create", { productId: ctx.match[2] });

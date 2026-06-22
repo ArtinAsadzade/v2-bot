@@ -39,9 +39,9 @@ test("Xray edit buttons are field-specific and manual detail stays manual-only",
 });
 
 test("field-specific product edit rejects invalid or manual-only Xray fields", () => {
-  assert.match(flowEngine, /validFields = new Set\(\["title", "price", "category", "trafficGB", "durationDays", "stockLimit", "limitIp"\]\)/);
-  assert.match(flowEngine, /فیلد ویرایش معتبر نیست/);
-  assert.match(flowEngine, /این فیلد فقط برای محصولات Xray است/);
+  assert.match(flowEngine, /const xrayOnly = \["trafficGB", "durationDays", "stockLimit", "limitIp", "xrayLimitIp", "soldCount"\]/);
+  assert.match(flowEngine, /فیلد ویرایش محصول معتبر نیست|برای ویرایش محصول از دکمه‌های اختصاصی/);
+  assert.match(flowEngine, /این گزینه فقط برای محصولات Xray فعال است/);
 });
 
 test("service validates Xray update fields and active category assignment", () => {
