@@ -1,16 +1,18 @@
 import { Markup } from "telegraf";
 import type { InlineKeyboardButton } from "telegraf/types";
+import { styledButtonFields, type UiButtonStyle, type UiButtonTone } from "../ui/button-style";
 import type { AppContext } from "../../types/bot";
 import { replyKeyboard, replyKeyboardSignature, type ReplyKeyboardScope } from "../keyboards/reply.keyboard";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 
-export type UiButtonTone = "primary" | "success" | "danger" | "neutral" | "warning";
+export type { UiButtonTone, UiButtonStyle };
 
 export type UiButton = {
   text: string;
   action?: string;
   url?: string;
   tone?: UiButtonTone;
+  style?: UiButtonTone;
 };
 
 export type UiKeyboard = UiButton[][];
@@ -334,13 +336,13 @@ export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?
 
         try {
           if (button.url) {
-            buttons.push(Markup.button.url(button.text, button.url) as InlineKeyboardButton);
+            buttons.push({ text: button.text, url: button.url, ...styledButtonFields(button) } as InlineKeyboardButton);
             continue;
           }
 
           if (!button.action) continue;
 
-          buttons.push(Markup.button.callback(button.text, ensureCallbackData(button.action)) as InlineKeyboardButton);
+          buttons.push({ text: button.text, callback_data: ensureCallbackData(button.action), ...styledButtonFields(button) } as InlineKeyboardButton);
         } catch (error) {
           console.error("BUTTON_BUILD_FAILED", {
             text: button.text,
@@ -358,17 +360,17 @@ export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?
   const nav: InlineKeyboardButton[] = [];
 
   if (options.back && !seenNav.has("nav:back")) {
-    nav.push(Markup.button.callback("↩️ برگشت", ensureCallbackData("nav:back")) as InlineKeyboardButton);
+    nav.push({ text: "↩️ برگشت", callback_data: ensureCallbackData("nav:back") } as InlineKeyboardButton);
   }
 
   if (options.home && !seenNav.has(callbackFor("home"))) {
-    nav.push(Markup.button.callback("🏠 خانه", callbackFor("home")) as InlineKeyboardButton);
+    nav.push({ text: "🏠 خانه", callback_data: callbackFor("home") } as InlineKeyboardButton);
   }
 
   if (nav.length) normalized.push(nav);
 
   if (options.cancel) {
-    normalized.push([Markup.button.callback("❌ لغو عملیات", "flow:cancel") as InlineKeyboardButton]);
+    normalized.push([{ text: "❌ لغو عملیات", callback_data: "flow:cancel", style: "danger" } as InlineKeyboardButton]);
   }
 
   return Markup.inlineKeyboard(normalized);
