@@ -71,19 +71,26 @@ export function registerAccountViews() {
     return {
       replyKeyboard: "profile",
       text: joinSections([
-        "👤 حساب من",
-        `${uiIcons.wallet} موجودی کیف پول: ${money(dashboard.user.balance)}`,
-        `🧩 تعداد سرویس‌های فعال: ${activeCount.toLocaleString("fa-IR")}`,
-        `📅 تاریخ عضویت: ${user.createdAt.toLocaleDateString("fa-IR")}`,
+        card("👤 حساب من", [
+          `${uiIcons.wallet} موجودی کیف پول: ${money(dashboard.user.balance)}`,
+          `🧩 سرویس‌های فعال: ${activeCount.toLocaleString("fa-IR")}`,
+          `🤝 دعوت‌های موفق: ${(dashboard.referralCount ?? 0).toLocaleString("fa-IR")}`,
+          `📅 تاریخ عضویت: ${user.createdAt.toLocaleDateString("fa-IR")}`,
+        ]),
+        section(sectionTitles.quickActions, ["کیف پول، اطلاعات کاربری، سرویس‌ها و دعوت دوستان از همین صفحه در دسترس هستند."]),
       ]),
       keyboard: [
         [
           { text: userLabels.wallet, action: callbackFor("wallet") },
-          { text: userLabels.transactions, action: callbackFor("wallet.history") },
+          { text: userLabels.userInfo, action: callbackFor("account") },
         ],
         [
+          { text: userLabels.myServices, action: callbackFor("account.details") },
+          { text: userLabels.referral, action: callbackFor("referral") },
+        ],
+        [
+          { text: userLabels.transactions, action: callbackFor("wallet.history") },
           { text: userLabels.coupon, action: callbackFor("coupon.info") },
-          { text: userLabels.userInfo, action: callbackFor("account") },
         ],
         [{ text: userLabels.home, action: callbackFor("home") }],
       ],
@@ -137,10 +144,33 @@ export function registerAccountViews() {
       lines.push(card(`${userLabels.freeAccount} قدیمی ${index}`, [`${statusLabels.active}`, `⏳ اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`, `${uiIcons.dashboard} حجم: —`]));
       index++;
     }
+    const inactiveCount = dashboard.expiredAccounts.length;
+    const currentPage = page(params);
+    const perPage = 5;
+    const totalPages = Math.max(Math.ceil(lines.length / perPage), 1);
+    const safePage = Math.min(currentPage, totalPages);
+    const start = (safePage - 1) * perPage;
+    const visibleLines = lines.slice(start, start + perPage);
+    const visibleKeyboard = keyboard.slice(start, start + perPage);
+    const pagination: UiKeyboard = [];
+    if (totalPages > 1) {
+      pagination.push([
+        ...(safePage > 1 ? [{ text: "⬅️ قبلی", action: callbackFor("account.details", { page: safePage - 1 }) }] : []),
+        { text: `صفحه ${safePage.toLocaleString("fa-IR")}/${totalPages.toLocaleString("fa-IR")}`, action: callbackFor("account.details", { page: safePage }) },
+        ...(safePage < totalPages ? [{ text: "بعدی ➡️", action: callbackFor("account.details", { page: safePage + 1 }) }] : []),
+      ]);
+    }
     return {
       replyKeyboard: "profile",
-      text: joinSections([section(sectionTitles.accounts, ["سرویس‌های فعال شما:"]), lines.join("\n\n") || "هنوز اکانتی برای نمایش وجود ندارد."]),
-      keyboard: accountListViewKeyboard(keyboard),
+      text: joinSections([
+        section(sectionTitles.accounts, [
+          `✅ فعال: ${lines.length.toLocaleString("fa-IR")}`,
+          `⛔ غیرفعال/منقضی: ${inactiveCount.toLocaleString("fa-IR")}`,
+          `📄 صفحه ${safePage.toLocaleString("fa-IR")} از ${totalPages.toLocaleString("fa-IR")}`,
+        ]),
+        visibleLines.join("\n\n") || "هنوز اکانتی برای نمایش وجود ندارد.",
+      ]),
+      keyboard: accountListViewKeyboard([...visibleKeyboard, ...pagination]),
     };
   });
   registerView("account.xray", async (ctx, params) => {

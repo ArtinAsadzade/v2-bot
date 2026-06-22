@@ -5,22 +5,17 @@ import { adminLabels, userLabels } from "../ui/labels";
 export const homeKeyboard = (isAdmin: boolean): UiKeyboard => {
   const keyboard: UiKeyboard = [
     [
-      { text: userLabels.buyService, action: nav.shopCategories() },
-      { text: userLabels.freeAccount, action: nav.freeAccount() },
-    ],
-    [
-      { text: userLabels.myServices, action: nav.accountDetails() },
-      { text: userLabels.renewService, action: nav.renewService() },
+      { text: "🎁 تست", action: nav.freeAccount() },
+      { text: "🛍 محصولات", action: nav.shopCategories() },
     ],
     [
       { text: userLabels.myAccounts, action: nav.account() },
-      { text: userLabels.wallet, action: nav.wallet() },
+      { text: "🤝 دعوت", action: nav.referral() },
     ],
     [
       { text: userLabels.support, action: nav.support() },
-      { text: "📢 اطلاعیه‌ها", action: nav.referral() },
+      { text: userLabels.guide, action: nav.productGuide() },
     ],
-    [{ text: userLabels.guide, action: nav.productGuide() }],
   ];
   if (isAdmin) keyboard.push([{ text: "🛠 پنل مدیریت", action: nav.adminDashboard() }]);
   return keyboard;

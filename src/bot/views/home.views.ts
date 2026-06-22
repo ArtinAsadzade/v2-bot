@@ -70,14 +70,21 @@ export function registerHomeViews() {
       const expiresAt = item.xrayClient?.expiresAt ?? item.expiresAt ?? item.productAccount?.expiresAt;
       return expiresAt ? expiresAt.getTime() > Date.now() && expiresAt.getTime() <= Date.now() + 7 * 86_400_000 : false;
     }).length;
+    const referralCount = dashboard?.referralCount ?? 0;
+    const firstName = ctx.from?.first_name || user?.firstName || "دوست عزیز";
     const keyboard = homeKeyboard(isAdmin);
 
     return {
-      text: [
-        `${uiIcons.wallet} موجودی کیف پول: ${money(user?.balance ?? 0)}`,
-        `🧩 سرویس فعال: ${activeCount.toLocaleString("fa-IR")}`,
-        expiringCount > 0 ? `⏳ نزدیک انقضا: ${expiringCount.toLocaleString("fa-IR")}` : undefined,
-      ].filter(Boolean).join("\n\n"),
+      text: joinSections([
+        `✨ سلام ${firstName}، خوش آمدی`,
+        card("🏠 خانه", [
+          `${uiIcons.wallet} موجودی: ${money(user?.balance ?? 0)}`,
+          `🧩 سرویس‌های فعال: ${activeCount.toLocaleString("fa-IR")}`,
+          `🤝 دعوت‌های موفق: ${referralCount.toLocaleString("fa-IR")}`,
+          expiringCount > 0 ? `⏳ نزدیک انقضا: ${expiringCount.toLocaleString("fa-IR")}` : "✅ وضعیت سرویس‌ها پایدار است",
+        ]),
+        section(sectionTitles.quickActions, ["یکی از گزینه‌های پایین را انتخاب کن؛ همه مسیرها کوتاه و بدون دکمه اضافه چیده شده‌اند."]),
+      ]),
       keyboard,
       replyKeyboard: "home",
     };
