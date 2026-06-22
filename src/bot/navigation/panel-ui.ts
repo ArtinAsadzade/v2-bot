@@ -4,12 +4,15 @@ import type { AppContext } from "../../types/bot";
 import { replyKeyboard, replyKeyboardSignature, type ReplyKeyboardScope } from "../keyboards/reply.keyboard";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 
-export type UiButtonTone = "primary" | "success" | "danger" | "neutral";
+export type UiButtonTone = "primary" | "success" | "danger" | "neutral" | "warning";
+
 export type UiButton = {
   text: string;
   action?: string;
   url?: string;
+  tone?: UiButtonTone;
 };
+
 export type UiKeyboard = UiButton[][];
 export type PanelViewId =
   | "home"
@@ -310,43 +313,54 @@ export function parseNavAction(action: string): ViewState | undefined {
 
 export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?: boolean; cancel?: boolean } = { back: true, home: true }) {
   const seenNav = new Set<string>();
+
   const normalized: InlineKeyboardButton[][] = rows
-    .map((row) =>
-      row
-        .filter((button) => {
-          if ((button.action === "nav:back" || button.action === callbackFor("home")) && seenNav.has(button.action)) return false;
-          if (button.action === "nav:back" || button.action === callbackFor("home")) seenNav.add(button.action);
-          return true;
-        })
-        .flatMap((button) => {
-          try {
-            if (button.url) {
-              return [Markup.button.url(button.text, button.url)];
-            }
+    .map((row) => {
+      const buttons: InlineKeyboardButton[] = [];
 
-            if (!button.action) {
-              return [];
-            }
+      for (const button of row) {
+        if ((button.action === "nav:back" || button.action === callbackFor("home")) && seenNav.has(button.action)) continue;
+        if (button.action === "nav:back" || button.action === callbackFor("home")) seenNav.add(button.action);
 
-            return [Markup.button.callback(button.text, ensureCallbackData(button.action))];
-          } catch (error) {
-            console.error("BUTTON_BUILD_FAILED", {
-              text: button.text,
-              action: button.action,
-              url: button.url,
-              error: error instanceof Error ? error.message : String(error),
-            });
-
-            return [];
+        try {
+          if (button.url) {
+            buttons.push(Markup.button.url(button.text, button.url) as InlineKeyboardButton);
+            continue;
           }
-        }),
-    )
+
+          if (!button.action) continue;
+
+          buttons.push(Markup.button.callback(button.text, ensureCallbackData(button.action)) as InlineKeyboardButton);
+        } catch (error) {
+          console.error("BUTTON_BUILD_FAILED", {
+            text: button.text,
+            action: button.action,
+            url: button.url,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      return buttons;
+    })
     .filter((row) => row.length > 0);
-  const nav: InlineKeyboardButton.CallbackButton[] = [];
-  if (options.back && !seenNav.has("nav:back")) nav.push(Markup.button.callback("↩️ برگشت", ensureCallbackData("nav:back")));
-  if (options.home && !seenNav.has(callbackFor("home"))) nav.push(Markup.button.callback("🏠 خانه", callbackFor("home")));
+
+  const nav: InlineKeyboardButton[] = [];
+
+  if (options.back && !seenNav.has("nav:back")) {
+    nav.push(Markup.button.callback("↩️ برگشت", ensureCallbackData("nav:back")) as InlineKeyboardButton);
+  }
+
+  if (options.home && !seenNav.has(callbackFor("home"))) {
+    nav.push(Markup.button.callback("🏠 خانه", callbackFor("home")) as InlineKeyboardButton);
+  }
+
   if (nav.length) normalized.push(nav);
-  if (options.cancel) normalized.push([Markup.button.callback("❌ لغو عملیات", "flow:cancel")]);
+
+  if (options.cancel) {
+    normalized.push([Markup.button.callback("❌ لغو عملیات", "flow:cancel") as InlineKeyboardButton]);
+  }
+
   return Markup.inlineKeyboard(normalized);
 }
 
