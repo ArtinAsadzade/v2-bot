@@ -1,0 +1,44 @@
+import { actionFor, callbackFor, type UiKeyboard } from "../navigation/panel-ui";
+import { actionLabels, adminLabels, userLabels } from "../ui/labels";
+
+export function productDetailViewKeyboard(productId: string, stock: number): UiKeyboard {
+  return [
+    ...(stock > 0 ? [[{ text: actionLabels.buy, action: callbackFor("shop.checkout", { productId }) }]] : []),
+    [{ text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId) }],
+    [{ text: actionLabels.back, action: callbackFor("shop.categories") }, { text: actionLabels.home, action: callbackFor("home") }],
+  ];
+}
+
+export function checkoutViewKeyboard(productId: string, gatewayEnabled: boolean, hasCoupon: boolean): UiKeyboard {
+  return [
+    hasCoupon
+      ? [
+          { text: actionLabels.removeCoupon, action: actionFor("coupon:remove", productId) },
+          { text: actionLabels.enterCoupon, action: actionFor("coupon:change", productId) },
+        ]
+      : [{ text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId) }],
+    [
+      { text: actionLabels.walletPurchase, action: actionFor("buy:confirm", productId) },
+      ...(gatewayEnabled ? [{ text: actionLabels.instantPayment, action: actionFor("buy:instant", productId) }] : []),
+    ],
+    [{ text: "🔙 بازگشت", action: callbackFor("shop.product", { productId }) }, { text: actionLabels.cancelPurchase, action: "flow:cancel" }],
+    [{ text: actionLabels.home, action: callbackFor("home") }],
+  ];
+}
+
+export function accountListViewKeyboard(rows: UiKeyboard): UiKeyboard {
+  return [
+    ...rows,
+    [{ text: userLabels.buyService, action: callbackFor("shop.categories") }, { text: userLabels.support, action: callbackFor("support") }],
+    [{ text: actionLabels.home, action: callbackFor("home") }],
+  ];
+}
+
+export function adminDashboardViewKeyboard(): UiKeyboard {
+  return [
+    [{ text: adminLabels.products, action: callbackFor("admin.store") }, { text: adminLabels.payments, action: callbackFor("admin.finance") }],
+    [{ text: adminLabels.users, action: callbackFor("admin.usersSupport") }, { text: adminLabels.settings, action: callbackFor("admin.botSettings") }],
+    [{ text: adminLabels.xrayCenter, action: callbackFor("admin.xraySettings") }, { text: adminLabels.tickets, action: callbackFor("admin.tickets") }],
+    [{ text: userLabels.home, action: callbackFor("home") }],
+  ];
+}

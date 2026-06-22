@@ -44,6 +44,11 @@ import {
   yesNoStatus,
 } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
+import { adminDashboardViewKeyboard } from "../keyboards/view-keyboards";
+import { card, joinSections, section } from "../ui/layout";
+import { sectionTitles } from "../ui/sections";
+import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
+import { uiIcons } from "../ui/icons";
 import { MonitoringService } from "../../services/monitoring.service";
 import { prisma } from "../../services/prisma";
 
@@ -164,30 +169,17 @@ ${client.status === "missing_on_panel" ? "حذف‌شده از پنل / نیاز
     const lowInventory = stats.availableAccounts <= 5 ? `⚠️ ${stats.availableAccounts.toLocaleString("fa-IR")} اکانت آماده` : "عادی ✅";
     return {
       replyKeyboard: "admin",
-      text: `📊 داشبورد مدیریت
-
-${divider}
-👥 کل کاربران: ${stats.users.toLocaleString("fa-IR")}
-📦 اکانت‌های فعال/فروخته: ${stats.soldAccounts.toLocaleString("fa-IR")}
-💰 درآمد امروز: ${money(paymentStats.todayRevenue)}
-⏳ پرداخت‌های در انتظار: ${paymentStats.pending.toLocaleString("fa-IR")}
-🎫 تیکت‌های باز: ${stats.openTickets.toLocaleString("fa-IR")}
-🛡 وضعیت سیستم: ساختار مانیتورینگ فعال
-${divider}
-
-برای مدیریت، وارد یکی از گروه‌های اصلی شوید.`,
-      keyboard: [
-        [
-          { text: "🛒 فروشگاه", action: callbackFor("admin.store") },
-          { text: "💳 مالی", action: callbackFor("admin.finance") },
-        ],
-        [
-          { text: "👥 کاربران و پشتیبانی", action: callbackFor("admin.usersSupport") },
-          { text: "🛡 مانیتورینگ", action: callbackFor("admin.monitoring") },
-        ],
-        [{ text: "⚙️ تنظیمات", action: callbackFor("admin.botSettings") }],
-        [{ text: "🏠 منوی کاربر", action: callbackFor("home") }],
-      ],
+      text: joinSections([
+        card(adminLabels.dashboard, [
+          `${uiIcons.users} کل کاربران: ${stats.users.toLocaleString("fa-IR")}`,
+          `${uiIcons.product} اکانت‌های فعال/فروخته: ${stats.soldAccounts.toLocaleString("fa-IR")}`,
+          `${uiIcons.wallet} درآمد امروز: ${money(paymentStats.todayRevenue)}`,
+        ]),
+        section(sectionTitles.adminMetrics, [`⏳ پرداخت‌های در انتظار: ${paymentStats.pending.toLocaleString("fa-IR")}`, `${uiIcons.support} تیکت‌های باز: ${stats.openTickets.toLocaleString("fa-IR")}`]),
+        section(sectionTitles.dangerZone, [stats.availableAccounts <= 5 ? `${uiIcons.warning} موجودی پایین: ${lowInventory}` : `${statusLabels.success} موجودی: ${lowInventory}`]),
+        section(sectionTitles.quickActions, ["برای مدیریت، وارد یکی از گروه‌های اصلی شوید."]),
+      ]),
+      keyboard: adminDashboardViewKeyboard(),
     };
   });
   registerView("admin.store", async () => {

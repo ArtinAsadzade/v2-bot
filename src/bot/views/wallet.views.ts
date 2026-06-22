@@ -44,6 +44,10 @@ import {
   yesNoStatus,
 } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
+import { card, joinSections, section } from "../ui/layout";
+import { sectionTitles } from "../ui/sections";
+import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
+import { uiIcons } from "../ui/icons";
 import { MonitoringService } from "../../services/monitoring.service";
 import { prisma } from "../../services/prisma";
 
@@ -69,16 +73,7 @@ export function registerWalletViews() {
         .join("\n") || "تراکنش اخیری ثبت نشده است.";
     return {
       replyKeyboard: "wallet",
-      text: `💳 کیف پول
-
-${divider}
-💰 موجودی فعلی: ${money(user?.balance ?? 0)}
-
-📜 خلاصه تراکنش‌های اخیر:
-${recent}
-${divider}
-
-روش شارژ یا گزارش مالی موردنظر را انتخاب کنید.`,
+      text: joinSections([card(userLabels.wallet, [`موجودی فعلی: ${money(user?.balance ?? 0)}`]), section(`${uiIcons.invoice} تراکنش‌های اخیر`, [recent]), section(sectionTitles.quickActions, ["روش شارژ یا گزارش مالی موردنظر را انتخاب کنید."])]),
       keyboard: [
         [
           { text: "➕ شارژ کیف پول", action: callbackFor("deposit") },
@@ -96,7 +91,7 @@ ${divider}
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
     const dashboard = await UserService.dashboard(user.id);
     return {
-      text: `📜 گردش کیف پول\n\n${dashboard.walletTransactions.map((tx) => `${tx.type === "credit" || tx.type === "transfer_in" ? "🟢" : "🔴"} ${tx.description}\n${money(tx.amount)} · ${tx.createdAt.toLocaleString("fa-IR")}`).join("\n\n") || "هنوز تراکنشی ثبت نشده است."}`,
+      text: joinSections([card(`${uiIcons.invoice} گردش کیف پول`, [dashboard.walletTransactions.map((tx) => `${tx.type === "credit" || tx.type === "transfer_in" ? "🟢" : "🔴"} ${tx.description}\n${money(tx.amount)} · ${tx.createdAt.toLocaleString("fa-IR")}`).join("\n\n") || "هنوز تراکنشی ثبت نشده است."])]),
       keyboard: [[{ text: "➕ شارژ کیف پول", action: callbackFor("deposit") }]],
     };
   });
@@ -105,19 +100,7 @@ ${divider}
     const keyboard: UiKeyboard = [[{ text: "💎 پرداخت با رمزارز", action: "flow:start:deposit_submit" }]];
     if (gateway.enabled) keyboard[0].push({ text: "⚡ پرداخت آنی", action: "flow:start:instant_topup" });
     return {
-      text: `➕ شارژ کیف پول
-
-${divider}
-💰 مبلغ
-در مرحله بعد مبلغ شارژ را وارد می‌کنید.
-
-⚡ روش پرداخت
-${gateway.enabled ? "پرداخت آنی و پرداخت با رمزارز فعال هستند." : "در حال حاضر پرداخت با رمزارز فعال است."}
-
-🔒 وضعیت پرداخت
-موجودی فقط پس از تأیید نهایی پرداخت به کیف پول اضافه می‌شود.
-
-روش دلخواه را انتخاب کنید.`,
+      text: joinSections([card(`${uiIcons.wallet} شارژ کیف پول`, ["در مرحله بعد مبلغ شارژ را وارد می‌کنید."]), section(sectionTitles.wallet, [gateway.enabled ? "پرداخت آنی و پرداخت با رمزارز فعال هستند." : "در حال حاضر پرداخت با رمزارز فعال است."]), section(sectionTitles.dangerZone, ["موجودی فقط پس از تأیید نهایی پرداخت به کیف پول اضافه می‌شود."])]),
       keyboard,
     };
   });
