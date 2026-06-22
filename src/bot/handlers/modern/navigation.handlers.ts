@@ -133,7 +133,7 @@ export function registerNavigationHandlers(bot: AppBot) {
 
 
   bot.action(/^nav:(.+)$/, async (ctx) => {
-    await ctx.answerCbQuery();
+    await ctx.answerCbQuery().catch(() => undefined);
     if (ctx.match[1] === "back") return goBack(ctx);
     const state = parseNavAction(`nav:${ctx.match[1]}`);
     if (!state) {
@@ -149,8 +149,11 @@ export function registerNavigationHandlers(bot: AppBot) {
       return;
     }
     if (state.id.startsWith("admin") && (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))) {
-      await ctx.answerCbQuery("دسترسی غیرمجاز");
+      await ctx.answerCbQuery("دسترسی غیرمجاز").catch(() => undefined);
       return;
+    }
+    if (state.id === "account.xray") {
+      await ctx.editMessageText("⏳ در حال دریافت اطلاعات سرویس...").catch(() => undefined);
     }
     await renderPanel(ctx, state, "push", RenderMode.EDIT_CURRENT);
   });
