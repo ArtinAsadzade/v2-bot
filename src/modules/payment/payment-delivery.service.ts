@@ -5,6 +5,7 @@ import { MonitoringService } from "../../services/monitoring.service";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, unassignedInventoryWhere } from "../product/visibility";
 import { CouponService, normalizeCouponCode } from "../coupon/coupon.service";
 import { XrayClientService, sanitizePanelError } from "../xray/xray.service";
+import { XrayDiagnosticsService } from "../xray/xray-diagnostics.service";
 import { audit, type DbClient } from "./payment-repository";
 import { paymentLog } from "./payment-logging";
 import type { ProductDeliveryResult, PurchaseMethod, TxClient } from "./payment.types";
@@ -356,11 +357,13 @@ export class PaymentDeliveryService {
         groupName: client.groupName,
       });
       panelClientCreated = true;
-      const verified = await XrayClientService.verifyPanelClient({
+      await XrayClientService.verifyPanelClient({
         email: client.clientEmail,
         expectedInboundIds: client.inboundIds,
         requireLinks: true,
       });
+      const verified = await XrayDiagnosticsService.verifyXrayClient(client.id);
+      if (!verified.ok) throw new Error(`XRAY_VERIFICATION_FAILED:${verified.reason}`);
       await prisma.order.update({ where: { id: orderId }, data: { status: "panel_verified" } });
       const result = await prisma.$transaction(async (tx) => {
         const freshOrder = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
@@ -407,7 +410,7 @@ export class PaymentDeliveryService {
           where: { id: client.id },
           data: {
             status: "active",
-            clientSubId: verified.subId ?? created.subId,
+            clientSubId: verified.clientSubId ?? created.subId,
             panelClientId: verified.panelClientId ?? created.uuid ?? created.id,
             lastError: null,
           },

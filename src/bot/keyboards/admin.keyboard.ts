@@ -24,6 +24,7 @@ export function adminKeyboard() {
       { text: "🧾 فاکتورهای پرداخت", action: callbackFor("admin.invoices") },
       { text: "🎫 پشتیبانی", action: callbackFor("admin.tickets") },
     ],
+    [{ text: "🧩 Xray Center", action: callbackFor("admin.xrayCenter"), tone: "primary" }],
     [
       { text: "➕ محصول جدید", action: "flow:start:product_create", tone: "primary" },
       { text: "📦 سفارش‌ها", action: callbackFor("admin.orders") },

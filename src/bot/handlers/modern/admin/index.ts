@@ -6,6 +6,7 @@ import { registerAdminPaymentsHandlers } from "./admin-payments.handlers";
 import { registerAdminCouponsHandlers } from "./admin-coupons.handlers";
 import { registerAdminUsersHandlers } from "./admin-users.handlers";
 import { registerAdminSupportHandlers } from "./admin-support.handlers";
+import { registerAdminXrayHandlers } from "./admin-xray.handlers";
 
 export function registerAdminDomainHandlers(bot: AppBot) {
   registerAdminInventoryHandlers(bot);
@@ -15,4 +16,5 @@ export function registerAdminDomainHandlers(bot: AppBot) {
   registerAdminCouponsHandlers(bot);
   registerAdminUsersHandlers(bot);
   registerAdminSupportHandlers(bot);
+  registerAdminXrayHandlers(bot);
 }

@@ -25,6 +25,7 @@ import {
   XrayPanelService,
   xrayTrafficSnapshot,
 } from "../../modules/xray/xray.service";
+import { XrayDiagnosticsService } from "../../modules/xray/xray-diagnostics.service";
 import type { PaymentInvoiceStatus } from "@prisma/client";
 import { accountSummaryMessage, errorMessage, walletSummaryMessage } from "../../utils/messages";
 import { formatToman } from "../../utils/money";
@@ -61,6 +62,46 @@ const freeAccountExpiry = resolveFreeAccountExpiry;
 const yesNo = yesNoStatus;
 
 export function registerAdminViews() {
+
+  registerView("admin.xrayCenter", async () => {
+    const report = await XrayDiagnosticsService.syncReport();
+    const inbounds = await XrayDiagnosticsService.listPanelInbounds().catch(() => []);
+    const sample = await prisma.xrayClient.findFirst({ where: { status: { in: ["active", "failed", "missing_on_panel", "provisioning"] } }, orderBy: { updatedAt: "desc" } });
+    return {
+      text: joinSections([
+        card("🧩 Xray Center", [
+          `API پنل: ${report.panelApiOk ? "✅ سالم" : "❌ قطع"}`,
+          `لینک اشتراک خراب: ${report.brokenSubscriptions.toLocaleString("fa-IR")}`,
+          `اینباندهای فعال: ${report.inboundCount.toLocaleString("fa-IR")}`,
+          `کلاینت‌های فعال DB: ${report.activeDbClients.toLocaleString("fa-IR")}`,
+          `کلاینت‌های مفقود در پنل: ${report.missingOnPanel.toLocaleString("fa-IR")}`,
+          `کلاینت‌های stale inboundIds: ${report.staleInboundClients.toLocaleString("fa-IR")}`,
+          `کلاینت‌های orphan پنل: ${report.orphanPanelClients.toLocaleString("fa-IR")}`,
+        ]),
+        section("📡 Inbounds", inbounds.slice(0, 8).map((inbound) => `#${inbound.id} · ${inbound.remark ?? inbound.tag ?? inbound.protocol ?? "—"}`).concat(inbounds.length > 8 ? [`… و ${inbounds.length - 8} مورد دیگر`] : [])),
+        section(sectionTitles.dangerZone, ["Repair و Cleanup فقط بعد از تایید پنل و لینک اشتراک، آیتم را فعال می‌کنند."]),
+      ]),
+      keyboard: [
+        [
+          { text: "🔄 Test Panel API", action: "admin:xray:center:test-api" },
+          { text: "🔗 Test Subscription URL", action: "admin:xray:center:test-sub" },
+        ],
+        [
+          { text: "📡 Inbounds", action: callbackFor("admin.xrayCenter") },
+          { text: "📊 Sync Report", action: callbackFor("admin.xrayCenter") },
+        ],
+        [
+          { text: "🔍 Verify Client", action: sample ? `admin:xray:center:verify:${sample.id}` : callbackFor("admin.xrayClients") },
+          { text: "🛠 Repair Client", action: sample ? `admin:xray:center:repair:${sample.id}` : callbackFor("admin.xrayClients") },
+        ],
+        [{ text: "🧹 Cleanup Broken Clients", action: "admin:xray:center:cleanup" }],
+        [
+          { text: "🧩 Xray Center", action: callbackFor("admin.xrayCenter") }, { text: "🧩 کلاینت‌های Xray", action: callbackFor("admin.xrayClients") },
+          { text: "⚙️ تنظیمات پنل", action: callbackFor("admin.xraySettings") },
+        ],
+      ],
+    };
+  });
   registerView("admin.xraySettings", async () => {
     const config = await XrayPanelService.getEnabledConfig();
     const anyConfig = config ?? (await prisma.xrayPanelConfig.findFirst({ orderBy: { updatedAt: "desc" } }));
@@ -90,7 +131,7 @@ ${divider}
           { text: "📡 تست اتصال", action: "admin:xray:test" },
           { text: anyConfig?.enabled ? "🚫 غیرفعال‌سازی" : "✅ فعال‌سازی", action: `admin:xray:enabled:${anyConfig?.enabled ? "0" : "1"}` },
         ],
-        [{ text: "🧩 کلاینت‌های Xray", action: callbackFor("admin.xrayClients") }],
+        [{ text: "🧩 Xray Center", action: callbackFor("admin.xrayCenter") }, { text: "🧩 کلاینت‌های Xray", action: callbackFor("admin.xrayClients") }],
       ],
     };
   });
@@ -196,7 +237,7 @@ ${divider}
         ],
         [
           { text: "🗄 موجودی اکانت‌ها", action: callbackFor("admin.accounts") },
-          { text: "🧩 کلاینت‌های Xray", action: callbackFor("admin.xrayClients") },
+          { text: "🧩 Xray Center", action: callbackFor("admin.xrayCenter") }, { text: "🧩 کلاینت‌های Xray", action: callbackFor("admin.xrayClients") },
         ],
         [
           { text: "⚙️ تنظیمات پنل Xray", action: callbackFor("admin.xraySettings") },

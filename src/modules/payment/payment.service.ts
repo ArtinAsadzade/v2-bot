@@ -11,6 +11,7 @@ import { logger } from "../../services/logger";
 import { MonitoringService } from "../../services/monitoring.service";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, unassignedInventoryWhere } from "../product/visibility";
 import { XrayClientService, sanitizePanelError, xrayTrafficSnapshot } from "../xray/xray.service";
+import { XrayDiagnosticsService } from "../xray/xray-diagnostics.service";
 import {
   assertProductDeliverySuccess,
   type InvoiceNotificationPayload,
@@ -1012,6 +1013,9 @@ export class PaymentService {
     if (expectedAmount !== undefined && product.price !== expectedAmount) throw new Error("مبلغ فاکتور با قیمت محصول همخوانی ندارد");
     if (product.mode === "xray_auto" && product.trafficBytes && product.durationDays && product.stockLimit && product.inboundIds.length) {
       if (product.soldCount >= product.stockLimit) throw new Error("موجودی این محصول تمام شده است");
+      const inbounds = await XrayDiagnosticsService.listPanelInbounds();
+      const validInboundIds = new Set(inbounds.map((inbound) => inbound.id));
+      if (product.inboundIds.some((id) => !validInboundIds.has(id))) throw new Error("اینباندهای محصول Xray با پنل فعلی همخوانی ندارد");
     } else {
       const stock = await tx.productAccount.count({ where: { AND: [availableInventoryWhere(productId), unassignedInventoryWhere()] } });
       if (stock < 1) throw new Error("موجودی این محصول تمام شده است");
