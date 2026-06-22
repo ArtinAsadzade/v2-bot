@@ -9,7 +9,7 @@ const productsView = adminViews.match(/registerView\("admin\.products"[\s\S]*?re
 const categoriesView = adminViews.match(/registerView\("admin\.categories"[\s\S]*?registerView\("admin\.category"/)?.[0] ?? "";
 
 test("admin shop dashboard groups only shop product and category actions", () => {
-  for (const label of ["🛍 مدیریت فروشگاه", "📦 مدیریت محصولات", "🗂 مدیریت دسته‌بندی‌ها", "➕ افزودن محصول جدید", "➕ افزودن دسته‌بندی جدید", "✅ محصولات فعال", "⛔ محصولات غیرفعال", "⚙️ تنظیمات فروشگاه"]) {
+  for (const label of ["🛍 داشبورد فروشگاه", "📦 محصولات", "🗂 دسته‌بندی‌ها", "➕ افزودن محصول", "➕ افزودن دسته‌بندی", "✅ محصولات فعال", "⛔ محصولات غیرفعال", "🔄 سینک با Xray"]) {
     assert.match(storeView, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   for (const unrelated of ["کاربران Xray", "واریزی", "تیکت", "اطلاع‌رسانی", "کیف پول"]) {

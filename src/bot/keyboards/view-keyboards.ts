@@ -43,18 +43,20 @@ export function accountListViewKeyboard(rows: UiKeyboard): UiKeyboard {
 export function adminDashboardViewKeyboard(): UiKeyboard {
   return [
     [
-      { text: adminLabels.dashboard, action: callbackFor("admin.analytics") },
-      { text: adminLabels.products, action: callbackFor("admin.store") },
+      { text: "👥 کاربران", action: callbackFor("admin.usersSupport") },
+      { text: "🛍 فروشگاه", action: callbackFor("admin.store") },
     ],
     [
-      { text: adminLabels.xrayCenter, action: callbackFor("admin.xrayCenter") },
-      { text: adminLabels.users, action: callbackFor("admin.usersSupport") },
+      { text: "🧩 مرکز Xray", action: callbackFor("admin.xrayCenter") },
+      { text: "💳 مالی", action: callbackFor("admin.finance") },
     ],
     [
-      { text: adminLabels.finance, action: callbackFor("admin.finance") },
-      { text: adminLabels.tickets, action: callbackFor("admin.tickets") },
+      { text: "🎫 پشتیبانی", action: callbackFor("admin.tickets") },
+      { text: "📣 اطلاع‌رسانی", action: callbackFor("admin.content") },
     ],
-    [{ text: adminLabels.settings, action: callbackFor("admin.botSettings") }],
-    [{ text: userLabels.home, action: callbackFor("home") }],
+    [
+      { text: "⚙️ تنظیمات", action: callbackFor("admin.botSettings") },
+      { text: "🏠 خانه", action: callbackFor("home") },
+    ],
   ];
 }
