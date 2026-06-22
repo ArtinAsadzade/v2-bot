@@ -47,6 +47,7 @@ import { homeKeyboard } from "../keyboards/common.keyboard";
 import { accountListViewKeyboard } from "../keyboards/view-keyboards";
 import { accountActionViewKeyboard } from "../keyboards/account.keyboard";
 import { card, joinSections, section } from "../ui/layout";
+import { uxCopy } from "../messages/copy";
 import { sectionTitles } from "../ui/sections";
 import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
 import { uiIcons } from "../ui/icons";
@@ -70,16 +71,25 @@ export function registerAccountViews() {
     const username = ctx.from?.username ? `@${ctx.from.username}` : user.username ? `@${user.username}` : "ثبت نشده";
     return {
       replyKeyboard: "profile",
-      text: joinSections([card(userLabels.myAccounts, [`🆔 Telegram ID: ${user.telegramId}`, `👤 Username: ${username}`, `${uiIcons.wallet} موجودی: ${money(dashboard.user.balance)}`, `${uiIcons.account} اکانت‌های فعال: ${activeCount.toLocaleString("fa-IR")}`, `${uiIcons.invoice} کل خریدها: ${dashboard.recentOrders.length.toLocaleString("fa-IR")}`]), section(sectionTitles.quickActions, ["برای مدیریت حساب، یکی از بخش‌های زیر را انتخاب کنید."])]),
+      text: joinSections([uxCopy.account({ balance: money(dashboard.user.balance), activeServices: activeCount.toLocaleString("fa-IR") }), section("اطلاعات کاربری", [`Telegram ID: ${user.telegramId}`, `Username: ${username}`]), section(sectionTitles.quickActions, ["بخش موردنظر را انتخاب کنید."])]),
       keyboard: [
         [
-          { text: "📦 اکانت‌های من", action: callbackFor("account.details") },
-          { text: "💳 کیف پول", action: callbackFor("wallet") },
+          { text: userLabels.myServices, action: callbackFor("account.details") },
+          { text: userLabels.wallet, action: callbackFor("wallet") },
         ],
         [
-          { text: "🎁 دعوت دوستان", action: callbackFor("referral") },
-          { text: "🎫 پشتیبانی", action: callbackFor("support") },
+          { text: userLabels.topup, action: callbackFor("deposit") },
+          { text: userLabels.transactions, action: callbackFor("wallet.history") },
         ],
+        [
+          { text: userLabels.coupon, action: callbackFor("coupon.info") },
+          { text: userLabels.userInfo, action: callbackFor("account") },
+        ],
+        [
+          { text: userLabels.referral, action: callbackFor("referral") },
+          { text: userLabels.support, action: callbackFor("support") },
+        ],
+        [{ text: "↩️ برگشت", action: callbackFor("home") }, { text: userLabels.home, action: callbackFor("home") }],
       ],
     };
   });

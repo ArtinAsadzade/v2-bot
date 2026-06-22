@@ -25,14 +25,14 @@ export const labels = {
   transactions: "📜 تاریخچه تراکنش‌ها",
   instantPayment: "⚡ پرداخت آنی",
   walletPayment: "💳 پرداخت با کیف پول",
-  shop: "🛒 فروشگاه",
+  shop: "📦 خرید سرویس",
   shopLegacy: "🛒 فروشگاه",
   buyAgain: "🛒 خرید مجدد",
   coupon: "🎟 تخفیف‌ها",
-  account: "👤 حساب کاربری",
+  account: "👤 حساب من",
   freeAccount: "🆓 اکانت تست",
   referral: "🎁 دعوت دوستان",
-  orders: "📦 اکانت‌های من",
+  orders: "🧩 سرویس‌های من",
   support: "🎫 پشتیبانی",
   guide: "📘 راهنما",
   settings: "⚙️ تنظیمات",
@@ -57,7 +57,7 @@ export const labels = {
   adminTickets: "🎫 تیکت‌ها",
   adminNotifications: "📢 اطلاع‌رسانی",
   adminCoupons: "🎟 کدهای تخفیف",
-  adminDashboard: "🛡 پنل مدیریت",
+  adminDashboard: "🛠 پنل مدیریت",
 } as const;
 
 const toneToStyle: Record<Exclude<ButtonTone, "neutral">, TelegramButtonStyle> = {
@@ -67,19 +67,11 @@ const toneToStyle: Record<Exclude<ButtonTone, "neutral">, TelegramButtonStyle> =
   warning: "warning",
 };
 
-// Compatibility check (2026-06-13): official Bot API 9.4 exposes
-// KeyboardButton/InlineKeyboardButton `style` and `icon_custom_emoji_id`, while
-// Telegraf 4.16.3 can send unknown raw fields but its bundled types lag behind.
-// The premium fields are therefore opt-in raw payload decorations with a safe
-// fallback: set TELEGRAM_BUTTON_STYLE_ENABLED=false or TELEGRAM_CUSTOM_EMOJI_ENABLED=false
-// for older self-hosted Bot API servers or bots that cannot use premium emoji.
-function buttonDecorations(button: ButtonStyleFields) {
-  const styleEnabled = process.env.TELEGRAM_BUTTON_STYLE_ENABLED !== "false";
-  const customEmojiEnabled = process.env.TELEGRAM_CUSTOM_EMOJI_ENABLED === "true";
-  return {
-    ...(styleEnabled && button.tone && button.tone !== "neutral" ? { style: toneToStyle[button.tone] } : {}),
-    ...(customEmojiEnabled && button.customEmojiId ? { icon_custom_emoji_id: button.customEmojiId } : {}),
-  };
+// Telegram does not expose arbitrary button colors; tones are layout hints only.
+function buttonDecorations(_button: ButtonStyleFields) {
+  // Telegram inline keyboards do not support arbitrary colors/backgrounds.
+  // Keep tone metadata internal and send only standard Bot API button fields.
+  return {};
 }
 
 function replyButton(button: ReplyButton): StyledKeyboardButton {
@@ -107,15 +99,12 @@ export function buildInlineKeyboard(rows: InlineButton[][]): { reply_markup: Inl
 
 export function MainMenuKeyboard(isAdmin = false) {
   const rows: ReplyButton[][] = [
-    [{ text: labels.shop }, { text: labels.wallet }],
-    [{ text: labels.orders }, { text: labels.freeAccount }],
-    [{ text: labels.guide }, { text: labels.support }],
-    [{ text: labels.referral }, { text: labels.account }],
+    [{ text: labels.shop }, { text: labels.account }],
+    [{ text: labels.support }, { text: labels.guide }],
   ];
   if (isAdmin) rows.push([{ text: labels.adminDashboard }]);
   return buildReplyKeyboard(rows);
 }
-
 export function UserKeyboard() {
   return MainMenuKeyboard();
 }

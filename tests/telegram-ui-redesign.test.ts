@@ -16,9 +16,8 @@ const inlineFromView = (rows: Parameters<typeof buildInlineKeyboard>[0]) => buil
 
 describe("Telegram UI redesign keyboards", () => {
   test("home keyboard groups primary user actions", () => {
-    expect(texts(inlineFromView(homeKeyboard(false))).slice(0, 3)).toEqual([
-      ["📦 خرید سرویس", "👤 اکانت‌های من"],
-      ["💳 کیف پول", "🎟 کد تخفیف"],
+    expect(texts(inlineFromView(homeKeyboard(false)))).toEqual([
+      ["📦 خرید سرویس", "👤 حساب من"],
       ["🆘 پشتیبانی", "📘 راهنما"],
     ]);
   });
@@ -65,9 +64,10 @@ describe("Telegram UI redesign keyboards", () => {
 
   test("admin dashboard keyboard uses grouped operational sections", () => {
     expect(texts(inlineFromView(adminDashboardViewKeyboard()))).toEqual([
-      ["📦 محصولات", "💳 پرداخت‌ها"],
-      ["👥 کاربران", "⚙️ تنظیمات"],
-      ["🧩 Xray Center", "🆘 تیکت‌ها"],
+      ["📊 داشبورد", "📦 محصولات"],
+      ["🧩 Xray Center", "👥 کاربران"],
+      ["💳 مالی", "🆘 تیکت‌ها"],
+      ["⚙️ تنظیمات"],
       ["🏠 خانه"],
     ]);
   });
