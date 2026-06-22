@@ -1,26 +1,27 @@
 import type { UiKeyboard } from "../navigation/panel-ui";
 import { nav, supportCallbacks } from "../callbacks";
+import { adminLabels, userLabels } from "../ui/labels";
 
 export const homeKeyboard = (isAdmin: boolean): UiKeyboard => {
   const keyboard: UiKeyboard = [
     [
-      { text: "🛒 فروشگاه", action: nav.shopCategories() },
-      { text: "📦 اکانت‌های من", action: nav.accountDetails() },
+      { text: userLabels.buyService, action: nav.shopCategories() },
+      { text: userLabels.myAccounts, action: nav.accountDetails() },
     ],
     [
-      { text: "💳 کیف پول", action: nav.wallet() },
-      { text: "🆓 اکانت تست", action: nav.freeAccount() },
+      { text: userLabels.wallet, action: nav.wallet() },
+      { text: userLabels.coupon, action: nav.shopCategories() },
     ],
     [
-      { text: "📘 راهنما", action: nav.productGuide() },
-      { text: "🎫 پشتیبانی", action: nav.support() },
+      { text: userLabels.support, action: nav.support() },
+      { text: userLabels.guide, action: nav.productGuide() },
     ],
     [
       { text: "🎁 دعوت دوستان", action: nav.referral() },
       { text: "👤 حساب کاربری", action: nav.account() },
     ],
   ];
-  if (isAdmin) keyboard.push([{ text: "🛡 پنل مدیریت", action: nav.adminDashboard() }]);
+  if (isAdmin) keyboard.push([{ text: adminLabels.dashboard, action: nav.adminDashboard() }]);
   return keyboard;
 };
 
