@@ -44,6 +44,7 @@ import {
   yesNoStatus,
 } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
+import { uxCopy } from "../messages/copy";
 import { card, joinSections, section } from "../ui/layout";
 import { sectionTitles } from "../ui/sections";
 import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
@@ -68,11 +69,20 @@ export function registerHomeViews() {
     const keyboard = homeKeyboard(isAdmin);
 
     return {
-      text: joinSections([card(`${uiIcons.home} سلام ${ctx.from?.first_name ?? "دوست عزیز"} 🌿`, [`${uiIcons.wallet} موجودی کیف پول: ${money(user?.balance ?? 0)}`, `${uiIcons.account} اکانت‌های فعال: ${activeCount.toLocaleString("fa-IR")}`, `${uiIcons.users} دعوت‌های موفق: ${(dashboard?.referralCount ?? 0).toLocaleString("fa-IR")} نفر`]), section(sectionTitles.quickActions, ["از مسیرهای سریع زیر وارد بخش موردنظر شوید. محصولات فقط از مسیر «فروشگاه ← دسته‌بندی ← محصول» نمایش داده می‌شوند."])]),
+      text: joinSections([uxCopy.home(ctx.from?.first_name ?? "دوست عزیز"), card("خلاصه حساب", [`${uiIcons.wallet} موجودی کیف پول: ${money(user?.balance ?? 0)}`, `${uiIcons.account} سرویس‌های فعال: ${activeCount.toLocaleString("fa-IR")}`])]),
       keyboard,
       replyKeyboard: "home",
     };
   });
+  registerView("coupon.info", async () => ({
+    replyKeyboard: "home",
+    text: uxCopy.couponInfo,
+    keyboard: [
+      [{ text: userLabels.buyService, action: callbackFor("shop.categories") }],
+      [{ text: userLabels.myAccounts, action: callbackFor("account") }],
+      [{ text: userLabels.home, action: callbackFor("home") }],
+    ],
+  }));
   registerView("productGuide", async () => {
     const sections = await ProductGuideService.listActive();
     return {

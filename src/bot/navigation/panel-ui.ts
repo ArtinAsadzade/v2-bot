@@ -14,6 +14,7 @@ export type PanelViewId =
   | "shop.checkout"
   | "shop.searchResults"
   | "wallet"
+  | "coupon.info"
   | "account"
   | "account.details"
   | "account.xray"
@@ -174,6 +175,7 @@ export const PANEL_VIEW_IDS = new Set<string>([
   "shop.checkout",
   "shop.searchResults",
   "wallet",
+  "coupon.info",
   "account",
   "account.details",
   "account.xray",

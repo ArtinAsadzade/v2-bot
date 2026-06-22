@@ -36,9 +36,10 @@ export function accountListViewKeyboard(rows: UiKeyboard): UiKeyboard {
 
 export function adminDashboardViewKeyboard(): UiKeyboard {
   return [
-    [{ text: adminLabels.products, action: callbackFor("admin.store") }, { text: adminLabels.payments, action: callbackFor("admin.finance") }],
-    [{ text: adminLabels.users, action: callbackFor("admin.usersSupport") }, { text: adminLabels.settings, action: callbackFor("admin.botSettings") }],
-    [{ text: adminLabels.xrayCenter, action: callbackFor("admin.xraySettings") }, { text: adminLabels.tickets, action: callbackFor("admin.tickets") }],
+    [{ text: adminLabels.dashboard, action: callbackFor("admin.analytics") }, { text: adminLabels.products, action: callbackFor("admin.store") }],
+    [{ text: adminLabels.xrayCenter, action: callbackFor("admin.xrayCenter") }, { text: adminLabels.users, action: callbackFor("admin.usersSupport") }],
+    [{ text: adminLabels.finance, action: callbackFor("admin.finance") }, { text: adminLabels.tickets, action: callbackFor("admin.tickets") }],
+    [{ text: adminLabels.settings, action: callbackFor("admin.botSettings") }],
     [{ text: userLabels.home, action: callbackFor("home") }],
   ];
 }
