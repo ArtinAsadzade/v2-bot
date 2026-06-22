@@ -24,6 +24,8 @@ import { isAdminByTelegramId } from "../../../middlewares/admin.middleware";
 import { quickReplyTarget } from "../../../keyboards/reply.keyboard";
 import { InvoiceActionKeyboard } from "../../../keyboards/design-system";
 import { supportCloseHomeInlineKeyboard } from "../../../keyboards/common.keyboard";
+import { adminDangerConfirmKeyboard } from "../../../keyboards/admin-danger.keyboard";
+import { adminDangerConfirmMessage } from "../../../messages/admin.messages";
 import { xraySubscriptionKeyboard, xrayConfigsSentKeyboard, xrayRenewedKeyboard, xrayRenewalInvoiceKeyboard } from "../../../keyboards/account.keyboard";
 import { accountHomeInlineKeyboard, expiredCheckoutRecoveryKeyboard, pendingInvoiceRecoveryKeyboard, processingPurchaseRecoveryKeyboard, standardPurchaseDeliveryKeyboard, xrayPurchaseDeliveryKeyboard } from "../../../keyboards/purchase.keyboard";
 import { buyCallbacks, nav, xrayCallbacks } from "../../../callbacks";
@@ -496,16 +498,10 @@ ${account.configLink}
   bot.action(/^admin:account:delete:confirm:([^:]+)$/, async (ctx) => {
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
     await ctx.answerCbQuery();
-    await ctx.reply("⚠️ این اکانت از موجودی حذف شود؟", {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "تایید حذف", callback_data: actionFor("admin:account:delete:force", ctx.match[1]) },
-            { text: "لغو", callback_data: callbackFor("admin.account", { accountId: ctx.match[1] }) },
-          ],
-        ],
-      },
-    });
+    await ctx.reply(
+      adminDangerConfirmMessage({ action: "حذف اکانت از موجودی", item: ctx.match[1] }),
+      adminDangerConfirmKeyboard(actionFor("admin:account:delete:force", ctx.match[1]), callbackFor("admin.account", { accountId: ctx.match[1] })),
+    );
   });
 
   bot.action(/^admin:account:delete:force:([^:]+)$/, async (ctx) => {

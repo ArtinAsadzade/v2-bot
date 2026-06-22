@@ -45,6 +45,7 @@ import {
 } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
 import { accountListViewKeyboard } from "../keyboards/view-keyboards";
+import { accountActionViewKeyboard } from "../keyboards/account.keyboard";
 import { card, joinSections, section } from "../ui/layout";
 import { sectionTitles } from "../ui/sections";
 import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
@@ -167,27 +168,10 @@ export function registerAccountViews() {
     const snap = xrayTrafficSnapshot(traffic, client.trafficBytes, client.usedBytes);
     const days = Math.max(Math.ceil((client.expiresAt.getTime() - Date.now()) / 86_400_000), 0);
     const status = client.expiresAt <= new Date() ? "منقضی شده ⛔" : normalizeXrayStatus(client.status);
+    // Callback compatibility is provided by accountActionViewKeyboard: xray:sub:${client.id} / xray:configs:${client.id}
     return {
       text: `🧩 سرویس Xray\n\n📦 سرویس:\n${client.isFreeTest ? "🆓 اکانت تست" : (client.product?.title ?? "سرویس Xray")}\n\n👤 شناسه:\n${client.clientEmail}\n\n📊 حجم:\n${formatXrayBytes(snap.usedBytes)} / ${formatXrayBytes(snap.totalBytes, { unlimitedIfZero: true })}\n\n📉 باقی‌مانده:\n${formatXrayBytes(snap.remainingBytes, { unlimitedIfZero: snap.totalBytes === 0n })}\n\n⏳ اعتبار:\n${client.expiresAt.toLocaleDateString("fa-IR")}\n${days.toLocaleString("fa-IR")} روز باقی‌مانده\n\n📌 وضعیت:\n${status}${warning}`,
-      keyboard: [
-        [
-          { text: "🔗 دریافت لینک اشتراک", action: `xray:sub:${client.id}` },
-          { text: "📲 دریافت QR اشتراک", action: `xray:qr:${client.id}` },
-        ],
-        client.isFreeTest
-          ? [
-              { text: "⚙️ دریافت کانفیگ‌ها", action: `xray:configs:${client.id}` },
-              { text: "🎫 پشتیبانی", action: callbackFor("support") },
-            ]
-          : [
-              { text: "⚙️ دریافت کانفیگ‌ها", action: `xray:configs:${client.id}` },
-              { text: "🔄 تمدید سرویس", action: callbackFor("account.renew", { xrayClientId: client.id }) },
-            ],
-        [
-          { text: "📊 بروزرسانی اطلاعات", action: callbackFor("account.xray", { xrayClientId: client.id }) },
-          { text: "🎫 پشتیبانی", action: callbackFor("support") },
-        ],
-      ],
+      keyboard: accountActionViewKeyboard(client.id, { renewable: !client.isFreeTest }),
     };
   });
   registerView("account.renew", async (ctx, params) => {

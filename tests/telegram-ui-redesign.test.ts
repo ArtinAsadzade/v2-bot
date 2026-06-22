@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 import { callbackFor } from "../src/bot/navigation/panel-ui";
-import { userHomeKeyboard } from "../src/bot/keyboards/user-menu.keyboard";
-import { productDetailKeyboard } from "../src/bot/keyboards/product.keyboard";
+import { buildInlineKeyboard } from "../src/bot/keyboards/design-system";
+import { homeKeyboard } from "../src/bot/keyboards/common.keyboard";
+import { productDetailViewKeyboard, checkoutViewKeyboard, adminDashboardViewKeyboard } from "../src/bot/keyboards/view-keyboards";
 import { purchasePaymentMethodKeyboard } from "../src/bot/keyboards/purchase.keyboard";
 import { accountActionKeyboard } from "../src/bot/keyboards/account.keyboard";
-import { adminDashboardKeyboard } from "../src/bot/keyboards/admin-dashboard.keyboard";
 import { adminDangerConfirmKeyboard } from "../src/bot/keyboards/admin-danger.keyboard";
 import { userHomeMessage } from "../src/bot/messages/user.messages";
 import { productDetailMessage } from "../src/bot/messages/product.messages";
@@ -12,10 +12,11 @@ import { adminDangerConfirmMessage } from "../src/bot/messages/admin.messages";
 
 const texts = (keyboard: { reply_markup: { inline_keyboard: Array<Array<{ text: string }>> } }) => keyboard.reply_markup.inline_keyboard.map((row) => row.map((button) => button.text));
 const actions = (keyboard: { reply_markup: { inline_keyboard: Array<Array<{ callback_data?: string }>> } }) => keyboard.reply_markup.inline_keyboard.flatMap((row) => row.map((button) => button.callback_data));
+const inlineFromView = (rows: Parameters<typeof buildInlineKeyboard>[0]) => buildInlineKeyboard(rows);
 
 describe("Telegram UI redesign keyboards", () => {
   test("home keyboard groups primary user actions", () => {
-    expect(texts(userHomeKeyboard(false)).slice(0, 3)).toEqual([
+    expect(texts(inlineFromView(homeKeyboard(false))).slice(0, 3)).toEqual([
       ["📦 خرید سرویس", "👤 اکانت‌های من"],
       ["💳 کیف پول", "🎟 کد تخفیف"],
       ["🆘 پشتیبانی", "📘 راهنما"],
@@ -23,14 +24,25 @@ describe("Telegram UI redesign keyboards", () => {
   });
 
   test("product detail keyboard has payment, coupon, back, and home actions", () => {
-    const keyboard = productDetailKeyboard("p1");
+    const keyboard = inlineFromView(productDetailViewKeyboard("p1", 10));
     expect(texts(keyboard)).toEqual([
-      ["💳 خرید با کیف پول"],
-      ["🧾 پرداخت آنی"],
+      ["🛒 خرید"],
       ["🎟 وارد کردن کد تخفیف"],
       ["↩️ برگشت", "🏠 خانه"],
     ]);
     expect(actions(keyboard)).toContain(callbackFor("home"));
+  });
+
+
+  test("checkout keyboard keeps legacy buy and coupon callbacks plus cancel/home", () => {
+    const keyboard = inlineFromView(checkoutViewKeyboard("p1", true, true));
+    const callbackData = actions(keyboard);
+    expect(callbackData).toContain("coupon:remove:p1");
+    expect(callbackData).toContain("coupon:change:p1");
+    expect(callbackData).toContain("buy:confirm:p1");
+    expect(callbackData).toContain("buy:instant:p1");
+    expect(callbackData).toContain("flow:cancel");
+    expect(callbackData).toContain(callbackFor("home"));
   });
 
   test("purchase payment keyboard keeps legacy purchase callbacks compatible", () => {
@@ -44,18 +56,19 @@ describe("Telegram UI redesign keyboards", () => {
 
   test("account action keyboard exposes subscription, configs, refresh, renewal, support, and home", () => {
     expect(texts(accountActionKeyboard("x1"))).toEqual([
-      ["🔗 لینک اشتراک", "📋 کانفیگ‌ها"],
+      ["🔗 لینک اشتراک", "📲 دریافت QR اشتراک"],
+      ["📋 کانفیگ‌ها"],
       ["🔄 بروزرسانی وضعیت", "♻️ تمدید"],
       ["🆘 پشتیبانی", "🏠 خانه"],
     ]);
   });
 
   test("admin dashboard keyboard uses grouped operational sections", () => {
-    expect(texts(adminDashboardKeyboard())).toEqual([
-      ["📦 محصولات", "📥 موجودی اکانت‌ها"],
-      ["🧩 Xray Center", "💳 پرداخت‌ها"],
-      ["👥 کاربران", "🎟 کدهای تخفیف"],
-      ["🆘 تیکت‌ها", "⚙️ تنظیمات"],
+    expect(texts(inlineFromView(adminDashboardViewKeyboard()))).toEqual([
+      ["📦 محصولات", "💳 پرداخت‌ها"],
+      ["👥 کاربران", "⚙️ تنظیمات"],
+      ["🧩 Xray Center", "🆘 تیکت‌ها"],
+      ["🏠 خانه"],
     ]);
   });
 

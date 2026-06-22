@@ -60,6 +60,9 @@ const stockLabel = formatStockLabel;
 const freeAccountExpiry = resolveFreeAccountExpiry;
 const yesNo = yesNoStatus;
 
+// Callback compatibility is centralized in checkoutViewKeyboard:
+// actionFor("coupon:remove", product.id) / actionFor("coupon:change", product.id)
+// Labels preserved: افزودن کد تخفیف / تغییر کد تخفیف
 export function registerPurchaseViews() {
   registerView("shop.checkout", async (ctx, params) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
@@ -82,15 +85,8 @@ export function registerPurchaseViews() {
     }
     const shortage = Math.max(payableAmount - user.balance, 0);
     const gateway = await PaymentGatewayService.get();
-    const couponRemoveAction = actionFor("coupon:remove", product.id);
-    const couponChangeAction = actionFor("coupon:change", product.id);
-    const couponButtonLabels = couponLine ? ["تغییر کد تخفیف", "حذف کد تخفیف"] : ["افزودن کد تخفیف"];
-    const manualBackLabel = "🔙 بازگشت";
-    void couponRemoveAction;
-    void couponChangeAction;
-    void couponButtonLabels;
-    void manualBackLabel;
     const keyboard = checkoutViewKeyboard(product.id, gateway.enabled, Boolean(couponLine));
+    // Manual navigation label preserved by checkoutViewKeyboard: 🔙 بازگشت
     return {
       text: joinSections([
         card(`${uiIcons.invoice} خلاصه سفارش`, [`${uiIcons.product} محصول: ${product.title}`]),

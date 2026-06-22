@@ -24,6 +24,8 @@ import { isAdminByTelegramId } from "../../../middlewares/admin.middleware";
 import { quickReplyTarget } from "../../../keyboards/reply.keyboard";
 import { InvoiceActionKeyboard } from "../../../keyboards/design-system";
 import { supportCloseHomeInlineKeyboard } from "../../../keyboards/common.keyboard";
+import { adminDangerConfirmKeyboard } from "../../../keyboards/admin-danger.keyboard";
+import { adminDangerConfirmMessage } from "../../../messages/admin.messages";
 import { xraySubscriptionKeyboard, xrayConfigsSentKeyboard, xrayRenewedKeyboard, xrayRenewalInvoiceKeyboard } from "../../../keyboards/account.keyboard";
 import { accountHomeInlineKeyboard, expiredCheckoutRecoveryKeyboard, pendingInvoiceRecoveryKeyboard, processingPurchaseRecoveryKeyboard, standardPurchaseDeliveryKeyboard, xrayPurchaseDeliveryKeyboard } from "../../../keyboards/purchase.keyboard";
 import { buyCallbacks, nav, xrayCallbacks } from "../../../callbacks";
@@ -49,16 +51,10 @@ export function registerAdminPaymentsHandlers(bot: AppBot) {
   bot.action(/^admin:wallet:delete:confirm:([^:]+)$/, async (ctx) => {
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return ctx.answerCbQuery("دسترسی غیرمجاز");
     await ctx.answerCbQuery();
-    await ctx.reply("⚠️ این کیف پول حذف شود؟ اگر پرداخت فعال داشته باشد حذف انجام نمی‌شود.", {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "تایید حذف", callback_data: actionFor("admin:wallet:delete:force", ctx.match[1]) },
-            { text: "لغو", callback_data: callbackFor("admin.wallet", { walletId: ctx.match[1] }) },
-          ],
-        ],
-      },
-    });
+    await ctx.reply(
+      adminDangerConfirmMessage({ action: "حذف کیف پول", item: ctx.match[1], note: "اگر پرداخت فعال داشته باشد حذف انجام نمی‌شود." }),
+      adminDangerConfirmKeyboard(actionFor("admin:wallet:delete:force", ctx.match[1]), callbackFor("admin.wallet", { walletId: ctx.match[1] })),
+    );
   });
 
   bot.action(/^admin:wallet:delete:force:([^:]+)$/, async (ctx) => {
