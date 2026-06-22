@@ -248,11 +248,9 @@ ${link}`;
           shareText,
         ]),
       ]),
-      keyboard: [
-        [{ text: "📤 اشتراک گذاری", url: shareUrl }],
-        [{ text: "🏠 خانه", action: callbackFor("home") }],
-      ],
+      keyboard: [[{ text: "📤 اشتراک گذاری", url: shareUrl }], [{ text: "🏠 خانه", action: callbackFor("home") }]],
     };
+  });
 
   registerView("referral.users", async (ctx) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;

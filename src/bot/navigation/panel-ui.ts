@@ -310,7 +310,7 @@ export function parseNavAction(action: string): ViewState | undefined {
 
 export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?: boolean; cancel?: boolean } = { back: true, home: true }) {
   const seenNav = new Set<string>();
-  const normalized: InlineKeyboardButton.CallbackButton[][] = rows
+  const normalized: InlineKeyboardButton[][] = rows
     .map((row) =>
       row
         .filter((button) => {
