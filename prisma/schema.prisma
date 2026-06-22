@@ -622,6 +622,7 @@ model XrayPanelConfig {
   lastSuccessAt       DateTime?
   lastError           String?
   lastInboundCount    Int       @default(0)
+  defaultInboundId    Int?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 

@@ -131,7 +131,7 @@ export function registerAdminViews() {
       ]),
       keyboard: [
         [
-          { text: "➕ افزودن پنل", action: "flow:start:xray_panel_setup" },
+          { text: "➕ افزودن پنل", action: "flow:start:xray_panel_setup:new:name" },
           { text: "🧪 تست همه پنل‌ها", action: "admin:xray:center:test-api" },
         ],
         ...panels.map((panel) => [{ text: `📡 ${panel.name}`.slice(0, 60), action: callbackFor("admin.xrayPanel", { panelId: panel.id }) }]),
@@ -148,7 +148,8 @@ export function registerAdminViews() {
         card(`📡 ${panel.name}`, [
           `آدرس پنل: ${panel.apiBaseUrl}`,
           `وضعیت اتصال: ${panel.enabled ? "✅ فعال" : "⛔ غیرفعال"}`,
-          `تعداد inbound: ${panel.lastInboundCount.toLocaleString("fa-IR")}`,
+          `inbound پیش‌فرض: ${panel.defaultInboundId ?? "انتخاب نشده"}`,
+  `تعداد inbound: ${panel.lastInboundCount.toLocaleString("fa-IR")}`,
           `آخرین تست اتصال: ${panel.lastSuccessAt ? panel.lastSuccessAt.toLocaleString("fa-IR") : "انجام نشده"}`,
           `توکن/API key: ${maskAdminSecret(panel.apiToken)}`,
           `آخرین خطا: ${panel.lastError ?? "—"}`,
@@ -157,28 +158,33 @@ export function registerAdminViews() {
       ]),
       keyboard: [
         [
-          { text: "🧪 تست اتصال", action: "admin:xray:center:test-api" },
-          { text: "📥 دریافت inboundها", action: "admin:xray:test" },
+          { text: "✏️ نام پنل", action: `flow:start:xray_panel_setup:${panel.id}:name` },
+          { text: "🌐 آدرس پنل", action: `flow:start:xray_panel_setup:${panel.id}:apiBaseUrl` },
         ],
         [
-          { text: "✏️ ویرایش نام", action: "flow:start:xray_panel_setup:name" },
-          { text: "🌐 ویرایش آدرس", action: "flow:start:xray_panel_setup:apiBaseUrl" },
+          { text: "🔑 توکن/API", action: `flow:start:xray_panel_setup:${panel.id}:apiToken` },
+          { text: "📥 inbound پیش‌فرض", action: `admin:xray:inbounds:${panel.id}` },
         ],
         [
-          { text: "🔑 ویرایش توکن/API key", action: "flow:start:xray_panel_setup:apiToken" },
-          { text: panel.enabled ? "⛔ غیرفعال کردن" : "✅ فعال کردن", action: `admin:xray:enabled:${panel.enabled ? "0" : "1"}` },
+          { text: "🧪 تست اتصال", action: `admin:xray:test:${panel.id}` },
+          { text: "📋 دریافت inboundها", action: `admin:xray:inbounds:${panel.id}` },
         ],
-        [{ text: "🗑 حذف/آرشیو", action: callbackFor("admin.xrayPanel", { panelId: panel.id }) }],
         [
-          { text: "🔙 وضعیت پنل‌ها", action: callbackFor("admin.xrayPanels") },
+          { text: panel.enabled ? "⛔ غیرفعال" : "✅ فعال", action: `admin:xray:enabled:${panel.id}:${panel.enabled ? "0" : "1"}` },
+          { text: "🗑 حذف/آرشیو", action: `admin:xray:danger:${panel.id}` },
+        ],
+        [
+          { text: "🔙 پنل‌ها", action: callbackFor("admin.xrayPanels") },
           { text: "🧩 مرکز Xray", action: callbackFor("admin.xrayCenter") },
         ],
       ],
     };
   });
 
-  registerView("admin.xraySync", async () => ({
-    text: joinSections([
+  registerView("admin.xraySync", async () => {
+    const panels = await prisma.xrayPanelConfig.findMany({ where: { enabled: true }, orderBy: { updatedAt: "desc" } });
+    return {
+      text: joinSections([
       card("🔄 سینک محصولات با 3x-ui", ["برای جلوگیری از تغییر ناخواسته، سینک در چند مرحله و با پیش‌نمایش انجام می‌شود."]),
       section("۱. انتخاب پنل", ["ابتدا پنل مقصد را انتخاب کنید."]),
       section("۲. انتخاب inbound", ["پس از انتخاب پنل، inboundهای همان پنل نمایش داده می‌شوند."]),
@@ -191,12 +197,13 @@ export function registerAdminViews() {
       ]),
       section("۴. نتیجه", ["ساخته شد، بروزرسانی شد، رد شد، ناموفق و جزئیات خطاها به فارسی نمایش داده می‌شود."]),
     ]),
-    keyboard: [
-      [{ text: "📡 انتخاب پنل", action: callbackFor("admin.xrayPanels") }],
+      keyboard: [
+      ...panels.map((panel) => [{ text: `📡 ${panel.name}`.slice(0, 60), action: `admin:xsync:p:${panel.id}` }]),
       [{ text: "👁 نمایش پیش‌نمایش", action: callbackFor("admin.xraySyncPreview") }],
       [{ text: "🔙 مرکز Xray", action: callbackFor("admin.xrayCenter") }],
     ],
-  }));
+    };
+  });
 
   registerView("admin.xraySyncPreview", async () => ({
     text: joinSections([
@@ -1246,24 +1253,30 @@ ${recentLines}`,
   registerView("admin.settings", async () => {
     const stats = await AdminService.cryptoWalletStats();
     return {
-      text: `⚙️ تنظیمات
-
-وضعیت فروشگاه: ${stats.setting.storeStatus === "active" ? "فعال ✅" : "غیرفعال ⛔"}
-حداقل شارژ کیف پول: ${money(stats.setting.minimumTopupAmount)}
-کیف پول‌ها: ${stats.wallets.length.toLocaleString("fa-IR")}
-
-بخش تنظیمات را انتخاب کنید:`,
+      text: joinSections([card("⚙️ تنظیمات بات", [
+        `وضعیت فروشگاه: ${stats.setting.storeStatus === "active" ? "فعال ✅" : "غیرفعال ⛔"}`,
+        "عضویت اجباری: از بخش اختصاصی مدیریت می‌شود",
+        "درگاه پرداخت: تنظیمات مالی و پرداخت آنی",
+        "پشتیبانی: تیکت‌ها و پاسخ‌گویی",
+        "اعلان‌ها: پیام‌رسانی هدفمند",
+      ]), section("راهنما", ["هر گزینه یک صفحه کاری مشخص دارد و تنظیمات حساس ماسک می‌شوند."])]),
       keyboard: [
         [
-          { text: "🏪 وضعیت فروشگاه", action: callbackFor("admin.store") },
-          { text: "💳 حداقل شارژ", action: "flow:start:minimum_topup" },
+          { text: "🛍 وضعیت فروشگاه", action: callbackFor("admin.store") },
+          { text: "🔐 عضویت اجباری", action: callbackFor("admin.forcedJoin") },
         ],
         [
-          { text: "💳 کیف پول‌ها", action: callbackFor("admin.wallets") },
-          { text: "⚙️ تنظیمات مالی", action: callbackFor("admin.crypto") },
+          { text: "💳 پرداخت", action: callbackFor("admin.paymentGateway") },
+          { text: "📣 اعلان‌ها", action: callbackFor("admin.notifications") },
         ],
-        [{ text: "📢 عضویت اجباری", action: callbackFor("admin.forcedJoin") }],
-        [{ text: "📘 راهنمای محصولات", action: callbackFor("admin.productGuides") }],
+        [
+          { text: "💬 پیام‌ها", action: callbackFor("admin.productGuides") },
+          { text: "🎫 پشتیبانی", action: callbackFor("admin.tickets") },
+        ],
+        [
+          { text: "🛡 امنیت", action: callbackFor("admin.monitoring") },
+          { text: "🔙 پنل مدیریت", action: callbackFor("admin.dashboard") },
+        ],
       ],
     };
   });

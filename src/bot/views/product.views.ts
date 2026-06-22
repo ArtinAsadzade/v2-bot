@@ -26,7 +26,7 @@ const productDurationLabel = (product: { durationDays?: number | null; duration?
 
 const productModeLabel = (mode: string) => (mode === "xray_auto" ? "ساخت خودکار از پنل Xray" : "تحویل از موجودی دستی");
 
-const productButtonText = (product: { title: string; price: number }) => `${product.title} · ${money(product.price)}`.slice(0, 60);
+const productButtonText = (product: { title: string; price: number }) => product.title.slice(0, 60);
 
 export function registerProductViews() {
   registerView("shop", async () => {
@@ -60,7 +60,7 @@ export function registerProductViews() {
       keyboard: [
         ...products.map((product) => [
           {
-            text: productButtonText(product),
+            text: product.title,
             action: callbackFor("shop.product", { productId: product.id }),
           },
         ]),
@@ -107,7 +107,7 @@ export function registerProductViews() {
       keyboard: [
         ...products.map((product) => [
           {
-            text: productButtonText(product),
+            text: product.title,
             action: callbackFor("shop.product", { productId: product.id }),
           },
         ]),
@@ -131,7 +131,7 @@ export function registerProductViews() {
       keyboard: [
         ...products.map((product) => [
           {
-            text: productButtonText(product),
+            text: product.title,
             action: callbackFor("shop.product", { productId: product.id }),
           },
         ]),
@@ -168,11 +168,11 @@ export function registerProductViews() {
           `🏷 دسته‌بندی: ${product.category?.name ?? "نامشخص"}`,
           `⚙️ نوع تحویل: ${productModeLabel(product.mode)}`,
           `🚀 تحویل: فوری و خودکار`,
-          `📦 موجودی: ${stockLabel(stock)}`,
+          `📊 موجودی: ${stockLabel(stock)}`,
         ]),
         section(sectionTitles.traffic, [`📊 حجم سرویس: ${traffic}`]),
         section(sectionTitles.duration, [`📅 اعتبار سرویس: ${duration}`]),
-        section(sectionTitles.price, [`💰 قیمت پایه: ${money(product.price)}`]),
+        section(sectionTitles.price, [`💰 قیمت نهایی: ${money(product.price)}`]),
         section(sectionTitles.finalAmount, [`✅ مبلغ قابل پرداخت: ${money(product.price)}`]),
         card(`${uiIcons.info} راهنمای تحویل`, [
           "بعد از پرداخت، اطلاعات سرویس همین‌جا نمایش داده می‌شود.",
