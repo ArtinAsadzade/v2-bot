@@ -39,6 +39,7 @@ import { ProductGuideService } from "../../../../modules/system/product-guide.se
 import { PublicPlansService } from "../../../../modules/product/public-plans.service";
 import { XrayClientService, XrayPanelService, xrayInboundSnapshot } from "../../../../modules/xray/xray.service";
 import { prisma } from "../../../../services/prisma";
+import { withTimeout } from "../../../../utils/async";
 
 export function registerAdminInventoryHandlers(bot: AppBot) {
   function freeTestInboundKeyboard(inbounds: Awaited<ReturnType<typeof XrayClientService.listInbounds>>, selectedIds: number[]) {
@@ -69,12 +70,20 @@ export function registerAdminInventoryHandlers(bot: AppBot) {
   }
 
   bot.action("admin:xray:test", async (ctx) => {
-    await ctx.answerCbQuery();
+    await ctx.answerCbQuery().catch(() => undefined);
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
-    const result = await XrayPanelService.testConnection();
-    await ctx.reply(
-      result.ok ? `✅ اتصال موفق\nتعداد اینباندها: ${result.inboundCount.toLocaleString("fa-IR")}` : `⚠️ اتصال ناموفق\n${result.error}`,
-    );
+    const loading = await ctx.reply("⏳ در حال تست اتصال پنل Xray...");
+    const result = await withTimeout(XrayPanelService.testConnection(), 15_000).catch((error) => ({ ok: false as const, error: error instanceof Error ? error.message : "timeout", inboundCount: 0 }));
+    await ctx.telegram
+      .editMessageText(
+        loading.chat.id,
+        loading.message_id,
+        undefined,
+        result.ok
+          ? `✅ اتصال موفق\nتعداد اینباندها: ${result.inboundCount.toLocaleString("fa-IR")}`
+          : `⚠️ اطلاعات لحظه‌ای پنل در دسترس نیست؛ اطلاعات ذخیره‌شده نمایش داده شد.\n${result.error}`,
+      )
+      .catch(() => undefined);
     await renderPanel(ctx, { id: "admin.xraySettings" }, "replace");
   });
 

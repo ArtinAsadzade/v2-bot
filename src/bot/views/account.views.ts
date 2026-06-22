@@ -50,6 +50,7 @@ import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/label
 import { uiIcons } from "../ui/icons";
 import { MonitoringService } from "../../services/monitoring.service";
 import { prisma } from "../../services/prisma";
+import { withTimeout } from "../../utils/async";
 
 const money = formatToman;
 const page = getPageParam;
@@ -131,22 +132,15 @@ export function registerAccountViews() {
       where: { userId: user.id, isFreeTest: true, status: { in: ["active", "provisioning", "creating"] }, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: "desc" },
     });
-    for (const client of freeXrayClients) {
-      const exists = await XrayClientService.ensureExistsOrMarkMissing(client).catch(() => ({ exists: true }));
-      if (!exists.exists) client.status = "missing_on_panel" as any;
-    }
     const visibleFreeXrayClients = freeXrayClients.filter((c) => c.status !== "missing_on_panel" && c.status !== "deleted");
-    const purchasedAccounts = dashboard.purchasedAccounts;
+    const purchasedAccounts = dashboard.activeAccounts;
     const lines: string[] = [];
     const keyboard: UiKeyboard = [];
     let index = 1;
     for (const item of purchasedAccounts) {
       if (item.xrayClient || item.product.mode === "xray_auto") {
         const client = item.xrayClient;
-        if (client) {
-          const exists = await XrayClientService.ensureExistsOrMarkMissing(client).catch(() => ({ exists: true }));
-          if (!exists.exists) continue;
-        }
+        if (client && ["missing_on_panel", "deleted"].includes(client.status)) continue;
         const days = client ? Math.max(Math.ceil((client.expiresAt.getTime() - Date.now()) / 86_400_000), 0) : 0;
         lines.push(
           card(`${uiIcons.product} ${index}. ${item.product.title}`, [
@@ -262,29 +256,35 @@ export function registerAccountViews() {
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
     const client = await prisma.xrayClient.findFirst({ where: { id: params.xrayClientId, userId: user.id }, include: { product: true } });
     if (!client) return { text: "⚠️ سرویس Xray پیدا نشد.", keyboard: [[{ text: "🔙 بازگشت", action: callbackFor("services") }]] };
-    const exists = await XrayClientService.ensureExistsOrMarkMissing(client).catch(() => ({ exists: true }));
-    if (!exists.exists)
-      return {
-        text: "این سرویس در پنل فعال نیست و از لیست سرویس‌های فعال حذف شد.",
-        keyboard: [
-          [
-            { text: "🔙 بازگشت", action: callbackFor("services") },
-            { text: "🎫 پشتیبانی", action: callbackFor("support") },
-          ],
-        ],
-      };
     let warning = "";
+    try {
+      const exists = await withTimeout(XrayClientService.ensureExistsOrMarkMissing(client), 15_000);
+      if (!exists.exists)
+        return {
+          text: "این سرویس در پنل فعال نیست و از لیست سرویس‌های فعال حذف شد.",
+          keyboard: [
+            [
+              { text: "🔙 بازگشت", action: callbackFor("services") },
+              { text: "🎫 پشتیبانی", action: callbackFor("support") },
+            ],
+          ],
+        };
+    } catch {
+      warning = "\n\n⚠️ اطلاعات لحظه‌ای پنل در دسترس نیست؛ اطلاعات ذخیره‌شده نمایش داده شد.";
+    }
     let traffic: any = null;
     try {
-      traffic = await XrayClientService.traffic(client.clientEmail);
+      traffic = await withTimeout(XrayClientService.traffic(client.clientEmail), 15_000);
     } catch {
-      warning = "\n\n⚠️ اطلاعات مصرف لحظه‌ای در دسترس نیست.";
+      warning = "\n\n⚠️ اطلاعات لحظه‌ای پنل در دسترس نیست؛ اطلاعات ذخیره‌شده نمایش داده شد.";
     }
     try {
-      const detail = await XrayClientService.getClient(client.clientEmail);
+      const detail = await withTimeout(XrayClientService.getClient(client.clientEmail), 15_000);
       const subId = detail.obj?.subId ?? detail.obj?.client?.subId ?? detail.obj?.sub_id;
       if (subId && subId !== client.clientSubId) await prisma.xrayClient.update({ where: { id: client.id }, data: { clientSubId: String(subId) } });
-    } catch {}
+    } catch {
+      warning = "\n\n⚠️ اطلاعات لحظه‌ای پنل در دسترس نیست؛ اطلاعات ذخیره‌شده نمایش داده شد.";
+    }
     const snap = xrayTrafficSnapshot(traffic, client.trafficBytes, client.usedBytes);
     const days = Math.max(Math.ceil((client.expiresAt.getTime() - Date.now()) / 86_400_000), 0);
     const status = client.expiresAt <= new Date() ? "منقضی شده ⛔" : normalizeXrayStatus(client.status);
