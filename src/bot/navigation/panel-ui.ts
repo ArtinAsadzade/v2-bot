@@ -100,6 +100,7 @@ export type PanelViewId =
   | "admin.xraySettings"
   | "admin.xrayCenter"
   | "admin.xrayClients"
+  | "admin.xrayClient"
   | "admin.paymentGateway"
   | "admin.paymentStats"
   | "admin.invoices"
@@ -292,6 +293,7 @@ export const PANEL_VIEW_IDS = new Set<string>([
   "admin.xraySettings",
   "admin.xrayCenter",
   "admin.xrayClients",
+  "admin.xrayClient",
   "admin.paymentGateway",
   "admin.paymentStats",
   "admin.invoices",
