@@ -87,12 +87,13 @@ export function normalizeSubscriptionBaseUrl(url?: string | null) {
     throw new Error("لینک اشتراک معتبر نیست. نمونه صحیح: https://domain.com:port/sub");
   }
 }
-export type XrayPanelConfigPatch = { apiBaseUrl?: string; apiToken?: string; subscriptionBaseUrl?: string | null; enabled?: boolean };
+export type XrayPanelConfigPatch = { name?: string; apiBaseUrl?: string; apiToken?: string; subscriptionBaseUrl?: string | null; enabled?: boolean; defaultInboundId?: number | null };
 export function mergeXrayConfigPatch(
   existing: { apiBaseUrl?: string | null; apiToken?: string | null; subscriptionBaseUrl?: string | null; enabled?: boolean | null } | null,
   patch: XrayPanelConfigPatch,
 ) {
-  if (patch.apiToken !== undefined && !patch.apiToken.trim()) throw new Error("توکن API نمی‌تواند خالی باشد.");
+  if (patch.name !== undefined && (patch.name.trim().length < 2 || patch.name.trim().length > 64)) throw new Error("نام پنل باید بین ۲ تا ۶۴ کاراکتر باشد.");
+  if (patch.apiToken !== undefined && patch.apiToken.trim().length < 8) throw new Error("توکن API باید حداقل ۸ کاراکتر باشد.");
   const merged = {
     apiBaseUrl: existing?.apiBaseUrl ?? "",
     apiToken: existing?.apiToken ?? "",
@@ -103,10 +104,12 @@ export function mergeXrayConfigPatch(
   if (!merged.apiBaseUrl?.trim() || !merged.apiToken?.trim()) throw new Error("برای ساخت تنظیمات اولیه، وارد کردن apiBaseUrl و apiToken الزامی است.");
   return {
     ...merged,
+    ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
     apiBaseUrl: normalizeBaseUrl(merged.apiBaseUrl),
     apiToken: merged.apiToken.trim(),
     subscriptionBaseUrl: normalizeSubscriptionBaseUrl(merged.subscriptionBaseUrl),
     enabled: Boolean(merged.enabled),
+    ...(patch.defaultInboundId !== undefined ? { defaultInboundId: patch.defaultInboundId } : {}),
   };
 }
 async function request<T>(path: string, init: RequestInit = {}, config?: { apiBaseUrl: string; apiToken: string }): Promise<T> {
@@ -143,15 +146,15 @@ export class XrayPanelService {
   static async upsertConfig(data: { apiBaseUrl: string; apiToken: string; subscriptionBaseUrl?: string; enabled?: boolean }) {
     return this.upsertConfigPatch(data);
   }
-  static async upsertConfigPatch(patch: XrayPanelConfigPatch) {
-    const existing = await prisma.xrayPanelConfig.findFirst({ where: { name: "default" } });
+  static async upsertConfigPatch(patch: XrayPanelConfigPatch, panelId?: string) {
+    const existing = panelId ? await prisma.xrayPanelConfig.findUnique({ where: { id: panelId } }) : await prisma.xrayPanelConfig.findFirst({ where: { name: "default" } });
     const payload = mergeXrayConfigPatch(existing, patch);
     return existing
       ? prisma.xrayPanelConfig.update({ where: { id: existing.id }, data: payload })
-      : prisma.xrayPanelConfig.create({ data: { name: "default", ...payload } });
+      : prisma.xrayPanelConfig.create({ data: { name: patch.name?.trim() || "پنل جدید", ...payload } });
   }
-  static async testConnection() {
-    const config = await this.getEnabledConfig();
+  static async testConnection(panelId?: string) {
+    const config = panelId ? await prisma.xrayPanelConfig.findUnique({ where: { id: panelId } }) : await this.getEnabledConfig();
     if (!config) throw new Error("تنظیمات فعال پنل پیدا نشد");
     try {
       const inbounds = await XrayClientService.listInbounds(config);

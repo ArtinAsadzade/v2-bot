@@ -1285,34 +1285,35 @@ status: ${detail.wallet.status}`;
     firstStep: "fields",
     prompt: (ctx) => {
       const field = String(ctx.session.flow?.data.field ?? "");
-      if (field === "apiBaseUrl")
-        return `🌐 آدرس پنل Xray را وارد کنید:
+      if (field === "name") return "✏️ نام پنل را وارد کنید (۲ تا ۶۴ کاراکتر):";
+      if (field === "apiBaseUrl") return `🌐 آدرس پنل Xray را وارد کنید:
 
 مثال: https://domain.com:port/securityPath`;
-      if (field === "apiToken") return "🔑 توکن API پنل Xray را وارد کنید:";
-      if (field === "subscriptionBaseUrl")
-        return `🔗 لینک پایه اشتراک را وارد کنید (اختیاری):
+      if (field === "apiToken") return "🔑 توکن/API پنل Xray را وارد کنید. مقدار کامل نمایش داده نمی‌شود:";
+      if (field === "subscriptionBaseUrl") return `🔗 لینک پایه اشتراک را وارد کنید (اختیاری):
 
 مثال: https://domain.com:2096/sub/`;
-      return "⚙️ برای تنظیم پنل Xray از دکمه‌های اختصاصی آدرس پنل، توکن API و لینک اشتراک استفاده کنید. توکن کامل در پنل نمایش داده نمی‌شود.";
+      return "⚙️ فقط یک فیلد را از دکمه‌های پنل انتخاب و ویرایش کنید.";
     },
     async handleText(ctx, text) {
       try {
         const flow = ctx.session.flow!;
         const field = String(flow.data.field ?? "");
-        const data = field ? { [field]: text.trim() } : parseKeyValueLines(text);
+        const panelId = String(flow.data.panelId ?? "");
+        if (!field) return { text: "لطفاً از دکمه اختصاصی هر فیلد استفاده کنید." };
+        const value = text.trim();
         const patch: XrayPanelConfigPatch = {};
-        if (data.apiBaseUrl !== undefined) patch.apiBaseUrl = data.apiBaseUrl;
-        if (data.apiToken !== undefined) patch.apiToken = data.apiToken;
-        if (data.subscriptionBaseUrl !== undefined) patch.subscriptionBaseUrl = data.subscriptionBaseUrl;
-        if (data.enabled !== undefined) {
-          const enabled = parseActive(data.enabled);
-          if (enabled === undefined) return { text: "مقدار وضعیت معتبر نیست. از true/false یا فعال/غیرفعال استفاده کنید." };
-          patch.enabled = enabled;
+        if (field === "name") patch.name = validateLength(value, "نام پنل", 2, 64);
+        if (field === "apiBaseUrl") patch.apiBaseUrl = value;
+        if (field === "apiToken") patch.apiToken = value;
+        if (field === "subscriptionBaseUrl") patch.subscriptionBaseUrl = value;
+        if (!Object.keys(patch).length) return { text: "این فیلد پشتیبانی نمی‌شود." };
+        if (panelId === "new") {
+          await XrayPanelService.upsertConfigPatch({ name: patch.name ?? "پنل جدید", apiBaseUrl: "https://example.invalid", apiToken: "temporary-token", enabled: false });
+        } else {
+          await XrayPanelService.upsertConfigPatch(patch, panelId || undefined);
         }
-        if (!Object.keys(patch).length) return { text: "هیچ مقدار معتبری برای ذخیره ارسال نشده است." };
-        await XrayPanelService.upsertConfigPatch(patch);
-        return { done: true, text: "✅ تنظیمات پنل Xray ذخیره شد. برای اطمینان تست اتصال را اجرا کنید.", returnTo: { id: "admin.xraySettings" } };
+        return { done: true, text: "✅ تغییرات با موفقیت ذخیره شد.", returnTo: panelId && panelId !== "new" ? { id: "admin.xrayPanel", params: { panelId } } : { id: "admin.xrayPanels" } };
       } catch (error) {
         return { text: error instanceof Error ? `❌ ${error.message}` : "❌ ذخیره تنظیمات پنل ناموفق بود." };
       }
@@ -1505,7 +1506,7 @@ export function registerFlowEngine(bot: AppBot) {
     await renderPanel(ctx, { id: "admin.notifications" }, "replace");
   });
 
-  bot.action(/^flow:start:([^:]+)(?::([^:]+))?(?::([^:]+))?$/, async (ctx) => {
+  bot.action(/^flow:start:([^:]+)(?::([^:]+))?(?::([^:]+))?(?::([^:]+))?$/, async (ctx) => {
     await ctx.answerCbQuery();
     const name = ctx.match[1];
     if (!isFlowName(name)) {
@@ -1547,7 +1548,7 @@ export function registerFlowEngine(bot: AppBot) {
     if (name === "product_guide_edit") return startFlow(ctx, "product_guide_edit", { sectionId: ctx.match[2] });
     if (name === "payment_gateway_update") return startFlow(ctx, "payment_gateway_update", { field: ctx.match[2] });
     if (name === "payment_gateway_setup") return startFlow(ctx, "payment_gateway_setup");
-    if (name === "xray_panel_setup") return startFlow(ctx, "xray_panel_setup", { field: ctx.match[2] });
+    if (name === "xray_panel_setup") return startFlow(ctx, "xray_panel_setup", { panelId: ctx.match[2], field: ctx.match[3] ?? ctx.match[2] });
     if (name === "coupon_edit") return startFlow(ctx, "coupon_edit", { couponId: ctx.match[2] });
     if (name === "broadcast_create") {
       return startFlow(ctx, "broadcast_create", {
