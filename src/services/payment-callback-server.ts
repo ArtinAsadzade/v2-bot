@@ -7,6 +7,7 @@ import { paymentFailureKeyboard, paymentSuccessKeyboard } from "../bot/keyboards
 import { composeCustomEmojiMessage, customEmoji } from "../bot/keyboards/custom-emoji";
 import { errorMessage, purchaseSuccessMessage, walletSummaryMessage } from "../utils/messages";
 import { callbackFor } from "../bot/navigation/panel-ui";
+import { redactPaymentMetadata, safePaymentCallbackUrl } from "../modules/payment/payment-redaction";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
 
@@ -212,10 +213,10 @@ export function startPaymentCallbackServer(bot: AppBot) {
   const server = http.createServer(async (req, res) => {
     const callbackUrl = parsedCallbackUrl(req);
     logger.info("PAYMENT CALLBACK HIT", {
-      url: req.url,
+      url: safePaymentCallbackUrl(req.url),
       method: req.method,
       path: callbackUrl.pathname,
-      query: Object.fromEntries(callbackUrl.searchParams.entries()),
+      query: redactPaymentMetadata(Object.fromEntries(callbackUrl.searchParams.entries())),
       remoteAddress: req.socket.remoteAddress,
     });
 
@@ -228,12 +229,12 @@ export function startPaymentCallbackServer(bot: AppBot) {
     try {
       const reference = callbackReferenceFromUrl(callbackUrl);
       const result = await PaymentInvoiceService.processCallback(reference, {
-        url: req.url,
+        url: safePaymentCallbackUrl(req.url),
         remoteAddress: req.socket.remoteAddress,
-        query: callbackQueryMetadata(callbackUrl),
+        query: redactPaymentMetadata(callbackQueryMetadata(callbackUrl)),
       });
       logger.info("PAYMENT CALLBACK RESULT", {
-        reference,
+        reference: redactPaymentMetadata(reference),
         statusCode: result.statusCode,
         text: result.text,
         hasResult: Boolean(result.result),
@@ -249,7 +250,7 @@ export function startPaymentCallbackServer(bot: AppBot) {
     } catch (error) {
       logger.error("Payment callback crashed", {
         error: error instanceof Error ? error.message : String(error),
-        url: req.url,
+        url: safePaymentCallbackUrl(req.url),
         remoteAddress: req.socket.remoteAddress,
       });
       res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });

@@ -13,13 +13,14 @@ import { CryptoRateService } from "./modules/system/system.service";
 import { prisma } from "./services/prisma";
 import { startPaymentCallbackServer } from "./services/payment-callback-server";
 import { MonitoringService } from "./services/monitoring.service";
+import { runJobOnce } from "./jobs/runJobOnce";
 
 async function bootstrap() {
   try {
     logger.info("Bot starting...");
     registerHandlers(bot);
 
-    await CryptoRateService.refreshAll().catch((error) => {
+    await runJobOnce("crypto-rate-refresh", () => CryptoRateService.refreshAll()).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       logger.error("Initial crypto rate refresh failed", { error: message });
       MonitoringService.record({
@@ -30,7 +31,7 @@ async function bootstrap() {
         suggestedAction: "اتصال Coingecko و نرخ USD_TOMAN_RATE را بررسی کنید.",
       });
     });
-    await cleanExpiredDeposits().catch((error) => {
+    await runJobOnce("deposit-cleaner", () => cleanExpiredDeposits()).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       logger.error("Initial deposit cleaner failed", { error: message });
       MonitoringService.record({
@@ -41,12 +42,12 @@ async function bootstrap() {
         suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
       });
     });
-    await cleanStalePurchases().catch((error) => {
+    await runJobOnce("purchase-cleaner", () => cleanStalePurchases()).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       logger.error("Initial purchase cleaner failed", { error: message });
       MonitoringService.record({ type: "JOB_FAILED", section: "Purchase Cleaner", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." });
     });
-    await deactivateExpiredAccounts().catch((error) => {
+    await runJobOnce("account-expiration", () => deactivateExpiredAccounts()).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       logger.error("Initial account expiration job failed", { error: message });
       MonitoringService.record({
@@ -57,13 +58,13 @@ async function bootstrap() {
         suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
       });
     });
-    await cleanupExpiredDeliveryReservations().catch((error) => {
+    await runJobOnce("delivery-cleanup", () => cleanupExpiredDeliveryReservations()).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       logger.error("Initial delivery cleanup job failed", { error: message });
       MonitoringService.record({ type: "JOB_FAILED", section: "Delivery Cleanup", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." });
     });
     setInterval(() => {
-      cleanExpiredDeposits().catch((error) => {
+      runJobOnce("deposit-cleaner", () => cleanExpiredDeposits()).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         logger.error("Deposit cleaner failed", { error: message });
         MonitoringService.record({
@@ -74,12 +75,12 @@ async function bootstrap() {
           suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
         });
       });
-      cleanStalePurchases().catch((error) => {
+      runJobOnce("purchase-cleaner", () => cleanStalePurchases()).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         logger.error("Purchase cleaner failed", { error: message });
         MonitoringService.record({ type: "JOB_FAILED", section: "Purchase Cleaner", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." });
       });
-      deactivateExpiredAccounts().catch((error) => {
+      runJobOnce("account-expiration", () => deactivateExpiredAccounts()).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         logger.error("Account expiration job failed", { error: message });
         MonitoringService.record({
@@ -90,14 +91,14 @@ async function bootstrap() {
           suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
         });
       });
-      cleanupExpiredDeliveryReservations().catch((error) => {
+      runJobOnce("delivery-cleanup", () => cleanupExpiredDeliveryReservations()).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         logger.error("Delivery cleanup job failed", { error: message });
         MonitoringService.record({ type: "JOB_FAILED", section: "Delivery Cleanup", description: message, severity: "critical", suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید." });
       });
     }, 60_000);
     setInterval(() => {
-      CryptoRateService.refreshAll().catch((error) => {
+      runJobOnce("crypto-rate-refresh", () => CryptoRateService.refreshAll()).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         logger.error("Crypto rate refresh failed", { error: message });
         MonitoringService.record({
