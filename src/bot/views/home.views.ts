@@ -148,60 +148,130 @@ ${divider}
   });
   registerView("referral", async (ctx) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+
+    if (!user) {
+      return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+    }
+
     const stats = await ReferralService.getStats(user.id);
     const botUsername = process.env.BOT_USERNAME ?? "BOT";
     const link = `https://t.me/${botUsername}?start=${user.referralCode}`;
+
     const nextTarget = Math.max(Math.ceil((stats.totalReferrals + 1) / 5) * 5, 5);
+    const remaining = Math.max(nextTarget - stats.totalReferrals, 0);
+
+    const shareText = `🔥 یه ربات عالی برای خرید سریع و راحت سرویس پیدا کردم!
+
+✅ تحویل فوری
+✅ مدیریت سرویس‌ها
+✅ کیف پول اختصاصی
+✅ پشتیبانی راحت
+
+از لینک من وارد شو و استفاده کن 👇
+${link}`;
+
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(shareText)}`;
+
     return {
-      text: `🎁 دعوت دوستان
-
-${divider}
-
-👥 تعداد دعوت‌های موفق
-${stats.totalReferrals.toLocaleString("fa-IR")} نفر
-
-💎 پاداش قابل دریافت
-${money(stats.pendingAmount)}
-
-📈 فاصله تا پاداش بعدی
-${progressBar(stats.totalReferrals % nextTarget, nextTarget)}
-
-🔗 لینک اختصاصی شما
-${link}
-
-لینک دعوت خود را با دوستانتان به اشتراک بگذارید. هر کاربری که از طریق این لینک عضو شود، در آمار شما ثبت شده و پاداش‌های مربوطه به حساب شما تعلق می‌گیرد.
-
-✨ هرچه افراد بیشتری دعوت کنید، پاداش‌های بیشتری دریافت خواهید کرد.`,
+      text: joinSections([
+        card("🎁 دعوت دوستان و دریافت پاداش", [
+          "لینک اختصاصی خودت را برای دوستانت بفرست.",
+          "هر عضویت معتبر از طریق لینک تو ثبت می‌شود و پاداش آن به حساب تو اضافه می‌شود.",
+        ]),
+        card("📊 آمار دعوت شما", [
+          `👥 دعوت‌های موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر`,
+          `💎 پاداش قابل دریافت: ${money(stats.pendingAmount)}`,
+          `✅ پاداش دریافت‌شده: ${money(stats.claimedAmount)}`,
+          `🎯 تا جایزه بعدی: ${remaining.toLocaleString("fa-IR")} دعوت دیگر`,
+          progressBar(stats.totalReferrals % nextTarget, nextTarget),
+        ]),
+        card("🔗 لینک اختصاصی شما", [link]),
+      ]),
       keyboard: [
-        navRow({ text: "🔗 لینک دعوت من", view: "referral.link" }, { text: "👥 افراد دعوت‌شده", view: "referral.users" }),
+        [{ text: "📤 اشتراک‌گذاری لینک دعوت", url: shareUrl }],
+        navRow({ text: "🔗 مشاهده لینک دعوت", view: "referral.link" }, { text: "👥 دعوت‌شده‌ها", view: "referral.users" }),
         navRow({ text: "💎 پاداش‌های من", view: "referral.rewards", tone: "success" }, { text: "📜 قوانین دعوت", view: "referral.rules" }),
       ],
     };
   });
+
   registerView("referral.link", async (ctx) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+
+    if (!user) {
+      return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+    }
+
     const botUsername = process.env.BOT_USERNAME ?? "BOT";
-    return { text: `🔗 لینک دعوت من\n\nhttps://t.me/${botUsername}?start=${user.referralCode}`, keyboard: [] };
-  });
-  registerView("referral.users", async (ctx) => {
-    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
-    const stats = await ReferralService.getStats(user.id);
-    return { text: card("👥 افراد دعوت‌شده", [`تعداد دعوت موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر`]), keyboard: [] };
-  });
-  registerView("referral.rewards", async (ctx) => {
-    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
-    const stats = await ReferralService.getStats(user.id);
+    const link = `https://t.me/${botUsername}?start=${user.referralCode}`;
+
+    const shareText = `🔥 یه ربات عالی برای خرید سریع و راحت سرویس پیدا کردم!
+
+✅ تحویل فوری
+✅ مدیریت سرویس‌ها
+✅ کیف پول اختصاصی
+✅ پشتیبانی راحت
+
+از لینک من وارد شو و استفاده کن 👇
+${link}`;
+
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(shareText)}`;
+
     return {
-      text: card("💎 پاداش‌های من", [`قابل دریافت: ${money(stats.pendingAmount)}`, `دریافت‌شده: ${money(stats.claimedAmount)}`]),
-      keyboard: [[{ text: "💎 دریافت پاداش", action: "referral:claim" }]],
+      text: joinSections([
+        card("🔗 لینک دعوت من", ["این لینک مخصوص شماست.", "هر کاربری که با این لینک وارد ربات شود، به عنوان دعوت‌شده شما ثبت می‌شود.", "", link]),
+      ]),
+      keyboard: [[{ text: "📤 اشتراک‌گذاری لینک دعوت", url: shareUrl }]],
     };
   });
+
+  registerView("referral.users", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+
+    if (!user) {
+      return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+    }
+
+    const stats = await ReferralService.getStats(user.id);
+
+    return {
+      text: card("👥 دعوت‌شده‌های من", [
+        `✅ تعداد دعوت موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر`,
+        "دعوت‌های معتبر بعد از ورود کاربر از لینک اختصاصی شما ثبت می‌شوند.",
+      ]),
+      keyboard: [navRow({ text: "🔗 لینک دعوت من", view: "referral.link" })],
+    };
+  });
+
+  registerView("referral.rewards", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+
+    if (!user) {
+      return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+    }
+
+    const stats = await ReferralService.getStats(user.id);
+
+    return {
+      text: card("💎 پاداش‌های دعوت", [
+        `💰 قابل دریافت: ${money(stats.pendingAmount)}`,
+        `✅ دریافت‌شده: ${money(stats.claimedAmount)}`,
+        stats.pendingAmount > 0 ? "برای انتقال پاداش به کیف پول، دکمه زیر را بزنید." : "فعلاً پاداش قابل دریافت ندارید.",
+      ]),
+      keyboard:
+        stats.pendingAmount > 0
+          ? [[{ text: "💎 دریافت پاداش", action: "referral:claim" }]]
+          : [navRow({ text: "🔗 دعوت دوستان", view: "referral.link" })],
+    };
+  });
+
   registerView("referral.rules", async () => ({
-    text: card("📜 قوانین دعوت", ["دعوت دوستان همان Referral است؛ هر عضویت معتبر از لینک شما در آمار و پاداش ثبت می‌شود."]),
-    keyboard: [],
+    text: card("📜 قوانین دعوت دوستان", [
+      "هر کاربر فقط یک‌بار می‌تواند به عنوان دعوت‌شده ثبت شود.",
+      "دعوت فقط زمانی معتبر است که کاربر از لینک اختصاصی شما وارد ربات شود.",
+      "پاداش‌های معتبر به بخش پاداش‌های من اضافه می‌شوند.",
+      "در صورت سوءاستفاده یا دعوت غیرواقعی، پاداش قابل تأیید نخواهد بود.",
+    ]),
+    keyboard: [navRow({ text: "🔗 دعوت دوستان", view: "referral.link" })],
   }));
 }
