@@ -1,5 +1,7 @@
 import { callbackFor } from "../navigation/panel-ui";
-import { buyCallbacks, nav, xrayCallbacks } from "../callbacks";
+import { buyCallbacks, couponCallbacks, nav, xrayCallbacks } from "../callbacks";
+import { buildInlineKeyboard } from "./design-system";
+import { actionLabels as uiActionLabels } from "../ui/labels";
 
 export const accountHomeInlineKeyboard = () => ({
   inline_keyboard: [[{ text: "📦 اکانت‌های من", callback_data: nav.accountDetails() }], [{ text: "🏠 خانه", callback_data: nav.home() }]],
@@ -44,3 +46,13 @@ export const processingPurchaseRecoveryKeyboard = (productId: string) => ({
     [{ text: "Back", callback_data: callbackFor("shop.checkout", { productId }) }],
   ],
 });
+
+export function purchasePaymentMethodKeyboard(productId: string) {
+  return buildInlineKeyboard([
+    [{ text: uiActionLabels.walletPurchase, action: buyCallbacks.confirm(productId), tone: "success" }],
+    [{ text: uiActionLabels.instantPayment, action: buyCallbacks.instant(productId), tone: "primary" }],
+    [{ text: uiActionLabels.enterCoupon, action: couponCallbacks.start(productId) }],
+    [{ text: uiActionLabels.backToProduct, action: callbackFor("shop.product", { productId }) }, { text: uiActionLabels.cancelPurchase, action: buyCallbacks.cancelExisting(productId), tone: "danger" }],
+    [{ text: uiActionLabels.home, action: callbackFor("home") }],
+  ]);
+}

@@ -1,0 +1,66 @@
+import { uiIcons } from "./icons";
+
+export const userLabels = {
+  home: `${uiIcons.home} خانه`,
+  buyService: `${uiIcons.product} خرید سرویس`,
+  services: `${uiIcons.product} سرویس‌ها`,
+  myAccounts: `${uiIcons.account} اکانت‌های من`,
+  wallet: `${uiIcons.wallet} کیف پول`,
+  coupon: `${uiIcons.coupon} کد تخفیف`,
+  support: `${uiIcons.support} پشتیبانی`,
+  guide: `${uiIcons.guide} راهنما`,
+  freeAccount: "🆓 اکانت تست",
+  referral: "🎁 دعوت دوستان",
+} as const;
+
+export const adminLabels = {
+  dashboard: `${uiIcons.dashboard} داشبورد`,
+  products: `${uiIcons.product} محصولات`,
+  xrayCenter: `${uiIcons.xray} Xray Center`,
+  users: `${uiIcons.users} کاربران`,
+  payments: `${uiIcons.payments} پرداخت‌ها`,
+  coupons: `${uiIcons.coupon} کدهای تخفیف`,
+  inventory: `${uiIcons.inventory} موجودی اکانت‌ها`,
+  settings: `${uiIcons.settings} تنظیمات`,
+  broadcast: `${uiIcons.broadcast} ارسال همگانی`,
+  tickets: `${uiIcons.support} تیکت‌ها`,
+  adminBack: `${uiIcons.back} برگشت به پنل ادمین`,
+} as const;
+
+export const actionLabels = {
+  details: `${uiIcons.info} جزئیات`,
+  buy: `${uiIcons.cart} خرید`,
+  walletPurchase: `${uiIcons.wallet} خرید با کیف پول`,
+  instantPayment: `${uiIcons.invoice} پرداخت آنی`,
+  enterCoupon: `${uiIcons.coupon} وارد کردن کد تخفیف`,
+  removeCoupon: `${uiIcons.cancel} حذف کد تخفیف`,
+  subscription: `${uiIcons.link} لینک اشتراک`,
+  configs: `${uiIcons.configs} کانفیگ‌ها`,
+  refresh: `${uiIcons.refresh} بروزرسانی وضعیت`,
+  renew: `${uiIcons.renew} تمدید`,
+  requestReview: `${uiIcons.repair} درخواست بررسی`,
+  confirm: `${uiIcons.success} تایید`,
+  activate: `${uiIcons.active} فعال‌سازی`,
+  delete: `${uiIcons.danger} حذف`,
+  disable: `${uiIcons.danger} غیرفعال‌سازی`,
+  cancel: `${uiIcons.cancel} لغو`,
+  cancelPurchase: `${uiIcons.cancel} لغو خرید`,
+  back: `${uiIcons.back} برگشت`,
+  backToProduct: `${uiIcons.back} برگشت به محصول`,
+  home: `${uiIcons.home} خانه`,
+  stats: `${uiIcons.dashboard} آمار`,
+  invoice: `${uiIcons.invoice} فاکتور`,
+  support: `${uiIcons.support} پشتیبانی`,
+} as const;
+
+export const statusLabels = {
+  active: `${uiIcons.active} فعال`,
+  available: `${uiIcons.active} موجود`,
+  pending: `${uiIcons.pending} در انتظار`,
+  needsReview: `${uiIcons.warning} نیازمند بررسی`,
+  unavailable: `${uiIcons.disabled} ناموجود`,
+  success: `${uiIcons.success} موفق`,
+  error: `${uiIcons.error} خطا`,
+  xrayHealthy: `${uiIcons.active} API سالم`,
+  xrayDown: `${uiIcons.danger} API قطع`,
+} as const;
