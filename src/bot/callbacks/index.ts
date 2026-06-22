@@ -34,6 +34,12 @@ export const buyCallbacks = {
   confirm: (productId: string) => actionFor("buy:confirm", productId),
   instant: (productId: string) => actionFor("buy:instant", productId),
   cancelExisting: (productId: string) => actionFor("buy:cancel_existing", productId),
+  pendingView: (productId: string) => actionFor("purchase.pending.view", productId),
+  pendingContinuePayment: (productId: string) => actionFor("purchase.pending.continuePayment", productId),
+  pendingCancel: (productId: string) => actionFor("purchase.pending.cancel", productId),
+  pendingRetryDelivery: (productId: string) => actionFor("purchase.pending.retryDelivery", productId),
+  pendingStartNew: (productId: string) => actionFor("purchase.pending.startNew", productId),
+  pendingSupport: (productId: string) => actionFor("purchase.pending.support", productId),
 } as const;
 
 export const couponCallbacks = {
