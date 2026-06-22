@@ -1059,7 +1059,7 @@ export class PaymentInvoiceService {
       const existing = await PaymentService.resolveExistingPurchaseIntent(userId, productId);
       if (existing.action === "reuse_invoice") return existing.invoice;
       if (existing.action === "processing")
-        throw new Error("Your previous purchase is still being processed. Please wait or cancel it if it is stuck.");
+        throw new Error("خرید قبلی شما هنوز باز است. لطفاً ابتدا وضعیت سفارش قبلی را از صفحه پیگیری مشخص کنید.");
     }
     const quote = await prisma.$transaction((tx) => PaymentService.quoteProductInvoice(tx, { userId, productId, couponCode }));
     return PaymentService.createInvoice({
