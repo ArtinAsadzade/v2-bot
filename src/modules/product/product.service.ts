@@ -1,4 +1,5 @@
 import { prisma } from "../../services/prisma";
+import { isValidObjectId } from "../../utils/object-id";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, categoryNotDeletedWhere, productNotDeletedWhere } from "./visibility";
 import { gbToBytes } from "../xray/xray.service";
 import { logger } from "../../services/logger";
@@ -109,10 +110,12 @@ export class ProductService {
   }
 
   static async getProduct(productId: string) {
+    if (!isValidObjectId(productId)) return null;
     return prisma.product.findUnique({ where: { id: productId }, include: { category: true } });
   }
 
   static async getActiveProductForUser(productId: string) {
+    if (!isValidObjectId(productId)) return null;
     return prisma.product.findFirst({ where: { id: productId, AND: [activeProductWhere(), { category: { is: activeCategoryWhere() } }] }, include: { category: true } });
   }
 

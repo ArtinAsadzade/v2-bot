@@ -61,7 +61,7 @@ export class PaymentDeliveryService {
       totalAmount = data.invoice.amount;
       if (originalAmount - discountAmount !== totalAmount) throw new Error("مبلغ فاکتور با مبلغ خرید همخوانی ندارد");
     } else if (data.couponCode) {
-      const validation = await CouponService.validateForCheckout({ code: data.couponCode, userId: data.userId, originalAmount, tx });
+      const validation = await CouponService.validateForCheckout({ code: data.couponCode, userId: data.userId, originalAmount, productId: data.productId, tx });
       if (!validation.ok) {
         paymentLog("COUPON_RECHECK_FAILED", {
           userId: data.userId,
@@ -251,6 +251,7 @@ export class PaymentDeliveryService {
           userId: data.userId,
           orderId: order.id,
           invoiceId: data.invoice?.id,
+          productId: product.id,
           originalAmount,
           discountAmount,
           finalAmount: totalAmount,
@@ -402,6 +403,7 @@ export class PaymentDeliveryService {
             userId: client.userId,
             orderId,
             invoiceId,
+            productId: product.id,
             originalAmount: freshOrder.originalAmount,
             discountAmount: freshOrder.discountAmount,
             finalAmount: freshOrder.finalPaidAmount,

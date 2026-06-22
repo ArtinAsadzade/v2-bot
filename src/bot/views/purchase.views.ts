@@ -73,7 +73,7 @@ export function registerPurchaseViews() {
     let payableAmount = product.price;
     let couponLine: string | undefined;
     if (couponCode) {
-      const validation = await CouponService.validateForCheckout({ code: couponCode, userId: user.id, originalAmount: product.price });
+      const validation = await CouponService.validateForCheckout({ code: couponCode, userId: user.id, originalAmount: product.price, productId: product.id });
       if (validation.ok) {
         discountAmount = validation.discountAmount;
         payableAmount = validation.finalAmount;

@@ -401,7 +401,7 @@ export class PaymentService {
     let couponId: string | null = null;
     let couponCode: string | null = null;
     if (data.couponCode?.trim()) {
-      const validation = await CouponService.validateForCheckout({ code: data.couponCode, userId: data.userId, originalAmount, tx });
+      const validation = await CouponService.validateForCheckout({ code: data.couponCode, userId: data.userId, originalAmount, productId: data.productId, tx });
       if (!validation.ok) {
         paymentLog("COUPON_RECHECK_FAILED", {
           userId: data.userId,
