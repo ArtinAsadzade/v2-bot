@@ -5,7 +5,7 @@ export function productDetailViewKeyboard(productId: string, stock: number): UiK
   return [
     ...(stock > 0 ? [[{ text: actionLabels.buy, action: callbackFor("shop.checkout", { productId }) }]] : []),
     [{ text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId) }],
-    [{ text: actionLabels.home, action: callbackFor("home") }],
+    [{ text: "↩️ برگشت", action: callbackFor("shop.products") }, { text: actionLabels.home, action: callbackFor("home") }],
   ];
 }
 

@@ -6,7 +6,7 @@ const productServiceSource = readFileSync("src/modules/product/product.service.t
 const modernViewsSource = (readFileSync("src/bot/views/modern.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/home.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/product.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/purchase.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/account.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/wallet.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/support.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/free-account.views.ts", "utf8") + "\n" + readFileSync("src/bot/views/admin.views.ts", "utf8"));
 const legacyShopSource = readFileSync("src/bot/handlers/shop.ts", "utf8");
 
-const renewalStart = modernViewsSource.match(/registerView\("account\.renew"[\s\S]*?registerView\("account\.renew\.products"/)?.[0] ?? "";
+const renewalStart = modernViewsSource.match(/const renderRenewService[\s\S]*?registerView\("account\.renew", renderRenewService\)/)?.[0] ?? "";
 const renewalProducts = modernViewsSource.match(/registerView\("account\.renew\.products"[\s\S]*?registerView\("account\.renew\.summary"/)?.[0] ?? "";
 const renewalSummary = modernViewsSource.match(/registerView\("account\.renew\.summary"[\s\S]*?registerView\("account\.history"/)?.[0] ?? "";
 const shopProducts = modernViewsSource.match(/registerView\("shop\.products"[\s\S]*?registerView\("shop\.searchResults"/)?.[0] ?? "";

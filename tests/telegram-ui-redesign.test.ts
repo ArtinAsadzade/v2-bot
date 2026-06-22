@@ -21,21 +21,22 @@ describe("Telegram UI redesign keyboards", () => {
   test("home keyboard groups primary user actions", () => {
     const rows = texts(inlineFromView(homeKeyboard(false)));
     expect(rows).toEqual([
-      ["🎁 تست", "🛍 محصولات"],
-      ["👤 حساب من", "🤝 دعوت"],
+      ["🛒 خرید سرویس", "🎁 تست رایگان"],
+      ["📦 سرویس‌های من", "👤 حساب کاربری"],
+      ["💳 کیف پول", "🎟 دعوت دوستان"],
       ["🆘 پشتیبانی", "📘 راهنما"],
     ]);
-    expect(rows.flat()).toContain("🎁 تست");
-    expect(rows.flat()).toContain("🛍 محصولات");
-    expect(rows.flat()).toContain("🤝 دعوت");
+    expect(rows.flat()).toContain("🎁 تست رایگان");
+    expect(rows.flat()).toContain("🛒 خرید سرویس");
+    expect(rows.flat()).toContain("🎟 دعوت دوستان");
     expect(rows.flat()).not.toContain("🎟 کد تخفیف");
   });
 
   test("account menu keeps wallet, transactions, and coupon below account", () => {
     const accountBlock = accountViewsSource.slice(accountViewsSource.indexOf('registerView("account"'), accountViewsSource.indexOf('registerView("account.details"'));
-    expect(accountBlock).toContain('userLabels.wallet');
-    expect(accountBlock).toContain('userLabels.transactions');
-    expect(accountBlock).toContain('userLabels.coupon');
+    expect(accountBlock).toContain('"💰 کیف پول"');
+    expect(accountBlock).toContain('"🧾 تاریخچه خرید"');
+    expect(accountBlock).toContain('"📦 سرویس‌های من"');
   });
 
   test("old callbacks route to new VPN-first screens", () => {

@@ -1,7 +1,6 @@
 import { prisma } from "../../services/prisma";
 import { isValidObjectId } from "../../utils/object-id";
 import { activeCategoryWhere, activeProductWhere, availableInventoryWhere, categoryNotDeletedWhere, productNotDeletedWhere } from "./visibility";
-import { gbToBytes } from "../xray/xray.service";
 import { logger } from "../../services/logger";
 import { validateProductName, validatePositiveInteger, validateNonNegativeInteger, validateNonNegativeNumber } from "./product.validation";
 
