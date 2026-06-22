@@ -45,6 +45,7 @@ import {
 } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
 import { productDetailViewKeyboard } from "../keyboards/view-keyboards";
+import { navRow } from "../keyboards/panel-keyboard.helpers";
 import { card, joinSections, section } from "../ui/layout";
 import { sectionTitles } from "../ui/sections";
 import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
@@ -61,6 +62,24 @@ const freeAccountExpiry = resolveFreeAccountExpiry;
 const yesNo = yesNoStatus;
 
 export function registerProductViews() {
+  registerView("shop", async () => ({
+    replyKeyboard: "shop",
+    text: joinSections([card("🛒 خرید سرویس", ["مرحله خرید را انتخاب کنید."])]),
+    keyboard: [
+      navRow({ text: "📁 دسته‌بندی سرویس‌ها", view: "shop.categories" }, { text: "⭐ سرویس‌های پیشنهادی", view: "shop.recommended" }),
+      navRow({ text: "💰 مشاهده قیمت‌ها", view: "shop.prices" }),
+    ],
+  }));
+  registerView("shop.recommended", async () => {
+    const categories = await ProductService.getCategories();
+    const products = categories.flatMap((category) => category.products).slice(0, 6);
+    return { text: joinSections([card("⭐ سرویس‌های پیشنهادی", [products.length ? "یکی از سرویس‌های پیشنهادی را انتخاب کنید." : "فعلاً پیشنهادی برای نمایش نیست."])]), keyboard: products.map((product) => [{ text: product.title, action: callbackFor("shop.product", { productId: product.id }) }]) };
+  });
+  registerView("shop.prices", async () => {
+    const categories = await ProductService.getCategories();
+    const products = categories.flatMap((category) => category.products).slice(0, 12);
+    return { text: joinSections([card("💰 قیمت سرویس‌ها", products.map((product) => `${product.title}: ${money(product.price)}`) || ["محصولی ثبت نشده است."])]), keyboard: [navRow({ text: "📁 دسته‌بندی‌ها", view: "shop.categories" })] };
+  });
   registerView("shop.categories", async () => {
     const categories = await ProductService.getCategories();
     return {

@@ -4,18 +4,36 @@ import type { AppContext } from "../../types/bot";
 import { replyKeyboard, replyKeyboardSignature, type ReplyKeyboardScope } from "../keyboards/reply.keyboard";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 
-export type UiButton = { text: string; action: string };
+export type UiButtonTone = "primary" | "success" | "danger" | "neutral";
+export type UiButton = { text: string; action: string; tone?: UiButtonTone };
 export type UiKeyboard = UiButton[][];
 export type PanelViewId =
   | "home"
+  | "shop"
   | "shop.categories"
+  | "shop.recommended"
+  | "shop.prices"
   | "shop.products"
   | "shop.product"
   | "shop.checkout"
   | "shop.searchResults"
   | "wallet"
+  | "wallet.balance"
+  | "wallet.topup"
+  | "wallet.transactions"
+  | "wallet.invoices"
+  | "wallet.redeem"
   | "coupon.info"
   | "account"
+  | "account.profile"
+  | "account.membership"
+  | "account.settings"
+  | "account.security"
+  | "services"
+  | "services.active"
+  | "services.expired"
+  | "services.renew"
+  | "services.issue"
   | "account.details"
   | "account.xray"
   | "account.renew"
@@ -25,8 +43,22 @@ export type PanelViewId =
   | "wallet.history"
   | "deposit"
   | "support"
+  | "support.new"
+  | "support.tickets"
+  | "support.connection"
+  | "support.payment"
+  | "support.contact"
   | "referral"
+  | "referral.link"
+  | "referral.users"
+  | "referral.rewards"
+  | "referral.rules"
   | "freeAccount"
+  | "help"
+  | "help.buy"
+  | "help.connection"
+  | "help.faq"
+  | "help.rules"
   | "productGuide"
   | "admin.dashboard"
   | "admin.users"
@@ -169,14 +201,31 @@ function isPanelViewId(value: string): value is PanelViewId {
 
 export const PANEL_VIEW_IDS = new Set<string>([
   "home",
+  "shop",
   "shop.categories",
+  "shop.recommended",
+  "shop.prices",
   "shop.products",
   "shop.product",
   "shop.checkout",
   "shop.searchResults",
   "wallet",
+  "wallet.balance",
+  "wallet.topup",
+  "wallet.transactions",
+  "wallet.invoices",
+  "wallet.redeem",
   "coupon.info",
   "account",
+  "account.profile",
+  "account.membership",
+  "account.settings",
+  "account.security",
+  "services",
+  "services.active",
+  "services.expired",
+  "services.renew",
+  "services.issue",
   "account.details",
   "account.xray",
   "account.renew",
@@ -186,8 +235,22 @@ export const PANEL_VIEW_IDS = new Set<string>([
   "wallet.history",
   "deposit",
   "support",
+  "support.new",
+  "support.tickets",
+  "support.connection",
+  "support.payment",
+  "support.contact",
   "referral",
+  "referral.link",
+  "referral.users",
+  "referral.rewards",
+  "referral.rules",
   "freeAccount",
+  "help",
+  "help.buy",
+  "help.connection",
+  "help.faq",
+  "help.rules",
   "productGuide",
   "admin.dashboard",
   "admin.users",
