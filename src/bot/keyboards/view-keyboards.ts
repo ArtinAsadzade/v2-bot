@@ -2,11 +2,7 @@ import { actionFor, callbackFor, type UiKeyboard } from "../navigation/panel-ui"
 import { actionLabels, adminLabels, userLabels } from "../ui/labels";
 
 export function productDetailViewKeyboard(productId: string, stock: number): UiKeyboard {
-  return [
-    ...(stock > 0 ? [[{ text: actionLabels.buy, action: callbackFor("shop.checkout", { productId }) }]] : []),
-    [{ text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId) }],
-    [{ text: "↩️ برگشت", action: callbackFor("shop.products") }, { text: actionLabels.home, action: callbackFor("home") }],
-  ];
+  return [...(stock > 0 ? [[{ text: actionLabels.buy, action: callbackFor("shop.checkout", { productId }) }]] : [])];
 }
 
 export function checkoutViewKeyboard(productId: string, gatewayEnabled: boolean, hasCoupon: boolean): UiKeyboard {
@@ -21,10 +17,7 @@ export function checkoutViewKeyboard(productId: string, gatewayEnabled: boolean,
       { text: actionLabels.walletPurchase, action: actionFor("buy:confirm", productId) },
       ...(gatewayEnabled ? [{ text: actionLabels.instantPayment, action: actionFor("buy:instant", productId) }] : []),
     ],
-    [
-      { text: "🔙 بازگشت", action: callbackFor("shop.product", { productId }) },
-      { text: actionLabels.cancelPurchase, action: "flow:cancel" },
-    ],
+    [{ text: "🔙 بازگشت", action: callbackFor("shop.product", { productId }) }],
     [{ text: actionLabels.home, action: callbackFor("home") }],
   ];
 }
