@@ -21,7 +21,7 @@ export const userLabels = {
 export const adminLabels = {
   dashboard: `${uiIcons.dashboard} داشبورد`,
   products: `${uiIcons.product} محصولات`,
-  xrayCenter: `${uiIcons.xray} Xray Center`,
+  xrayCenter: `${uiIcons.xray} مرکز Xray`,
   users: `${uiIcons.users} کاربران`,
   finance: `${uiIcons.payments} مالی`,
   payments: `${uiIcons.payments} مالی`,
