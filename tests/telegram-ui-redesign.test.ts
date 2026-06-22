@@ -21,15 +21,13 @@ describe("Telegram UI redesign keyboards", () => {
   test("home keyboard groups primary user actions", () => {
     const rows = texts(inlineFromView(homeKeyboard(false)));
     expect(rows).toEqual([
-      ["📦 خرید سرویس", "🎁 دریافت تست رایگان"],
-      ["🧩 سرویس‌های من", "♻️ تمدید سرویس"],
-      ["👤 حساب من", "💳 کیف پول"],
-      ["🆘 پشتیبانی", "📢 اطلاعیه‌ها"],
-      ["📘 راهنما"],
+      ["🎁 تست", "🛍 محصولات"],
+      ["👤 حساب من", "🤝 دعوت"],
+      ["🆘 پشتیبانی", "📘 راهنما"],
     ]);
-    expect(rows.flat()).toContain("🎁 دریافت تست رایگان");
-    expect(rows.flat()).toContain("🧩 سرویس‌های من");
-    expect(rows.flat()).toContain("♻️ تمدید سرویس");
+    expect(rows.flat()).toContain("🎁 تست");
+    expect(rows.flat()).toContain("🛍 محصولات");
+    expect(rows.flat()).toContain("🤝 دعوت");
     expect(rows.flat()).not.toContain("🎟 کد تخفیف");
   });
 
