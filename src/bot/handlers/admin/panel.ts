@@ -831,7 +831,10 @@ export function registerAdminHandlers(bot: AppBot) {
     const [orders] = await AdminService.listRecentOrders();
     await ctx.reply(
       orders
-        .map((order) => `🧾 ${order.id.slice(-6)} | ${order.user.telegramId} | ${order.product.title} | ${order.finalPaidAmount.toLocaleString("fa-IR")}`)
+        .map(
+          (order) =>
+            `🧾 ${order.id.slice(-6)} | ${order.user.telegramId} | ${order.product.title} | ${order.finalPaidAmount.toLocaleString("fa-IR")}`,
+        )
         .join("\n") || "سفارشی وجود ندارد.",
       navigationKeyboard("admin:dashboard"),
     );

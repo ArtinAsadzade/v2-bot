@@ -5,7 +5,7 @@ export function productDetailViewKeyboard(productId: string, stock: number): UiK
   return [
     ...(stock > 0 ? [[{ text: actionLabels.buy, action: callbackFor("shop.checkout", { productId }) }]] : []),
     [{ text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId) }],
-    [{ text: actionLabels.back, action: callbackFor("shop.categories") }, { text: actionLabels.home, action: callbackFor("home") }],
+    [{ text: actionLabels.home, action: callbackFor("home") }],
   ];
 }
 
@@ -21,7 +21,10 @@ export function checkoutViewKeyboard(productId: string, gatewayEnabled: boolean,
       { text: actionLabels.walletPurchase, action: actionFor("buy:confirm", productId) },
       ...(gatewayEnabled ? [{ text: actionLabels.instantPayment, action: actionFor("buy:instant", productId) }] : []),
     ],
-    [{ text: "🔙 بازگشت", action: callbackFor("shop.product", { productId }) }, { text: actionLabels.cancelPurchase, action: "flow:cancel" }],
+    [
+      { text: "🔙 بازگشت", action: callbackFor("shop.product", { productId }) },
+      { text: actionLabels.cancelPurchase, action: "flow:cancel" },
+    ],
     [{ text: actionLabels.home, action: callbackFor("home") }],
   ];
 }
@@ -29,16 +32,28 @@ export function checkoutViewKeyboard(productId: string, gatewayEnabled: boolean,
 export function accountListViewKeyboard(rows: UiKeyboard): UiKeyboard {
   return [
     ...rows,
-    [{ text: userLabels.buyService, action: callbackFor("shop.categories") }, { text: userLabels.support, action: callbackFor("support") }],
+    [
+      { text: userLabels.buyService, action: callbackFor("shop.categories") },
+      { text: userLabels.support, action: callbackFor("support") },
+    ],
     [{ text: actionLabels.home, action: callbackFor("home") }],
   ];
 }
 
 export function adminDashboardViewKeyboard(): UiKeyboard {
   return [
-    [{ text: adminLabels.dashboard, action: callbackFor("admin.analytics") }, { text: adminLabels.products, action: callbackFor("admin.store") }],
-    [{ text: adminLabels.xrayCenter, action: callbackFor("admin.xrayCenter") }, { text: adminLabels.users, action: callbackFor("admin.usersSupport") }],
-    [{ text: adminLabels.finance, action: callbackFor("admin.finance") }, { text: adminLabels.tickets, action: callbackFor("admin.tickets") }],
+    [
+      { text: adminLabels.dashboard, action: callbackFor("admin.analytics") },
+      { text: adminLabels.products, action: callbackFor("admin.store") },
+    ],
+    [
+      { text: adminLabels.xrayCenter, action: callbackFor("admin.xrayCenter") },
+      { text: adminLabels.users, action: callbackFor("admin.usersSupport") },
+    ],
+    [
+      { text: adminLabels.finance, action: callbackFor("admin.finance") },
+      { text: adminLabels.tickets, action: callbackFor("admin.tickets") },
+    ],
     [{ text: adminLabels.settings, action: callbackFor("admin.botSettings") }],
     [{ text: userLabels.home, action: callbackFor("home") }],
   ];

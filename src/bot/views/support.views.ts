@@ -5,11 +5,7 @@ import { UserService } from "../../modules/user/user.service";
 import { ProductService } from "../../modules/product/product.service";
 import { AdminService } from "../../modules/admin/admin.service";
 import { ReferralService } from "../../modules/referral/referral.service";
-import {
-  FreeAccountService,
-  FREE_ACCOUNT_STATUS_LABELS,
-  formatFreeAccountDate,
-} from "../../modules/free-account/free-account.service";
+import { FreeAccountService, FREE_ACCOUNT_STATUS_LABELS, formatFreeAccountDate } from "../../modules/free-account/free-account.service";
 import { SupportService } from "../../modules/support/support.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
 import { BroadcastService, BROADCAST_TARGET_LABELS } from "../../modules/broadcast/broadcast.service";
@@ -69,8 +65,18 @@ export function registerSupportViews() {
     return {
       replyKeyboard: "support",
       text: joinSections([
-        card(userLabels.support, ["برای ارتباط با پشتیبانی وارد گفتگو شوید و پیام خود را ارسال کنید. پاسخ‌ها در همین چت برای شما نمایش داده می‌شود.", `📌 وضعیت آخرین تیکت: ${latestOpen ? `باز (#${shortId(latestOpen.id)})` : "تیکت باز ندارید"}`]),
-        section(`${uiIcons.invoice} تیکت‌های اخیر`, [tickets.map((ticket) => `• #${shortId(ticket.id)} · ${ticket.status === "open" ? statusLabels.active : "🔒 بسته"} · ${ticket.updatedAt.toLocaleString("fa-IR")}\n  ${ticket.messages[0]?.message ?? "بدون پیام"}`).join("\n") || "هنوز تیکتی ثبت نشده است."]),
+        card(userLabels.support, [
+          "برای ارتباط با پشتیبانی وارد گفتگو شوید و پیام خود را ارسال کنید. پاسخ‌ها در همین چت برای شما نمایش داده می‌شود.",
+          `📌 وضعیت آخرین تیکت: ${latestOpen ? `باز (#${shortId(latestOpen.id)})` : "تیکت باز ندارید"}`,
+        ]),
+        section(`${uiIcons.invoice} تیکت‌های اخیر`, [
+          tickets
+            .map(
+              (ticket) =>
+                `• #${shortId(ticket.id)} · ${ticket.status === "open" ? statusLabels.active : "🔒 بسته"} · ${ticket.updatedAt.toLocaleString("fa-IR")}\n  ${ticket.messages[0]?.message ?? "بدون پیام"}`,
+            )
+            .join("\n") || "هنوز تیکتی ثبت نشده است.",
+        ]),
       ]),
       keyboard: [
         navRow({ text: "✉️ تیکت جدید", view: "support.new" }),
@@ -79,14 +85,33 @@ export function registerSupportViews() {
       ],
     };
   });
-  registerView("support.new", async () => ({ text: card("✉️ تیکت جدید", ["برای شروع گفتگو دکمه زیر را بزنید و پیام خود را ارسال کنید."]), keyboard: [[{ text: "✉️ شروع گفتگو", action: "support:chat:start" }]] }));
+  registerView("support.new", async () => ({
+    text: card("✉️ تیکت جدید", ["برای شروع گفتگو دکمه زیر را بزنید و پیام خود را ارسال کنید."]),
+    keyboard: [[{ text: "✉️ شروع گفتگو", action: "support:chat:start" }]],
+  }));
   registerView("support.tickets", async (ctx) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
     const tickets = await SupportService.listUserTickets(user.id);
-    return { text: card("📋 تیکت‌های من", [tickets.length ? tickets.map((ticket) => `#${shortId(ticket.id)} · ${ticket.status === "open" ? "باز" : "بسته"}`).join("\n") : "تیکتی ثبت نشده است."]), keyboard: tickets.slice(0, 5).map((ticket) => [{ text: `👁 تیکت #${shortId(ticket.id)}`, action: `support:chat:${ticket.id}` }]) };
+    return {
+      text: card("📋 تیکت‌های من", [
+        tickets.length
+          ? tickets.map((ticket) => `#${shortId(ticket.id)} · ${ticket.status === "open" ? "باز" : "بسته"}`).join("\n")
+          : "تیکتی ثبت نشده است.",
+      ]),
+      keyboard: tickets.slice(0, 5).map((ticket) => [{ text: `👁 تیکت #${shortId(ticket.id)}`, action: `support:chat:${ticket.id}` }]),
+    };
   });
-  registerView("support.connection", async () => ({ text: card("📡 مشکل اتصال", ["اگر سرویس وصل نمی‌شود، کانفیگ را دوباره بررسی کنید و سپس تیکت بزنید."]), keyboard: [[{ text: "✉️ ثبت مشکل اتصال", action: "support:chat:start" }]] }));
-  registerView("support.payment", async () => ({ text: card("💳 مشکل پرداخت", ["برای پیگیری پرداخت، رسید یا شناسه تراکنش را در تیکت ارسال کنید."]), keyboard: [[{ text: "✉️ ثبت مشکل پرداخت", action: "support:chat:start" }]] }));
-  registerView("support.contact", async () => ({ text: card("💬 ارتباط با پشتیبانی", ["پیام خود را در گفتگو ارسال کنید؛ پاسخ در همین چت نمایش داده می‌شود."]), keyboard: [[{ text: "💬 شروع گفتگو", action: "support:chat:start" }]] }));
+  registerView("support.connection", async () => ({
+    text: card("📡 مشکل اتصال", ["اگر سرویس وصل نمی‌شود، ساب را آپدیت کنید و سپس تیکت بزنید."]),
+    keyboard: [[{ text: "✉️ ثبت مشکل اتصال", action: "support:chat:start" }]],
+  }));
+  registerView("support.payment", async () => ({
+    text: card("💳 مشکل پرداخت", ["برای پیگیری پرداخت، رسید یا شناسه تراکنش را در تیکت ارسال کنید."]),
+    keyboard: [[{ text: "✉️ ثبت مشکل پرداخت", action: "support:chat:start" }]],
+  }));
+  registerView("support.contact", async () => ({
+    text: card("💬 ارتباط با پشتیبانی", ["پیام خود را در گفتگو ارسال کنید؛ پاسخ در همین چت نمایش داده می‌شود."]),
+    keyboard: [[{ text: "💬 شروع گفتگو", action: "support:chat:start" }]],
+  }));
 }

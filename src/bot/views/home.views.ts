@@ -5,11 +5,7 @@ import { UserService } from "../../modules/user/user.service";
 import { ProductService } from "../../modules/product/product.service";
 import { AdminService } from "../../modules/admin/admin.service";
 import { ReferralService } from "../../modules/referral/referral.service";
-import {
-  FreeAccountService,
-  FREE_ACCOUNT_STATUS_LABELS,
-  formatFreeAccountDate,
-} from "../../modules/free-account/free-account.service";
+import { FreeAccountService, FREE_ACCOUNT_STATUS_LABELS, formatFreeAccountDate } from "../../modules/free-account/free-account.service";
 import { SupportService } from "../../modules/support/support.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
 import { BroadcastService, BROADCAST_TARGET_LABELS } from "../../modules/broadcast/broadcast.service";
@@ -82,7 +78,7 @@ export function registerHomeViews() {
           `${uiIcons.wallet} موجودی: ${money(user?.balance ?? 0)}`,
           `🧩 سرویس‌های فعال: ${activeCount.toLocaleString("fa-IR")}`,
           `🤝 دعوت‌های موفق: ${referralCount.toLocaleString("fa-IR")}`,
-          expiringCount > 0 ? `⏳ نزدیک انقضا: ${expiringCount.toLocaleString("fa-IR")}` : "✅ وضعیت سرویس‌ها پایدار است",
+          expiringCount > 0 ? `⏳ نزدیک انقضا: ${expiringCount.toLocaleString("fa-IR")}` : "✅ وضعیت سرویس‌ها: پایدار",
         ]),
         section(sectionTitles.quickActions, ["یکی از گزینه‌های پایین را انتخاب کن؛ همه مسیرها کوتاه و بدون دکمه اضافه چیده شده‌اند."]),
       ]),
@@ -107,10 +103,22 @@ export function registerHomeViews() {
       navRow({ text: "❓ سوالات پرتکرار", view: "help.faq" }, { text: "📜 قوانین استفاده", view: "help.rules" }),
     ],
   }));
-  registerView("help.buy", async () => ({ text: card("🛒 راهنمای خرید", ["از خرید سرویس، دسته‌بندی را انتخاب کنید، سرویس را ببینید و پرداخت را کامل کنید."]), keyboard: [navRow({ text: "🛒 خرید سرویس", view: "shop" })] }));
-  registerView("help.connection", async () => ({ text: card("🔌 راهنمای اتصال", ["پس از خرید، لینک اشتراک یا کانفیگ را از سرویس‌های من دریافت و در اپلیکیشن وارد کنید."]), keyboard: [navRow({ text: "📦 سرویس‌های من", view: "services" })] }));
-  registerView("help.faq", async () => ({ text: card("❓ سوالات پرتکرار", ["اگر پاسخ سؤال خود را پیدا نکردید، از پشتیبانی پیام بدهید."]), keyboard: [navRow({ text: "🆘 پشتیبانی", view: "support" })] }));
-  registerView("help.rules", async () => ({ text: card("📜 قوانین استفاده", ["استفاده از سرویس‌ها باید مطابق قوانین سرویس و شرایط اعلام‌شده باشد."]), keyboard: [] }));
+  registerView("help.buy", async () => ({
+    text: card("🛒 راهنمای خرید", ["از خرید سرویس، دسته‌بندی را انتخاب کنید، سرویس را ببینید و پرداخت را کامل کنید."]),
+    keyboard: [navRow({ text: "🛒 خرید سرویس", view: "shop" })],
+  }));
+  registerView("help.connection", async () => ({
+    text: card("🔌 راهنمای اتصال", ["پس از خرید، لینک اشتراک یا کانفیگ را از سرویس‌های من دریافت و در اپلیکیشن وارد کنید."]),
+    keyboard: [navRow({ text: "📦 سرویس‌های من", view: "services" })],
+  }));
+  registerView("help.faq", async () => ({
+    text: card("❓ سوالات پرتکرار", ["اگر پاسخ سؤال خود را پیدا نکردید، از پشتیبانی پیام بدهید."]),
+    keyboard: [navRow({ text: "🆘 پشتیبانی", view: "support" })],
+  }));
+  registerView("help.rules", async () => ({
+    text: card("📜 قوانین استفاده", ["استفاده از سرویس‌ها باید مطابق قوانین سرویس و شرایط اعلام‌شده باشد."]),
+    keyboard: [],
+  }));
   registerView("productGuide", async () => {
     const sections = await ProductGuideService.listActive();
     return {
@@ -146,7 +154,7 @@ ${divider}
     const link = `https://t.me/${botUsername}?start=${user.referralCode}`;
     const nextTarget = Math.max(Math.ceil((stats.totalReferrals + 1) / 5) * 5, 5);
     return {
-      text: `🎁 برنامه دعوت دوستان
+      text: `🎁 دعوت دوستان
 
 ${divider}
 
@@ -187,7 +195,13 @@ ${link}
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
     const stats = await ReferralService.getStats(user.id);
-    return { text: card("💎 پاداش‌های من", [`قابل دریافت: ${money(stats.pendingAmount)}`, `دریافت‌شده: ${money(stats.claimedAmount)}`]), keyboard: [[{ text: "💎 دریافت پاداش", action: "referral:claim" }]] };
+    return {
+      text: card("💎 پاداش‌های من", [`قابل دریافت: ${money(stats.pendingAmount)}`, `دریافت‌شده: ${money(stats.claimedAmount)}`]),
+      keyboard: [[{ text: "💎 دریافت پاداش", action: "referral:claim" }]],
+    };
   });
-  registerView("referral.rules", async () => ({ text: card("📜 قوانین دعوت", ["دعوت دوستان همان Referral است؛ هر عضویت معتبر از لینک شما در آمار و پاداش ثبت می‌شود."]), keyboard: [] }));
+  registerView("referral.rules", async () => ({
+    text: card("📜 قوانین دعوت", ["دعوت دوستان همان Referral است؛ هر عضویت معتبر از لینک شما در آمار و پاداش ثبت می‌شود."]),
+    keyboard: [],
+  }));
 }

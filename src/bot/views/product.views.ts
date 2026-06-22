@@ -1,90 +1,42 @@
-import { registerView, callbackFor, actionFor, type UiKeyboard } from "../navigation/panel-ui";
-import { createCallbackToken, tokenAction } from "../navigation/callback-tokens";
-import { isAdminByTelegramId } from "../middlewares/admin.middleware";
-import { UserService } from "../../modules/user/user.service";
+import { registerView, callbackFor } from "../navigation/panel-ui";
 import { ProductService } from "../../modules/product/product.service";
-import { AdminService } from "../../modules/admin/admin.service";
-import { ReferralService } from "../../modules/referral/referral.service";
-import {
-  FreeAccountService,
-  FREE_ACCOUNT_STATUS_LABELS,
-  formatFreeAccountDate,
-} from "../../modules/free-account/free-account.service";
-import { SupportService } from "../../modules/support/support.service";
-import { CouponService } from "../../modules/coupon/coupon.service";
-import { BroadcastService, BROADCAST_TARGET_LABELS } from "../../modules/broadcast/broadcast.service";
-import { PaymentGatewayService, PaymentInvoiceService, maskApiKey } from "../../modules/payment/payment.service";
-import { ProductGuideService } from "../../modules/system/product-guide.service";
-import { ForcedJoinService } from "../../modules/system/forced-join.service";
-import { PublicPlansService } from "../../modules/product/public-plans.service";
-import {
-  formatXrayBytes,
-  maskToken,
-  normalizeXrayStatus,
-  XrayClientService,
-  XrayPanelService,
-  xrayTrafficSnapshot,
-} from "../../modules/xray/xray.service";
-import type { PaymentInvoiceStatus } from "@prisma/client";
-import { accountSummaryMessage, errorMessage, walletSummaryMessage } from "../../utils/messages";
+import { formatXrayBytes } from "../../modules/xray/xray.service";
 import { formatToman } from "../../utils/money";
-import {
-  accountStatusLabel,
-  divider,
-  formatPageCount,
-  formatStockLabel,
-  formatUserLine,
-  getPageParam,
-  paymentStatusLabel,
-  progressBar,
-  purchasedAccountStatusLabel,
-  resolveFreeAccountExpiry,
-  shortId,
-  walletStatusLabel,
-  yesNoStatus,
-} from "../../utils/formatters";
-import { homeKeyboard } from "../keyboards/common.keyboard";
+import { formatStockLabel } from "../../utils/formatters";
 import { productDetailViewKeyboard } from "../keyboards/view-keyboards";
 import { navRow } from "../keyboards/panel-keyboard.helpers";
 import { card, joinSections, section } from "../ui/layout";
 import { sectionTitles } from "../ui/sections";
-import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
+import { userLabels } from "../ui/labels";
 import { uiIcons } from "../ui/icons";
-import { MonitoringService } from "../../services/monitoring.service";
-import { prisma } from "../../services/prisma";
+import { errorMessage } from "../../utils/messages";
 
 const money = formatToman;
-const page = getPageParam;
-const pages = formatPageCount;
-const userLine = formatUserLine;
 const stockLabel = formatStockLabel;
-const freeAccountExpiry = resolveFreeAccountExpiry;
-const yesNo = yesNoStatus;
-
 export function registerProductViews() {
   registerView("shop", async () => ({
     replyKeyboard: "shop",
     text: joinSections([card("🛒 خرید سرویس", ["مرحله خرید را انتخاب کنید."])]),
-    keyboard: [
-      navRow({ text: "📁 دسته‌بندی سرویس‌ها", view: "shop.categories" }, { text: "⭐ سرویس‌های پیشنهادی", view: "shop.recommended" }),
-      navRow({ text: "💰 مشاهده قیمت‌ها", view: "shop.prices" }),
-    ],
+    keyboard: [navRow({ text: "📋 مشاهده همه", view: "shop.categories" }, { text: "⭐ سرویس‌های پیشنهادی", view: "shop.recommended" })],
   }));
   registerView("shop.recommended", async () => {
     const categories = await ProductService.getCategories();
     const products = categories.flatMap((category) => category.products).slice(0, 6);
-    return { text: joinSections([card("⭐ سرویس‌های پیشنهادی", [products.length ? "یکی از سرویس‌های پیشنهادی را انتخاب کنید." : "فعلاً پیشنهادی برای نمایش نیست."])]), keyboard: products.map((product) => [{ text: product.title, action: callbackFor("shop.product", { productId: product.id }) }]) };
-  });
-  registerView("shop.prices", async () => {
-    const categories = await ProductService.getCategories();
-    const products = categories.flatMap((category) => category.products).slice(0, 12);
-    return { text: joinSections([card("💰 قیمت سرویس‌ها", products.map((product) => `${product.title}: ${money(product.price)}`) || ["محصولی ثبت نشده است."])]), keyboard: [navRow({ text: "📁 دسته‌بندی‌ها", view: "shop.categories" })] };
+    return {
+      text: joinSections([
+        card("⭐ سرویس‌های پیشنهادی", [products.length ? "یکی از سرویس‌های پیشنهادی را انتخاب کنید." : "فعلاً پیشنهادی برای نمایش نیست."]),
+      ]),
+      keyboard: products.map((product) => [{ text: product.title, action: callbackFor("shop.product", { productId: product.id }) }]),
+    };
   });
   registerView("shop.categories", async () => {
     const categories = await ProductService.getCategories();
     return {
       replyKeyboard: "shop",
-      text: joinSections([card(`${uiIcons.product} فروشگاه نیمه‌شب`, ["دسته‌بندی موردنظر را انتخاب کنید."]), section(sectionTitles.serviceSpecs, ["همه سرویس‌های نمایش‌داده‌شده فعال و آماده تحویل خودکار هستند."])]),
+      text: joinSections([
+        card(`${uiIcons.product} فروشگاه نیمه‌شب`, ["دسته‌بندی موردنظر را انتخاب کنید."]),
+        section(sectionTitles.serviceSpecs, ["همه سرویس‌های نمایش‌داده‌شده فعال و آماده تحویل خودکار هستند."]),
+      ]),
       keyboard: [
         [{ text: "🔎 جستجوی محصول", action: "flow:start:product_search" }],
         ...categories.map((category) => [
@@ -112,7 +64,12 @@ export function registerProductViews() {
     const query = params.q || ctx.session.productSearchQuery || "";
     const products = await ProductService.searchActiveProducts(query, 10);
     return {
-      text: joinSections([card(`${uiIcons.info} نتیجه جستجو`, [`عبارت: ${query || "—"}`, products.length ? "از نتایج زیر یک محصول را انتخاب کنید:" : "موردی پیدا نشد. لطفاً با نام کوتاه‌تر سرویس یا دسته‌بندی دوباره جستجو کنید."])]),
+      text: joinSections([
+        card(`${uiIcons.info} نتیجه جستجو`, [
+          `عبارت: ${query || "—"}`,
+          products.length ? "از نتایج زیر یک محصول را انتخاب کنید:" : "موردی پیدا نشد. لطفاً با نام کوتاه‌تر سرویس یا دسته‌بندی دوباره جستجو کنید.",
+        ]),
+      ]),
       keyboard: [
         ...products.map((product) => [
           {
@@ -149,7 +106,6 @@ export function registerProductViews() {
         section(sectionTitles.traffic, [product.mode === "xray_auto" ? formatXrayBytes(product.trafficBytes) : undefined]),
         section(sectionTitles.duration, [`${(product.durationDays ?? product.duration).toLocaleString("fa-IR")} روز`]),
         section(sectionTitles.price, [`قیمت پایه: ${money(product.price)}`]),
-        section(sectionTitles.discount, ["در مرحله بعد می‌توانید کد تخفیف وارد کنید."]),
         section(sectionTitles.finalAmount, [`💰 قیمت نهایی: ${money(product.price)}`]),
         card(`${uiIcons.info} راهنما`, ["پس از پرداخت، اطلاعات اکانت همین‌جا نمایش داده می‌شود و همیشه از بخش «اکانت‌های من» قابل مشاهده است."]),
       ]),

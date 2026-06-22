@@ -5,11 +5,7 @@ import { UserService } from "../../modules/user/user.service";
 import { ProductService } from "../../modules/product/product.service";
 import { AdminService } from "../../modules/admin/admin.service";
 import { ReferralService } from "../../modules/referral/referral.service";
-import {
-  FreeAccountService,
-  FREE_ACCOUNT_STATUS_LABELS,
-  formatFreeAccountDate,
-} from "../../modules/free-account/free-account.service";
+import { FreeAccountService, FREE_ACCOUNT_STATUS_LABELS, formatFreeAccountDate } from "../../modules/free-account/free-account.service";
 import { SupportService } from "../../modules/support/support.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
 import { BroadcastService, BROADCAST_TARGET_LABELS } from "../../modules/broadcast/broadcast.service";
@@ -79,7 +75,18 @@ export function registerFreeAccountViews() {
               : "آماده دریافت";
     return {
       replyKeyboard: "freeAccount",
-      text: joinSections([card(userLabels.freeAccount, [`📌 وضعیت شما: ${reason}`, `📅 آخرین دریافت: ${formatFreeAccountDate(e.lastClaimAt)}`, `⏳ دریافت بعدی: ${formatFreeAccountDate(e.nextAvailableAt && e.nextAvailableAt > new Date() ? e.nextAvailableAt : undefined)}`]), section(sectionTitles.serviceSpecs, [`${uiIcons.product} موجودی: ${cfg.available.toLocaleString("fa-IR")} از ${cfg.stockLimit.toLocaleString("fa-IR")}`, `${sectionTitles.traffic}: ${formatXrayBytes(cfg.trafficBytes)}`, `${sectionTitles.duration}: ${cfg.durationDays.toLocaleString("fa-IR")} روز`]), card(`${uiIcons.info} راهنما`, ["اکانت تست به‌صورت خودکار در پنل Xray ساخته می‌شود و از بخش «اکانت‌های من» قابل مشاهده است."])]),
+      text: joinSections([
+        card(userLabels.freeAccount, [
+          `📌 وضعیت شما: ${reason}`,
+          `📅 آخرین دریافت: ${formatFreeAccountDate(e.lastClaimAt)}`,
+          `⏳ دریافت بعدی: ${formatFreeAccountDate(e.nextAvailableAt && e.nextAvailableAt > new Date() ? e.nextAvailableAt : undefined)}`,
+        ]),
+        section(sectionTitles.serviceSpecs, [
+          `${uiIcons.product} موجودی: ${cfg.available.toLocaleString("fa-IR")} از ${cfg.stockLimit.toLocaleString("fa-IR")}`,
+          `${sectionTitles.traffic}: ${formatXrayBytes(cfg.trafficBytes)}`,
+          `${sectionTitles.duration}: ${cfg.durationDays.toLocaleString("fa-IR")} روز`,
+        ]),
+      ]),
       keyboard: blocked
         ? [
             [

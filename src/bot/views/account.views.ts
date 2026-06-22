@@ -5,11 +5,7 @@ import { UserService } from "../../modules/user/user.service";
 import { ProductService } from "../../modules/product/product.service";
 import { AdminService } from "../../modules/admin/admin.service";
 import { ReferralService } from "../../modules/referral/referral.service";
-import {
-  FreeAccountService,
-  FREE_ACCOUNT_STATUS_LABELS,
-  formatFreeAccountDate,
-} from "../../modules/free-account/free-account.service";
+import { FreeAccountService, FREE_ACCOUNT_STATUS_LABELS, formatFreeAccountDate } from "../../modules/free-account/free-account.service";
 import { SupportService } from "../../modules/support/support.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
 import { BroadcastService, BROADCAST_TARGET_LABELS } from "../../modules/broadcast/broadcast.service";
@@ -66,40 +62,64 @@ const yesNo = yesNoStatus;
 export function registerAccountViews() {
   registerView("account", async (ctx) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.", keyboard: [] };
+
+    if (!user) {
+      return {
+        text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.",
+        keyboard: [],
+      };
+    }
+
     const dashboard = await UserService.dashboard(user.id);
     const activeCount = dashboard.activeAccounts.length + dashboard.activeFreeAccounts.length;
+
     return {
       replyKeyboard: "profile",
       text: joinSections([
         card("👤 حساب کاربری", [
-          `موجودی کیف پول: ${money(dashboard.user.balance)}`,
-          `سرویس فعال: ${activeCount.toLocaleString("fa-IR")}`,
-          `تاریخ عضویت: ${user.createdAt.toLocaleDateString("fa-IR")}`,
+          `💰 موجودی کیف پول: ${money(dashboard.user.balance)}`,
+          `📦 سرویس فعال: ${activeCount.toLocaleString("fa-IR")}`,
+          `📅 تاریخ عضویت: ${user.createdAt.toLocaleDateString("fa-IR")}`,
         ]),
-        section(sectionTitles.quickActions, ["برای مدیریت پروفایل، یکی از گزینه‌های حساب را انتخاب کنید."]),
+        section(sectionTitles.quickActions, ["از گزینه‌های زیر برای مدیریت حساب، کیف پول و سرویس‌های خود استفاده کنید."]),
       ]),
       keyboard: [
-        navRow({ text: "👤 اطلاعات حساب", view: "account.profile" }, { text: "⭐ وضعیت عضویت", view: "account.membership" }),
-        navRow({ text: "⚙️ تنظیمات", view: "account.settings" }, { text: "🔐 امنیت حساب", view: "account.security" }),
+        navRow({ text: "💰 کیف پول", view: "wallet" }, { text: "📦 سرویس‌های من", view: "services" }),
+        navRow({ text: "♻️ تمدید سرویس", view: "services.renew", tone: "success" }, { text: "🛒 خرید سرویس جدید", view: "shop" }),
+        navRow({ text: "👤 اطلاعات حساب", view: "account.profile" }, { text: "🧾 تاریخچه خرید", view: "account.history" }),
+        navRow({ text: "🎫 پشتیبانی", view: "support" }),
       ],
     };
   });
   registerView("account.profile", async (ctx) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
-    return { text: card("👤 اطلاعات حساب", [`شناسه: ${user.telegramId}`, `نام: ${user.firstName ?? "—"}`, `نام کاربری: ${user.username ? `@${user.username}` : "—"}`]), keyboard: [] };
-  });
-  registerView("account.membership", async (ctx) => {
-    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+
+    if (!user) {
+      return {
+        text: "⚠️ پروفایل شما پیدا نشد.",
+        keyboard: [],
+      };
+    }
+
     const dashboard = await UserService.dashboard(user.id);
-    return { text: card("⭐ وضعیت عضویت", [`عضویت از: ${user.createdAt.toLocaleDateString("fa-IR")}`, `سرویس فعال: ${(dashboard.activeAccounts.length + dashboard.activeFreeAccounts.length).toLocaleString("fa-IR")}`, user.isBanned ? "وضعیت: محدود" : "وضعیت: فعال"]), keyboard: [] };
-  });
-  registerView("account.settings", async () => ({ text: card("⚙️ تنظیمات", ["تنظیمات حساب به‌زودی از همین بخش در دسترس قرار می‌گیرد."]), keyboard: [] }));
-  registerView("account.security", async (ctx) => {
-    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-    return { text: card("🔐 امنیت حساب", [`شناسه تلگرام: ${user?.telegramId ?? "—"}`, "برای امنیت، اطلاعات ورود سرویس‌ها را در اختیار دیگران قرار ندهید."]), keyboard: [] };
+
+    return {
+      text: joinSections([
+        card("👤 پروفایل کاربری", [
+          `🆔 شناسه کاربر: ${user.telegramId}`,
+          `👤 نام: ${user.firstName ?? "ثبت نشده"}`,
+          `📛 نام کاربری: ${user.username ? `@${user.username}` : "ثبت نشده"}`,
+          `💰 موجودی کیف پول: ${money(dashboard.user.balance)}`,
+          `📦 سرویس فعال: ${(dashboard.activeAccounts.length + dashboard.activeFreeAccounts.length).toLocaleString("fa-IR")}`,
+          `📅 تاریخ عضویت: ${user.createdAt.toLocaleDateString("fa-IR")}`,
+          `🚦 وضعیت حساب: ${user.isBanned ? "محدود شده ⛔" : "فعال ✅"}`,
+        ]),
+      ]),
+      keyboard: [
+        navRow({ text: "💰 کیف پول", view: "wallet" }, { text: "📦 سرویس‌های من", view: "services" }),
+        navRow({ text: "🧾 تاریخچه خرید", view: "account.history" }, { text: "🎫 پشتیبانی", view: "support" }),
+      ],
+    };
   });
   const renderServicesActive: ViewRenderer = async (ctx, params) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
@@ -128,25 +148,51 @@ export function registerAccountViews() {
           if (!exists.exists) continue;
         }
         const days = client ? Math.max(Math.ceil((client.expiresAt.getTime() - Date.now()) / 86_400_000), 0) : 0;
-        lines.push(card(`${uiIcons.product} ${index}. ${item.product.title}`, [`${uiIcons.active} وضعیت: ${normalizeXrayStatus(client?.status)}`, `⏳ اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`, `${uiIcons.dashboard} حجم: ${client ? formatXrayBytes(client.usedBytes ?? 0n) : "—"}`, client && !client.isFreeTest ? `${uiIcons.renew} تمدید از جزئیات سرویس` : undefined]));
+        lines.push(
+          card(`${uiIcons.product} ${index}. ${item.product.title}`, [
+            `${uiIcons.active} وضعیت: ${normalizeXrayStatus(client?.status)}`,
+            `⏳ اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`,
+            `${uiIcons.dashboard} حجم: ${client ? formatXrayBytes(client.usedBytes ?? 0n) : "—"}`,
+            client && !client.isFreeTest ? `${uiIcons.renew} تمدید از جزئیات سرویس` : undefined,
+          ]),
+        );
         if (client)
           keyboard.push([{ text: `🧩 ${item.product.title}`.slice(0, 60), action: callbackFor("account.xray", { xrayClientId: client.id }) }]);
       } else {
         const days = item.expiresAt ? Math.max(Math.ceil((item.expiresAt.getTime() - Date.now()) / 86_400_000), 0) : undefined;
-        lines.push(card(`${uiIcons.product} ${index}. ${item.product.title}`, [`${uiIcons.active} وضعیت: ${purchasedAccountStatusLabel(item)}`, `⏳ اعتبار: ${days === undefined ? "نامحدود" : `${days.toLocaleString("fa-IR")} روز باقی‌مانده`}`, `${uiIcons.dashboard} حجم: موجودی دستی`, `${uiIcons.renew} تمدید از جزئیات سرویس`]));
+        lines.push(
+          card(`${uiIcons.product} ${index}. ${item.product.title}`, [
+            `${uiIcons.active} وضعیت: ${purchasedAccountStatusLabel(item)}`,
+            `⏳ اعتبار: ${days === undefined ? "نامحدود" : `${days.toLocaleString("fa-IR")} روز باقی‌مانده`}`,
+            `${uiIcons.dashboard} حجم: موجودی دستی`,
+            `${uiIcons.renew} تمدید از جزئیات سرویس`,
+          ]),
+        );
         keyboard.push([{ text: `🧩 ${item.product.title}`.slice(0, 60), action: callbackFor("account", { accountId: item.id }) }]);
       }
       index++;
     }
     for (const client of visibleFreeXrayClients) {
       const days = Math.max(Math.ceil((client.expiresAt.getTime() - Date.now()) / 86_400_000), 0);
-      lines.push(card(`${userLabels.freeAccount} ${index}`, [`${uiIcons.active} وضعیت: ${normalizeXrayStatus(client.status)}`, `⏳ اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`, `${uiIcons.dashboard} حجم: ${formatXrayBytes(client.trafficBytes, { unlimitedIfZero: true })}`]));
+      lines.push(
+        card(`${userLabels.freeAccount} ${index}`, [
+          `${uiIcons.active} وضعیت: ${normalizeXrayStatus(client.status)}`,
+          `⏳ اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`,
+          `${uiIcons.dashboard} حجم: ${formatXrayBytes(client.trafficBytes, { unlimitedIfZero: true })}`,
+        ]),
+      );
       keyboard.push([{ text: `🆓 اکانت تست ${client.clientEmail}`.slice(0, 60), action: callbackFor("account.xray", { xrayClientId: client.id }) }]);
       index++;
     }
     for (const item of activeFreeAccounts) {
       const days = Math.max(Math.ceil((freeAccountExpiry(item).getTime() - Date.now()) / 86_400_000), 0);
-      lines.push(card(`${userLabels.freeAccount} قدیمی ${index}`, [`${statusLabels.active}`, `⏳ اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`, `${uiIcons.dashboard} حجم: —`]));
+      lines.push(
+        card(`${userLabels.freeAccount} قدیمی ${index}`, [
+          `${statusLabels.active}`,
+          `⏳ اعتبار: ${days.toLocaleString("fa-IR")} روز باقی‌مانده`,
+          `${uiIcons.dashboard} حجم: —`,
+        ]),
+      );
       index++;
     }
     const inactiveCount = dashboard.expiredAccounts.length;
@@ -161,7 +207,10 @@ export function registerAccountViews() {
     if (totalPages > 1) {
       pagination.push([
         ...(safePage > 1 ? [{ text: "⬅️ قبلی", action: callbackFor("services.active", { page: safePage - 1 }) }] : []),
-        { text: `صفحه ${safePage.toLocaleString("fa-IR")}/${totalPages.toLocaleString("fa-IR")}`, action: callbackFor("services.active", { page: safePage }) },
+        {
+          text: `صفحه ${safePage.toLocaleString("fa-IR")}/${totalPages.toLocaleString("fa-IR")}`,
+          action: callbackFor("services.active", { page: safePage }),
+        },
         ...(safePage < totalPages ? [{ text: "بعدی ➡️", action: callbackFor("services.active", { page: safePage + 1 }) }] : []),
       ]);
     }
@@ -192,10 +241,22 @@ export function registerAccountViews() {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
     const dashboard = await UserService.dashboard(user.id);
-    return { text: joinSections([card("⛔ سرویس‌های منقضی", [dashboard.expiredAccounts.length ? `${dashboard.expiredAccounts.length.toLocaleString("fa-IR")} سرویس منقضی دارید.` : "سرویس منقضی ندارید."])]), keyboard: [navRow({ text: "♻️ تمدید سرویس", view: "services.renew", tone: "success" }, { text: "🛒 خرید سرویس جدید", view: "shop" })] };
+    return {
+      text: joinSections([
+        card("⛔ سرویس‌های منقضی", [
+          dashboard.expiredAccounts.length ? `${dashboard.expiredAccounts.length.toLocaleString("fa-IR")} سرویس منقضی دارید.` : "سرویس منقضی ندارید.",
+        ]),
+      ]),
+      keyboard: [navRow({ text: "♻️ تمدید سرویس", view: "services.renew", tone: "success" }, { text: "🛒 خرید سرویس جدید", view: "shop" })],
+    };
   });
   registerView("services.renew", async (ctx, params) => renderRenewService(ctx, params));
-  registerView("services.issue", async () => ({ text: card("🛠 مشکل در سرویس", ["برای بررسی مشکل اتصال یا سرویس، مسیر پشتیبانی را انتخاب کنید."]), keyboard: [navRow({ text: "🆘 مشکل اتصال", view: "support.connection", tone: "danger" }, { text: "ارتباط با پشتیبانی", view: "support.contact" })] }));
+  registerView("services.issue", async () => ({
+    text: card("🛠 مشکل در سرویس", ["برای بررسی مشکل اتصال یا سرویس، مسیر پشتیبانی را انتخاب کنید."]),
+    keyboard: [
+      navRow({ text: "🆘 مشکل اتصال", view: "support.connection", tone: "danger" }, { text: "ارتباط با پشتیبانی", view: "support.contact" }),
+    ],
+  }));
   registerView("account.xray", async (ctx, params) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
@@ -249,8 +310,16 @@ export function registerAccountViews() {
           clients.length ? "سرویس موردنظر برای تمدید را انتخاب کنید." : "در حال حاضر سرویس قابل تمدیدی پیدا نشد.",
         ]),
         keyboard: [
-          ...clients.map((client) => [{ text: `♻️ ${client.product?.title ?? client.clientEmail}`.slice(0, 60), action: callbackFor("services.renew", { xrayClientId: client.id }) }]),
-          [{ text: "🧩 سرویس‌های من", action: callbackFor("services") }, { text: "🛒 خرید سرویس", action: callbackFor("shop.categories") }],
+          ...clients.map((client) => [
+            {
+              text: `♻️ ${client.product?.title ?? client.clientEmail}`.slice(0, 60),
+              action: callbackFor("services.renew", { xrayClientId: client.id }),
+            },
+          ]),
+          [
+            { text: "🧩 سرویس‌های من", action: callbackFor("services") },
+            { text: "🛒 خرید سرویس", action: callbackFor("shop.categories") },
+          ],
           [{ text: userLabels.home, action: callbackFor("home") }],
         ],
         navigation: { back: false, home: false },
