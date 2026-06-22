@@ -189,37 +189,26 @@ ${divider}
     const nextTarget = Math.max(Math.ceil((stats.totalReferrals + 1) / 5) * 5, 5);
     const remaining = Math.max(nextTarget - stats.totalReferrals, 0);
 
-    const shareText = `🔥 یه ربات عالی برای خرید سریع و راحت سرویس پیدا کردم!
-
-✅ تحویل فوری
-✅ مدیریت سرویس‌ها
-✅ کیف پول اختصاصی
-✅ پشتیبانی راحت
-
-از لینک من وارد شو و استفاده کن 👇
-${link}`;
-
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(shareText)}`;
-
     return {
       text: joinSections([
-        card("🎁 دعوت دوستان و دریافت پاداش", [
-          "لینک اختصاصی خودت را برای دوستانت بفرست.",
-          "هر عضویت معتبر از طریق لینک تو ثبت می‌شود و پاداش آن به حساب تو اضافه می‌شود.",
+        card("🎁 دعوت دوستان", [
+          "لینک اختصاصی خودت را برای دوستانت ارسال کن.",
+          "هر کاربری که از طریق لینک شما وارد ربات شود، در آمار دعوت شما ثبت می‌شود.",
+          "پاداش‌های قابل دریافت از همین بخش قابل مشاهده و برداشت هستند.",
         ]),
-        card("📊 آمار دعوت شما", [
-          `👥 دعوت‌های موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر`,
-          `💎 پاداش قابل دریافت: ${money(stats.pendingAmount)}`,
-          `✅ پاداش دریافت‌شده: ${money(stats.claimedAmount)}`,
-          `🎯 تا جایزه بعدی: ${remaining.toLocaleString("fa-IR")} دعوت دیگر`,
+        card("📊 وضعیت دعوت‌ها", [
+          `👥 دعوت موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر`,
+          `💎 پاداش قابل برداشت: ${money(stats.pendingAmount)}`,
+          `✅ پاداش برداشت‌شده: ${money(stats.claimedAmount)}`,
+          remaining > 0 ? `🎯 تا هدف بعدی: ${remaining.toLocaleString("fa-IR")} دعوت دیگر` : "🎯 هدف فعلی تکمیل شده است.",
           progressBar(stats.totalReferrals % nextTarget, nextTarget),
         ]),
         card("🔗 لینک اختصاصی شما", [link]),
       ]),
       keyboard: [
-        [{ text: "📤 اشتراک‌گذاری لینک دعوت", url: shareUrl }],
-        navRow({ text: "🔗 مشاهده لینک دعوت", view: "referral.link" }, { text: "👥 دعوت‌شده‌ها", view: "referral.users" }),
-        navRow({ text: "💎 پاداش‌های من", view: "referral.rewards", tone: "success" }, { text: "📜 قوانین دعوت", view: "referral.rules" }),
+        [{ text: "📤 متن آماده ارسال", action: callbackFor("referral.link") }],
+        navRow({ text: "👥 دعوت‌شده‌ها", view: "referral.users" }, { text: "💎 پاداش‌ها", view: "referral.rewards", tone: "success" }),
+        navRow({ text: "📜 قوانین دعوت", view: "referral.rules" }, { text: "🏠 خانه", view: "home" }),
       ],
     };
   });
@@ -234,23 +223,30 @@ ${link}`;
     const botUsername = process.env.BOT_USERNAME ?? "BOT";
     const link = `https://t.me/${botUsername}?start=${user.referralCode}`;
 
-    const shareText = `🔥 یه ربات عالی برای خرید سریع و راحت سرویس پیدا کردم!
+    const shareText = `🚀 دنبال یک سرویس سریع، پایدار و آماده استفاده هستی؟
 
-✅ تحویل فوری
-✅ مدیریت سرویس‌ها
+اینجا می‌تونی خیلی راحت سرویس موردنیازت رو انتخاب کنی، پرداخت رو انجام بدی و اطلاعات سرویس رو فوری تحویل بگیری.
+
+✅ خرید سریع و ساده
+✅ تحویل خودکار بعد از پرداخت
+✅ مدیریت سرویس‌ها از داخل ربات
 ✅ کیف پول اختصاصی
-✅ پشتیبانی راحت
+✅ تمدید آسان سرویس
+✅ پشتیبانی در صورت نیاز
 
-از لینک من وارد شو و استفاده کن 👇
+برای شروع از لینک زیر وارد شو 👇
 ${link}`;
-
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(shareText)}`;
 
     return {
       text: joinSections([
-        card("🔗 لینک دعوت من", ["این لینک مخصوص شماست.", "هر کاربری که با این لینک وارد ربات شود، به عنوان دعوت‌شده شما ثبت می‌شود.", "", link]),
+        card("📤 متن آماده ارسال", [
+          "متن زیر برای ارسال به دوستان آماده شده است.",
+          "آن را کپی کنید و در گروه‌ها یا چت‌های خود به اشتراک بگذارید:",
+          "",
+          shareText,
+        ]),
       ]),
-      keyboard: [[{ text: "📤 اشتراک‌گذاری لینک دعوت", url: shareUrl }]],
+      keyboard: [[{ text: "🎁 بازگشت به دعوت دوستان", action: callbackFor("referral") }], [{ text: "🏠 خانه", action: callbackFor("home") }]],
     };
   });
 
@@ -264,11 +260,14 @@ ${link}`;
     const stats = await ReferralService.getStats(user.id);
 
     return {
-      text: card("👥 دعوت‌شده‌های من", [
-        `✅ تعداد دعوت موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر`,
-        "دعوت‌های معتبر بعد از ورود کاربر از لینک اختصاصی شما ثبت می‌شوند.",
+      text: card("👥 دعوت‌شده‌ها", [
+        `✅ تعداد دعوت‌های موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر`,
+        "دعوت زمانی ثبت می‌شود که کاربر از لینک اختصاصی شما وارد ربات شود.",
       ]),
-      keyboard: [navRow({ text: "🔗 لینک دعوت من", view: "referral.link" })],
+      keyboard: [
+        [{ text: "📤 متن آماده ارسال", action: callbackFor("referral.link") }],
+        [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }],
+      ],
     };
   });
 
@@ -283,24 +282,24 @@ ${link}`;
 
     return {
       text: card("💎 پاداش‌های دعوت", [
-        `💰 قابل دریافت: ${money(stats.pendingAmount)}`,
-        `✅ دریافت‌شده: ${money(stats.claimedAmount)}`,
-        stats.pendingAmount > 0 ? "برای انتقال پاداش به کیف پول، دکمه زیر را بزنید." : "فعلاً پاداش قابل دریافت ندارید.",
+        `💰 قابل برداشت: ${money(stats.pendingAmount)}`,
+        `✅ برداشت‌شده: ${money(stats.claimedAmount)}`,
+        stats.pendingAmount > 0 ? "برای انتقال پاداش به کیف پول، دکمه دریافت پاداش را بزنید." : "در حال حاضر پاداش قابل برداشتی ندارید.",
       ]),
       keyboard:
         stats.pendingAmount > 0
           ? [[{ text: "💎 دریافت پاداش", action: "referral:claim" }]]
-          : [navRow({ text: "🔗 دعوت دوستان", view: "referral.link" })],
+          : [[{ text: "📤 دعوت دوستان", action: callbackFor("referral.link") }]],
     };
   });
 
   registerView("referral.rules", async () => ({
-    text: card("📜 قوانین دعوت دوستان", [
+    text: card("📜 قوانین دعوت", [
       "هر کاربر فقط یک‌بار می‌تواند به عنوان دعوت‌شده ثبت شود.",
       "دعوت فقط زمانی معتبر است که کاربر از لینک اختصاصی شما وارد ربات شود.",
-      "پاداش‌های معتبر به بخش پاداش‌های من اضافه می‌شوند.",
-      "در صورت سوءاستفاده یا دعوت غیرواقعی، پاداش قابل تأیید نخواهد بود.",
+      "پاداش‌های تأییدشده در بخش پاداش‌ها نمایش داده می‌شوند.",
+      "در صورت ثبت دعوت غیرواقعی یا سوءاستفاده، پاداش قابل تأیید نخواهد بود.",
     ]),
-    keyboard: [navRow({ text: "🔗 دعوت دوستان", view: "referral.link" })],
+    keyboard: [[{ text: "📤 متن آماده ارسال", action: callbackFor("referral.link") }], [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }]],
   }));
 }
