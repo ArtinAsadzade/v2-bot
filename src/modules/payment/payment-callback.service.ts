@@ -7,6 +7,7 @@ import { AdminService } from "../admin/admin.service";
 import { assertInvoiceAmountIntegrity } from "./payment-amounts";
 import { audit } from "./payment-repository";
 import { paymentLog } from "./payment-logging";
+import { redactPaymentMetadata } from "./payment-redaction";
 
 const ALREADY_PROCESSED_FA = "⚠️ این پرداخت قبلاً پردازش شده است.";
 
@@ -68,14 +69,16 @@ async function findInvoiceByCallbackReference(reference: string | CallbackRefere
 
 export class PaymentCallbackService {
   static async completePayment(reference: string | CallbackReference, metadata: Record<string, unknown> = {}, deps: CallbackDeps) {
+    const safeMetadata = redactPaymentMetadata(metadata);
     const normalizedReference = normalizeCallbackReference(reference);
+    const safeReference = redactPaymentMetadata(normalizedReference);
     if (!normalizedReference.token && !normalizedReference.invoice && !normalizedReference.invoice_id && !normalizedReference.pay_id) {
-      paymentLog("PAYMENT_CALLBACK_REJECTED", { reason: "missing_callback_reference", query: metadata.query });
+      paymentLog("PAYMENT_CALLBACK_REJECTED", { reason: "missing_callback_reference", query: safeMetadata.query });
       await prisma.auditLog.create({
         data: {
           actorId: "system",
           action: "PAYMENT_CALLBACK_REJECTED",
-          metadata: JSON.stringify({ reason: "missing_callback_reference", ...metadata }),
+          metadata: JSON.stringify({ reason: "missing_callback_reference", ...safeMetadata }),
         },
       });
       MonitoringService.record({
@@ -84,19 +87,19 @@ export class PaymentCallbackService {
         description: "Missing callback reference",
         severity: "critical",
         suggestedAction: "پارامترهای callback درگاه را بررسی کنید.",
-        metadata,
+        metadata: safeMetadata,
       });
       return { statusCode: 400, text: "Invalid payment callback." };
     }
 
     const resolved = await findInvoiceByCallbackReference(normalizedReference);
     if (!resolved) {
-      paymentLog("PAYMENT_CALLBACK_REJECTED", { reason: "invoice_not_found", reference: normalizedReference, query: metadata.query });
+      paymentLog("PAYMENT_CALLBACK_REJECTED", { reason: "invoice_not_found", reference: safeReference, query: safeMetadata.query });
       await prisma.auditLog.create({
         data: {
           actorId: "system",
           action: "PAYMENT_CALLBACK_REJECTED",
-          metadata: JSON.stringify({ reason: "invoice_not_found", reference: normalizedReference, ...metadata }),
+          metadata: JSON.stringify({ reason: "invoice_not_found", reference: safeReference, ...safeMetadata }),
         },
       });
       MonitoringService.record({
@@ -105,7 +108,7 @@ export class PaymentCallbackService {
         description: "Payment invoice not found",
         severity: "critical",
         suggestedAction: "ارسال invoice_id/token/pay_id از سمت درگاه را بررسی کنید.",
-        metadata: { reference: normalizedReference, ...metadata },
+        metadata: { reference: safeReference, ...safeMetadata },
       });
       return { statusCode: 404, text: "Payment invoice not found." };
     }
@@ -119,13 +122,13 @@ export class PaymentCallbackService {
       status: invoice.status,
       matchedBy: resolved.matchedBy,
       callbackAt: callbackAt.toISOString(),
-      query: metadata.query,
+      query: safeMetadata.query,
     });
     await audit(prisma, {
       userId: invoice.userId,
       invoiceId: invoice.id,
       action: "PAYMENT_CALLBACK_RECEIVED",
-      metadata: { reference: normalizedReference, matchedBy: resolved.matchedBy, ...metadata },
+      metadata: { reference: safeReference, matchedBy: resolved.matchedBy, ...safeMetadata },
     });
 
     const integrity = assertInvoiceAmountIntegrity(invoice);
@@ -187,7 +190,7 @@ export class PaymentCallbackService {
           reason: "pay_id_mismatch",
           expectedPayId: invoice.payId,
           receivedPayId: normalizedReference.pay_id,
-          reference: normalizedReference,
+          reference: safeReference,
         },
       });
       MonitoringService.record({
@@ -269,7 +272,7 @@ export class PaymentCallbackService {
         userId: invoice.userId,
         invoiceId: invoice.id,
         action: "PAYMENT_DUPLICATE_CALLBACK_IGNORED",
-        metadata: { status: invoice.status, deliveryStatus: invoice.deliveryStatus, reference: normalizedReference },
+        metadata: { status: invoice.status, deliveryStatus: invoice.deliveryStatus, reference: safeReference },
       });
       MonitoringService.record({
         type: "PAYMENT_DUPLICATE_CALLBACK",

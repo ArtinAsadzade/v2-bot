@@ -8,6 +8,7 @@ import { forcedJoinMiddleware } from "./middlewares/forced-join.middleware";
 import { registerForcedJoinEvents } from "./handlers/forced-join-events";
 import { rateLimitMiddleware } from "./middlewares/rate-limit.middleware";
 import { MonitoringService } from "../services/monitoring.service";
+import { acknowledgeCallbackImmediately, installCallbackAckGuard } from "./callback-ack";
 
 if (!process.env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN is missing");
@@ -25,9 +26,8 @@ bot.use(
 );
 
 bot.use(async (ctx, next) => {
-  if (ctx.callbackQuery) {
-    await ctx.answerCbQuery().catch(() => undefined);
-  }
+  installCallbackAckGuard(ctx);
+  if (ctx.callbackQuery) await acknowledgeCallbackImmediately(ctx);
   await next();
 });
 
