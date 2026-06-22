@@ -1,4 +1,4 @@
-import { registerView, callbackFor, actionFor, type UiKeyboard } from "../navigation/panel-ui";
+import { registerView, callbackFor, actionFor, type UiKeyboard, type ViewRenderer } from "../navigation/panel-ui";
 import { createCallbackToken, tokenAction } from "../navigation/callback-tokens";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 import { UserService } from "../../modules/user/user.service";
@@ -46,6 +46,7 @@ import {
 import { homeKeyboard } from "../keyboards/common.keyboard";
 import { accountListViewKeyboard } from "../keyboards/view-keyboards";
 import { accountActionViewKeyboard } from "../keyboards/account.keyboard";
+import { navRow } from "../keyboards/panel-keyboard.helpers";
 import { card, joinSections, section } from "../ui/layout";
 import { uxCopy } from "../messages/copy";
 import { sectionTitles } from "../ui/sections";
@@ -71,32 +72,36 @@ export function registerAccountViews() {
     return {
       replyKeyboard: "profile",
       text: joinSections([
-        card("👤 حساب من", [
-          `${uiIcons.wallet} موجودی کیف پول: ${money(dashboard.user.balance)}`,
-          `🧩 سرویس‌های فعال: ${activeCount.toLocaleString("fa-IR")}`,
-          `🤝 دعوت‌های موفق: ${(dashboard.referralCount ?? 0).toLocaleString("fa-IR")}`,
-          `📅 تاریخ عضویت: ${user.createdAt.toLocaleDateString("fa-IR")}`,
+        card("👤 حساب کاربری", [
+          `موجودی کیف پول: ${money(dashboard.user.balance)}`,
+          `سرویس فعال: ${activeCount.toLocaleString("fa-IR")}`,
+          `تاریخ عضویت: ${user.createdAt.toLocaleDateString("fa-IR")}`,
         ]),
-        section(sectionTitles.quickActions, ["کیف پول، اطلاعات کاربری، سرویس‌ها و دعوت دوستان از همین صفحه در دسترس هستند."]),
+        section(sectionTitles.quickActions, ["برای مدیریت پروفایل، یکی از گزینه‌های حساب را انتخاب کنید."]),
       ]),
       keyboard: [
-        [
-          { text: userLabels.wallet, action: callbackFor("wallet") },
-          { text: userLabels.userInfo, action: callbackFor("account") },
-        ],
-        [
-          { text: userLabels.myServices, action: callbackFor("account.details") },
-          { text: userLabels.referral, action: callbackFor("referral") },
-        ],
-        [
-          { text: userLabels.transactions, action: callbackFor("wallet.history") },
-          { text: userLabels.coupon, action: callbackFor("coupon.info") },
-        ],
-        [{ text: userLabels.home, action: callbackFor("home") }],
+        navRow({ text: "👤 اطلاعات حساب", view: "account.profile" }, { text: "⭐ وضعیت عضویت", view: "account.membership" }),
+        navRow({ text: "⚙️ تنظیمات", view: "account.settings" }, { text: "🔐 امنیت حساب", view: "account.security" }),
       ],
     };
   });
-  registerView("account.details", async (ctx) => {
+  registerView("account.profile", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+    return { text: card("👤 اطلاعات حساب", [`شناسه: ${user.telegramId}`, `نام: ${user.firstName ?? "—"}`, `نام کاربری: ${user.username ? `@${user.username}` : "—"}`]), keyboard: [] };
+  });
+  registerView("account.membership", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+    const dashboard = await UserService.dashboard(user.id);
+    return { text: card("⭐ وضعیت عضویت", [`عضویت از: ${user.createdAt.toLocaleDateString("fa-IR")}`, `سرویس فعال: ${(dashboard.activeAccounts.length + dashboard.activeFreeAccounts.length).toLocaleString("fa-IR")}`, user.isBanned ? "وضعیت: محدود" : "وضعیت: فعال"]), keyboard: [] };
+  });
+  registerView("account.settings", async () => ({ text: card("⚙️ تنظیمات", ["تنظیمات حساب به‌زودی از همین بخش در دسترس قرار می‌گیرد."]), keyboard: [] }));
+  registerView("account.security", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    return { text: card("🔐 امنیت حساب", [`شناسه تلگرام: ${user?.telegramId ?? "—"}`, "برای امنیت، اطلاعات ورود سرویس‌ها را در اختیار دیگران قرار ندهید."]), keyboard: [] };
+  });
+  const renderServicesActive: ViewRenderer = async (ctx, params) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.", keyboard: [] };
     await FreeAccountService.expireDueAccounts();
@@ -155,9 +160,9 @@ export function registerAccountViews() {
     const pagination: UiKeyboard = [];
     if (totalPages > 1) {
       pagination.push([
-        ...(safePage > 1 ? [{ text: "⬅️ قبلی", action: callbackFor("account.details", { page: safePage - 1 }) }] : []),
-        { text: `صفحه ${safePage.toLocaleString("fa-IR")}/${totalPages.toLocaleString("fa-IR")}`, action: callbackFor("account.details", { page: safePage }) },
-        ...(safePage < totalPages ? [{ text: "بعدی ➡️", action: callbackFor("account.details", { page: safePage + 1 }) }] : []),
+        ...(safePage > 1 ? [{ text: "⬅️ قبلی", action: callbackFor("services.active", { page: safePage - 1 }) }] : []),
+        { text: `صفحه ${safePage.toLocaleString("fa-IR")}/${totalPages.toLocaleString("fa-IR")}`, action: callbackFor("services.active", { page: safePage }) },
+        ...(safePage < totalPages ? [{ text: "بعدی ➡️", action: callbackFor("services.active", { page: safePage + 1 }) }] : []),
       ]);
     }
     return {
@@ -172,19 +177,37 @@ export function registerAccountViews() {
       ]),
       keyboard: accountListViewKeyboard([...visibleKeyboard, ...pagination]),
     };
+  };
+  registerView("account.details", renderServicesActive);
+  registerView("services.active", renderServicesActive);
+  registerView("services", async () => ({
+    text: joinSections([card("📦 سرویس‌های من", ["بخش موردنظر سرویس‌ها را انتخاب کنید."])]),
+    keyboard: [
+      navRow({ text: "✅ سرویس‌های فعال", view: "services.active", tone: "success" }, { text: "⛔ سرویس‌های منقضی", view: "services.expired" }),
+      navRow({ text: "♻️ تمدید سرویس", view: "services.renew", tone: "success" }, { text: "🛒 خرید سرویس جدید", view: "shop" }),
+      navRow({ text: "🛠 مشکل در سرویس", view: "services.issue", tone: "danger" }),
+    ],
+  }));
+  registerView("services.expired", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+    const dashboard = await UserService.dashboard(user.id);
+    return { text: joinSections([card("⛔ سرویس‌های منقضی", [dashboard.expiredAccounts.length ? `${dashboard.expiredAccounts.length.toLocaleString("fa-IR")} سرویس منقضی دارید.` : "سرویس منقضی ندارید."])]), keyboard: [navRow({ text: "♻️ تمدید سرویس", view: "services.renew", tone: "success" }, { text: "🛒 خرید سرویس جدید", view: "shop" })] };
   });
+  registerView("services.renew", async (ctx, params) => renderRenewService(ctx, params));
+  registerView("services.issue", async () => ({ text: card("🛠 مشکل در سرویس", ["برای بررسی مشکل اتصال یا سرویس، مسیر پشتیبانی را انتخاب کنید."]), keyboard: [navRow({ text: "🆘 مشکل اتصال", view: "support.connection", tone: "danger" }, { text: "ارتباط با پشتیبانی", view: "support.contact" })] }));
   registerView("account.xray", async (ctx, params) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
     const client = await prisma.xrayClient.findFirst({ where: { id: params.xrayClientId, userId: user.id }, include: { product: true } });
-    if (!client) return { text: "⚠️ سرویس Xray پیدا نشد.", keyboard: [[{ text: "🔙 بازگشت", action: callbackFor("account.details") }]] };
+    if (!client) return { text: "⚠️ سرویس Xray پیدا نشد.", keyboard: [[{ text: "🔙 بازگشت", action: callbackFor("services") }]] };
     const exists = await XrayClientService.ensureExistsOrMarkMissing(client).catch(() => ({ exists: true }));
     if (!exists.exists)
       return {
         text: "این سرویس در پنل فعال نیست و از لیست سرویس‌های فعال حذف شد.",
         keyboard: [
           [
-            { text: "🔙 بازگشت", action: callbackFor("account.details") },
+            { text: "🔙 بازگشت", action: callbackFor("services") },
             { text: "🎫 پشتیبانی", action: callbackFor("support") },
           ],
         ],
@@ -210,7 +233,7 @@ export function registerAccountViews() {
       keyboard: accountActionViewKeyboard(client.id, { renewable: !client.isFreeTest }),
     };
   });
-  registerView("account.renew", async (ctx, params) => {
+  const renderRenewService: ViewRenderer = async (ctx, params) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [], navigation: { back: false, home: false } };
     if (!params.xrayClientId) {
@@ -226,8 +249,8 @@ export function registerAccountViews() {
           clients.length ? "سرویس موردنظر برای تمدید را انتخاب کنید." : "در حال حاضر سرویس قابل تمدیدی پیدا نشد.",
         ]),
         keyboard: [
-          ...clients.map((client) => [{ text: `♻️ ${client.product?.title ?? client.clientEmail}`.slice(0, 60), action: callbackFor("account.renew", { xrayClientId: client.id }) }]),
-          [{ text: "🧩 سرویس‌های من", action: callbackFor("account.details") }, { text: "🛒 خرید سرویس", action: callbackFor("shop.categories") }],
+          ...clients.map((client) => [{ text: `♻️ ${client.product?.title ?? client.clientEmail}`.slice(0, 60), action: callbackFor("services.renew", { xrayClientId: client.id }) }]),
+          [{ text: "🧩 سرویس‌های من", action: callbackFor("services") }, { text: "🛒 خرید سرویس", action: callbackFor("shop.categories") }],
           [{ text: userLabels.home, action: callbackFor("home") }],
         ],
         navigation: { back: false, home: false },
@@ -240,7 +263,7 @@ export function registerAccountViews() {
     if (!client)
       return {
         text: "این سرویس برای تمدید پیدا نشد.",
-        keyboard: [[{ text: "🔙 بازگشت", action: callbackFor("account.details") }]],
+        keyboard: [[{ text: "🔙 بازگشت", action: callbackFor("services") }]],
         navigation: { back: false, home: false },
       };
     const currentProductTitle = client.product?.title ?? "سرویس Xray";
@@ -292,7 +315,8 @@ ${client.clientEmail}
       keyboard: [...rows, [{ text: "🔙 بازگشت", action: callbackFor("account.xray", { xrayClientId: client.id }) }]],
       navigation: { back: false, home: false },
     };
-  });
+  };
+  registerView("account.renew", renderRenewService);
   registerView("account.renew.products", async (ctx, params) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [], navigation: { back: false, home: false } };
@@ -303,7 +327,7 @@ ${client.clientEmail}
     if (!client)
       return {
         text: "این سرویس برای تمدید پیدا نشد.",
-        keyboard: [[{ text: "🔙 بازگشت", action: callbackFor("account.details") }]],
+        keyboard: [[{ text: "🔙 بازگشت", action: callbackFor("services") }]],
         navigation: { back: false, home: false },
       };
     const currentProductTitle = client.product?.title ?? "سرویس Xray";
@@ -322,7 +346,7 @@ ${client.clientEmail}
         keyboard: [
           [{ text: "🛒 فروشگاه", action: callbackFor("shop.categories") }],
           [{ text: "🎫 پشتیبانی", action: callbackFor("support") }],
-          [{ text: "🔙 بازگشت", action: callbackFor("account.renew", { xrayClientId: client.id }) }],
+          [{ text: "🔙 بازگشت", action: callbackFor("services.renew", { xrayClientId: client.id }) }],
         ],
         navigation: { back: false, home: false },
       };
@@ -341,7 +365,7 @@ ${client.clientEmail}
         ...available.map((p) => [
           { text: p.title, action: tokenAction("xr:r:s", createCallbackToken(ctx, "renewal", { xrayClientId: client.id, productId: p.id })) },
         ]),
-        [{ text: "🔙 بازگشت", action: callbackFor("account.renew", { xrayClientId: client.id }) }],
+        [{ text: "🔙 بازگشت", action: callbackFor("services.renew", { xrayClientId: client.id }) }],
       ],
       navigation: { back: false, home: false },
     };

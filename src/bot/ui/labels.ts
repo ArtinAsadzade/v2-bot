@@ -15,7 +15,7 @@ export const userLabels = {
   support: `${uiIcons.support} پشتیبانی`,
   guide: `${uiIcons.guide} راهنما`,
   freeAccount: "🎁 دریافت تست رایگان",
-  referral: "🎁 دعوت دوستان",
+  referral: "🎟 دعوت دوستان",
 } as const;
 
 export const adminLabels = {

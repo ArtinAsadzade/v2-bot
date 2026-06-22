@@ -44,6 +44,7 @@ import {
   yesNoStatus,
 } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
+import { navRow } from "../keyboards/panel-keyboard.helpers";
 import { uxCopy } from "../messages/copy";
 import { card, joinSections, section } from "../ui/layout";
 import { sectionTitles } from "../ui/sections";
@@ -98,6 +99,18 @@ export function registerHomeViews() {
       [{ text: userLabels.home, action: callbackFor("home") }],
     ],
   }));
+  registerView("help", async () => ({
+    replyKeyboard: "home",
+    text: card("📘 راهنما", ["موضوع راهنما را انتخاب کنید."]),
+    keyboard: [
+      navRow({ text: "🛒 راهنمای خرید", view: "help.buy" }, { text: "🔌 راهنمای اتصال", view: "help.connection" }),
+      navRow({ text: "❓ سوالات پرتکرار", view: "help.faq" }, { text: "📜 قوانین استفاده", view: "help.rules" }),
+    ],
+  }));
+  registerView("help.buy", async () => ({ text: card("🛒 راهنمای خرید", ["از خرید سرویس، دسته‌بندی را انتخاب کنید، سرویس را ببینید و پرداخت را کامل کنید."]), keyboard: [navRow({ text: "🛒 خرید سرویس", view: "shop" })] }));
+  registerView("help.connection", async () => ({ text: card("🔌 راهنمای اتصال", ["پس از خرید، لینک اشتراک یا کانفیگ را از سرویس‌های من دریافت و در اپلیکیشن وارد کنید."]), keyboard: [navRow({ text: "📦 سرویس‌های من", view: "services" })] }));
+  registerView("help.faq", async () => ({ text: card("❓ سوالات پرتکرار", ["اگر پاسخ سؤال خود را پیدا نکردید، از پشتیبانی پیام بدهید."]), keyboard: [navRow({ text: "🆘 پشتیبانی", view: "support" })] }));
+  registerView("help.rules", async () => ({ text: card("📜 قوانین استفاده", ["استفاده از سرویس‌ها باید مطابق قوانین سرویس و شرایط اعلام‌شده باشد."]), keyboard: [] }));
   registerView("productGuide", async () => {
     const sections = await ProductGuideService.listActive();
     return {
@@ -152,7 +165,29 @@ ${link}
 لینک دعوت خود را با دوستانتان به اشتراک بگذارید. هر کاربری که از طریق این لینک عضو شود، در آمار شما ثبت شده و پاداش‌های مربوطه به حساب شما تعلق می‌گیرد.
 
 ✨ هرچه افراد بیشتری دعوت کنید، پاداش‌های بیشتری دریافت خواهید کرد.`,
-      keyboard: [[{ text: "💎 دریافت پاداش", action: "referral:claim" }], [{ text: "📋 کپی لینک دعوت", action: "referral:copy" }]],
+      keyboard: [
+        navRow({ text: "🔗 لینک دعوت من", view: "referral.link" }, { text: "👥 افراد دعوت‌شده", view: "referral.users" }),
+        navRow({ text: "💎 پاداش‌های من", view: "referral.rewards", tone: "success" }, { text: "📜 قوانین دعوت", view: "referral.rules" }),
+      ],
     };
   });
+  registerView("referral.link", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+    const botUsername = process.env.BOT_USERNAME ?? "BOT";
+    return { text: `🔗 لینک دعوت من\n\nhttps://t.me/${botUsername}?start=${user.referralCode}`, keyboard: [] };
+  });
+  registerView("referral.users", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+    const stats = await ReferralService.getStats(user.id);
+    return { text: card("👥 افراد دعوت‌شده", [`تعداد دعوت موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر`]), keyboard: [] };
+  });
+  registerView("referral.rewards", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+    const stats = await ReferralService.getStats(user.id);
+    return { text: card("💎 پاداش‌های من", [`قابل دریافت: ${money(stats.pendingAmount)}`, `دریافت‌شده: ${money(stats.claimedAmount)}`]), keyboard: [[{ text: "💎 دریافت پاداش", action: "referral:claim" }]] };
+  });
+  registerView("referral.rules", async () => ({ text: card("📜 قوانین دعوت", ["دعوت دوستان همان Referral است؛ هر عضویت معتبر از لینک شما در آمار و پاداش ثبت می‌شود."]), keyboard: [] }));
 }

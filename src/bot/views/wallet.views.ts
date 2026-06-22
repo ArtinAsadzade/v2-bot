@@ -44,6 +44,7 @@ import {
   yesNoStatus,
 } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
+import { navRow } from "../keyboards/panel-keyboard.helpers";
 import { card, joinSections, section } from "../ui/layout";
 import { sectionTitles } from "../ui/sections";
 import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
@@ -75,27 +76,31 @@ export function registerWalletViews() {
       replyKeyboard: "wallet",
       text: joinSections([card(userLabels.wallet, [`موجودی فعلی: ${money(user?.balance ?? 0)}`]), section(`${uiIcons.invoice} تراکنش‌های اخیر`, [recent]), section(sectionTitles.quickActions, ["روش شارژ یا گزارش مالی موردنظر را انتخاب کنید."])]),
       keyboard: [
-        [
-          { text: "➕ شارژ کیف پول", action: callbackFor("deposit") },
-          { text: "📜 تاریخچه تراکنش‌ها", action: callbackFor("wallet.history") },
-        ],
-        [
-          { text: "⚡ پرداخت آنی", action: "flow:start:instant_topup" },
-          { text: "💎 شارژ با رمزارز", action: "flow:start:deposit_submit" },
-        ],
+        navRow({ text: "💳 موجودی", view: "wallet.balance" }, { text: "➕ افزایش موجودی", view: "wallet.topup", tone: "success" }),
+        navRow({ text: "📜 تراکنش‌ها", view: "wallet.transactions" }, { text: "🧾 فاکتورها", view: "wallet.invoices" }),
+        navRow({ text: "🎟 کد تخفیف / هدیه", view: "wallet.redeem" }),
       ],
     };
   });
-  registerView("wallet.history", async (ctx) => {
+  const renderWalletHistory = async (ctx: Parameters<import("../navigation/panel-ui").ViewRenderer>[0]) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
     const dashboard = await UserService.dashboard(user.id);
     return {
       text: joinSections([card(`${uiIcons.invoice} گردش کیف پول`, [dashboard.walletTransactions.map((tx) => `${tx.type === "credit" || tx.type === "transfer_in" ? "🟢" : "🔴"} ${tx.description}\n${money(tx.amount)} · ${tx.createdAt.toLocaleString("fa-IR")}`).join("\n\n") || "هنوز تراکنشی ثبت نشده است."])]),
-      keyboard: [[{ text: "➕ شارژ کیف پول", action: callbackFor("deposit") }]],
+      keyboard: [[{ text: "➕ شارژ کیف پول", action: callbackFor("wallet.topup") }]],
     };
+  };
+  registerView("wallet.history", renderWalletHistory);
+
+  registerView("wallet.balance", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    return { text: card("💳 موجودی", [`موجودی فعلی: ${money(user?.balance ?? 0)}`]), keyboard: [navRow({ text: "➕ افزایش موجودی", view: "wallet.topup", tone: "success" })] };
   });
-  registerView("deposit", async () => {
+  registerView("wallet.transactions", async (ctx) => renderWalletHistory(ctx));
+  registerView("wallet.invoices", async () => ({ text: card("🧾 فاکتورها", ["فاکتورهای پرداخت از بخش خرید و پرداخت قابل پیگیری هستند."]), keyboard: [] }));
+  registerView("wallet.redeem", async () => ({ text: card("🎟 کد تخفیف / هدیه", ["برای ثبت کد، دکمه زیر را بزنید."]), keyboard: [[{ text: "🎟 وارد کردن کد", action: actionFor("flow:start", "coupon_code") }]] }));
+  registerView("wallet.topup", async () => {
     const gateway = await PaymentGatewayService.get();
     const keyboard: UiKeyboard = [[{ text: "💎 پرداخت با رمزارز", action: "flow:start:deposit_submit" }]];
     if (gateway.enabled) keyboard[0].push({ text: "⚡ پرداخت آنی", action: "flow:start:instant_topup" });
@@ -104,4 +109,5 @@ export function registerWalletViews() {
       keyboard,
     };
   });
+  registerView("deposit", async () => ({ text: "در حال انتقال به افزایش موجودی...", keyboard: [navRow({ text: "➕ افزایش موجودی", view: "wallet.topup", tone: "success" })] }));
 }
