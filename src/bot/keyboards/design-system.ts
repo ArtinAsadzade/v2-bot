@@ -1,15 +1,16 @@
 import type { InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup } from "telegraf/types";
 import { callbackFor, ensureCallbackData, type PanelViewId } from "../navigation/panel-ui";
+import { styledButtonFields, type TelegramButtonStyle, type UiButtonStyle, type UiButtonTone } from "../ui/button-style";
 
-export type ButtonTone = "primary" | "success" | "danger" | "warning" | "neutral";
-export type TelegramButtonStyle = "primary" | "success" | "danger" | "warning";
+export type ButtonTone = UiButtonTone;
+export type ButtonStyle = UiButtonStyle;
 
 type StyledKeyboardButton = KeyboardButton & { style?: TelegramButtonStyle; icon_custom_emoji_id?: string };
 type StyledInlineKeyboardButton = InlineKeyboardButton.CallbackButton & { style?: TelegramButtonStyle; icon_custom_emoji_id?: string };
 type StyledUrlInlineKeyboardButton = InlineKeyboardButton.UrlButton & { style?: TelegramButtonStyle; icon_custom_emoji_id?: string };
 
-type ButtonStyleFields = { tone?: ButtonTone; customEmojiId?: string };
-type ReplyButton = { text: string } & ButtonStyleFields;
+type ButtonStyleFields = { tone?: ButtonTone; style?: ButtonTone; customEmojiId?: string };
+type ReplyButton = KeyboardButton & ButtonStyleFields;
 type InlineCallbackButton = { text: string; action: string } & ButtonStyleFields;
 type InlineUrlButton = { text: string; url: string } & ButtonStyleFields;
 type InlineButton = InlineCallbackButton | InlineUrlButton;
@@ -60,22 +61,13 @@ export const labels = {
   adminDashboard: "🛠 پنل مدیریت",
 } as const;
 
-const toneToStyle: Record<Exclude<ButtonTone, "neutral">, TelegramButtonStyle> = {
-  primary: "primary",
-  success: "success",
-  danger: "danger",
-  warning: "warning",
-};
-
-// Telegram does not expose arbitrary button colors; tones are layout hints only.
-function buttonDecorations(_button: ButtonStyleFields) {
-  // Telegram inline keyboards do not support arbitrary colors/backgrounds.
-  // Keep tone metadata internal and send only standard Bot API button fields.
-  return {};
+function buttonDecorations(button: ButtonStyleFields) {
+  return { ...styledButtonFields(button), ...(button.customEmojiId ? { icon_custom_emoji_id: button.customEmojiId } : {}) };
 }
 
 function replyButton(button: ReplyButton): StyledKeyboardButton {
-  return { text: button.text, ...buttonDecorations(button) };
+  const { tone: _tone, style: _style, customEmojiId: _customEmojiId, ...telegramButton } = button as KeyboardButton.CommonButton & ButtonStyleFields;
+  return { ...telegramButton, ...buttonDecorations(button) } as StyledKeyboardButton;
 }
 
 function inlineButton(button: InlineButton): StyledInlineKeyboardButton | StyledUrlInlineKeyboardButton {
