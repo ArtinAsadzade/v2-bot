@@ -22,14 +22,14 @@ describe("Telegram UI redesign keyboards", () => {
     const rows = texts(inlineFromView(homeKeyboard(false)));
     expect(rows).toEqual([
       ["🛒 خرید سرویس", "🎁 تست رایگان"],
-      ["📦 سرویس‌های من", "👤 حساب کاربری"],
-      ["💳 کیف پول", "🔮 پیش‌بینی"],
-      ["🎟 دعوت دوستان"],
-      ["🆘 پشتیبانی", "📘 راهنما"],
+      ["📦 سرویس‌های من", "💳 کیف پول"],
+      ["🔮 پیش‌بینی", "🎁 دعوت دوستان"],
+      ["🆘 پشتیبانی", "📢 اطلاعیه‌ها"],
+      ["📘 راهنما"],
     ]);
     expect(rows.flat()).toContain("🎁 تست رایگان");
     expect(rows.flat()).toContain("🛒 خرید سرویس");
-    expect(rows.flat()).toContain("🎟 دعوت دوستان");
+    expect(rows.flat()).toContain("🎁 دعوت دوستان");
     expect(rows.flat()).not.toContain("🎟 کد تخفیف");
   });
 
@@ -50,7 +50,7 @@ describe("Telegram UI redesign keyboards", () => {
     const keyboard = inlineFromView(productDetailViewKeyboard("p1", 10));
     expect(texts(keyboard)).toEqual([
       ["🛒 خرید"],
-      ["🎟 وارد کردن کد تخفیف"],
+      ["🎟 وارد کردن کد تخفیف", "📋 جزئیات"],
       ["↩️ برگشت", "🏠 خانه"],
     ]);
     expect(actions(keyboard)).toContain(callbackFor("home"));
@@ -88,11 +88,11 @@ describe("Telegram UI redesign keyboards", () => {
 
   test("admin dashboard keyboard uses grouped operational sections", () => {
     expect(texts(inlineFromView(adminDashboardViewKeyboard()))).toEqual([
-      ["👥 کاربران", "🛍 فروشگاه"],
-      ["🧩 مرکز Xray", "💳 مالی"],
-      ["🔮 پیش‌بینی‌ها", "🎫 پشتیبانی"],
-      ["📣 اطلاع‌رسانی"],
-      ["⚙️ تنظیمات", "🏠 خانه"],
+      ["📦 فروشگاه", "👥 کاربران"],
+      ["🧩 Xray", "💳 مالی"],
+      ["🔮 پیش‌بینی", "📣 اطلاع‌رسانی"],
+      ["⚙️ تنظیمات", "📊 آمار"],
+      ["🏠 خانه"],
     ]);
   });
 

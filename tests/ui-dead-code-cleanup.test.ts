@@ -91,11 +91,11 @@ describe("UI dead-code cleanup coverage", () => {
   });
 
   test("major view keyboards keep back/home/cancel coverage and callback compatibility", () => {
-    expect(viewCallbacks(homeKeyboard(true))).toEqual(expect.arrayContaining([callbackFor("shop"), callbackFor("freeAccount"), callbackFor("services"), callbackFor("account"), callbackFor("wallet"), callbackFor("referral"), callbackFor("support"), callbackFor("help"), callbackFor("admin.dashboard")]));
+    expect(viewCallbacks(homeKeyboard(true))).toEqual(expect.arrayContaining([callbackFor("shop"), callbackFor("freeAccount"), callbackFor("services"), callbackFor("wallet"), callbackFor("referral"), callbackFor("support"), callbackFor("help"), callbackFor("admin.dashboard")]));
     expect(viewCallbacks(productDetailViewKeyboard("p1", 1))).toEqual(expect.arrayContaining([callbackFor("shop.checkout", { productId: "p1" }), callbackFor("home")]));
     expect(viewCallbacks(checkoutViewKeyboard("p1", true, false))).toEqual(expect.arrayContaining(["buy:confirm:p1", "buy:instant:p1", "flow:cancel", callbackFor("home")]));
     expect(viewCallbacks(accountActionViewKeyboard("x1", { renewable: true }))).toEqual(expect.arrayContaining(["xray:sub:x1", "xray:qr:x1", "xray:configs:x1", callbackFor("account.renew", { xrayClientId: "x1" }), callbackFor("home")]));
-    expect(viewCallbacks(adminDashboardViewKeyboard())).toEqual(expect.arrayContaining([callbackFor("admin.usersSupport"), callbackFor("admin.store"), callbackFor("admin.finance"), callbackFor("admin.xrayCenter"), callbackFor("admin.tickets"), callbackFor("admin.content"), callbackFor("admin.botSettings"), callbackFor("home")]));
+    expect(viewCallbacks(adminDashboardViewKeyboard())).toEqual(expect.arrayContaining([callbackFor("admin.usersSupport"), callbackFor("admin.store"), callbackFor("admin.finance"), callbackFor("admin.xrayCenter"), callbackFor("admin.content"), callbackFor("admin.botSettings"), callbackFor("home")]));
     expect(viewCallbacks(accountListViewKeyboard([[{ text: "svc", action: callbackFor("account.xray", { xrayClientId: "x1" }) }]]))).toContain(callbackFor("home"));
   });
 

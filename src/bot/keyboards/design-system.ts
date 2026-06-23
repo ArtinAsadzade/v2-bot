@@ -1,6 +1,6 @@
 import type { InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup } from "telegraf/types";
 import { callbackFor, ensureCallbackData, type PanelViewId } from "../navigation/panel-ui";
-import { styledButtonFields, type TelegramButtonStyle, type UiButtonStyle, type UiButtonTone } from "../ui/button-style";
+import { buttonIntent, styledButtonFields, type ButtonIntent, type TelegramButtonStyle, type UiButtonStyle, type UiButtonTone } from "../ui/button-style";
 
 export type ButtonTone = UiButtonTone;
 export type ButtonStyle = UiButtonStyle;
@@ -9,7 +9,7 @@ type StyledKeyboardButton = KeyboardButton & { style?: TelegramButtonStyle; icon
 type StyledInlineKeyboardButton = InlineKeyboardButton.CallbackButton & { style?: TelegramButtonStyle; icon_custom_emoji_id?: string };
 type StyledUrlInlineKeyboardButton = InlineKeyboardButton.UrlButton & { style?: TelegramButtonStyle; icon_custom_emoji_id?: string };
 
-type ButtonStyleFields = { tone?: ButtonTone; style?: ButtonTone; customEmojiId?: string };
+type ButtonStyleFields = { tone?: ButtonTone; style?: ButtonTone; intent?: ButtonIntent; customEmojiId?: string };
 type ReplyButton = KeyboardButton & ButtonStyleFields;
 type InlineCallbackButton = { text: string; action: string } & ButtonStyleFields;
 type InlineUrlButton = { text: string; url: string } & ButtonStyleFields;
@@ -62,11 +62,12 @@ export const labels = {
 } as const;
 
 function buttonDecorations(button: ButtonStyleFields) {
-  return { ...styledButtonFields(button), ...(button.customEmojiId ? { icon_custom_emoji_id: button.customEmojiId } : {}) };
+  const tone = button.tone ?? button.style ?? (button.intent ? buttonIntent[button.intent] : undefined);
+  return { ...styledButtonFields({ ...button, tone }), ...(button.customEmojiId ? { icon_custom_emoji_id: button.customEmojiId } : {}) };
 }
 
 function replyButton(button: ReplyButton): StyledKeyboardButton {
-  const { tone: _tone, style: _style, customEmojiId: _customEmojiId, ...telegramButton } = button as KeyboardButton.CommonButton & ButtonStyleFields;
+  const { tone: _tone, style: _style, intent: _intent, customEmojiId: _customEmojiId, ...telegramButton } = button as KeyboardButton.CommonButton & ButtonStyleFields;
   return { ...telegramButton, ...buttonDecorations(button) } as StyledKeyboardButton;
 }
 
@@ -91,13 +92,13 @@ export function buildInlineKeyboard(rows: InlineButton[][]): { reply_markup: Inl
 
 export function MainMenuKeyboard(isAdmin = false) {
   const rows: ReplyButton[][] = [
-    [{ text: labels.shop }, { text: labels.freeAccount }],
-    [{ text: labels.orders }, { text: "♻️ تمدید سرویس" }],
-    [{ text: labels.account }, { text: labels.wallet }],
-    [{ text: labels.support }, { text: "📢 اطلاعیه‌ها" }],
-    [{ text: labels.guide }],
+    [{ text: "🛒 خرید سرویس", intent: "buy" }, { text: labels.freeAccount, intent: "test" }],
+    [{ text: labels.orders, intent: "services" }, { text: labels.wallet, intent: "wallet" }],
+    [{ text: "🔮 پیش‌بینی", intent: "navigation" }, { text: labels.referral, intent: "navigation" }],
+    [{ text: labels.support, intent: "support" }, { text: "📢 اطلاعیه‌ها", intent: "navigation" }],
+    [{ text: labels.guide, intent: "back" }],
   ];
-  if (isAdmin) rows.push([{ text: labels.adminDashboard }]);
+  if (isAdmin) rows.push([{ text: labels.adminDashboard, intent: "navigation" }]);
   return buildReplyKeyboard(rows);
 }
 export function UserKeyboard() {
@@ -122,11 +123,11 @@ export function SupportKeyboard() {
 
 export function AdminKeyboard() {
   return buildReplyKeyboard([
-    [{ text: labels.adminStats }, { text: labels.adminStore }],
-    [{ text: labels.adminFinance }, { text: labels.adminUsersSupport }],
-    [{ text: labels.adminContent }, { text: labels.adminBotSettings }],
-    [{ text: labels.adminMonitoring }],
-    [{ text: labels.userMenu }],
+    [{ text: "📦 فروشگاه", intent: "products" }, { text: "👥 کاربران", intent: "users" }],
+    [{ text: "🧩 Xray", intent: "xray" }, { text: labels.adminFinance, intent: "wallet" }],
+    [{ text: "🔮 پیش‌بینی", intent: "navigation" }, { text: "📣 اطلاع‌رسانی", intent: "navigation" }],
+    [{ text: "⚙️ تنظیمات", intent: "navigation" }, { text: "📊 آمار", intent: "stats" }],
+    [{ text: labels.userMenu, intent: "home" }],
   ]);
 }
 
@@ -187,6 +188,7 @@ export function paymentFailureKeyboard() {
 }
 
 export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record<string, string> } | "refresh" | "claimFree" | "newTicket"> = {
+  ["🛒 خرید سرویس"]: { id: "shop.categories" },
   [labels.shop]: { id: "shop.categories" },
   [labels.buyAgain]: { id: "shop.categories" },
   [labels.orders]: { id: "account.details" },
@@ -194,6 +196,7 @@ export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record
   [labels.account]: { id: "account" },
   [labels.freeAccount]: { id: "freeAccount" },
   [labels.guide]: { id: "productGuide" },
+  ["🔮 پیش‌بینی"]: { id: "prediction" },
   [labels.referral]: { id: "referral" },
   "📢 اطلاعیه‌ها": { id: "referral" },
   "🎁 اکانت تست": { id: "freeAccount" },

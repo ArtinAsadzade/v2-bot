@@ -15,6 +15,16 @@ export type ButtonIntent =
   | "warning"
   | "support"
   | "wallet"
+  | "services"
+  | "stats"
+  | "xray"
+  | "users"
+  | "products"
+  | "navigation"
+  | "create"
+  | "activate"
+  | "continue"
+  | "claimReward"
   | "renew"
   | "test";
 
@@ -33,6 +43,16 @@ export const buttonStyle = {
     warning: "danger",
     support: "primary",
     wallet: "primary",
+    services: "primary",
+    stats: "primary",
+    xray: "primary",
+    users: "primary",
+    products: "primary",
+    navigation: "primary",
+    create: "success",
+    activate: "success",
+    continue: "success",
+    claimReward: "success",
     renew: "success",
     test: "success",
   } satisfies Record<ButtonIntent, UiButtonStyle>,
@@ -52,9 +72,9 @@ export function telegramButtonStyle(button: ButtonStyleInput): TelegramButtonSty
 function inferButtonStyle(button: ButtonStyleInput): TelegramButtonStyle | undefined {
   const text = button.text ?? "";
   const action = button.action ?? "";
-  if (/حذف|غیرفعال|آرشیو|لغو|رد|ناموفق|خطاها|منقضی|مشکل/.test(text) || /delete|disable|cancel|archive|reject|failed|error/.test(action)) return "danger";
-  if (/خرید|پرداخت|تمدید|تست|تأیید|تایید|ذخیره|فعال کردن|افزودن|شارژ|پاداش|اشتراک گذاری|اشتراک‌گذاری|سینک|همگام|اتصال/.test(text) || /buy|pay|confirm|renew|freeAccount|deposit|topup|sync|test/.test(action)) return "success";
-  if (/سرویس|کیف پول|پشتیبانی|Xray|کاربران|مالی|گزارش|وضعیت|تراکنش|فاکتور|جستجو|تنظیمات|اطلاع|دعوت‌شده|پنل|فروشگاه|محصولات|دسته‌بندی/.test(text) || /wallet|support|xray|admin|ticket|invoice|transaction|search|settings|products|categories|users/.test(action)) return "primary";
+  if (/حذف|غیرفعال|آرشیو|رد|ناموفق/.test(text) || /delete|disable|cancel|archive|reject|failed|error/.test(action)) return "danger";
+  if (/خرید|پرداخت|تمدید|تست|تأیید|تایید|ذخیره|فعال کردن|افزودن|شارژ|دریافت جایزه|ساخت|ایجاد|ادامه|ثبت|فعال|سینک|همگام/.test(text) || /buy|pay|confirm|renew|freeAccount|deposit|topup|sync|test/.test(action)) return "success";
+  if (/سرویس|کیف پول|پشتیبانی|مشکل|اتصال|خطاها|Xray|کاربران|مالی|گزارش|وضعیت|تراکنش|فاکتور|جستجو|تنظیمات|اطلاع|دعوت‌شده|پنل|فروشگاه|محصولات|دسته‌بندی/.test(text) || /wallet|support|xray|admin|ticket|invoice|transaction|search|settings|products|categories|users/.test(action)) return "primary";
   return undefined;
 }
 
@@ -62,6 +82,8 @@ export function styledButtonFields(button: ButtonStyleInput): { style?: Telegram
   const style = telegramButtonStyle(button);
   return style ? { style } : {};
 }
+
+export const buttonIntent = buttonStyle.intent;
 
 export const buttonPrefixes = {
   success: "✅",

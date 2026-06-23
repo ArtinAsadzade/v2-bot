@@ -91,20 +91,23 @@ export function registerAdminViews() {
       ]),
       keyboard: [
         [
-          { text: "📡 وضعیت پنل‌ها", action: callbackFor("admin.xrayPanels") },
-          { text: "👥 کاربران Xray", action: callbackFor("admin.xrayClients") },
+          { text: "📡 پنل‌ها", action: callbackFor("admin.xrayPanels"), tone: "primary" },
+          { text: "👥 کاربران Xray", action: callbackFor("admin.xrayClients"), tone: "primary" },
         ],
         [
-          { text: "🔄 همگام‌سازی", action: callbackFor("admin.xraySync") },
-          { text: "🧪 تست اتصال", action: "admin:xray:center:test-api" },
+          { text: "🔄 همگام‌سازی", action: callbackFor("admin.xraySync"), tone: "success" },
+          { text: "🧪 تست اتصال", action: "admin:xray:center:test-api", tone: "success" },
         ],
         [
-          { text: "📊 گزارش مصرف", action: callbackFor("admin.xrayClients") },
-          { text: "⚠️ خطاها", action: callbackFor("admin.xrayClients", { status: "failed" }) },
+          { text: "📊 گزارش مصرف", action: callbackFor("admin.xrayClients"), tone: "primary" },
+          { text: "⚠️ خطاها", action: callbackFor("admin.xrayClients", { status: "failed" }), tone: "primary" },
         ],
         [
-          { text: "⚙️ تنظیمات Xray", action: callbackFor("admin.xraySettings") },
-          { text: "🔙 پنل مدیریت", action: callbackFor("admin.dashboard") },
+          { text: "⚙️ تنظیمات Xray", action: callbackFor("admin.xraySettings"), tone: "primary" },
+        ],
+        [
+          { text: "🔙 بازگشت", action: callbackFor("admin.dashboard"), tone: "neutral" },
+          { text: "🏠 خانه", action: callbackFor("home"), tone: "neutral" },
         ],
       ],
     };
