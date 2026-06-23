@@ -15,7 +15,7 @@ export const homeKeyboard = (isAdmin: boolean): UiKeyboard => {
 
 export const supportCloseHomeInlineKeyboard = (ticketId: string) => ({
   inline_keyboard: [
-    [{ text: "✅ بستن تیکت", callback_data: supportCallbacks.close(ticketId), tone: "success" }],
+    [{ text: "✅ بستن تیکت", callback_data: supportCallbacks.close(ticketId), style: "success" }],
     [{ text: "🏠 خانه", callback_data: nav.home() }],
   ],
 });
