@@ -72,7 +72,7 @@ export function telegramButtonStyle(button: ButtonStyleInput): TelegramButtonSty
 function inferButtonStyle(button: ButtonStyleInput): TelegramButtonStyle | undefined {
   const text = button.text ?? "";
   const action = button.action ?? "";
-  if (/حذف|غیرفعال|آرشیو|رد|ناموفق/.test(text) || /delete|disable|cancel|archive|reject|failed|error/.test(action)) return "danger";
+  if (/حذف|غیرفعال|آرشیو|\bرد\b|ناموفق/.test(text) || /delete|disable|cancel|archive|reject|failed|error/.test(action)) return "danger";
   if (/خرید|پرداخت|تمدید|تست|تأیید|تایید|ذخیره|فعال کردن|افزودن|شارژ|دریافت جایزه|ساخت|ایجاد|ادامه|ثبت|فعال|سینک|همگام/.test(text) || /buy|pay|confirm|renew|freeAccount|deposit|topup|sync|test/.test(action)) return "success";
   if (/سرویس|کیف پول|پشتیبانی|مشکل|اتصال|خطاها|Xray|کاربران|مالی|گزارش|وضعیت|تراکنش|فاکتور|جستجو|تنظیمات|اطلاع|دعوت‌شده|پنل|فروشگاه|محصولات|دسته‌بندی/.test(text) || /wallet|support|xray|admin|ticket|invoice|transaction|search|settings|products|categories|users/.test(action)) return "primary";
   return undefined;
