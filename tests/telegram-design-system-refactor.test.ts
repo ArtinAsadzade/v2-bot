@@ -49,23 +49,22 @@ describe("premium Telegram design system refactor", () => {
     expect(styles(keyboard)).toEqual([
       ["success", "success"],
       ["primary", "primary"],
+      ["success", "success"],
       ["primary", "primary"],
-      ["primary", "primary"],
-      ["default"],
+      ["primary"],
     ]);
   });
 
   test("admin dashboard has balanced primary section hubs and default home", () => {
     const keyboard = buildInlineKeyboard(adminDashboardViewKeyboard()).reply_markup.inline_keyboard as any[][];
     expect(texts(keyboard)).toEqual([
-      ["📦 فروشگاه", "👥 کاربران"],
-      ["🧩 Xray", "💳 مالی"],
-      ["🔮 پیش‌بینی", "📣 اطلاع‌رسانی"],
-      ["⚙️ تنظیمات", "📊 آمار"],
-      ["🏠 خانه"],
+      ["🛍 تجارت", "👥 مشتریان"],
+      ["🧩 Xray", "📣 بازاریابی"],
+      ["⚙️ سیستم", "💳 مالی"],
+      ["📊 داشبورد", "🏠 خانه"],
     ]);
-    expect(styles(keyboard).slice(0, 4).flat().every((style) => style === "primary")).toBe(true);
-    expect(styles(keyboard)[4]).toEqual(["default"]);
+    expect(styles(keyboard).slice(0, 3).flat().every((style) => style === "primary")).toBe(true);
+    expect(styles(keyboard)[3]).toEqual(["default", "default"]);
   });
 
   test("purchase and product keyboards separate main, management, navigation, and danger rows", () => {
