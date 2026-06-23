@@ -12,13 +12,15 @@ import { FreeAccountService } from "../../modules/free-account/free-account.serv
 import { ReferralService } from "../../modules/referral/referral.service";
 import { BroadcastService } from "../../modules/broadcast/broadcast.service";
 import { PaymentGatewayService, PaymentInvoiceService, type PaymentGatewayInput } from "../../modules/payment/payment.service";
-import { PredictionService, parsePredictionCloseDate } from "../../modules/prediction/prediction.service";
+import { PredictionService } from "../../modules/prediction/prediction.service";
 import { ProductGuideService } from "../../modules/system/product-guide.service";
 import { isProductValidationError, normalizeNumericInput, productValidationError } from "../../modules/product/product.validation";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 import { MainMenuKeyboard } from "../keyboards/design-system";
 import { WorkflowTelemetryService } from "../../services/workflow-telemetry.service";
 import { MonitoringService } from "../../services/monitoring.service";
+import { formatJalaliDateTime } from "../../utils/persianDateTime";
+import { pickerKeyboard, pickerStepFromState, pickerText, selectedPickerDate, startPersianDateTimePicker } from "../ui/persian-date-time-picker";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
 const parseInteger = (value: string) => Number(normalizeNumericInput(value));
@@ -252,8 +254,8 @@ function currentReturnTo(ctx: AppContext): ViewState {
   return stack[stack.length - 1] ?? { id: "home" };
 }
 
-async function flowPrompt(ctx: AppContext, text: string, keyboard: UiKeyboard = []) {
-  await ctx.reply(text, { ...panelKeyboard(keyboard, { back: false, home: true, cancel: true }) });
+async function flowPrompt(ctx: AppContext, text: string, keyboard: UiKeyboard = [], navigation: { back?: boolean; home?: boolean; cancel?: boolean } = { back: false, home: true, cancel: true }) {
+  await ctx.reply(text, { ...panelKeyboard(keyboard, navigation) });
 }
 
 async function productCategoryKeyboard(): Promise<UiKeyboard> {
@@ -323,9 +325,9 @@ async function completeBroadcast(ctx: AppContext) {
 }
 
 
-type PredictionCreateStep = "title" | "question" | "description" | "options" | "rewardType" | "walletAmount" | "productId" | "winnerCount" | "closesAt" | "confirm";
+type PredictionCreateStep = "title" | "question" | "description" | "options" | "rewardType" | "walletAmount" | "productId" | "winnerCount" | "confirm";
 type PredictionCreateDraft = { title?: string; question?: string; description?: string; options?: string[]; rewardType?: "wallet" | "product"; rewardWalletAmount?: number; rewardProductId?: string; winnerCount?: number; closesAt?: string };
-const predictionCreateSteps = new Set<string>(["title", "question", "description", "options", "rewardType", "walletAmount", "productId", "winnerCount", "closesAt", "confirm"]);
+const predictionCreateSteps = new Set<string>(["title", "question", "description", "options", "rewardType", "walletAmount", "productId", "winnerCount", "confirm"]);
 const isPredictionCreateStep = (step: string): step is PredictionCreateStep => predictionCreateSteps.has(step);
 const isPredictionCancelText = (text: string) => text === "❌ لغو ساخت پیش‌بینی" || text === "لغو" || text === "انصراف";
 const isPredictionDescriptionSkipText = (text: string) => text === "⏭ رد کردن توضیحات" || text === "رد کردن" || text === "ندارد" || text === "-";
@@ -424,14 +426,9 @@ const definitions: Record<FlowName, FlowDefinition> = {
       }
       if (flow.step === "winnerCount") {
         draft.winnerCount = parsePositiveIntegerInput(text, "تعداد برنده‌ها");
-        return { text: "زمان بسته شدن را ارسال کنید. مثال: 2026-06-26 23:59 یا امروز 23:59 یا فردا 20:00", nextStep: "closesAt", keyboard: predictionCreateKeyboard("closesAt", draft) };
-      }
-      if (flow.step === "closesAt") {
-        const closesAt = parsePredictionCloseDate(text);
-        if (!closesAt || closesAt <= new Date()) return { text: "❌ زمان معتبر نیست یا در آینده نیست. مثال: 2026-06-26 23:59", keyboard: predictionCreateKeyboard("closesAt", draft) };
-        draft.closesAt = closesAt.toISOString();
-        const reward = draft.rewardType === "wallet" ? `شارژ کیف پول ${Number(draft.rewardWalletAmount).toLocaleString("fa-IR")} تومان` : `محصول ${draft.rewardProductId}`;
-        return { text: `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${draft.title}\nسؤال: ${draft.question}\nتوضیحات: ${draft.description || "—"}\nگزینه‌ها: ${(draft.options ?? []).join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(draft.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${closesAt.toLocaleString("fa-IR", { timeZone: "Europe/Istanbul" })}\n\nبرای انتشار روی «انتشار» و برای پیش‌نویس روی «ذخیره پیش‌نویس» بزنید.`, nextStep: "confirm", keyboard: predictionCreateKeyboard("confirm", draft) };
+        startPersianDateTimePicker(ctx, { flow: "prediction.create.closesAt", returnView: "admin.predictions" });
+        const state = ctx.session.dateTimePicker!;
+        return { text: pickerText(state, "year"), keyboard: pickerKeyboard(state, "year") };
       }
       if (flow.step === "confirm") {
         const publish = input.includes("انتشار");
@@ -1732,6 +1729,55 @@ export function registerFlowEngine(bot: AppBot) {
 
     await ctx.reply(result);
     await renderPanel(ctx, { id: "admin.notifications" }, "replace");
+  });
+
+
+  bot.action(/^dtp:(start|y|m|d|h|min|back|confirm|cancel)(?::([^:]+))?(?::([^:]+))?$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const op = ctx.match[1];
+    if (op === "start") {
+      if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return void (await ctx.answerCbQuery("دسترسی غیرمجاز"));
+      const mode = ctx.match[2];
+      const contestId = ctx.match[3];
+      if (mode !== "pe" || !contestId) return;
+      const contest = await (await import("../../services/prisma")).prisma.predictionContest.findUnique({ where: { id: contestId } }) as any;
+      if (!contest) return void (await ctx.reply("❌ پیش‌بینی پیدا نشد."));
+      if (contest.status === "archived") return void (await ctx.reply("❌ پیش‌بینی آرشیوشده قابل ویرایش نیست."));
+      if (contest.status === "announced" || contest.announcedAt) return void (await ctx.reply("❌ نتیجه این پیش‌بینی اعلام شده و تغییر زمان بسته شدن مجاز نیست."));
+      startPersianDateTimePicker(ctx, { flow: "prediction.edit.closesAt", contestId, returnView: "admin.predictionDetail" });
+    }
+    const state = ctx.session.dateTimePicker;
+    if (!state) return void (await ctx.reply("❌ انتخاب‌گر تاریخ فعال نیست."));
+    if (op === "cancel") { ctx.session.dateTimePicker = undefined; return void (await ctx.reply("❌ انتخاب زمان لغو شد.")); }
+    if (op === "back") {
+      const target = ctx.match[2];
+      if (target === "year") { delete state.selectedYear; delete state.selectedMonth; delete state.selectedDay; delete state.selectedHour; delete state.selectedMinute; }
+      if (target === "month") { delete state.selectedMonth; delete state.selectedDay; delete state.selectedHour; delete state.selectedMinute; }
+      if (target === "day") { delete state.selectedDay; delete state.selectedHour; delete state.selectedMinute; }
+      if (target === "hour") { delete state.selectedHour; delete state.selectedMinute; }
+    } else if (op === "y") state.selectedYear = Number(ctx.match[2]);
+    else if (op === "m") state.selectedMonth = Number(ctx.match[2]);
+    else if (op === "d") state.selectedDay = Number(ctx.match[2]);
+    else if (op === "h") state.selectedHour = Number(ctx.match[2]);
+    else if (op === "min") state.selectedMinute = Number(ctx.match[2]);
+    else if (op === "confirm") {
+      const date = selectedPickerDate(state);
+      if (date <= new Date()) return void (await ctx.reply("❌ زمان بسته شدن باید در آینده باشد."));
+      if (state.flow === "prediction.create.closesAt") {
+        const draft = ensurePredictionCreateDraft(ctx); draft.closesAt = date.toISOString();
+        if (ctx.session.flow?.name === "prediction_create") ctx.session.flow.step = "confirm";
+        ctx.session.dateTimePicker = undefined;
+        const reward = draft.rewardType === "wallet" ? `شارژ کیف پول ${Number(draft.rewardWalletAmount).toLocaleString("fa-IR")} تومان` : `محصول ${draft.rewardProductId}`;
+        return void (await flowPrompt(ctx, `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${draft.title}\nسؤال: ${draft.question}\nتوضیحات: ${draft.description || "—"}\nگزینه‌ها: ${(draft.options ?? []).join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(draft.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${formatJalaliDateTime(date)}\n\nبرای انتشار روی «انتشار» و برای پیش‌نویس روی «ذخیره پیش‌نویس» بزنید.`, predictionCreateKeyboard("confirm", draft)));
+      }
+      const contestId = state.contestId!;
+      await (await import("../../services/prisma")).prisma.predictionContest.update({ where: { id: contestId }, data: { closesAt: date, status: "open" } });
+      ctx.session.dateTimePicker = undefined;
+      await ctx.reply("✅ زمان بسته شدن پیش‌بینی بروزرسانی شد.");
+      return void (await renderPanel(ctx, { id: "admin.predictionDetail", params: { contestId } }, "replace"));
+    }
+    const step = pickerStepFromState(state);
+    await flowPrompt(ctx, pickerText(state, step), pickerKeyboard(state, step), { back: false, home: false, cancel: false });
   });
 
   bot.action(/^flow:start:([^:]+)(?::([^:]+))?(?::([^:]+))?(?::([^:]+))?$/, async (ctx) => {
