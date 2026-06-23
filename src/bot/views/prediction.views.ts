@@ -221,13 +221,6 @@ export function registerPredictionViews() {
             tone: "primary",
           },
         ],
-        [
-          {
-            text: "🔙 پنل مدیریت",
-            action: callbackFor("admin.dashboard"),
-            tone: "neutral",
-          },
-        ],
       ],
     };
   });
