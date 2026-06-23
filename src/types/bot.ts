@@ -51,6 +51,15 @@ export interface ActiveFlow {
   step: string;
   data: Record<string, string | number | boolean | undefined>;
   returnTo?: ViewState;
+  draft?: {
+    type: FlowName;
+    id: string;
+    currentStep: string;
+    data: Record<string, string | number | boolean | undefined>;
+    createdAt: string;
+    updatedAt: string;
+    expiresAt: string;
+  };
 }
 
 export type CallbackTokenPayloadMap = {
