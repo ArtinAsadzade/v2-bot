@@ -1,61 +1,39 @@
-import { registerView, callbackFor, actionFor, type UiKeyboard } from "../navigation/panel-ui";
-import { createCallbackToken, tokenAction } from "../navigation/callback-tokens";
+import { registerView, callbackFor } from "../navigation/panel-ui";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 import { UserService } from "../../modules/user/user.service";
-import { ProductService } from "../../modules/product/product.service";
-import { AdminService } from "../../modules/admin/admin.service";
 import { ReferralService } from "../../modules/referral/referral.service";
-import { FreeAccountService, FREE_ACCOUNT_STATUS_LABELS, formatFreeAccountDate } from "../../modules/free-account/free-account.service";
-import { SupportService } from "../../modules/support/support.service";
-import { CouponService } from "../../modules/coupon/coupon.service";
-import { BroadcastService, BROADCAST_TARGET_LABELS } from "../../modules/broadcast/broadcast.service";
-import { PaymentGatewayService, PaymentInvoiceService, maskApiKey } from "../../modules/payment/payment.service";
 import { ProductGuideService } from "../../modules/system/product-guide.service";
-import { ForcedJoinService } from "../../modules/system/forced-join.service";
-import { PublicPlansService } from "../../modules/product/public-plans.service";
-import {
-  formatXrayBytes,
-  maskToken,
-  normalizeXrayStatus,
-  XrayClientService,
-  XrayPanelService,
-  xrayTrafficSnapshot,
-} from "../../modules/xray/xray.service";
-import type { PaymentInvoiceStatus } from "@prisma/client";
-import { accountSummaryMessage, errorMessage, walletSummaryMessage } from "../../utils/messages";
 import { formatToman } from "../../utils/money";
-import {
-  accountStatusLabel,
-  divider,
-  formatPageCount,
-  formatStockLabel,
-  formatUserLine,
-  getPageParam,
-  paymentStatusLabel,
-  progressBar,
-  purchasedAccountStatusLabel,
-  resolveFreeAccountExpiry,
-  shortId,
-  walletStatusLabel,
-  yesNoStatus,
-} from "../../utils/formatters";
+import { divider, progressBar } from "../../utils/formatters";
 import { homeKeyboard } from "../keyboards/common.keyboard";
 import { navRow } from "../keyboards/panel-keyboard.helpers";
 import { uxCopy } from "../messages/copy";
-import { card, joinSections, section } from "../ui/layout";
-import { sectionTitles } from "../ui/sections";
-import { actionLabels, adminLabels, statusLabels, userLabels } from "../ui/labels";
-import { uiIcons } from "../ui/icons";
-import { MonitoringService } from "../../services/monitoring.service";
-import { prisma } from "../../services/prisma";
+import { card, joinSections } from "../ui/layout";
+import { userLabels } from "../ui/labels";
 
 const money = formatToman;
-const page = getPageParam;
-const pages = formatPageCount;
-const userLine = formatUserLine;
-const stockLabel = formatStockLabel;
-const freeAccountExpiry = resolveFreeAccountExpiry;
-const yesNo = yesNoStatus;
+const buildReferralShare = (referralCode: string) => {
+  const botUsername = process.env.BOT_USERNAME ?? "BOT";
+  const link = `https://t.me/${botUsername}?start=${referralCode}`;
+
+  const shareText = `🚀 دنبال یک سرویس سریع، پایدار و آماده استفاده هستی؟
+
+اینجا می‌تونی خیلی راحت سرویس موردنیازت رو انتخاب کنی، پرداخت رو انجام بدی و اطلاعات سرویس رو فوری تحویل بگیری.
+
+✅ خرید سریع و ساده
+✅ تحویل خودکار بعد از پرداخت
+✅ مدیریت سرویس‌ها از داخل ربات
+✅ کیف پول اختصاصی
+✅ تمدید آسان سرویس
+✅ پشتیبانی در صورت نیاز
+
+برای شروع از لینک زیر وارد شو 👇
+${link}`;
+
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(shareText)}`;
+
+  return { link, shareText, shareUrl };
+};
 
 export function registerHomeViews() {
   registerView("home", async (ctx) => {
@@ -189,6 +167,8 @@ ${divider}
     const nextTarget = Math.max(Math.ceil((stats.totalReferrals + 1) / 5) * 5, 5);
     const remaining = Math.max(nextTarget - stats.totalReferrals, 0);
 
+    const { shareUrl } = buildReferralShare(user.referralCode as string);
+
     return {
       text: joinSections([
         card("🎁 دعوت دوستان", [
@@ -206,49 +186,10 @@ ${divider}
         card("🔗 لینک اختصاصی شما", [link]),
       ]),
       keyboard: [
-        [{ text: "📤 ارسال متن دعوت", action: callbackFor("referral.link") }],
-        navRow({ text: "👥 دعوت‌شده‌ها", view: "referral.users" }, { text: "💎 پاداش‌ها", view: "referral.rewards", tone: "success" }),
+        [{ text: "📤 ارسال متن دعوت", url: shareUrl, tone: "success" }],
+        navRow({ text: "👥 دعوت‌شده‌ها", view: "referral.users" }, { text: "💎 پاداش‌ها", view: "referral.rewards", tone: "primary" }),
         navRow({ text: "📜 قوانین دعوت", view: "referral.rules" }, { text: "🏠 خانه", view: "home" }),
       ],
-    };
-  });
-
-  registerView("referral.link", async (ctx) => {
-    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-
-    if (!user) {
-      return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
-    }
-
-    const botUsername = process.env.BOT_USERNAME ?? "BOT";
-    const link = `https://t.me/${botUsername}?start=${user.referralCode}`;
-
-    const shareText = `🚀 دنبال یک سرویس سریع، پایدار و آماده استفاده هستی؟
-
-اینجا می‌تونی خیلی راحت سرویس موردنیازت رو انتخاب کنی، پرداخت رو انجام بدی و اطلاعات سرویس رو فوری تحویل بگیری.
-
-✅ خرید سریع و ساده
-✅ تحویل خودکار بعد از پرداخت
-✅ مدیریت سرویس‌ها از داخل ربات
-✅ کیف پول اختصاصی
-✅ تمدید آسان سرویس
-✅ پشتیبانی در صورت نیاز
-
-برای شروع از لینک زیر وارد شو 👇
-${link}`;
-
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(shareText)}`;
-
-    return {
-      text: joinSections([
-        card("📤 ارسال متن دعوت", [
-          "متن زیر برای ارسال به دوستان آماده شده است.",
-          "آن را کپی کنید یا از دکمه اشتراک‌گذاری استفاده کنید:",
-          "",
-          shareText,
-        ]),
-      ]),
-      keyboard: [[{ text: "📤 اشتراک گذاری", url: shareUrl }], [{ text: "🏠 خانه", action: callbackFor("home") }]],
     };
   });
 
@@ -260,16 +201,14 @@ ${link}`;
     }
 
     const stats = await ReferralService.getStats(user.id);
+    const { shareUrl } = buildReferralShare(user.referralCode as string);
 
     return {
       text: card("👥 دعوت‌شده‌ها", [
         `✅ تعداد دعوت‌های موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر`,
         "دعوت زمانی ثبت می‌شود که کاربر از لینک اختصاصی شما وارد ربات شود.",
       ]),
-      keyboard: [
-        [{ text: "📤 ارسال متن دعوت", action: callbackFor("referral.link") }],
-        [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }],
-      ],
+      keyboard: [[{ text: "📤 ارسال متن دعوت", url: shareUrl }], [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }]],
     };
   });
 
@@ -281,6 +220,7 @@ ${link}`;
     }
 
     const stats = await ReferralService.getStats(user.id);
+    const { shareUrl } = buildReferralShare(user.referralCode as string);
 
     return {
       text: card("💎 پاداش‌های دعوت", [
@@ -288,20 +228,27 @@ ${link}`;
         `✅ برداشت‌شده: ${money(stats.claimedAmount)}`,
         stats.pendingAmount > 0 ? "برای انتقال پاداش به کیف پول، دکمه دریافت پاداش را بزنید." : "در حال حاضر پاداش قابل برداشتی ندارید.",
       ]),
-      keyboard:
-        stats.pendingAmount > 0
-          ? [[{ text: "💎 دریافت پاداش", action: "referral:claim" }]]
-          : [[{ text: "📤 دعوت دوستان", action: callbackFor("referral.link") }]],
+      keyboard: stats.pendingAmount > 0 ? [[{ text: "💎 دریافت پاداش", action: "referral:claim" }]] : [[{ text: "📤 دعوت دوستان", url: shareUrl }]],
     };
   });
 
-  registerView("referral.rules", async () => ({
-    text: card("📜 قوانین دعوت", [
-      "هر کاربر فقط یک‌بار می‌تواند به عنوان دعوت‌شده ثبت شود.",
-      "دعوت فقط زمانی معتبر است که کاربر از لینک اختصاصی شما وارد ربات شود.",
-      "پاداش‌های تأییدشده در بخش پاداش‌ها نمایش داده می‌شوند.",
-      "در صورت ثبت دعوت غیرواقعی یا سوءاستفاده، پاداش قابل تأیید نخواهد بود.",
-    ]),
-    keyboard: [[{ text: "📤 ارسال متن دعوت", action: callbackFor("referral.link") }], [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }]],
-  }));
+  registerView("referral.rules", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+
+    if (!user) {
+      return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+    }
+
+    const { shareUrl } = buildReferralShare(user.referralCode as string);
+
+    return {
+      text: card("📜 قوانین دعوت", [
+        "هر کاربر فقط یک‌بار می‌تواند به عنوان دعوت‌شده ثبت شود.",
+        "دعوت فقط زمانی معتبر است که کاربر از لینک اختصاصی شما وارد ربات شود.",
+        "پاداش‌های تأییدشده در بخش پاداش‌ها نمایش داده می‌شوند.",
+        "در صورت ثبت دعوت غیرواقعی یا سوءاستفاده، پاداش قابل تأیید نخواهد بود.",
+      ]),
+      keyboard: [[{ text: "📤 ارسال متن دعوت", url: shareUrl }], [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }]],
+    };
+  });
 }

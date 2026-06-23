@@ -106,13 +106,7 @@ export function registerAdminViews() {
           { text: "📊 گزارش مصرف", action: callbackFor("admin.xrayClients"), tone: "primary" },
           { text: "⚠️ خطاها", action: callbackFor("admin.xrayClients", { status: "failed" }), tone: "primary" },
         ],
-        [
-          { text: "⚙️ تنظیمات Xray", action: callbackFor("admin.xraySettings"), tone: "primary" },
-        ],
-        [
-          { text: "🔙 بازگشت", action: callbackFor("admin.dashboard"), tone: "neutral" },
-          { text: "🏠 خانه", action: callbackFor("home"), tone: "neutral" },
-        ],
+        [{ text: "⚙️ تنظیمات Xray", action: callbackFor("admin.xraySettings"), tone: "primary" }],
       ],
     };
   });
@@ -228,7 +222,12 @@ export function registerAdminViews() {
   }));
 
   registerView("admin.xrayBulkInbound", async (ctx) => {
-    const products = await prisma.product.findMany({ where: { mode: "xray_auto", AND: [{ deletedAt: null }] }, include: { category: true }, orderBy: { updatedAt: "desc" }, take: 20 });
+    const products = await prisma.product.findMany({
+      where: { mode: "xray_auto", AND: [{ deletedAt: null }] },
+      include: { category: true },
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+    });
     const selected = new Set(ctx.session.xrayBulkInbound?.selectedProductIds ?? []);
     return {
       text: joinSections([
@@ -239,10 +238,18 @@ export function registerAdminViews() {
         ]),
       ]),
       keyboard: [
-        [{ text: "✅ انتخاب همه صفحه", action: "admin:xb:all", tone: "success" }, { text: "🧹 پاک‌کردن انتخاب", action: "admin:xb:clear", tone: "danger" }],
-        ...products.map((product) => [{ text: `${selected.has(product.id) ? "✅" : "⬜️"} ${product.title}`.slice(0, 60), action: `admin:xb:t:${product.id}`, tone: "primary" as const }]),
+        [
+          { text: "✅ انتخاب همه صفحه", action: "admin:xb:all", tone: "success" },
+          { text: "🧹 پاک‌کردن انتخاب", action: "admin:xb:clear", tone: "danger" },
+        ],
+        ...products.map((product) => [
+          {
+            text: `${selected.has(product.id) ? "✅" : "⬜️"} ${product.title}`.slice(0, 60),
+            action: `admin:xb:t:${product.id}`,
+            tone: "primary" as const,
+          },
+        ]),
         [{ text: "➡️ انتخاب پنل", action: callbackFor("admin.xrayBulkInboundPanel"), tone: "success" }],
-        [{ text: "🔙 مرکز Xray", action: callbackFor("admin.xrayCenter"), tone: "neutral" }],
       ],
     };
   });
@@ -251,7 +258,10 @@ export function registerAdminViews() {
     const panels = await prisma.xrayPanelConfig.findMany({ where: { enabled: true }, orderBy: { updatedAt: "desc" } });
     const selectedCount = ctx.session.xrayBulkInbound?.selectedProductIds.length ?? 0;
     return {
-      text: card("📡 انتخاب پنل و inbound", [`محصولات انتخاب‌شده: ${selectedCount.toLocaleString("fa-IR")}`, "مرحله ۲: پنل مقصد را انتخاب کنید. بعد از انتخاب پنل، inboundهای همان پنل نمایش داده می‌شوند."]),
+      text: card("📡 انتخاب پنل و inbound", [
+        `محصولات انتخاب‌شده: ${selectedCount.toLocaleString("fa-IR")}`,
+        "مرحله ۲: پنل مقصد را انتخاب کنید. بعد از انتخاب پنل، inboundهای همان پنل نمایش داده می‌شوند.",
+      ]),
       keyboard: [
         ...panels.map((panel) => [{ text: `📡 ${panel.name}`.slice(0, 60), action: `admin:xb:p:${panel.id}`, tone: "primary" as const }]),
         [{ text: "🔙 انتخاب محصولات", action: callbackFor("admin.xrayBulkInbound"), tone: "neutral" }],
@@ -261,7 +271,10 @@ export function registerAdminViews() {
 
   registerView("admin.xrayBulkInboundPreview", async (ctx) => {
     const state = ctx.session.xrayBulkInbound;
-    const products = await prisma.product.findMany({ where: { id: { in: state?.selectedProductIds ?? [] } }, select: { id: true, title: true, inboundIds: true } });
+    const products = await prisma.product.findMany({
+      where: { id: { in: state?.selectedProductIds ?? [] } },
+      select: { id: true, title: true, inboundIds: true },
+    });
     const panel = state?.panelId ? await prisma.xrayPanelConfig.findUnique({ where: { id: state.panelId } }) : null;
     return {
       text: joinSections([
@@ -269,13 +282,18 @@ export function registerAdminViews() {
           `پنل مقصد: ${panel?.name ?? "انتخاب نشده"}`,
           `inbound مقصد: ${state?.inboundId ?? "انتخاب نشده"}`,
           `محصولات درگیر: ${products.length.toLocaleString("fa-IR")}`,
-          ...products.slice(0, 10).map((product) => `• ${product.title} ← inbound ${state?.inboundId ?? "—"} (قبلی: ${product.inboundIds.join("، ") || "—"})`),
+          ...products
+            .slice(0, 10)
+            .map((product) => `• ${product.title} ← inbound ${state?.inboundId ?? "—"} (قبلی: ${product.inboundIds.join("، ") || "—"})`),
         ]),
         section("⚠️ تأیید لازم است", ["با دکمه تأیید، inbound همه محصولات انتخاب‌شده بروزرسانی می‌شود."]),
       ]),
       keyboard: [
         [{ text: "✅ اعمال بروزرسانی", action: "admin:xb:apply", tone: "success" }],
-        [{ text: "🔙 انتخاب پنل", action: callbackFor("admin.xrayBulkInboundPanel"), tone: "neutral" }, { text: "🧩 مرکز Xray", action: callbackFor("admin.xrayCenter"), tone: "neutral" }],
+        [
+          { text: "🔙 انتخاب پنل", action: callbackFor("admin.xrayBulkInboundPanel"), tone: "neutral" },
+          { text: "🧩 مرکز Xray", action: callbackFor("admin.xrayCenter"), tone: "neutral" },
+        ],
       ],
     };
   });
@@ -315,7 +333,6 @@ export function registerAdminViews() {
           { text: anyConfig?.enabled ? "⛔ غیرفعال‌سازی" : "✅ فعال‌سازی", action: `admin:xray:enabled:${anyConfig?.enabled ? "0" : "1"}` },
           { text: "💾 ذخیره تنظیمات", action: "flow:start:xray_panel_setup" },
         ],
-        [{ text: "↩️ بازگشت به مرکز Xray", action: callbackFor("admin.xrayCenter") }],
       ],
     };
   });

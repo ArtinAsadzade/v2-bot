@@ -1,21 +1,12 @@
-import {
-  registerView,
-  callbackFor,
-  actionFor,
-  type UiKeyboard,
-} from "../navigation/panel-ui";
-import {
-  createCallbackToken,
-  tokenAction,
-} from "../navigation/callback-tokens";
+import { registerView, callbackFor, actionFor, type UiKeyboard } from "../navigation/panel-ui";
+import { createCallbackToken, tokenAction } from "../navigation/callback-tokens";
 import { card, joinSections } from "../ui/layout";
 import { prisma } from "../../services/prisma";
 import { UserService } from "../../modules/user/user.service";
 import { PredictionService } from "../../modules/prediction/prediction.service";
 
 const db = prisma as any;
-const fmt = (d: Date) =>
-  new Date(d).toLocaleString("fa-IR", { timeZone: "Europe/Istanbul" });
+const fmt = (d: Date) => new Date(d).toLocaleString("fa-IR", { timeZone: "Europe/Istanbul" });
 const statusFa: Record<string, string> = {
   draft: "پیش‌نویس",
   open: "باز",
@@ -47,10 +38,7 @@ export function registerPredictionViews() {
         card(
           "🔮 پیش‌بینی",
           contests.length
-            ? contests.map(
-                (c: any) =>
-                  `• ${c.title} · ${statusFa[c.status]} · تا ${fmt(c.closesAt)}`,
-              )
+            ? contests.map((c: any) => `• ${c.title} · ${statusFa[c.status]} · تا ${fmt(c.closesAt)}`)
             : ["فعلاً پیش‌بینی فعالی وجود ندارد."],
         ),
       ]),
@@ -82,9 +70,7 @@ export function registerPredictionViews() {
     return {
       text: card(
         "📜 نتایج پیش‌بینی‌ها",
-        contests.length
-          ? contests.map((c: any) => `• ${c.title} · ${statusFa[c.status]}`)
-          : ["هنوز نتیجه‌ای ثبت نشده است."],
+        contests.length ? contests.map((c: any) => `• ${c.title} · ${statusFa[c.status]}`) : ["هنوز نتیجه‌ای ثبت نشده است."],
       ),
       keyboard: [
         ...contests.map((c: any) => [
@@ -94,13 +80,6 @@ export function registerPredictionViews() {
             tone: "primary" as const,
           },
         ]),
-        [
-          {
-            text: "🔙 پیش‌بینی",
-            action: callbackFor("prediction"),
-            tone: "neutral",
-          },
-        ],
       ],
     };
   });
@@ -111,9 +90,7 @@ export function registerPredictionViews() {
       where: { id: params.contestId },
       include: {
         options: { orderBy: { order: "asc" } },
-        entries: user
-          ? { where: { userId: user.id }, include: { option: true } }
-          : true,
+        entries: user ? { where: { userId: user.id }, include: { option: true } } : true,
       },
     });
     if (!contest)
@@ -130,8 +107,7 @@ export function registerPredictionViews() {
         ],
       };
     const entry = user ? contest.entries[0] : undefined;
-    const open =
-      contest.status === "open" && new Date(contest.closesAt) > new Date();
+    const open = contest.status === "open" && new Date(contest.closesAt) > new Date();
     const archived = contest.status === "archived";
     const optionRows: UiKeyboard =
       open && (!entry || contest.allowUserEdit)
@@ -181,16 +157,15 @@ export function registerPredictionViews() {
   });
 
   registerView("admin.predictions", async () => {
-    const [total, open, closed, resulted, announced, archived, entries] =
-      await Promise.all([
-        db.predictionContest.count(),
-        db.predictionContest.count({ where: { status: "open" } }),
-        db.predictionContest.count({ where: { status: "closed" } }),
-        db.predictionContest.count({ where: { status: "resulted" } }),
-        db.predictionContest.count({ where: { status: "announced" } }),
-        db.predictionContest.count({ where: { status: "archived" } }),
-        db.predictionEntry.count(),
-      ]);
+    const [total, open, closed, resulted, announced, archived, entries] = await Promise.all([
+      db.predictionContest.count(),
+      db.predictionContest.count({ where: { status: "open" } }),
+      db.predictionContest.count({ where: { status: "closed" } }),
+      db.predictionContest.count({ where: { status: "resulted" } }),
+      db.predictionContest.count({ where: { status: "announced" } }),
+      db.predictionContest.count({ where: { status: "archived" } }),
+      db.predictionEntry.count(),
+    ]);
     return {
       replyKeyboard: "admin",
       text: joinSections([
@@ -274,12 +249,7 @@ export function registerPredictionViews() {
       take: 20,
     });
     return {
-      text: card(
-        "📋 لیست پیش‌بینی‌ها",
-        contests.length
-          ? contests.map((c: any) => `• ${c.title} · ${statusFa[c.status]}`)
-          : ["موردی وجود ندارد."],
-      ),
+      text: card("📋 لیست پیش‌بینی‌ها", contests.length ? contests.map((c: any) => `• ${c.title} · ${statusFa[c.status]}`) : ["موردی وجود ندارد."]),
       keyboard: [
         ...contests.map((c: any) => [
           {
@@ -321,9 +291,7 @@ export function registerPredictionViews() {
           ],
         ],
       };
-    const correct = c.entries.filter((e: any) =>
-      ["correct", "winner", "rewarded"].includes(e.status),
-    ).length;
+    const correct = c.entries.filter((e: any) => ["correct", "winner", "rewarded"].includes(e.status)).length;
     return {
       text: joinSections([
         card(`🔮 ${c.title}`, [
@@ -475,8 +443,7 @@ export function registerPredictionViews() {
       include: { options: true, entries: true, winners: true },
     });
     const lines = (c?.options ?? []).map(
-      (o: any) =>
-        `• ${o.title}: ${c.entries.filter((e: any) => e.optionId === o.id).length.toLocaleString("fa-IR")}`,
+      (o: any) => `• ${o.title}: ${c.entries.filter((e: any) => e.optionId === o.id).length.toLocaleString("fa-IR")}`,
     );
     return {
       text: joinSections([
@@ -513,10 +480,7 @@ export function registerPredictionViews() {
       text: card(
         "👥 لیست شرکت‌کنندگان",
         entries.length
-          ? entries.map(
-              (e: any) =>
-                `• ${e.telegramId} · ${e.option?.title ?? "گزینه"} · ${statusFa[e.status] ?? e.status}`,
-            )
+          ? entries.map((e: any) => `• ${e.telegramId} · ${e.option?.title ?? "گزینه"} · ${statusFa[e.status] ?? e.status}`)
           : ["هنوز شرکت‌کننده‌ای وجود ندارد."],
       ),
       keyboard: [
@@ -554,11 +518,7 @@ export function registerPredictionViews() {
     const mode = await PredictionService.getPredictionDeleteMode(c.id);
     if (mode === "hard_delete_allowed") {
       return {
-        text: joinSections([
-          card("🗑 حذف پیش‌بینی", [
-            "این پیش‌بینی هنوز شرکت‌کننده‌ای ندارد و می‌تواند به‌صورت کامل حذف شود.",
-          ]),
-        ]),
+        text: joinSections([card("🗑 حذف پیش‌بینی", ["این پیش‌بینی هنوز شرکت‌کننده‌ای ندارد و می‌تواند به‌صورت کامل حذف شود."])]),
         keyboard: [
           [
             {
