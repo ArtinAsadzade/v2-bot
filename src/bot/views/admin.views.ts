@@ -14,6 +14,7 @@ import { PaymentGatewayService, PaymentInvoiceService, maskApiKey } from "../../
 import { ProductGuideService } from "../../modules/system/product-guide.service";
 import { ForcedJoinService } from "../../modules/system/forced-join.service";
 import { PublicPlansService } from "../../modules/product/public-plans.service";
+import { productNotDeletedWhere } from "../../modules/product/visibility";
 import {
   formatXrayBytes,
   maskToken,
@@ -228,7 +229,7 @@ export function registerAdminViews() {
   }));
 
   registerView("admin.xrayBulkInbound", async (ctx) => {
-    const products = await prisma.product.findMany({ where: { mode: "xray_auto", AND: [{ deletedAt: null }] }, include: { category: true }, orderBy: { updatedAt: "desc" }, take: 20 });
+    const products = await prisma.product.findMany({ where: { mode: "xray_auto", AND: [productNotDeletedWhere()] }, include: { category: true }, orderBy: { updatedAt: "desc" }, take: 20 });
     const selected = new Set(ctx.session.xrayBulkInbound?.selectedProductIds ?? []);
     return {
       text: joinSections([

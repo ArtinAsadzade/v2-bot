@@ -5,6 +5,7 @@ import { XrayDiagnosticsService } from "../../../../modules/xray/xray-diagnostic
 import { XrayClientService, XrayPanelService, xrayInboundSnapshot } from "../../../../modules/xray/xray.service";
 import { AdminService } from "../../../../modules/admin/admin.service";
 import { prisma } from "../../../../services/prisma";
+import { productNotDeletedWhere } from "../../../../modules/product/visibility";
 
 export function registerAdminXrayHandlers(bot: AppBot) {
   bot.action("admin:xray:center:test-api", async (ctx) => {
@@ -87,7 +88,7 @@ export function registerAdminXrayHandlers(bot: AppBot) {
   bot.action("admin:xb:all", async (ctx) => {
     await ctx.answerCbQuery("محصولات صفحه انتخاب شدند");
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
-    const products = await prisma.product.findMany({ where: { mode: "xray_auto", deletedAt: null }, select: { id: true }, orderBy: { updatedAt: "desc" }, take: 20 });
+    const products = await prisma.product.findMany({ where: { mode: "xray_auto", AND: [productNotDeletedWhere()] }, select: { id: true }, orderBy: { updatedAt: "desc" }, take: 20 });
     ctx.session.xrayBulkInbound = { ...(ctx.session.xrayBulkInbound ?? {}), selectedProductIds: products.map((product) => product.id) };
     await renderPanel(ctx, { id: "admin.xrayBulkInbound" }, "replace");
   });

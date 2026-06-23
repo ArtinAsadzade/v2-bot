@@ -29,6 +29,8 @@ describe("full feature integration audit", () => {
   test("bulk inbound update is visible, previewed, applied, and uses short callbacks", () => {
     for (const view of ["admin.xrayBulkInbound", "admin.xrayBulkInboundPanel", "admin.xrayBulkInboundPreview"]) expect(adminViews).toContain(`registerView("${view}"`);
     expect(adminViews).toContain("📦 بروزرسانی گروهی اینباند");
+    expect(adminViews).toContain("productNotDeletedWhere()");
+    expect(xrayHandlers).toContain("productNotDeletedWhere()");
     for (const handler of ["admin:xb:t", "admin:xb:all", "admin:xb:clear", "admin:xb:p", "admin:xb:i", "admin:xb:apply"]) expect(xrayHandlers).toContain(handler);
     expect(xrayHandlers).toContain("bulkUpdateXrayInbounds");
     for (const callback of [callbackFor("admin.xrayBulkInbound"), callbackFor("admin.xrayBulkInboundPanel"), callbackFor("admin.xrayBulkInboundPreview"), "admin:xb:all", "admin:xb:clear", "admin:xb:apply"]) {
