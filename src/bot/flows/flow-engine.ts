@@ -254,8 +254,8 @@ function currentReturnTo(ctx: AppContext): ViewState {
   return stack[stack.length - 1] ?? { id: "home" };
 }
 
-async function flowPrompt(ctx: AppContext, text: string, keyboard: UiKeyboard = []) {
-  await ctx.reply(text, { ...panelKeyboard(keyboard, { back: false, home: true, cancel: true }) });
+async function flowPrompt(ctx: AppContext, text: string, keyboard: UiKeyboard = [], navigation: { back?: boolean; home?: boolean; cancel?: boolean } = { back: false, home: true, cancel: true }) {
+  await ctx.reply(text, { ...panelKeyboard(keyboard, navigation) });
 }
 
 async function productCategoryKeyboard(): Promise<UiKeyboard> {
@@ -1777,7 +1777,7 @@ export function registerFlowEngine(bot: AppBot) {
       return void (await renderPanel(ctx, { id: "admin.predictionDetail", params: { contestId } }, "replace"));
     }
     const step = pickerStepFromState(state);
-    await flowPrompt(ctx, pickerText(state, step), pickerKeyboard(state, step));
+    await flowPrompt(ctx, pickerText(state, step), pickerKeyboard(state, step), { back: false, home: false, cancel: false });
   });
 
   bot.action(/^flow:start:([^:]+)(?::([^:]+))?(?::([^:]+))?(?::([^:]+))?$/, async (ctx) => {
