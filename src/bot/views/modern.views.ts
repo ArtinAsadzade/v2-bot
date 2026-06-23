@@ -6,6 +6,7 @@ import { registerWalletViews } from "./wallet.views";
 import { registerSupportViews } from "./support.views";
 import { registerFreeAccountViews } from "./free-account.views";
 import { registerAdminViews } from "./admin.views";
+import { registerPredictionViews } from "./prediction.views";
 
 export function registerModernViews() {
   registerHomeViews();
@@ -15,6 +16,7 @@ export function registerModernViews() {
   registerWalletViews();
   registerSupportViews();
   registerFreeAccountViews();
+  registerPredictionViews();
   registerAdminViews();
 }
 
@@ -26,3 +28,4 @@ export * from "./wallet.views";
 export * from "./support.views";
 export * from "./free-account.views";
 export * from "./admin.views";
+export * from "./prediction.views";

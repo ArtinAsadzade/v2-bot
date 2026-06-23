@@ -12,6 +12,7 @@ import { FreeAccountService } from "../../modules/free-account/free-account.serv
 import { ReferralService } from "../../modules/referral/referral.service";
 import { BroadcastService } from "../../modules/broadcast/broadcast.service";
 import { PaymentGatewayService, PaymentInvoiceService, type PaymentGatewayInput } from "../../modules/payment/payment.service";
+import { PredictionService, parsePredictionCloseDate } from "../../modules/prediction/prediction.service";
 import { ProductGuideService } from "../../modules/system/product-guide.service";
 import { isProductValidationError, normalizeNumericInput, productValidationError } from "../../modules/product/product.validation";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
@@ -256,6 +257,79 @@ async function completeBroadcast(ctx: AppContext) {
 }
 
 const definitions: Record<FlowName, FlowDefinition> = {
+  prediction_create: {
+    firstStep: "title",
+    prompt: "عنوان پیش‌بینی را ارسال کنید.",
+    async handleText(ctx, text) {
+      const flow = ctx.session.flow!;
+      if (flow.step === "title") {
+        const title = validateLength(text, "عنوان", 3, 100);
+        flow.data.title = title;
+        return { text: "سؤال پیش‌بینی را ارسال کنید.", nextStep: "question" };
+      }
+      if (flow.step === "question") {
+        const question = validateLength(text, "سؤال", 3, 200);
+        flow.data.question = question;
+        return { text: "توضیحات پیش‌بینی را ارسال کنید. اگر توضیحی ندارید، «ندارد» را بفرستید.", nextStep: "description" };
+      }
+      if (flow.step === "description") {
+        flow.data.description = text.trim() === "ندارد" ? "" : validateLength(text, "توضیحات", 0, 1000, true);
+        flow.data.options = "";
+        return { text: "گزینه اول را ارسال کنید. هر گزینه را جداگانه بفرستید. بعد از حداقل ۲ گزینه، عبارت «پایان گزینه‌ها» را ارسال کنید.", nextStep: "options" };
+      }
+      if (flow.step === "options") {
+        const current = String(flow.data.options ?? "").split("|").filter(Boolean);
+        if (text.trim() === "پایان گزینه‌ها") {
+          if (current.length < 2) return { text: "❌ حداقل ۲ گزینه لازم است. گزینه بعدی را ارسال کنید." };
+          return { text: "نوع جایزه را ارسال کنید: «کیف پول» یا «محصول»", nextStep: "rewardType" };
+        }
+        const option = validateLength(text, "گزینه", 1, 64);
+        if (current.length >= 10) return { text: "❌ حداکثر ۱۰ گزینه مجاز است. عبارت «پایان گزینه‌ها» را ارسال کنید." };
+        current.push(option);
+        flow.data.options = current.join("|");
+        return { text: `✅ گزینه ثبت شد.\n\nگزینه بعدی را ارسال کنید یا «پایان گزینه‌ها» را بفرستید.\nتعداد گزینه‌ها: ${current.length.toLocaleString("fa-IR")}` };
+      }
+      if (flow.step === "rewardType") {
+        const normalized = text.trim();
+        if (normalized.includes("کیف") || normalized.includes("wallet")) { flow.data.rewardType = "wallet"; return { text: "مبلغ جایزه کیف پول را به تومان ارسال کنید.", nextStep: "walletAmount" }; }
+        if (normalized.includes("محصول")) { flow.data.rewardType = "product"; return { text: "شناسه محصول جایزه را ارسال کنید. محصول باید فعال باشد.", nextStep: "productId" }; }
+        return { text: "❌ نوع جایزه معتبر نیست. «کیف پول» یا «محصول» را ارسال کنید." };
+      }
+      if (flow.step === "walletAmount") {
+        flow.data.rewardWalletAmount = parsePositiveIntegerInput(text, "مبلغ جایزه");
+        return { text: "تعداد برنده‌ها را ارسال کنید.", nextStep: "winnerCount" };
+      }
+      if (flow.step === "productId") {
+        flow.data.rewardProductId = text.trim();
+        return { text: "تعداد برنده‌ها را ارسال کنید.", nextStep: "winnerCount" };
+      }
+      if (flow.step === "winnerCount") {
+        flow.data.winnerCount = parsePositiveIntegerInput(text, "تعداد برنده‌ها");
+        return { text: "زمان بسته شدن را ارسال کنید. مثال: 2026-06-26 23:59 یا امروز 23:59 یا فردا 20:00", nextStep: "closesAt" };
+      }
+      if (flow.step === "closesAt") {
+        const closesAt = parsePredictionCloseDate(text);
+        if (!closesAt || closesAt <= new Date()) return { text: "❌ زمان معتبر نیست یا در آینده نیست. مثال: 2026-06-26 23:59" };
+        flow.data.closesAt = closesAt.toISOString();
+        const options = String(flow.data.options).split("|").filter(Boolean);
+        const reward = flow.data.rewardType === "wallet" ? `شارژ کیف پول ${Number(flow.data.rewardWalletAmount).toLocaleString("fa-IR")} تومان` : `محصول ${flow.data.rewardProductId}`;
+        return { text: `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${flow.data.title}\nسؤال: ${flow.data.question}\nگزینه‌ها: ${options.join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(flow.data.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${closesAt.toLocaleString("fa-IR", { timeZone: "Europe/Istanbul" })}\n\nبرای انتشار «انتشار» و برای پیش‌نویس «پیش‌نویس» را ارسال کنید.`, nextStep: "confirm" };
+      }
+      if (flow.step === "confirm") {
+        const publish = text.includes("انتشار");
+        const draft = {
+          title: String(flow.data.title), question: String(flow.data.question), description: String(flow.data.description ?? ""),
+          options: String(flow.data.options).split("|").filter(Boolean), rewardType: flow.data.rewardType as "wallet" | "product",
+          rewardWalletAmount: flow.data.rewardWalletAmount ? Number(flow.data.rewardWalletAmount) : undefined,
+          rewardProductId: flow.data.rewardProductId ? String(flow.data.rewardProductId) : undefined,
+          winnerCount: Number(flow.data.winnerCount), closesAt: new Date(String(flow.data.closesAt)),
+        };
+        const contest = await PredictionService.createContest(draft, ctx.from?.id, publish);
+        return { done: true, text: publish ? "✅ پیش‌بینی منتشر شد." : "💾 پیش‌نویس ذخیره شد.", returnTo: { id: "admin.predictionDetail", params: { contestId: contest.id } } };
+      }
+      return { text: "ورودی نامعتبر است." };
+    },
+  },
   instant_topup: {
     firstStep: "amount",
     prompt: async () => {
@@ -1540,6 +1614,7 @@ export function registerFlowEngine(bot: AppBot) {
       "free_account_create",
       "free_account_edit",
       "free_test_config",
+      "prediction_create",
     ];
     if (adminOnlyFlows.includes(name) && (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))) {
       await ctx.answerCbQuery("دسترسی غیرمجاز");

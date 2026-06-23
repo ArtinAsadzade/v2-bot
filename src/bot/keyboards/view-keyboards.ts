@@ -54,8 +54,11 @@ export function adminDashboardViewKeyboard(): UiKeyboard {
       { text: "💳 مالی", action: callbackFor("admin.finance"), tone: "primary" as const },
     ],
     [
-      { text: "🎫 پشتیبانی", action: callbackFor("admin.tickets"), tone: "info" as const },
-      { text: "📣 اطلاع‌رسانی", action: callbackFor("admin.content"), tone: "info" as const },
+      { text: "🔮 پیش‌بینی‌ها", action: callbackFor("admin.predictions"), tone: "primary" as const },
+      { text: "🎫 پشتیبانی", action: callbackFor("admin.tickets"), tone: "primary" as const },
+    ],
+    [
+      { text: "📣 اطلاع‌رسانی", action: callbackFor("admin.content"), tone: "primary" as const },
     ],
     [
       { text: "⚙️ تنظیمات", action: callbackFor("admin.botSettings"), tone: "warning" as const },

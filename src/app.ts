@@ -14,6 +14,7 @@ import { prisma } from "./services/prisma";
 import { startPaymentCallbackServer } from "./services/payment-callback-server";
 import { MonitoringService } from "./services/monitoring.service";
 import { runJobOnce } from "./jobs/runJobOnce";
+import { runPredictionCloseJob } from "./jobs/prediction-close.job";
 
 async function bootstrap() {
   try {
@@ -58,6 +59,11 @@ async function bootstrap() {
         suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
       });
     });
+    await runPredictionCloseJob().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Initial prediction close job failed", { error: message });
+      MonitoringService.record({ type: "JOB_FAILED", section: "Prediction CloseJob", description: message, severity: "warning", suggestedAction: "لاگ پیش‌بینی و اتصال دیتابیس را بررسی کنید." });
+    });
     await runJobOnce("delivery-cleanup", () => cleanupExpiredDeliveryReservations()).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       logger.error("Initial delivery cleanup job failed", { error: message });
@@ -90,6 +96,11 @@ async function bootstrap() {
           severity: "critical",
           suggestedAction: "لاگ job و اتصال دیتابیس را بررسی کنید.",
         });
+      });
+      runPredictionCloseJob().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error("Prediction close job failed", { error: message });
+        MonitoringService.record({ type: "JOB_FAILED", section: "Prediction CloseJob", description: message, severity: "warning", suggestedAction: "لاگ پیش‌بینی و اتصال دیتابیس را بررسی کنید." });
       });
       runJobOnce("delivery-cleanup", () => cleanupExpiredDeliveryReservations()).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);

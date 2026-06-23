@@ -62,7 +62,7 @@ describe("styled Telegram buttons", () => {
     const home = buildInlineKeyboard(homeKeyboard(false)).reply_markup.inline_keyboard;
     expect(first(home)).toMatchObject({ text: "🛒 خرید سرویس", style: "success" });
     expect(home[2][0]).toMatchObject({ text: "💳 کیف پول", style: "primary" });
-    expect(home[3][1]).not.toHaveProperty("style");
+    expect(home[4][1]).toMatchObject({ text: "📘 راهنما", style: "primary" });
 
     const detail = buildInlineKeyboard(productDetailViewKeyboard("p1", 1)).reply_markup.inline_keyboard;
     expect(first(detail)).toMatchObject({ text: "🛒 خرید", style: "success" });
@@ -76,6 +76,6 @@ describe("styled Telegram buttons", () => {
     const admin = buildInlineKeyboard(adminDashboardViewKeyboard()).reply_markup.inline_keyboard;
     expect(admin[0][1]).toMatchObject({ text: "🛍 فروشگاه", style: "success" });
     expect(admin[1][0]).toMatchObject({ text: "🧩 مرکز Xray", style: "primary" });
-    expect(admin[3][1]).not.toHaveProperty("style");
+    expect(admin[4][1]).not.toHaveProperty("style");
   });
 });
