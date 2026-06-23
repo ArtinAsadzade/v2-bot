@@ -2,8 +2,9 @@ import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import { callbackFor, isValidCallbackData } from "../src/bot/navigation/panel-ui";
+import { readAdminViewsSource } from "./helpers/view-source";
 
-const adminViews = readFileSync("src/bot/views/admin.views.ts", "utf8");
+const adminViews = readAdminViewsSource();
 const storeView = adminViews.match(/registerView\("admin\.store"[\s\S]*?registerView\("admin\.finance"/)?.[0] ?? "";
 const productsView = adminViews.match(/registerView\("admin\.products"[\s\S]*?registerView\("admin\.product"/)?.[0] ?? "";
 const categoriesView = adminViews.match(/registerView\("admin\.categories"[\s\S]*?registerView\("admin\.category"/)?.[0] ?? "";

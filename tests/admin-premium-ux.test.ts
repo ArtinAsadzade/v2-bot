@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { test } from "vitest";
 import assert from "node:assert/strict";
+import { readAdminViewsSource } from "./helpers/view-source";
 
-const adminViews = readFileSync("src/bot/views/admin.views.ts", "utf8");
+const adminViews = readAdminViewsSource();
 const viewModels = readFileSync("src/modules/admin/admin.view-models.ts", "utf8");
 const keyboards = readFileSync("src/bot/keyboards/view-keyboards.ts", "utf8");
 const panelUi = readFileSync("src/bot/navigation/panel-ui.ts", "utf8");

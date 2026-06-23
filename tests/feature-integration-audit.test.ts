@@ -3,8 +3,9 @@ import { describe, expect, test } from "vitest";
 import { callbackFor, isValidCallbackData } from "../src/bot/navigation/panel-ui";
 import { adminDashboardViewKeyboard } from "../src/bot/keyboards/view-keyboards";
 import { homeKeyboard } from "../src/bot/keyboards/common.keyboard";
+import { readAdminViewsSource } from "./helpers/view-source";
 
-const adminViews = readFileSync("src/bot/views/admin.views.ts", "utf8");
+const adminViews = readAdminViewsSource();
 const predictionViews = readFileSync("src/bot/views/prediction.views.ts", "utf8");
 const registerModern = readFileSync("src/bot/handlers/modern/register-modern-handlers.ts", "utf8");
 const predictionHandlers = readFileSync("src/bot/handlers/modern/prediction.handlers.ts", "utf8");

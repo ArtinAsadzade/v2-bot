@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { test } from "vitest";
+import { readAdminViewsSource } from "./helpers/view-source";
 
 const diagnostics = readFileSync("src/modules/xray/xray-diagnostics.service.ts", "utf8");
 const delivery = readFileSync("src/modules/payment/payment-delivery.service.ts", "utf8");
 const payment = readFileSync("src/modules/payment/payment.service.ts", "utf8");
-const views = readFileSync("src/bot/views/admin.views.ts", "utf8");
+const views = readAdminViewsSource();
 const handlers = readFileSync("src/bot/handlers/modern/admin/admin-xray.handlers.ts", "utf8");
 
 test("stale inbound detection compares DB inboundIds against current panel inbounds", () => {

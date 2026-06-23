@@ -1,9 +1,10 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { readAdminViewsSource } from "./helpers/view-source";
 
 const flowEngine = readFileSync("src/bot/flows/flow-engine.ts", "utf8");
-const modernViews = (readFileSync("src/bot/views/admin.views.ts", "utf8"));
+const modernViews = (readAdminViewsSource());
 const adminService = readFileSync("src/modules/admin/admin.service.ts", "utf8");
 const validation = readFileSync("src/modules/product/product.validation.ts", "utf8");
 
