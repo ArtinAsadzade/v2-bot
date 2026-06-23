@@ -1,6 +1,13 @@
 import type { InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup } from "telegraf/types";
 import { callbackFor, ensureCallbackData, type PanelViewId } from "../navigation/panel-ui";
-import { buttonIntent, styledButtonFields, type ButtonIntent, type TelegramButtonStyle, type UiButtonStyle, type UiButtonTone } from "../ui/button-style";
+import {
+  buttonIntent,
+  styledButtonFields,
+  type ButtonIntent,
+  type TelegramButtonStyle,
+  type UiButtonStyle,
+  type UiButtonTone,
+} from "../ui/button-style";
 import { normalizeKeyboardRows } from "./keyboard-normalizer";
 
 export type ButtonTone = UiButtonTone;
@@ -68,7 +75,13 @@ function buttonDecorations(button: ButtonStyleFields) {
 }
 
 function replyButton(button: ReplyButton): StyledKeyboardButton {
-  const { tone: _tone, style: _style, intent: _intent, customEmojiId: _customEmojiId, ...telegramButton } = button as KeyboardButton.CommonButton & ButtonStyleFields;
+  const {
+    tone: _tone,
+    style: _style,
+    intent: _intent,
+    customEmojiId: _customEmojiId,
+    ...telegramButton
+  } = button as KeyboardButton.CommonButton & ButtonStyleFields;
   return { ...telegramButton, ...buttonDecorations(button) } as StyledKeyboardButton;
 }
 
@@ -95,10 +108,11 @@ export function buildInlineKeyboard(rows: InlineButton[][]): { reply_markup: Inl
 
 export function MainMenuKeyboard(isAdmin = false) {
   const rows: ReplyButton[][] = [
-    [{ text: "🛒 خرید سرویس", intent: "buy" }, { text: labels.freeAccount, intent: "test" }],
-    [{ text: labels.orders, intent: "services" }, { text: labels.wallet, intent: "wallet" }],
-    [{ text: "🔮 پیش‌بینی", intent: "navigation" }, { text: labels.referral, intent: "navigation" }],
-    [{ text: labels.support, intent: "support" }, { text: "📢 اطلاعیه‌ها", intent: "navigation" }],
+    [
+      { text: "🛒 خرید سرویس", intent: "buy" },
+      { text: labels.freeAccount, intent: "test" },
+    ],
+
     [{ text: labels.guide, intent: "back" }],
   ];
   if (isAdmin) rows.push([{ text: labels.adminDashboard, intent: "navigation" }]);
@@ -117,7 +131,7 @@ export function ShopKeyboard() {
 }
 
 export function PurchaseKeyboard() {
-  return ShopKeyboard();
+  return MainMenuKeyboard();
 }
 
 export function SupportKeyboard() {
@@ -125,13 +139,7 @@ export function SupportKeyboard() {
 }
 
 export function AdminKeyboard() {
-  return buildReplyKeyboard([
-    [{ text: "📦 فروشگاه", intent: "products" }, { text: "👥 کاربران", intent: "users" }],
-    [{ text: "🧩 Xray", intent: "xray" }, { text: labels.adminFinance, intent: "wallet" }],
-    [{ text: "🔮 پیش‌بینی", intent: "navigation" }, { text: "📣 اطلاع‌رسانی", intent: "navigation" }],
-    [{ text: "⚙️ تنظیمات", intent: "navigation" }, { text: "📊 آمار", intent: "stats" }],
-    [{ text: labels.userMenu, intent: "home" }],
-  ]);
+  return buildReplyKeyboard([[{ text: labels.userMenu, intent: "home" }]]);
 }
 
 export function AdminProductsKeyboard() {
@@ -178,14 +186,20 @@ export function InvoiceActionKeyboard(paymentLink: string, backAction: string) {
 
 export function paymentSuccessKeyboard(_type: "wallet" | "product") {
   return buildInlineKeyboard([
-    [{ text: labels.orders, action: callbackFor("account.details"), tone: "success" }, { text: labels.buyAgain, action: callbackFor("shop.categories"), tone: "primary" }],
+    [
+      { text: labels.orders, action: callbackFor("account.details"), tone: "success" },
+      { text: labels.buyAgain, action: callbackFor("shop.categories"), tone: "primary" },
+    ],
     [{ text: labels.home, action: callbackFor("home") }],
   ]);
 }
 
 export function paymentFailureKeyboard() {
   return buildInlineKeyboard([
-    [{ text: labels.retry, action: callbackFor("deposit"), tone: "primary" }, { text: labels.support, action: callbackFor("support"), tone: "danger" }],
+    [
+      { text: labels.retry, action: callbackFor("deposit"), tone: "primary" },
+      { text: labels.support, action: callbackFor("support"), tone: "danger" },
+    ],
     [{ text: labels.home, action: callbackFor("home") }],
   ]);
 }
