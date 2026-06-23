@@ -1,6 +1,7 @@
 import { Markup } from "telegraf";
 import type { InlineKeyboardButton } from "telegraf/types";
-import { styledButtonFields, type UiButtonStyle, type UiButtonTone } from "../ui/button-style";
+import { type UiButtonStyle, type UiButtonTone } from "../ui/button-style";
+import { normalizeKeyboardLayout, styleForDesignButton } from "../ui/ui-system";
 import type { AppContext } from "../../types/bot";
 import { replyKeyboard, replyKeyboardSignature, type ReplyKeyboardScope } from "../keyboards/reply.keyboard";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
@@ -345,7 +346,9 @@ export function parseNavAction(action: string): ViewState | undefined {
 export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?: boolean; cancel?: boolean } = { back: true, home: true }) {
   const seenNav = new Set<string>();
 
-  const normalized: InlineKeyboardButton[][] = rows
+  const normalizedRows = normalizeKeyboardLayout(rows);
+
+  const normalized: InlineKeyboardButton[][] = normalizedRows
     .map((row) => {
       const buttons: InlineKeyboardButton[] = [];
 
@@ -355,13 +358,13 @@ export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?
 
         try {
           if (button.url) {
-            buttons.push({ text: button.text, url: button.url, ...styledButtonFields(button) } as InlineKeyboardButton);
+            buttons.push({ text: button.text, url: button.url, ...styleForDesignButton(button) } as InlineKeyboardButton);
             continue;
           }
 
           if (!button.action) continue;
 
-          buttons.push({ text: button.text, callback_data: ensureCallbackData(button.action), ...styledButtonFields(button) } as InlineKeyboardButton);
+          buttons.push({ text: button.text, callback_data: ensureCallbackData(button.action), ...styleForDesignButton(button) } as InlineKeyboardButton);
         } catch (error) {
           console.error("BUTTON_BUILD_FAILED", {
             text: button.text,
