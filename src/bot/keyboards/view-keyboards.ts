@@ -6,8 +6,8 @@ export function productDetailViewKeyboard(productId: string, stock: number): UiK
     ...(stock > 0 ? [[{ text: actionLabels.buy, action: callbackFor("shop.checkout", { productId }), tone: "success" as const }]] : []),
     [{ text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId), tone: "primary" as const }],
     [
-      { text: "↩️ برگشت", action: callbackFor("shop.categories"), tone: "warning" as const },
-      { text: actionLabels.home, action: callbackFor("home"), tone: "warning" as const },
+      { text: "↩️ برگشت", action: callbackFor("shop.categories"), tone: "neutral" as const },
+      { text: actionLabels.home, action: callbackFor("home"), tone: "neutral" as const },
     ],
   ];
 }
@@ -62,7 +62,7 @@ export function adminDashboardViewKeyboard(): UiKeyboard {
     ],
     [
       { text: "⚙️ تنظیمات", action: callbackFor("admin.botSettings"), tone: "warning" as const },
-      { text: "🏠 خانه", action: callbackFor("home"), tone: "warning" as const },
+      { text: "🏠 خانه", action: callbackFor("home"), tone: "neutral" as const },
     ],
   ];
 }

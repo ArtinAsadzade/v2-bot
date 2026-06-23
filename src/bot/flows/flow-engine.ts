@@ -256,78 +256,127 @@ async function completeBroadcast(ctx: AppContext) {
 ناموفق: ${stats.failed.toLocaleString("fa-IR")}`;
 }
 
+
+type PredictionCreateStep = "title" | "question" | "description" | "options" | "rewardType" | "walletAmount" | "productId" | "winnerCount" | "closesAt" | "confirm";
+type PredictionCreateDraft = { title?: string; question?: string; description?: string; options?: string[]; rewardType?: "wallet" | "product"; rewardWalletAmount?: number; rewardProductId?: string; winnerCount?: number; closesAt?: string };
+const predictionCreateSteps = new Set<string>(["title", "question", "description", "options", "rewardType", "walletAmount", "productId", "winnerCount", "closesAt", "confirm"]);
+const isPredictionCreateStep = (step: string): step is PredictionCreateStep => predictionCreateSteps.has(step);
+const isPredictionCancelText = (text: string) => text === "❌ لغو ساخت پیش‌بینی" || text === "لغو" || text === "انصراف";
+const isPredictionDescriptionSkipText = (text: string) => text === "⏭ رد کردن توضیحات" || text === "رد کردن" || text === "ندارد" || text === "-";
+const isPredictionOptionsFinishText = (text: string) => text === "✅ پایان گزینه‌ها" || text === "پایان گزینه‌ها" || text === "تمام";
+
+function predictionCreateKeyboard(step: PredictionCreateStep, draft: PredictionCreateDraft = {}): UiKeyboard {
+  const cancel: UiKeyboard = [[{ text: "❌ لغو ساخت پیش‌بینی", action: actionFor("flow:prediction_cancel"), tone: "danger" as const }]];
+  if (step === "description") return [[{ text: "⏭ رد کردن توضیحات", action: actionFor("flow:prediction_skip_description"), tone: "neutral" as const }], ...cancel];
+  if (step === "options") {
+    const rows: UiKeyboard = [];
+    if ((draft.options?.length ?? 0) >= 2) rows.push([{ text: "✅ پایان گزینه‌ها", action: actionFor("flow:prediction_finish_options"), tone: "success" as const }]);
+    rows.push([{ text: "➕ افزودن گزینه دیگر", action: actionFor("flow:prediction_add_option"), tone: "primary" as const }]);
+    rows.push(...cancel);
+    return rows;
+  }
+  if (step === "rewardType") return [[{ text: "💰 شارژ کیف پول", action: actionFor("flow:prediction_reward", "wallet"), tone: "success" as const }, { text: "📦 محصول", action: actionFor("flow:prediction_reward", "product"), tone: "primary" as const }], ...cancel];
+  if (step === "confirm") return [[{ text: "✅ انتشار", action: actionFor("flow:prediction_confirm", "publish"), tone: "success" as const }, { text: "💾 ذخیره پیش‌نویس", action: actionFor("flow:prediction_confirm", "draft"), tone: "primary" as const }], ...cancel];
+  return cancel;
+}
+
+function ensurePredictionCreateDraft(ctx: AppContext): PredictionCreateDraft {
+  ctx.session.predictionCreate = ctx.session.predictionCreate ?? {};
+  return ctx.session.predictionCreate;
+}
+
+function predictionDraftForService(draft: PredictionCreateDraft) {
+  return { title: String(draft.title), question: String(draft.question), description: draft.description ?? "", options: draft.options ?? [], rewardType: draft.rewardType as "wallet" | "product", rewardWalletAmount: draft.rewardWalletAmount, rewardProductId: draft.rewardProductId, winnerCount: Number(draft.winnerCount), closesAt: new Date(String(draft.closesAt)) };
+}
+
+function cancelPredictionCreate(ctx: AppContext): FlowStepResult {
+  ctx.session.flow = undefined;
+  ctx.session.predictionCreate = undefined;
+  return { done: true, text: "❌ ساخت پیش‌بینی لغو شد.", returnTo: { id: "admin.predictions" } };
+}
+
+function invalidPredictionCreateStep(ctx: AppContext, step: string): FlowStepResult {
+  console.warn("PREDICTION_FLOW_INVALID_STEP", { step, telegramId: ctx.from?.id });
+  ctx.session.flow = undefined;
+  ctx.session.predictionCreate = undefined;
+  return { done: true, text: "⚠️ ساخت پیش‌بینی ناقص مانده است. لطفاً دوباره شروع کنید.", returnTo: { id: "admin.predictions" } };
+}
+
 const definitions: Record<FlowName, FlowDefinition> = {
   prediction_create: {
     firstStep: "title",
     prompt: "عنوان پیش‌بینی را ارسال کنید.",
+    initialKeyboard: () => predictionCreateKeyboard("title"),
     async handleText(ctx, text) {
       const flow = ctx.session.flow!;
+      const draft = ensurePredictionCreateDraft(ctx);
+      const input = text.trim();
+      if (isPredictionCancelText(input)) return cancelPredictionCreate(ctx);
+      if (!isPredictionCreateStep(flow.step)) return invalidPredictionCreateStep(ctx, flow.step);
+
       if (flow.step === "title") {
         const title = validateLength(text, "عنوان", 3, 100);
-        flow.data.title = title;
-        return { text: "سؤال پیش‌بینی را ارسال کنید.", nextStep: "question" };
+        draft.title = title;
+        return { text: "سؤال پیش‌بینی را ارسال کنید.", nextStep: "question", keyboard: predictionCreateKeyboard("question") };
       }
       if (flow.step === "question") {
         const question = validateLength(text, "سؤال", 3, 200);
-        flow.data.question = question;
-        return { text: "توضیحات پیش‌بینی را ارسال کنید. اگر توضیحی ندارید، «ندارد» را بفرستید.", nextStep: "description" };
+        draft.question = question;
+        return { text: "توضیحات پیش‌بینی را ارسال کنید یا روی «رد کردن» بزنید.", nextStep: "description", keyboard: predictionCreateKeyboard("description") };
       }
       if (flow.step === "description") {
-        flow.data.description = text.trim() === "ندارد" ? "" : validateLength(text, "توضیحات", 0, 1000, true);
-        flow.data.options = "";
-        return { text: "گزینه اول را ارسال کنید. هر گزینه را جداگانه بفرستید. بعد از حداقل ۲ گزینه، عبارت «پایان گزینه‌ها» را ارسال کنید.", nextStep: "options" };
+        if (isPredictionDescriptionSkipText(input)) draft.description = "";
+        else draft.description = validateLength(text, "توضیحات", 0, 1000, true);
+        draft.options = draft.options ?? [];
+        return { text: "گزینه اول را ارسال کنید.", nextStep: "options", keyboard: predictionCreateKeyboard("options", draft) };
       }
       if (flow.step === "options") {
-        const current = String(flow.data.options ?? "").split("|").filter(Boolean);
-        if (text.trim() === "پایان گزینه‌ها") {
-          if (current.length < 2) return { text: "❌ حداقل ۲ گزینه لازم است. گزینه بعدی را ارسال کنید." };
-          return { text: "نوع جایزه را ارسال کنید: «کیف پول» یا «محصول»", nextStep: "rewardType" };
+        const current = draft.options ?? [];
+        if (isPredictionOptionsFinishText(input)) {
+          if (current.length < 2) return { text: "❌ حداقل ۲ گزینه لازم است. گزینه بعدی را ارسال کنید.", keyboard: predictionCreateKeyboard("options", draft) };
+          return { text: "نوع جایزه را انتخاب کنید:", nextStep: "rewardType", keyboard: predictionCreateKeyboard("rewardType", draft) };
         }
         const option = validateLength(text, "گزینه", 1, 64);
-        if (current.length >= 10) return { text: "❌ حداکثر ۱۰ گزینه مجاز است. عبارت «پایان گزینه‌ها» را ارسال کنید." };
+        if (current.length >= 10) return { text: "❌ حداکثر ۱۰ گزینه مجاز است. روی «پایان گزینه‌ها» بزنید.", keyboard: predictionCreateKeyboard("options", draft) };
+        if (current.some((item) => item.trim().toLowerCase() === option.toLowerCase())) return { text: "❌ گزینه تکراری است. گزینه دیگری ارسال کنید.", keyboard: predictionCreateKeyboard("options", draft) };
         current.push(option);
-        flow.data.options = current.join("|");
-        return { text: `✅ گزینه ثبت شد.\n\nگزینه بعدی را ارسال کنید یا «پایان گزینه‌ها» را بفرستید.\nتعداد گزینه‌ها: ${current.length.toLocaleString("fa-IR")}` };
+        draft.options = current;
+        const suffix = current.length >= 2 ? "\n\nمی‌توانید گزینه بعدی را ارسال کنید یا روی «پایان گزینه‌ها» بزنید." : "\n\nگزینه دوم را ارسال کنید.";
+        return { text: `✅ گزینه ثبت شد.\nتعداد گزینه‌ها: ${current.length.toLocaleString("fa-IR")}${suffix}`, keyboard: predictionCreateKeyboard("options", draft) };
       }
       if (flow.step === "rewardType") {
-        const normalized = text.trim();
-        if (normalized.includes("کیف") || normalized.includes("wallet")) { flow.data.rewardType = "wallet"; return { text: "مبلغ جایزه کیف پول را به تومان ارسال کنید.", nextStep: "walletAmount" }; }
-        if (normalized.includes("محصول")) { flow.data.rewardType = "product"; return { text: "شناسه محصول جایزه را ارسال کنید. محصول باید فعال باشد.", nextStep: "productId" }; }
-        return { text: "❌ نوع جایزه معتبر نیست. «کیف پول» یا «محصول» را ارسال کنید." };
+        const normalized = input.toLowerCase();
+        if (normalized.includes("کیف") || normalized.includes("wallet") || normalized.includes("شارژ")) { draft.rewardType = "wallet"; return { text: "مبلغ جایزه کیف پول را به تومان ارسال کنید.", nextStep: "walletAmount", keyboard: predictionCreateKeyboard("walletAmount", draft) }; }
+        if (normalized.includes("محصول") || normalized.includes("product")) { draft.rewardType = "product"; return { text: "شناسه محصول جایزه را ارسال کنید. محصول باید فعال باشد.", nextStep: "productId", keyboard: predictionCreateKeyboard("productId", draft) }; }
+        return { text: "❌ نوع جایزه معتبر نیست. یکی از گزینه‌های جایزه را انتخاب کنید.", keyboard: predictionCreateKeyboard("rewardType", draft) };
       }
       if (flow.step === "walletAmount") {
-        flow.data.rewardWalletAmount = parsePositiveIntegerInput(text, "مبلغ جایزه");
-        return { text: "تعداد برنده‌ها را ارسال کنید.", nextStep: "winnerCount" };
+        draft.rewardWalletAmount = parsePositiveIntegerInput(text, "مبلغ جایزه");
+        return { text: "تعداد برنده‌ها را ارسال کنید.", nextStep: "winnerCount", keyboard: predictionCreateKeyboard("winnerCount", draft) };
       }
       if (flow.step === "productId") {
-        flow.data.rewardProductId = text.trim();
-        return { text: "تعداد برنده‌ها را ارسال کنید.", nextStep: "winnerCount" };
+        draft.rewardProductId = input;
+        return { text: "تعداد برنده‌ها را ارسال کنید.", nextStep: "winnerCount", keyboard: predictionCreateKeyboard("winnerCount", draft) };
       }
       if (flow.step === "winnerCount") {
-        flow.data.winnerCount = parsePositiveIntegerInput(text, "تعداد برنده‌ها");
-        return { text: "زمان بسته شدن را ارسال کنید. مثال: 2026-06-26 23:59 یا امروز 23:59 یا فردا 20:00", nextStep: "closesAt" };
+        draft.winnerCount = parsePositiveIntegerInput(text, "تعداد برنده‌ها");
+        return { text: "زمان بسته شدن را ارسال کنید. مثال: 2026-06-26 23:59 یا امروز 23:59 یا فردا 20:00", nextStep: "closesAt", keyboard: predictionCreateKeyboard("closesAt", draft) };
       }
       if (flow.step === "closesAt") {
         const closesAt = parsePredictionCloseDate(text);
-        if (!closesAt || closesAt <= new Date()) return { text: "❌ زمان معتبر نیست یا در آینده نیست. مثال: 2026-06-26 23:59" };
-        flow.data.closesAt = closesAt.toISOString();
-        const options = String(flow.data.options).split("|").filter(Boolean);
-        const reward = flow.data.rewardType === "wallet" ? `شارژ کیف پول ${Number(flow.data.rewardWalletAmount).toLocaleString("fa-IR")} تومان` : `محصول ${flow.data.rewardProductId}`;
-        return { text: `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${flow.data.title}\nسؤال: ${flow.data.question}\nگزینه‌ها: ${options.join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(flow.data.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${closesAt.toLocaleString("fa-IR", { timeZone: "Europe/Istanbul" })}\n\nبرای انتشار «انتشار» و برای پیش‌نویس «پیش‌نویس» را ارسال کنید.`, nextStep: "confirm" };
+        if (!closesAt || closesAt <= new Date()) return { text: "❌ زمان معتبر نیست یا در آینده نیست. مثال: 2026-06-26 23:59", keyboard: predictionCreateKeyboard("closesAt", draft) };
+        draft.closesAt = closesAt.toISOString();
+        const reward = draft.rewardType === "wallet" ? `شارژ کیف پول ${Number(draft.rewardWalletAmount).toLocaleString("fa-IR")} تومان` : `محصول ${draft.rewardProductId}`;
+        return { text: `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${draft.title}\nسؤال: ${draft.question}\nتوضیحات: ${draft.description || "—"}\nگزینه‌ها: ${(draft.options ?? []).join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(draft.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${closesAt.toLocaleString("fa-IR", { timeZone: "Europe/Istanbul" })}\n\nبرای انتشار روی «انتشار» و برای پیش‌نویس روی «ذخیره پیش‌نویس» بزنید.`, nextStep: "confirm", keyboard: predictionCreateKeyboard("confirm", draft) };
       }
       if (flow.step === "confirm") {
-        const publish = text.includes("انتشار");
-        const draft = {
-          title: String(flow.data.title), question: String(flow.data.question), description: String(flow.data.description ?? ""),
-          options: String(flow.data.options).split("|").filter(Boolean), rewardType: flow.data.rewardType as "wallet" | "product",
-          rewardWalletAmount: flow.data.rewardWalletAmount ? Number(flow.data.rewardWalletAmount) : undefined,
-          rewardProductId: flow.data.rewardProductId ? String(flow.data.rewardProductId) : undefined,
-          winnerCount: Number(flow.data.winnerCount), closesAt: new Date(String(flow.data.closesAt)),
-        };
-        const contest = await PredictionService.createContest(draft, ctx.from?.id, publish);
+        const publish = input.includes("انتشار");
+        if (!publish && !input.includes("پیش‌نویس")) return { text: "❌ لطفاً «انتشار» یا «ذخیره پیش‌نویس» را انتخاب کنید.", keyboard: predictionCreateKeyboard("confirm", draft) };
+        const contest = await PredictionService.createContest(predictionDraftForService(draft), ctx.from?.id, publish);
+        ctx.session.predictionCreate = undefined;
         return { done: true, text: publish ? "✅ پیش‌بینی منتشر شد." : "💾 پیش‌نویس ذخیره شد.", returnTo: { id: "admin.predictionDetail", params: { contestId: contest.id } } };
       }
-      return { text: "ورودی نامعتبر است." };
+      return invalidPredictionCreateStep(ctx, flow.step);
     },
   },
   instant_topup: {
@@ -1416,6 +1465,7 @@ export async function startFlow(ctx: AppContext, name: FlowName, data: Record<st
   const definition = definitions[name];
   if (!definition) throw new Error("جریان پیدا نشد");
   ctx.session.flow = { name, step: definition.firstStep, data, returnTo: currentReturnTo(ctx) };
+  if (name === "prediction_create") ctx.session.predictionCreate = {};
   await flowPrompt(
     ctx,
     typeof definition.prompt === "function" ? await definition.prompt(ctx) : definition.prompt,
@@ -1430,7 +1480,7 @@ export async function handleActiveFlowText(ctx: AppContext, text: string) {
   try {
     result = await definitions[flow.name].handleText?.(ctx, text);
   } catch (error) {
-    if (flow.name === "product_edit" && isProductValidationError(error)) {
+    if (isProductValidationError(error)) {
       await ctx.reply(error.message);
       return true;
     }
@@ -1459,6 +1509,7 @@ export async function handleActiveFlowText(ctx: AppContext, text: string) {
     await renderPanel(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace", RenderMode.SEND_NEW);
     return true;
   }
+  if (result.nextStep && ctx.session.flow) ctx.session.flow.step = result.nextStep;
   await flowPrompt(ctx, result.text, result.keyboard);
   return true;
 }
@@ -1479,6 +1530,42 @@ export async function handleActiveFlowPhoto(ctx: AppContext, fileId: string) {
 }
 
 export function registerFlowEngine(bot: AppBot) {
+  bot.action("flow:prediction_cancel", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (ctx.session.flow?.name !== "prediction_create") return renderPanel(ctx, { id: "admin.predictions" }, "replace", RenderMode.EDIT_CURRENT);
+    ctx.session.flow = undefined;
+    ctx.session.predictionCreate = undefined;
+    await ctx.reply("❌ ساخت پیش‌بینی لغو شد.");
+    await renderPanel(ctx, { id: "admin.predictions" }, "replace", RenderMode.SEND_NEW);
+  });
+
+  bot.action("flow:prediction_skip_description", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (ctx.session.flow?.name !== "prediction_create" || ctx.session.flow.step !== "description") return;
+    await handleActiveFlowText(ctx, "⏭ رد کردن توضیحات");
+  });
+
+  bot.action("flow:prediction_finish_options", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (ctx.session.flow?.name !== "prediction_create" || ctx.session.flow.step !== "options") return;
+    await handleActiveFlowText(ctx, "✅ پایان گزینه‌ها");
+  });
+
+  bot.action(/^flow:prediction_reward:(wallet|product)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (ctx.session.flow?.name !== "prediction_create" || ctx.session.flow.step !== "rewardType") return;
+    await handleActiveFlowText(ctx, ctx.match[1] === "wallet" ? "💰 شارژ کیف پول" : "📦 محصول");
+  });
+
+  bot.action(/^flow:prediction_confirm:(publish|draft)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (ctx.session.flow?.name !== "prediction_create" || ctx.session.flow.step !== "confirm") return;
+    await handleActiveFlowText(ctx, ctx.match[1] === "publish" ? "انتشار" : "پیش‌نویس");
+  });
+
+  bot.action("flow:prediction_add_option", async (ctx) => {
+    await ctx.answerCbQuery("گزینه بعدی را به صورت پیام متنی ارسال کنید.");
+  });
   bot.action(/^flow:product_category:([^:]+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     const flow = ctx.session.flow;
