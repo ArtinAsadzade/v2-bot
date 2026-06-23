@@ -190,3 +190,34 @@ describe("prediction feature", () => {
     expect(handlers).not.toContain(old);
   });
 });
+
+describe("prediction bug regressions", () => {
+  test("closed predictions remain visible in user list and archived are excluded", () => {
+    expect(views).toContain('status: { in: ["open", "closed", "resulted", "announced"] }');
+    expect(views).toContain('contests.sort((a: any, b: any) => Number(b.status === "open")');
+    expect(views).toContain('"⏳ زمان ثبت پیش‌بینی به پایان رسیده است."');
+    expect(views).toContain('entry\n            ? `✅ انتخاب شما:');
+  });
+
+  test("admin prediction edit uses separate edit flow and preserves create draft", () => {
+    expect(views).toContain('actionFor("flow:start", "prediction_edit", c.id, "title")');
+    expect(views).toContain('actionFor("flow:start", "prediction_edit", c.id, "description")');
+    expect(flow).toContain('predictionEdit');
+    expect(flow).toContain('✏️ عنوان جدید پیش‌بینی را ارسال کنید.');
+    expect(flow).toContain('📝 توضیحات جدید پیش‌بینی را ارسال کنید.');
+    expect(flow).toContain('✅ تغییرات با موفقیت ذخیره شد.');
+    expect(flow).toContain('returnTo: { id: "admin.predictionDetail", params: { contestId } }');
+    expect(flow).toContain('if (name === "prediction_create") ctx.session.predictionCreate = {};');
+  });
+
+  test("product reward opens a button list and never asks for product code", () => {
+    expect(flow).toContain('📦 انتخاب محصول جایزه');
+    expect(flow).toContain('محصولی را که می‌خواهید به عنوان جایزه پیش‌بینی اهدا شود انتخاب کنید.');
+    expect(flow).toContain('flow:prediction_product');
+    expect(flow).toContain('rewardProductId = product.id');
+    expect(flow).toContain('rewardProductTitle = product.title');
+    expect(flow).toContain('isActive: true, deletedAt: null');
+    expect(flow).toContain('take = 9');
+    expect(flow).not.toContain('شناسه محصول جایزه را ارسال کنید');
+  });
+});

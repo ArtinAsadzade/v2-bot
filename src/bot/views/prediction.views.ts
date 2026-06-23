@@ -21,11 +21,12 @@ export function registerPredictionViews() {
   registerView("prediction", async (ctx) => {
     const user = ctx.from ? await UserService.findOrCreateUser(ctx) : undefined;
     const contests = await db.predictionContest.findMany({
-      where: { status: "open" },
-      orderBy: [{ status: "asc" }, { closesAt: "desc" }],
+      where: { status: { in: ["open", "closed", "resulted", "announced"] } },
+      orderBy: { closesAt: "desc" },
       take: 10,
       include: { _count: { select: { entries: true } }, entries: user ? { where: { userId: user.id } } : false },
     });
+    contests.sort((a: any, b: any) => Number(b.status === "open") - Number(a.status === "open") || new Date(b.closesAt).getTime() - new Date(a.closesAt).getTime());
     const rows: UiKeyboard = contests.map((c: any) => [
       {
         text: `${c.status === "open" ? "🟢" : "⚪️"} ${c.title}`,
@@ -46,7 +47,7 @@ export function registerPredictionViews() {
       keyboard: [
         [
           {
-            text: "🟢 پیش‌بینی‌های فعال",
+            text: "🟢 پیش‌بینی‌های باز",
             action: callbackFor("prediction"),
             tone: "primary",
           },
@@ -299,12 +300,12 @@ export function registerPredictionViews() {
         [
           {
             text: "✏️ ویرایش عنوان",
-            action: actionFor("flow:start", "prediction_title", c.id),
+            action: actionFor("flow:start", "prediction_edit", c.id, "title"),
             tone: "primary",
           },
           {
             text: "📝 ویرایش توضیحات",
-            action: actionFor("flow:start", "prediction_desc", c.id),
+            action: actionFor("flow:start", "prediction_edit", c.id, "description"),
             tone: "primary",
           },
         ],
@@ -335,12 +336,12 @@ export function registerPredictionViews() {
         [
           {
             text: "🎁 تغییر جایزه",
-            action: actionFor("flow:start", "prediction_reward", c.id),
+            action: actionFor("flow:start", "prediction_edit", c.id, "reward"),
             tone: "primary",
           },
           {
             text: "🔢 تغییر تعداد برنده‌ها",
-            action: actionFor("flow:start", "prediction_winners", c.id),
+            action: actionFor("flow:start", "prediction_edit", c.id, "winnerCount"),
             tone: "primary",
           },
         ],

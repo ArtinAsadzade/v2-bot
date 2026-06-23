@@ -44,7 +44,8 @@ export type FlowName =
   | "payment_gateway_update"
   | "payment_gateway_setup"
   | "xray_panel_setup"
-  | "prediction_create";
+  | "prediction_create"
+  | "prediction_edit";
 
 export interface ActiveFlow {
   name: FlowName;
@@ -68,6 +69,7 @@ export type CallbackTokenPayloadMap = {
   xrayPickerProduct: { target: "product_edit"; productId: string };
   predictionPick: { contestId: string; optionId: string };
   predictionClaim: { winnerId: string };
+  predictionProductReward: { productId?: string; page?: number; categoryId?: string };
 };
 export type CallbackTokenType = keyof CallbackTokenPayloadMap;
 export type CallbackTokenPayload<T extends CallbackTokenType = CallbackTokenType> = CallbackTokenPayloadMap[T];
@@ -83,7 +85,8 @@ export interface SessionData {
   liveTicketId?: string;
   liveTicketRole?: "user" | "admin";
   flow?: ActiveFlow;
-  predictionCreate?: { title?: string; question?: string; description?: string; options?: string[]; rewardType?: "wallet" | "product"; rewardWalletAmount?: number; rewardProductId?: string; winnerCount?: number; closesAt?: string };
+  predictionCreate?: { title?: string; question?: string; description?: string; options?: string[]; rewardType?: "wallet" | "product"; rewardWalletAmount?: number; rewardProductId?: string; rewardProductTitle?: string; winnerCount?: number; closesAt?: string };
+  predictionEdit?: { contestId: string; field: "title" | "question" | "description" | "winnerCount" | "reward" | "closesAt"; returnView?: string };
   dateTimePicker?: { flow: "prediction.create.closesAt" | "prediction.edit.closesAt"; returnView?: string; contestId?: string; selectedYear?: number; selectedMonth?: number; selectedDay?: number; selectedHour?: number; selectedMinute?: number };
   navigation?: { panelMessageId?: number; stack: ViewState[] };
   quickKeyboardSignature?: string;
