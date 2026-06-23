@@ -3,7 +3,11 @@ import type { InlineKeyboardButton } from "telegraf/types";
 import { type UiButtonStyle, type UiButtonTone } from "../ui/button-style";
 import { normalizeKeyboardLayout, styleForDesignButton } from "../ui/ui-system";
 import type { AppContext } from "../../types/bot";
-import { replyKeyboard, replyKeyboardSignature, type ReplyKeyboardScope } from "../keyboards/reply.keyboard";
+import {
+  replyKeyboard,
+  replyKeyboardSignature,
+  type ReplyKeyboardScope,
+} from "../keyboards/reply.keyboard";
 import { normalizeKeyboardRows } from "../keyboards/keyboard-normalizer";
 import type { InlineButton } from "../keyboards/design-system";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
@@ -79,6 +83,7 @@ export type PanelViewId =
   | "admin.predictions"
   | "admin.predictionList"
   | "admin.predictionDetail"
+  | "admin.predictionDeleteConfirm"
   | "admin.predictionResult"
   | "admin.predictionStats"
   | "admin.predictionParticipants"
@@ -132,7 +137,10 @@ export type PanelViewId =
   | "admin.tickets"
   | "admin.ticket";
 
-export type ViewState = { id: PanelViewId; params?: Record<string, string | number | boolean | undefined> };
+export type ViewState = {
+  id: PanelViewId;
+  params?: Record<string, string | number | boolean | undefined>;
+};
 export enum RenderMode {
   EDIT_CURRENT = "EDIT_CURRENT",
   SEND_NEW = "SEND_NEW",
@@ -147,7 +155,10 @@ export type ViewRenderResult = {
   renderMode?: RenderMode;
   navigation?: { back?: boolean; home?: boolean; cancel?: boolean };
 };
-export type ViewRenderer = (ctx: AppContext, params: Record<string, string>) => Promise<ViewRenderResult>;
+export type ViewRenderer = (
+  ctx: AppContext,
+  params: Record<string, string>,
+) => Promise<ViewRenderResult>;
 
 const registry = new Map<PanelViewId, ViewRenderer>();
 
@@ -175,14 +186,34 @@ const PARAM_ALIASES: Record<string, string> = {
   contestId: "pc",
   status: "s",
 };
-const PARAM_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_ALIASES).map(([key, value]) => [value, key]));
+const PARAM_ALIAS_REVERSE = Object.fromEntries(
+  Object.entries(PARAM_ALIASES).map(([key, value]) => [value, key]),
+);
 const PARAM_VALUE_ALIASES: Record<string, Record<string, string>> = {
-  status: { all: "a", active: "ac", open: "o", closed: "cl", resulted: "r", announced: "an", provisioning: "p", creating: "c", failed: "f", expired: "e", disabled: "d", missing_on_panel: "m" },
+  status: {
+    all: "a",
+    active: "ac",
+    open: "o",
+    closed: "cl",
+    resulted: "r",
+    announced: "an",
+    provisioning: "p",
+    creating: "c",
+    failed: "f",
+    expired: "e",
+    disabled: "d",
+    missing_on_panel: "m",
+  },
 };
-const PARAM_VALUE_ALIAS_REVERSE: Record<string, Record<string, string>> = Object.fromEntries(
+const PARAM_VALUE_ALIAS_REVERSE: Record<
+  string,
+  Record<string, string>
+> = Object.fromEntries(
   Object.entries(PARAM_VALUE_ALIASES).map(([key, values]) => [
     key,
-    Object.fromEntries(Object.entries(values).map(([value, alias]) => [alias, value])),
+    Object.fromEntries(
+      Object.entries(values).map(([value, alias]) => [alias, value]),
+    ),
   ]),
 );
 
@@ -192,20 +223,34 @@ export function isValidCallbackData(action: string): boolean {
 
 export function ensureCallbackData(action: string): string {
   if (!isValidCallbackData(action)) {
-    throw new Error(`Telegram callback payload is too long (${Buffer.byteLength(action, "utf8")} bytes): ${action}`);
+    throw new Error(
+      `Telegram callback payload is too long (${Buffer.byteLength(action, "utf8")} bytes): ${action}`,
+    );
   }
   return action;
 }
 
-export function actionFor(prefix: string, ...parts: Array<string | number | boolean | undefined>): string {
-  return ensureCallbackData([prefix, ...parts.filter((part) => part !== undefined && part !== "").map(String)].join(":"));
+export function actionFor(
+  prefix: string,
+  ...parts: Array<string | number | boolean | undefined>
+): string {
+  return ensureCallbackData(
+    [
+      prefix,
+      ...parts.filter((part) => part !== undefined && part !== "").map(String),
+    ].join(":"),
+  );
 }
 
-export function callbackFor(view: PanelViewId, params: Record<string, string | number | boolean | undefined> = {}): string {
+export function callbackFor(
+  view: PanelViewId,
+  params: Record<string, string | number | boolean | undefined> = {},
+): string {
   const query = Object.entries(params)
     .filter(([, value]) => value !== undefined && value !== "")
     .map(([key, value]) => {
-      const normalizedValue = PARAM_VALUE_ALIASES[key]?.[String(value)] ?? String(value);
+      const normalizedValue =
+        PARAM_VALUE_ALIASES[key]?.[String(value)] ?? String(value);
       return `${encodeURIComponent(PARAM_ALIASES[key] ?? key)}=${encodeURIComponent(normalizedValue)}`;
     })
     .join("&");
@@ -218,9 +263,11 @@ function parseParams(raw?: string): Record<string, string> {
   const params: Record<string, string> = {};
   for (const part of raw.split("&").filter(Boolean)) {
     const [key, value = ""] = part.split("=");
-    const fullKey = PARAM_ALIAS_REVERSE[decodeURIComponent(key)] ?? decodeURIComponent(key);
+    const fullKey =
+      PARAM_ALIAS_REVERSE[decodeURIComponent(key)] ?? decodeURIComponent(key);
     const decodedValue = decodeURIComponent(value);
-    params[fullKey] = PARAM_VALUE_ALIAS_REVERSE[fullKey]?.[decodedValue] ?? decodedValue;
+    params[fullKey] =
+      PARAM_VALUE_ALIAS_REVERSE[fullKey]?.[decodedValue] ?? decodedValue;
   }
   return params;
 }
@@ -289,6 +336,7 @@ export const PANEL_VIEW_IDS = new Set<string>([
   "admin.predictions",
   "admin.predictionList",
   "admin.predictionDetail",
+  "admin.predictionDeleteConfirm",
   "admin.predictionResult",
   "admin.predictionStats",
   "admin.predictionParticipants",
@@ -351,28 +399,65 @@ export function parseNavAction(action: string): ViewState | undefined {
   return { id, params: parseParams(params) };
 }
 
-export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?: boolean; cancel?: boolean } = { back: true, home: true }) {
-  const normalizedInput = normalizeKeyboardRows(normalizeKeyboardLayout(rows) as InlineButton[][]);
-  const seenActions = new Set(normalizedInput.flatMap((row) => row.map((button) => ("action" in button ? button.action : undefined))).filter(Boolean));
+export function panelKeyboard(
+  rows: UiKeyboard,
+  options: { back?: boolean; home?: boolean; cancel?: boolean } = {
+    back: true,
+    home: true,
+  },
+) {
+  const normalizedInput = normalizeKeyboardRows(
+    normalizeKeyboardLayout(rows) as InlineButton[][],
+  );
+  const seenActions = new Set(
+    normalizedInput
+      .flatMap((row) =>
+        row.map((button) => ("action" in button ? button.action : undefined)),
+      )
+      .filter(Boolean),
+  );
 
   const navigationRows: InlineButton[][] = [];
   const nav: InlineButton[] = [];
 
-  if (options.back && !seenActions.has("nav:back")) nav.push({ text: "🔙 برگشت", action: "nav:back", tone: "neutral" });
-  if (options.home && !seenActions.has(callbackFor("home"))) nav.push({ text: "🏠 خانه", action: callbackFor("home"), tone: "neutral" });
+  if (options.back && !seenActions.has("nav:back"))
+    nav.push({ text: "🔙 برگشت", action: "nav:back", tone: "neutral" });
+  if (options.home && !seenActions.has(callbackFor("home")))
+    nav.push({ text: "🏠 خانه", action: callbackFor("home"), tone: "neutral" });
   if (nav.length) navigationRows.push(nav);
-  if (options.cancel && !seenActions.has("flow:cancel")) navigationRows.push([{ text: "❌ لغو", action: "flow:cancel", tone: "danger" }]);
+  if (options.cancel && !seenActions.has("flow:cancel"))
+    navigationRows.push([
+      { text: "❌ لغو", action: "flow:cancel", tone: "danger" },
+    ]);
 
-  const normalizedRows = normalizeKeyboardRows([...normalizedInput, ...navigationRows]);
+  const normalizedRows = normalizeKeyboardRows([
+    ...normalizedInput,
+    ...navigationRows,
+  ]);
   const normalized: InlineKeyboardButton[][] = normalizedRows
     .map((row) => {
       const buttons: InlineKeyboardButton[] = [];
       for (const button of row) {
         try {
-          if ("url" in button) buttons.push({ text: button.text, url: button.url, ...styleForDesignButton(button) } as InlineKeyboardButton);
-          else buttons.push({ text: button.text, callback_data: ensureCallbackData(button.action), ...styleForDesignButton(button) } as InlineKeyboardButton);
+          if ("url" in button)
+            buttons.push({
+              text: button.text,
+              url: button.url,
+              ...styleForDesignButton(button),
+            } as InlineKeyboardButton);
+          else
+            buttons.push({
+              text: button.text,
+              callback_data: ensureCallbackData(button.action),
+              ...styleForDesignButton(button),
+            } as InlineKeyboardButton);
         } catch (error) {
-          console.error("BUTTON_BUILD_FAILED", { text: button.text, action: "action" in button ? button.action : undefined, url: "url" in button ? button.url : undefined, error: error instanceof Error ? error.message : String(error) });
+          console.error("BUTTON_BUILD_FAILED", {
+            text: button.text,
+            action: "action" in button ? button.action : undefined,
+            url: "url" in button ? button.url : undefined,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
       return buttons;
@@ -398,7 +483,10 @@ export async function renderPanel(
   try {
     result = await renderer(ctx, params);
   } catch (error) {
-    console.error("PANEL_RENDER_FAILED", { state, error: error instanceof Error ? error.message : String(error) });
+    console.error("PANEL_RENDER_FAILED", {
+      state,
+      error: error instanceof Error ? error.message : String(error),
+    });
     result = {
       text: "❌ نمایش این بخش ممکن نیست\n\nلطفاً از منوی اصلی دوباره وارد شوید.",
       keyboard: [
@@ -417,10 +505,20 @@ export async function renderPanel(
 
   if (result.replyKeyboard) {
     const isAdmin =
-      result.replyKeyboard !== "admin" && result.replyKeyboard !== "settings" && ctx.from ? await isAdminByTelegramId(ctx.from.id) : false;
+      result.replyKeyboard !== "admin" &&
+      result.replyKeyboard !== "settings" &&
+      ctx.from
+        ? await isAdminByTelegramId(ctx.from.id)
+        : false;
     const signature = replyKeyboardSignature(result.replyKeyboard, { isAdmin });
-    if (!ctx.callbackQuery && ctx.session.quickKeyboardSignature !== signature) {
-      await ctx.reply("⌨️ منوی دسترسی سریع", replyKeyboard(result.replyKeyboard, { isAdmin }));
+    if (
+      !ctx.callbackQuery &&
+      ctx.session.quickKeyboardSignature !== signature
+    ) {
+      await ctx.reply(
+        "⌨️ منوی دسترسی سریع",
+        replyKeyboard(result.replyKeyboard, { isAdmin }),
+      );
     }
     ctx.session.quickKeyboardSignature = signature;
   }
@@ -439,10 +537,16 @@ export async function renderPanel(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes("BUTTON_DATA_INVALID")) throw error;
-      console.error("BUTTON_DATA_INVALID_REPLY_FALLBACK", { state, error: message });
+      console.error("BUTTON_DATA_INVALID_REPLY_FALLBACK", {
+        state,
+        error: message,
+      });
       const sent = await ctx.reply(
         "نمایش این بخش با خطای دکمه مواجه شد. لطفاً دوباره تلاش کنید.",
-        panelKeyboard([[{ text: "🏠 خانه", action: callbackFor("home") }]], { back: false, home: false }),
+        panelKeyboard([[{ text: "🏠 خانه", action: callbackFor("home") }]], {
+          back: false,
+          home: false,
+        }),
       );
       ctx.session.navigation!.panelMessageId = sent.message_id;
     }
@@ -451,18 +555,37 @@ export async function renderPanel(
   const effectiveRenderMode = result.renderMode ?? renderMode;
   const shouldEdit =
     effectiveRenderMode === RenderMode.EDIT_CURRENT ||
-    (effectiveRenderMode === RenderMode.AUTO && Boolean(ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message));
+    (effectiveRenderMode === RenderMode.AUTO &&
+      Boolean(
+        ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message,
+      ));
 
-  if (shouldEdit && ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message) {
+  if (
+    shouldEdit &&
+    ctx.callbackQuery?.message &&
+    "text" in ctx.callbackQuery.message
+  ) {
     await ctx.editMessageText(result.text, extra).catch(async (error) => {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes("BUTTON_DATA_INVALID")) {
-        console.error("BUTTON_DATA_INVALID_RENDER_FALLBACK", { state, error: message });
-        result.text = "نمایش این بخش با خطای دکمه مواجه شد. لطفاً دوباره تلاش کنید.";
+        console.error("BUTTON_DATA_INVALID_RENDER_FALLBACK", {
+          state,
+          error: message,
+        });
+        result.text =
+          "نمایش این بخش با خطای دکمه مواجه شد. لطفاً دوباره تلاش کنید.";
       }
-      await ctx.editMessageReplyMarkup(keyboard.reply_markup).catch(() => undefined);
+      await ctx
+        .editMessageReplyMarkup(keyboard.reply_markup)
+        .catch(() => undefined);
       await fallbackReply().catch(async (replyError) => {
-        console.error("PANEL_FALLBACK_REPLY_FAILED", { state, error: replyError instanceof Error ? replyError.message : String(replyError) });
+        console.error("PANEL_FALLBACK_REPLY_FAILED", {
+          state,
+          error:
+            replyError instanceof Error
+              ? replyError.message
+              : String(replyError),
+        });
       });
     });
     return;
