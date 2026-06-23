@@ -4,7 +4,14 @@ import { actionLabels, userLabels } from "../ui/labels";
 export function productDetailViewKeyboard(productId: string, stock: number): UiKeyboard {
   return [
     ...(stock > 0 ? [[{ text: actionLabels.buy, action: callbackFor("shop.checkout", { productId }), tone: "success" as const }]] : []),
-    [{ text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId), tone: "primary" as const }],
+    [
+      { text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId), tone: "primary" as const },
+      { text: "📋 جزئیات", action: callbackFor("shop.product", { productId }), tone: "primary" as const },
+    ],
+    [
+      { text: "↩️ برگشت", action: callbackFor("shop.products"), tone: "neutral" as const },
+      { text: actionLabels.home, action: callbackFor("home"), tone: "neutral" as const },
+    ],
   ];
 }
 
@@ -19,6 +26,10 @@ export function checkoutViewKeyboard(productId: string, gatewayEnabled: boolean,
     [
       { text: actionLabels.walletPurchase, action: actionFor("buy:confirm", productId), tone: "success" as const },
       ...(gatewayEnabled ? [{ text: actionLabels.instantPayment, action: actionFor("buy:instant", productId), tone: "success" as const }] : []),
+    ],
+    [
+      { text: "🔙 بازگشت", action: callbackFor("shop.product", { productId }), tone: "neutral" as const },
+      { text: actionLabels.home, action: callbackFor("home"), tone: "neutral" as const },
     ],
     [{ text: "لغو", action: "flow:cancel", tone: "danger" as const }],
   ];
