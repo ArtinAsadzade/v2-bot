@@ -11,10 +11,10 @@ test("Xray center is a Persian operations dashboard with scoped buttons", () => 
   const center = adminViews.match(/registerView\("admin\.xrayCenter"[\s\S]*?registerView\("admin\.xrayPanels"/)?.[0] ?? "";
   assert.match(center, /🧩 مرکز مدیریت Xray/);
   for (const label of ["📡 وضعیت پنل", "👥 کاربران Xray", "📊 مصرف و ظرفیت", "⚠️ خطاها"]) assert.match(center, new RegExp(label));
-  assert.match(center, /📡 وضعیت پنل‌ها[\s\S]*👥 کاربران Xray/);
+  assert.match(center, /📡 پنل‌ها[\s\S]*👥 کاربران Xray/);
   assert.match(center, /🔄 همگام‌سازی[\s\S]*🧪 تست اتصال/);
   assert.match(center, /📊 گزارش مصرف[\s\S]*⚠️ خطاها/);
-  assert.match(center, /⚙️ تنظیمات Xray[\s\S]*🔙 پنل مدیریت/);
+  assert.match(center, /⚙️ تنظیمات Xray[\s\S]*🔙 بازگشت[\s\S]*🏠 خانه/);
   assert.doesNotMatch(center, /افزودن محصول|دسته‌بندی‌ها|مدیریت فروشگاه/);
   assert.doesNotMatch(center, /Xray Center/);
 });
@@ -51,10 +51,10 @@ test("shop and entity detail buttons are grouped with safe navigation and danger
 
 test("guided edits stay single-field and dashboard grouping is clean", () => {
   for (const flow of ["product_edit", "category_edit", "xray_panel_setup"]) assert.match(adminViews, new RegExp(`flow:start:${flow}:[^\`]+:[a-zA-Z]`));
-  assert.match(keyboards, /👥 کاربران[\s\S]*🛍 فروشگاه/);
-  assert.match(keyboards, /🧩 مرکز Xray[\s\S]*💳 مالی/);
-  assert.match(keyboards, /🎫 پشتیبانی[\s\S]*📣 اطلاع‌رسانی/);
-  assert.match(keyboards, /⚙️ تنظیمات[\s\S]*🏠 خانه/);
+  assert.match(keyboards, /📦 فروشگاه[\s\S]*👥 کاربران/);
+  assert.match(keyboards, /🧩 Xray[\s\S]*💳 مالی/);
+  assert.match(keyboards, /🔮 پیش‌بینی[\s\S]*📣 اطلاع‌رسانی/);
+  assert.match(keyboards, /⚙️ تنظیمات[\s\S]*📊 آمار[\s\S]*🏠 خانه/);
 });
 
 test("new callback routes are registered and literal callback data stays under Telegram limit", () => {
