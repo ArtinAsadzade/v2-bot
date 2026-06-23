@@ -51,10 +51,10 @@ test("shop and entity detail buttons are grouped with safe navigation and danger
 
 test("guided edits stay single-field and dashboard grouping is clean", () => {
   for (const flow of ["product_edit", "category_edit", "xray_panel_setup"]) assert.match(adminViews, new RegExp(`flow:start:${flow}:[^\`]+:[a-zA-Z]`));
-  assert.match(keyboards, /📦 فروشگاه[\s\S]*👥 کاربران/);
-  assert.match(keyboards, /🧩 Xray[\s\S]*💳 مالی/);
-  assert.match(keyboards, /🔮 پیش‌بینی[\s\S]*📣 اطلاع‌رسانی/);
-  assert.match(keyboards, /⚙️ تنظیمات[\s\S]*📊 آمار[\s\S]*🏠 خانه/);
+  assert.match(keyboards, /🛍 تجارت[\s\S]*👥 مشتریان/);
+  assert.match(keyboards, /🧩 Xray[\s\S]*📣 بازاریابی/);
+  assert.match(keyboards, /⚙️ سیستم[\s\S]*💳 مالی/);
+  assert.match(keyboards, /📊 داشبورد[\s\S]*🏠 خانه/);
 });
 
 test("new callback routes are registered and literal callback data stays under Telegram limit", () => {

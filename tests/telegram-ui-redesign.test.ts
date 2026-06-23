@@ -22,13 +22,14 @@ describe("Telegram UI redesign keyboards", () => {
     const rows = texts(inlineFromView(homeKeyboard(false)));
     expect(rows).toEqual([
       ["🛒 خرید سرویس", "🎁 تست رایگان"],
-      ["📦 سرویس‌های من", "👤 حساب کاربری"],
-      ["🔮 پیش‌بینی", "🎁 دعوت دوستان"],
-      ["🆘 پشتیبانی", "📘 راهنما"],
+      ["📦 سرویس‌های من", "💳 کیف پول"],
+      ["🎁 پاداش‌ها", "🔮 پیش‌بینی"],
+      ["🆘 پشتیبانی", "👤 پروفایل"],
+      ["📘 راهنما"],
     ]);
     expect(rows.flat()).toContain("🎁 تست رایگان");
     expect(rows.flat()).toContain("🛒 خرید سرویس");
-    expect(rows.flat()).toContain("🎁 دعوت دوستان");
+    expect(rows.flat()).toContain("🎁 پاداش‌ها");
     expect(rows.flat()).not.toContain("🎟 کد تخفیف");
   });
 
@@ -87,11 +88,10 @@ describe("Telegram UI redesign keyboards", () => {
 
   test("admin dashboard keyboard uses grouped operational sections", () => {
     expect(texts(inlineFromView(adminDashboardViewKeyboard()))).toEqual([
-      ["📦 فروشگاه", "👥 کاربران"],
-      ["🧩 Xray", "💳 مالی"],
-      ["🔮 پیش‌بینی", "📣 اطلاع‌رسانی"],
-      ["⚙️ تنظیمات", "📊 آمار"],
-      ["🏠 خانه"],
+      ["🛍 تجارت", "👥 مشتریان"],
+      ["🧩 Xray", "📣 بازاریابی"],
+      ["⚙️ سیستم", "💳 مالی"],
+      ["📊 داشبورد", "🏠 خانه"],
     ]);
   });
 
