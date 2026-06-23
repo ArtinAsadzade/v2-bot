@@ -219,7 +219,7 @@ export function registerAdminViews() {
       ]),
       section("⚠️ تأیید لازم است", ["تا زمانی که دکمه تأیید نهایی را نزنید، هیچ محصولی تغییر نمی‌کند."]),
     ]),
-    keyboard: [[{ text: "✅ تأیید سینک", action: "admin:xray:sync:confirm" }], [{ text: "🔙 سینک محصولات", action: callbackFor("admin.xraySync") }]],
+    keyboard: [[{ text: "✅ تأیید سینک", action: "admin:xray:sync:confirm" }]],
   }));
 
   registerView("admin.xrayBulkInbound", async (ctx) => {
