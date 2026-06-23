@@ -63,6 +63,9 @@ export type PanelViewId =
   | "referral.rewards"
   | "referral.rules"
   | "freeAccount"
+  | "prediction"
+  | "prediction.detail"
+  | "prediction.results"
   | "help"
   | "help.buy"
   | "help.connection"
@@ -70,6 +73,12 @@ export type PanelViewId =
   | "help.rules"
   | "productGuide"
   | "admin.dashboard"
+  | "admin.predictions"
+  | "admin.predictionList"
+  | "admin.predictionDetail"
+  | "admin.predictionResult"
+  | "admin.predictionStats"
+  | "admin.predictionParticipants"
   | "admin.users"
   | "admin.user"
   | "admin.user.blocks"
@@ -157,11 +166,12 @@ const PARAM_ALIASES: Record<string, string> = {
   invoiceId: "iid",
   ticketId: "tid",
   depositId: "did",
+  contestId: "pc",
   status: "s",
 };
 const PARAM_ALIAS_REVERSE = Object.fromEntries(Object.entries(PARAM_ALIASES).map(([key, value]) => [value, key]));
 const PARAM_VALUE_ALIASES: Record<string, Record<string, string>> = {
-  status: { all: "a", active: "ac", provisioning: "p", creating: "c", failed: "f", expired: "e", disabled: "d", missing_on_panel: "m" },
+  status: { all: "a", active: "ac", open: "o", closed: "cl", resulted: "r", announced: "an", provisioning: "p", creating: "c", failed: "f", expired: "e", disabled: "d", missing_on_panel: "m" },
 };
 const PARAM_VALUE_ALIAS_REVERSE: Record<string, Record<string, string>> = Object.fromEntries(
   Object.entries(PARAM_VALUE_ALIASES).map(([key, values]) => [
@@ -260,6 +270,9 @@ export const PANEL_VIEW_IDS = new Set<string>([
   "referral.rewards",
   "referral.rules",
   "freeAccount",
+  "prediction",
+  "prediction.detail",
+  "prediction.results",
   "help",
   "help.buy",
   "help.connection",
@@ -267,6 +280,12 @@ export const PANEL_VIEW_IDS = new Set<string>([
   "help.rules",
   "productGuide",
   "admin.dashboard",
+  "admin.predictions",
+  "admin.predictionList",
+  "admin.predictionDetail",
+  "admin.predictionResult",
+  "admin.predictionStats",
+  "admin.predictionParticipants",
   "admin.users",
   "admin.user",
   "admin.user.blocks",

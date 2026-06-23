@@ -11,6 +11,7 @@ import { registerWalletHandlers } from "./wallet.handlers";
 import { registerFreeAccountHandlers } from "./free-account.handlers";
 import { registerSupportHandlers } from "./support.handlers";
 import { registerAdminHandlers } from "./admin.handlers";
+import { registerPredictionHandlers } from "./prediction.handlers";
 
 export function registerModernHandlers(bot: AppBot) {
   registerModernViews();
@@ -25,5 +26,6 @@ export function registerModernHandlers(bot: AppBot) {
   registerWalletHandlers(bot);
   registerFreeAccountHandlers(bot);
   registerSupportHandlers(bot);
+  registerPredictionHandlers(bot);
   registerAdminHandlers(bot);
 }

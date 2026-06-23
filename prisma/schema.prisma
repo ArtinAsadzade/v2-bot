@@ -847,3 +847,133 @@ model FreeTestConfig {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+enum PredictionContestStatus {
+  draft
+  open
+  closed
+  resulted
+  announced
+  archived
+}
+
+enum PredictionRewardType {
+  wallet
+  product
+}
+
+enum PredictionEntryStatus {
+  submitted
+  correct
+  wrong
+  winner
+  rewarded
+}
+
+enum PredictionWinnerStatus {
+  selected
+  notified
+  claimed
+  failed
+}
+
+model PredictionContest {
+  id                       String                  @id @default(auto()) @map("_id") @db.ObjectId
+  title                    String
+  description              String?
+  status                   PredictionContestStatus @default(draft)
+  question                 String
+  closesAt                 DateTime
+  resultOptionId           String?                 @db.ObjectId
+  winnerCount              Int
+  rewardType               PredictionRewardType
+  rewardWalletAmount       Int?
+  rewardProductId          String?                 @db.ObjectId
+  allowUserEdit            Boolean                 @default(false)
+  createdByAdminTelegramId String?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  resultedAt               DateTime?
+  announcedAt              DateTime?
+  archivedAt               DateTime?
+
+  options PredictionOption[]
+  entries PredictionEntry[]
+  winners PredictionWinner[]
+  auditLogs PredictionAuditLog[]
+
+  @@index([status])
+  @@index([closesAt])
+}
+
+model PredictionOption {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  contestId String   @db.ObjectId
+  title     String
+  order     Int
+  createdAt DateTime @default(now())
+
+  contest PredictionContest @relation(fields: [contestId], references: [id])
+  entries PredictionEntry[]
+
+  @@index([contestId])
+}
+
+model PredictionEntry {
+  id              String                @id @default(auto()) @map("_id") @db.ObjectId
+  contestId       String                @db.ObjectId
+  optionId        String                @db.ObjectId
+  userId          String                @db.ObjectId
+  telegramId      String
+  status          PredictionEntryStatus @default(submitted)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  rewardClaimedAt DateTime?
+
+  contest PredictionContest @relation(fields: [contestId], references: [id])
+  option PredictionOption @relation(fields: [optionId], references: [id])
+  winner PredictionWinner?
+
+  @@unique([contestId, userId])
+  @@index([contestId])
+  @@index([userId])
+  @@index([optionId])
+}
+
+model PredictionWinner {
+  id                 String                 @id @default(auto()) @map("_id") @db.ObjectId
+  contestId          String                 @db.ObjectId
+  entryId            String                 @unique @db.ObjectId
+  userId             String                 @db.ObjectId
+  telegramId         String
+  rewardType         PredictionRewardType
+  rewardWalletAmount Int?
+  rewardProductId    String?                @db.ObjectId
+  status             PredictionWinnerStatus @default(selected)
+  selectedAt         DateTime               @default(now())
+  notifiedAt         DateTime?
+  claimedAt          DateTime?
+  failureReason      String?
+
+  contest PredictionContest @relation(fields: [contestId], references: [id])
+  entry PredictionEntry @relation(fields: [entryId], references: [id])
+
+  @@unique([contestId, userId])
+  @@index([contestId])
+  @@index([userId])
+  @@index([status])
+}
+
+model PredictionAuditLog {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  contestId       String   @db.ObjectId
+  adminTelegramId String?
+  userId          String?  @db.ObjectId
+  action          String
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  contest PredictionContest @relation(fields: [contestId], references: [id])
+
+  @@index([contestId])
+  @@index([userId])
+}

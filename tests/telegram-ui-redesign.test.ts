@@ -23,7 +23,8 @@ describe("Telegram UI redesign keyboards", () => {
     expect(rows).toEqual([
       ["🛒 خرید سرویس", "🎁 تست رایگان"],
       ["📦 سرویس‌های من", "👤 حساب کاربری"],
-      ["💳 کیف پول", "🎟 دعوت دوستان"],
+      ["💳 کیف پول", "🔮 پیش‌بینی"],
+      ["🎟 دعوت دوستان"],
       ["🆘 پشتیبانی", "📘 راهنما"],
     ]);
     expect(rows.flat()).toContain("🎁 تست رایگان");
@@ -89,7 +90,8 @@ describe("Telegram UI redesign keyboards", () => {
     expect(texts(inlineFromView(adminDashboardViewKeyboard()))).toEqual([
       ["👥 کاربران", "🛍 فروشگاه"],
       ["🧩 مرکز Xray", "💳 مالی"],
-      ["🎫 پشتیبانی", "📣 اطلاع‌رسانی"],
+      ["🔮 پیش‌بینی‌ها", "🎫 پشتیبانی"],
+      ["📣 اطلاع‌رسانی"],
       ["⚙️ تنظیمات", "🏠 خانه"],
     ]);
   });

@@ -43,7 +43,8 @@ export type FlowName =
   | "product_guide_edit"
   | "payment_gateway_update"
   | "payment_gateway_setup"
-  | "xray_panel_setup";
+  | "xray_panel_setup"
+  | "prediction_create";
 
 export interface ActiveFlow {
   name: FlowName;
@@ -56,6 +57,8 @@ export type CallbackTokenPayloadMap = {
   renewal: { xrayClientId: string; productId: string };
   xrayGroupSelect: { target: "free_test" | "product_create" | "product_edit"; selected: string | null; productId?: string };
   xrayPickerProduct: { target: "product_edit"; productId: string };
+  predictionPick: { contestId: string; optionId: string };
+  predictionClaim: { winnerId: string };
 };
 export type CallbackTokenType = keyof CallbackTokenPayloadMap;
 export type CallbackTokenPayload<T extends CallbackTokenType = CallbackTokenType> = CallbackTokenPayloadMap[T];
