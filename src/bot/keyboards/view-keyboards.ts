@@ -46,8 +46,9 @@ export function accountListViewKeyboard(rows: UiKeyboard): UiKeyboard {
 export function adminDashboardViewKeyboard(): UiKeyboard {
   return [
     [{ text: "🛍 تجارت", action: callbackFor("admin.store"), tone: "primary" as const }, { text: "👥 مشتریان", action: callbackFor("admin.usersSupport"), tone: "primary" as const }],
-    [{ text: "🧩 Xray", action: callbackFor("admin.xrayCenter"), tone: "primary" as const }, { text: "📣 بازاریابی", action: callbackFor("admin.content"), tone: "primary" as const }],
-    [{ text: "⚙️ سیستم", action: callbackFor("admin.botSettings"), tone: "primary" as const }, { text: "💳 مالی", action: callbackFor("admin.finance"), tone: "primary" as const }],
+    [{ text: "🧩 Xray", action: callbackFor("admin.xrayCenter"), tone: "primary" as const }, { text: "🔮 پیش‌بینی‌ها", action: callbackFor("admin.predictions"), tone: "primary" as const }],
+    [{ text: "📣 بازاریابی", action: callbackFor("admin.content"), tone: "primary" as const }, { text: "⚙️ سیستم", action: callbackFor("admin.botSettings"), tone: "primary" as const }],
+    [{ text: "💳 مالی", action: callbackFor("admin.finance"), tone: "primary" as const }],
     [{ text: "📊 داشبورد", action: callbackFor("admin.dashboard"), tone: "neutral" as const }, { text: "🏠 خانه", action: callbackFor("home"), tone: "neutral" as const }],
   ];
 }

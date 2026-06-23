@@ -89,8 +89,9 @@ describe("Telegram UI redesign keyboards", () => {
   test("admin dashboard keyboard uses grouped operational sections", () => {
     expect(texts(inlineFromView(adminDashboardViewKeyboard()))).toEqual([
       ["🛍 تجارت", "👥 مشتریان"],
-      ["🧩 Xray", "📣 بازاریابی"],
-      ["⚙️ سیستم", "💳 مالی"],
+      ["🧩 Xray", "🔮 پیش‌بینی‌ها"],
+      ["📣 بازاریابی", "⚙️ سیستم"],
+      ["💳 مالی"],
       ["📊 داشبورد", "🏠 خانه"],
     ]);
   });

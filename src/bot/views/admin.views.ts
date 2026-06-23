@@ -99,6 +99,10 @@ export function registerAdminViews() {
           { text: "🧪 تست اتصال", action: "admin:xray:center:test-api", tone: "success" },
         ],
         [
+          { text: "📦 بروزرسانی گروهی اینباند", action: callbackFor("admin.xrayBulkInbound"), tone: "primary" },
+          { text: "🗺 نگاشت محصولات", action: callbackFor("admin.xrayBulkInbound"), tone: "primary" },
+        ],
+        [
           { text: "📊 گزارش مصرف", action: callbackFor("admin.xrayClients"), tone: "primary" },
           { text: "⚠️ خطاها", action: callbackFor("admin.xrayClients", { status: "failed" }), tone: "primary" },
         ],
@@ -222,6 +226,59 @@ export function registerAdminViews() {
     ]),
     keyboard: [[{ text: "✅ تأیید سینک", action: "admin:xray:sync:confirm" }], [{ text: "🔙 سینک محصولات", action: callbackFor("admin.xraySync") }]],
   }));
+
+  registerView("admin.xrayBulkInbound", async (ctx) => {
+    const products = await prisma.product.findMany({ where: { mode: "xray_auto", AND: [{ deletedAt: null }] }, include: { category: true }, orderBy: { updatedAt: "desc" }, take: 20 });
+    const selected = new Set(ctx.session.xrayBulkInbound?.selectedProductIds ?? []);
+    return {
+      text: joinSections([
+        card("📦 بروزرسانی گروهی اینباند محصولات", [
+          "مرحله ۱ از ۴: محصولات Xray را انتخاب کنید.",
+          `محصولات انتخاب‌شده: ${selected.size.toLocaleString("fa-IR")}`,
+          "سپس پنل و inbound مقصد را انتخاب کنید تا پیش‌نمایش قبل از اعمال نمایش داده شود.",
+        ]),
+      ]),
+      keyboard: [
+        [{ text: "✅ انتخاب همه صفحه", action: "admin:xb:all", tone: "success" }, { text: "🧹 پاک‌کردن انتخاب", action: "admin:xb:clear", tone: "danger" }],
+        ...products.map((product) => [{ text: `${selected.has(product.id) ? "✅" : "⬜️"} ${product.title}`.slice(0, 60), action: `admin:xb:t:${product.id}`, tone: "primary" as const }]),
+        [{ text: "➡️ انتخاب پنل", action: callbackFor("admin.xrayBulkInboundPanel"), tone: "success" }],
+        [{ text: "🔙 مرکز Xray", action: callbackFor("admin.xrayCenter"), tone: "neutral" }],
+      ],
+    };
+  });
+
+  registerView("admin.xrayBulkInboundPanel", async (ctx) => {
+    const panels = await prisma.xrayPanelConfig.findMany({ where: { enabled: true }, orderBy: { updatedAt: "desc" } });
+    const selectedCount = ctx.session.xrayBulkInbound?.selectedProductIds.length ?? 0;
+    return {
+      text: card("📡 انتخاب پنل و inbound", [`محصولات انتخاب‌شده: ${selectedCount.toLocaleString("fa-IR")}`, "مرحله ۲: پنل مقصد را انتخاب کنید. بعد از انتخاب پنل، inboundهای همان پنل نمایش داده می‌شوند."]),
+      keyboard: [
+        ...panels.map((panel) => [{ text: `📡 ${panel.name}`.slice(0, 60), action: `admin:xb:p:${panel.id}`, tone: "primary" as const }]),
+        [{ text: "🔙 انتخاب محصولات", action: callbackFor("admin.xrayBulkInbound"), tone: "neutral" }],
+      ],
+    };
+  });
+
+  registerView("admin.xrayBulkInboundPreview", async (ctx) => {
+    const state = ctx.session.xrayBulkInbound;
+    const products = await prisma.product.findMany({ where: { id: { in: state?.selectedProductIds ?? [] } }, select: { id: true, title: true, inboundIds: true } });
+    const panel = state?.panelId ? await prisma.xrayPanelConfig.findUnique({ where: { id: state.panelId } }) : null;
+    return {
+      text: joinSections([
+        card("👁 پیش‌نمایش بروزرسانی گروهی اینباند", [
+          `پنل مقصد: ${panel?.name ?? "انتخاب نشده"}`,
+          `inbound مقصد: ${state?.inboundId ?? "انتخاب نشده"}`,
+          `محصولات درگیر: ${products.length.toLocaleString("fa-IR")}`,
+          ...products.slice(0, 10).map((product) => `• ${product.title} ← inbound ${state?.inboundId ?? "—"} (قبلی: ${product.inboundIds.join("، ") || "—"})`),
+        ]),
+        section("⚠️ تأیید لازم است", ["با دکمه تأیید، inbound همه محصولات انتخاب‌شده بروزرسانی می‌شود."]),
+      ]),
+      keyboard: [
+        [{ text: "✅ اعمال بروزرسانی", action: "admin:xb:apply", tone: "success" }],
+        [{ text: "🔙 انتخاب پنل", action: callbackFor("admin.xrayBulkInboundPanel"), tone: "neutral" }, { text: "🧩 مرکز Xray", action: callbackFor("admin.xrayCenter"), tone: "neutral" }],
+      ],
+    };
+  });
 
   registerView("admin.xraySettings", async () => {
     const config = await XrayPanelService.getEnabledConfig();
@@ -491,21 +548,17 @@ ${divider}
 🏪 وضعیت فروشگاه: ${stats.setting.storeStatus === "active" ? "فعال ✅" : "غیرفعال ⛔"}
 💳 حداقل شارژ: ${money(stats.setting.minimumTopupAmount)}
 
-یادداشت: تغییر یوزرنیم فقط از طریق BotFather امکان‌پذیر است.`,
+تنظیمات قابل اجرا فقط با دکمه‌های عملیاتی زیر نمایش داده می‌شوند.`,
       keyboard: [
-        [
-          { text: "🏷 نام ربات", action: callbackFor("admin.botSettings") },
-          { text: "📝 توضیحات", action: callbackFor("admin.botSettings") },
-        ],
-        [
-          { text: "🖼 عکس پروفایل", action: callbackFor("admin.botSettings") },
-          { text: "👤 یوزرنیم", action: callbackFor("admin.botSettings") },
-        ],
         [
           { text: "🏪 وضعیت فروشگاه", action: callbackFor("admin.settings") },
           { text: "📢 عضویت اجباری", action: callbackFor("admin.forcedJoin") },
         ],
-        [{ text: "🔐 امنیت", action: callbackFor("admin.forcedJoin") }],
+        [
+          { text: "📊 پایش سیستم", action: callbackFor("admin.monitoring") },
+          { text: "⚡ درگاه پرداخت", action: callbackFor("admin.paymentGateway") },
+        ],
+        [{ text: "🔙 پنل مدیریت", action: callbackFor("admin.dashboard") }],
       ],
     };
   });
