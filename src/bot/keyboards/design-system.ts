@@ -1,6 +1,7 @@
 import type { InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup } from "telegraf/types";
 import { callbackFor, ensureCallbackData, type PanelViewId } from "../navigation/panel-ui";
 import { buttonIntent, styledButtonFields, type ButtonIntent, type TelegramButtonStyle, type UiButtonStyle, type UiButtonTone } from "../ui/button-style";
+import { normalizeKeyboardRows } from "./keyboard-normalizer";
 
 export type ButtonTone = UiButtonTone;
 export type ButtonStyle = UiButtonStyle;
@@ -10,10 +11,10 @@ type StyledInlineKeyboardButton = InlineKeyboardButton.CallbackButton & { style?
 type StyledUrlInlineKeyboardButton = InlineKeyboardButton.UrlButton & { style?: TelegramButtonStyle; icon_custom_emoji_id?: string };
 
 type ButtonStyleFields = { tone?: ButtonTone; style?: ButtonTone; intent?: ButtonIntent; customEmojiId?: string };
-type ReplyButton = KeyboardButton & ButtonStyleFields;
+type ReplyButton = KeyboardButton.CommonButton & ButtonStyleFields;
 type InlineCallbackButton = { text: string; action: string } & ButtonStyleFields;
 type InlineUrlButton = { text: string; url: string } & ButtonStyleFields;
-type InlineButton = InlineCallbackButton | InlineUrlButton;
+export type InlineButton = InlineCallbackButton | InlineUrlButton;
 
 export type ReplyKeyboardScope = "home" | "shop" | "profile" | "wallet" | "payment" | "support" | "freeAccount" | "admin" | "settings";
 
@@ -77,9 +78,10 @@ function inlineButton(button: InlineButton): StyledInlineKeyboardButton | Styled
 }
 
 export function buildReplyKeyboard(rows: ReplyButton[][]): { reply_markup: ReplyKeyboardMarkup } {
+  const normalizedRows = normalizeKeyboardRows(rows);
   return {
     reply_markup: {
-      keyboard: rows.map((row) => row.map(replyButton)),
+      keyboard: normalizedRows.map((row) => row.map(replyButton)),
       resize_keyboard: true,
       is_persistent: true,
     },
@@ -87,7 +89,8 @@ export function buildReplyKeyboard(rows: ReplyButton[][]): { reply_markup: Reply
 }
 
 export function buildInlineKeyboard(rows: InlineButton[][]): { reply_markup: InlineKeyboardMarkup } {
-  return { reply_markup: { inline_keyboard: rows.map((row) => row.map(inlineButton)) } };
+  const normalizedRows = normalizeKeyboardRows(rows);
+  return { reply_markup: { inline_keyboard: normalizedRows.map((row) => row.map(inlineButton)) } };
 }
 
 export function MainMenuKeyboard(isAdmin = false) {

@@ -22,10 +22,9 @@ describe("Telegram UI redesign keyboards", () => {
     const rows = texts(inlineFromView(homeKeyboard(false)));
     expect(rows).toEqual([
       ["🛒 خرید سرویس", "🎁 تست رایگان"],
-      ["📦 سرویس‌های من", "💳 کیف پول"],
+      ["📦 سرویس‌های من", "👤 حساب کاربری"],
       ["🔮 پیش‌بینی", "🎁 دعوت دوستان"],
-      ["🆘 پشتیبانی", "📢 اطلاعیه‌ها"],
-      ["📘 راهنما"],
+      ["🆘 پشتیبانی", "📘 راهنما"],
     ]);
     expect(rows.flat()).toContain("🎁 تست رایگان");
     expect(rows.flat()).toContain("🛒 خرید سرویس");
@@ -109,5 +108,19 @@ describe("Telegram UI redesign messages", () => {
     expect(userHomeMessage({ firstName: "Ali", balance: "100,000 تومان", activeServices: 2 })).toContain("سلام Ali");
     expect(productDetailMessage({ title: "پلن", traffic: "100GB", duration: "30 روز", price: "200,000", finalAmount: "200,000" })).toContain("✅ مبلغ نهایی");
     expect(adminDangerConfirmMessage({ action: "حذف محصول", item: "پلن" })).toContain("⚠️ آیا مطمئن هستید؟");
+  });
+});
+
+
+describe("Keyboard duplicate regression protection", () => {
+  test("inline builder removes duplicate callback actions and empty rows", () => {
+    const keyboard = buildInlineKeyboard([
+      [{ text: "Back", action: callbackFor("home") }, { text: "Main Menu", action: callbackFor("home") }],
+      [],
+      [{ text: "Support", action: callbackFor("support") }],
+      [{ text: "Support duplicate", action: callbackFor("support") }],
+    ]);
+    expect(actions(keyboard)).toEqual([callbackFor("home"), callbackFor("support")]);
+    expect(texts(keyboard)).toEqual([["Back"], ["Support"]]);
   });
 });

@@ -4,6 +4,8 @@ import { type UiButtonStyle, type UiButtonTone } from "../ui/button-style";
 import { normalizeKeyboardLayout, styleForDesignButton } from "../ui/ui-system";
 import type { AppContext } from "../../types/bot";
 import { replyKeyboard, replyKeyboardSignature, type ReplyKeyboardScope } from "../keyboards/reply.keyboard";
+import { normalizeKeyboardRows } from "../keyboards/keyboard-normalizer";
+import type { InlineButton } from "../keyboards/design-system";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 
 export type { UiButtonTone, UiButtonStyle };
@@ -344,56 +346,32 @@ export function parseNavAction(action: string): ViewState | undefined {
 }
 
 export function panelKeyboard(rows: UiKeyboard, options: { back?: boolean; home?: boolean; cancel?: boolean } = { back: true, home: true }) {
-  const seenNav = new Set<string>();
+  const normalizedInput = normalizeKeyboardRows(normalizeKeyboardLayout(rows) as InlineButton[][]);
+  const seenActions = new Set(normalizedInput.flatMap((row) => row.map((button) => ("action" in button ? button.action : undefined))).filter(Boolean));
 
-  const normalizedRows = normalizeKeyboardLayout(rows);
+  const navigationRows: InlineButton[][] = [];
+  const nav: InlineButton[] = [];
 
+  if (options.back && !seenActions.has("nav:back")) nav.push({ text: "🔙 برگشت", action: "nav:back", tone: "neutral" });
+  if (options.home && !seenActions.has(callbackFor("home"))) nav.push({ text: "🏠 خانه", action: callbackFor("home"), tone: "neutral" });
+  if (nav.length) navigationRows.push(nav);
+  if (options.cancel && !seenActions.has("flow:cancel")) navigationRows.push([{ text: "❌ لغو", action: "flow:cancel", tone: "danger" }]);
+
+  const normalizedRows = normalizeKeyboardRows([...normalizedInput, ...navigationRows]);
   const normalized: InlineKeyboardButton[][] = normalizedRows
     .map((row) => {
       const buttons: InlineKeyboardButton[] = [];
-
       for (const button of row) {
-        if ((button.action === "nav:back" || button.action === callbackFor("home")) && seenNav.has(button.action)) continue;
-        if (button.action === "nav:back" || button.action === callbackFor("home")) seenNav.add(button.action);
-
         try {
-          if (button.url) {
-            buttons.push({ text: button.text, url: button.url, ...styleForDesignButton(button) } as InlineKeyboardButton);
-            continue;
-          }
-
-          if (!button.action) continue;
-
-          buttons.push({ text: button.text, callback_data: ensureCallbackData(button.action), ...styleForDesignButton(button) } as InlineKeyboardButton);
+          if ("url" in button) buttons.push({ text: button.text, url: button.url, ...styleForDesignButton(button) } as InlineKeyboardButton);
+          else buttons.push({ text: button.text, callback_data: ensureCallbackData(button.action), ...styleForDesignButton(button) } as InlineKeyboardButton);
         } catch (error) {
-          console.error("BUTTON_BUILD_FAILED", {
-            text: button.text,
-            action: button.action,
-            url: button.url,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          console.error("BUTTON_BUILD_FAILED", { text: button.text, action: "action" in button ? button.action : undefined, url: "url" in button ? button.url : undefined, error: error instanceof Error ? error.message : String(error) });
         }
       }
-
       return buttons;
     })
     .filter((row) => row.length > 0);
-
-  const nav: InlineKeyboardButton[] = [];
-
-  if (options.back && !seenNav.has("nav:back")) {
-    nav.push({ text: "↩️ برگشت", callback_data: ensureCallbackData("nav:back") } as InlineKeyboardButton);
-  }
-
-  if (options.home && !seenNav.has(callbackFor("home"))) {
-    nav.push({ text: "🏠 خانه", callback_data: callbackFor("home") } as InlineKeyboardButton);
-  }
-
-  if (nav.length) normalized.push(nav);
-
-  if (options.cancel) {
-    normalized.push([{ text: "❌ لغو عملیات", callback_data: "flow:cancel", style: "danger" } as InlineKeyboardButton]);
-  }
 
   return Markup.inlineKeyboard(normalized);
 }
