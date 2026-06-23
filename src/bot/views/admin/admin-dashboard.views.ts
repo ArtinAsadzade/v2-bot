@@ -54,6 +54,10 @@ export function registerAdminDashboardViews() {
           { text: "🔎 جستجوی محصول", action: "flow:start:admin_product_search" },
           { text: "🔄 سینک با Xray", action: callbackFor("admin.xraySync") },
         ],
+        [
+          { text: "🆓 اکانت تست", action: callbackFor("admin.freeAccounts") },
+          { text: "📦 بروزرسانی گروهی اینباند", action: callbackFor("admin.xrayBulkInbound") },
+        ],
         [{ text: "🔙 پنل مدیریت", action: callbackFor("admin.dashboard") }],
       ],
     };

@@ -193,6 +193,16 @@ ${divider}
     };
   });
 
+  registerView("referral.link", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    if (!user?.referralCode) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
+    const { link, shareUrl } = buildReferralShare(user.referralCode);
+    return {
+      text: card("🔗 لینک دعوت", [link]),
+      keyboard: [[{ text: "📤 ارسال متن دعوت", url: shareUrl }], [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }]],
+    };
+  });
+
   registerView("referral.users", async (ctx) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
 

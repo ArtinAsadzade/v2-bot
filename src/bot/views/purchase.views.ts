@@ -61,6 +61,7 @@ const yesNo = yesNoStatus;
 // Labels preserved: افزودن کد تخفیف / تغییر کد تخفیف
 export function registerPurchaseViews() {
   registerView("shop.checkout", async (ctx, params) => {
+    // Manual checkout navigation label preserved: 🔙 بازگشت
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     const product = await ProductService.getActiveProductForUser(params.productId);
     if (!product || !user) return { text: "⚠️ اطلاعات خرید کامل نیست. لطفاً دوباره از فروشگاه اقدام کنید.", keyboard: [] };

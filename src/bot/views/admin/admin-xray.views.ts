@@ -51,6 +51,10 @@ export function registerAdminXrayViews() {
           { text: "⚠️ خطاها", action: callbackFor("admin.xrayClients", { status: "failed" }), tone: "primary" },
         ],
         [{ text: "⚙️ تنظیمات Xray", action: callbackFor("admin.xraySettings"), tone: "primary" }],
+        [
+          { text: "🔙 بازگشت", action: callbackFor("admin.dashboard"), tone: "neutral" },
+          { text: "🏠 خانه", action: callbackFor("home"), tone: "neutral" },
+        ],
       ],
     };
   });
