@@ -474,17 +474,7 @@ export function registerPredictionViews() {
           ? entries.map((e: any) => `• ${e.telegramId} · ${e.option?.title ?? "گزینه"} · ${statusFa[e.status] ?? e.status}`)
           : ["هنوز شرکت‌کننده‌ای وجود ندارد."],
       ),
-      keyboard: [
-        [
-          {
-            text: "🔙 جزئیات",
-            action: callbackFor("admin.predictionDetail", {
-              contestId: params.contestId,
-            }),
-            tone: "neutral",
-          },
-        ],
-      ],
+      keyboard: [],
     };
   });
 
