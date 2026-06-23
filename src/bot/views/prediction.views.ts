@@ -107,7 +107,9 @@ export function registerPredictionViews() {
           ],
         ],
       };
-    const entry = user ? await db.predictionEntry.findFirst({ where: { contestId: contest.id, userId: user.id }, include: { option: true } }) : undefined;
+    const entry = user
+      ? await db.predictionEntry.findFirst({ where: { contestId: contest.id, userId: user.id }, include: { option: true } })
+      : undefined;
     const open = contest.status === "open" && new Date(contest.closesAt) > new Date();
     const archived = contest.status === "archived";
     const optionRows: UiKeyboard =
@@ -378,18 +380,6 @@ export function registerPredictionViews() {
             text: "🗑 حذف/آرشیو",
             action: actionFor("ap:del", c.id),
             tone: "danger",
-          },
-        ],
-        [
-          {
-            text: "🔙 لیست پیش‌بینی‌ها",
-            action: callbackFor("admin.predictionList"),
-            tone: "neutral",
-          },
-          {
-            text: "🔮 مدیریت پیش‌بینی‌ها",
-            action: callbackFor("admin.predictions"),
-            tone: "neutral",
           },
         ],
       ],

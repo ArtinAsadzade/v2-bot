@@ -28,7 +28,8 @@ const parseInteger = (value: string) => Number(normalizeNumericInput(value));
 function validateLength(value: string, label: string, min: number, max: number, optional = false) {
   const trimmed = value.trim();
   if (!trimmed && optional) return trimmed;
-  if (trimmed.length < min || trimmed.length > max) throw productValidationError(`${label} باید بین ${min.toLocaleString("fa-IR")} تا ${max.toLocaleString("fa-IR")} کاراکتر باشد.`);
+  if (trimmed.length < min || trimmed.length > max)
+    throw productValidationError(`${label} باید بین ${min.toLocaleString("fa-IR")} تا ${max.toLocaleString("fa-IR")} کاراکتر باشد.`);
   return trimmed;
 }
 
@@ -51,7 +52,11 @@ function parseTrafficGbInput(text: string) {
   const amount = Number(match[1]);
   if (!Number.isFinite(amount) || amount <= 0) throw productValidationError("حجم باید عددی مثبت باشد.");
   const unit = match[2] ?? "gb";
-  const gb = ["mb", "m", "مگ", "مگابایت"].includes(unit) ? amount / 1024 : ["b", "byte", "bytes", "بایت"].includes(unit) ? amount / 1_073_741_824 : amount;
+  const gb = ["mb", "m", "مگ", "مگابایت"].includes(unit)
+    ? amount / 1024
+    : ["b", "byte", "bytes", "بایت"].includes(unit)
+      ? amount / 1_073_741_824
+      : amount;
   if (!Number.isFinite(gb) || gb <= 0) throw productValidationError("حجم واردشده معتبر نیست.");
   return Math.max(1, Math.round(gb));
 }
@@ -202,14 +207,29 @@ function touchDraft(ctx: AppContext) {
 
 function clearFlow(ctx: AppContext, reason: "completed" | "cancelled" | "recovered" | "expired" | "failed") {
   const flow = ctx.session.flow;
-  if (flow) WorkflowTelemetryService.record({ type: reason, flow: flow.name, step: flow.step, draftId: flow.draft?.id, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined });
+  if (flow)
+    WorkflowTelemetryService.record({
+      type: reason,
+      flow: flow.name,
+      step: flow.step,
+      draftId: flow.draft?.id,
+      telegramId: ctx.from?.id ? String(ctx.from.id) : undefined,
+    });
   ctx.session.flow = undefined;
   if (flow?.name === "prediction_create") ctx.session.predictionCreate = undefined;
 }
 
 async function recoverCorruptedFlow(ctx: AppContext, reason: string, returnTo?: ViewState) {
   const flow = ctx.session.flow;
-  MonitoringService.record({ type: "WORKFLOW_RECOVERED", section: "Flow Engine", description: reason, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined, severity: "warning", suggestedAction: "تعریف مراحل و داده‌های پیش‌نویس جریان را بررسی کنید.", metadata: { flow: flow?.name, step: flow?.step, draftId: flow?.draft?.id } });
+  MonitoringService.record({
+    type: "WORKFLOW_RECOVERED",
+    section: "Flow Engine",
+    description: reason,
+    telegramId: ctx.from?.id ? String(ctx.from.id) : undefined,
+    severity: "warning",
+    suggestedAction: "تعریف مراحل و داده‌های پیش‌نویس جریان را بررسی کنید.",
+    metadata: { flow: flow?.name, step: flow?.step, draftId: flow?.draft?.id },
+  });
   clearFlow(ctx, reason.includes("منقضی") ? "expired" : "recovered");
   await ctx.reply(`${reason}
 
@@ -254,7 +274,12 @@ function currentReturnTo(ctx: AppContext): ViewState {
   return stack[stack.length - 1] ?? { id: "home" };
 }
 
-async function flowPrompt(ctx: AppContext, text: string, keyboard: UiKeyboard = [], navigation: { back?: boolean; home?: boolean; cancel?: boolean } = { back: false, home: true, cancel: true }) {
+async function flowPrompt(
+  ctx: AppContext,
+  text: string,
+  keyboard: UiKeyboard = [],
+  navigation: { back?: boolean; home?: boolean; cancel?: boolean } = { back: false, home: true, cancel: true },
+) {
   await ctx.reply(text, { ...panelKeyboard(keyboard, navigation) });
 }
 
@@ -324,28 +349,111 @@ async function completeBroadcast(ctx: AppContext) {
 ناموفق: ${stats.failed.toLocaleString("fa-IR")}`;
 }
 
-
-type PredictionCreateStep = "title" | "question" | "description" | "options" | "rewardType" | "walletAmount" | "productId" | "winnerCount" | "confirm";
-type PredictionCreateDraft = { title?: string; question?: string; description?: string; options?: string[]; rewardType?: "wallet" | "product"; rewardWalletAmount?: number; rewardProductId?: string; winnerCount?: number; closesAt?: string };
-const predictionCreateSteps = new Set<string>(["title", "question", "description", "options", "rewardType", "walletAmount", "productId", "winnerCount", "confirm"]);
+type PredictionCreateStep =
+  | "title"
+  | "question"
+  | "description"
+  | "options"
+  | "rewardType"
+  | "walletAmount"
+  | "productId"
+  | "winnerCount"
+  | "confirm";
+type PredictionCreateDraft = {
+  title?: string;
+  question?: string;
+  description?: string;
+  options?: string[];
+  rewardType?: "wallet" | "product";
+  rewardWalletAmount?: number;
+  rewardProductId?: string;
+  winnerCount?: number;
+  closesAt?: string;
+};
+const predictionCreateSteps = new Set<string>([
+  "title",
+  "question",
+  "description",
+  "options",
+  "rewardType",
+  "walletAmount",
+  "productId",
+  "winnerCount",
+  "confirm",
+]);
 const isPredictionCreateStep = (step: string): step is PredictionCreateStep => predictionCreateSteps.has(step);
 const isPredictionCancelText = (text: string) => text === "❌ لغو ساخت پیش‌بینی" || text === "لغو" || text === "انصراف";
 const isPredictionDescriptionSkipText = (text: string) => text === "⏭ رد کردن توضیحات" || text === "رد کردن" || text === "ندارد" || text === "-";
 const isPredictionOptionsFinishText = (text: string) => text === "✅ پایان گزینه‌ها" || text === "پایان گزینه‌ها" || text === "تمام";
 
 function predictionCreateKeyboard(step: PredictionCreateStep, draft: PredictionCreateDraft = {}): UiKeyboard {
-  const cancel: UiKeyboard = [[{ text: "❌ لغو ساخت پیش‌بینی", action: actionFor("flow:prediction_cancel"), tone: "danger" as const }]];
-  if (step === "description") return [[{ text: "⏭ رد کردن توضیحات", action: actionFor("flow:prediction_skip_description"), tone: "neutral" as const }], ...cancel];
+  if (step === "description")
+    return [
+      [
+        {
+          text: "⏭ رد کردن توضیحات",
+          action: actionFor("flow:prediction_skip_description"),
+          tone: "neutral",
+        },
+      ],
+    ];
+
   if (step === "options") {
     const rows: UiKeyboard = [];
-    if ((draft.options?.length ?? 0) >= 2) rows.push([{ text: "✅ پایان گزینه‌ها", action: actionFor("flow:prediction_finish_options"), tone: "success" as const }]);
-    rows.push([{ text: "➕ افزودن گزینه دیگر", action: actionFor("flow:prediction_add_option"), tone: "primary" as const }]);
-    rows.push(...cancel);
+
+    if ((draft.options?.length ?? 0) >= 2)
+      rows.push([
+        {
+          text: "✅ پایان گزینه‌ها",
+          action: actionFor("flow:prediction_finish_options"),
+          tone: "success",
+        },
+      ]);
+
+    rows.push([
+      {
+        text: "➕ افزودن گزینه دیگر",
+        action: actionFor("flow:prediction_add_option"),
+        tone: "primary",
+      },
+    ]);
+
     return rows;
   }
-  if (step === "rewardType") return [[{ text: "💰 شارژ کیف پول", action: actionFor("flow:prediction_reward", "wallet"), tone: "success" as const }, { text: "📦 محصول", action: actionFor("flow:prediction_reward", "product"), tone: "primary" as const }], ...cancel];
-  if (step === "confirm") return [[{ text: "✅ انتشار", action: actionFor("flow:prediction_confirm", "publish"), tone: "success" as const }, { text: "💾 ذخیره پیش‌نویس", action: actionFor("flow:prediction_confirm", "draft"), tone: "primary" as const }], ...cancel];
-  return cancel;
+
+  if (step === "rewardType")
+    return [
+      [
+        {
+          text: "💰 شارژ کیف پول",
+          action: actionFor("flow:prediction_reward", "wallet"),
+          tone: "success",
+        },
+        {
+          text: "📦 محصول",
+          action: actionFor("flow:prediction_reward", "product"),
+          tone: "primary",
+        },
+      ],
+    ];
+
+  if (step === "confirm")
+    return [
+      [
+        {
+          text: "✅ انتشار",
+          action: actionFor("flow:prediction_confirm", "publish"),
+          tone: "success",
+        },
+        {
+          text: "💾 ذخیره پیش‌نویس",
+          action: actionFor("flow:prediction_confirm", "draft"),
+          tone: "primary",
+        },
+      ],
+    ];
+
+  return [];
 }
 
 function ensurePredictionCreateDraft(ctx: AppContext): PredictionCreateDraft {
@@ -354,7 +462,17 @@ function ensurePredictionCreateDraft(ctx: AppContext): PredictionCreateDraft {
 }
 
 function predictionDraftForService(draft: PredictionCreateDraft) {
-  return { title: String(draft.title), question: String(draft.question), description: draft.description ?? "", options: draft.options ?? [], rewardType: draft.rewardType as "wallet" | "product", rewardWalletAmount: draft.rewardWalletAmount, rewardProductId: draft.rewardProductId, winnerCount: Number(draft.winnerCount), closesAt: new Date(String(draft.closesAt)) };
+  return {
+    title: String(draft.title),
+    question: String(draft.question),
+    description: draft.description ?? "",
+    options: draft.options ?? [],
+    rewardType: draft.rewardType as "wallet" | "product",
+    rewardWalletAmount: draft.rewardWalletAmount,
+    rewardProductId: draft.rewardProductId,
+    winnerCount: Number(draft.winnerCount),
+    closesAt: new Date(String(draft.closesAt)),
+  };
 }
 
 function cancelPredictionCreate(ctx: AppContext): FlowStepResult {
@@ -388,7 +506,11 @@ const definitions: Record<FlowName, FlowDefinition> = {
       if (flow.step === "question") {
         const question = validateLength(text, "سؤال", 3, 200);
         draft.question = question;
-        return { text: "توضیحات پیش‌بینی را ارسال کنید یا روی «رد کردن» بزنید.", nextStep: "description", keyboard: predictionCreateKeyboard("description") };
+        return {
+          text: "توضیحات پیش‌بینی را ارسال کنید یا روی «رد کردن» بزنید.",
+          nextStep: "description",
+          keyboard: predictionCreateKeyboard("description"),
+        };
       }
       if (flow.step === "description") {
         if (isPredictionDescriptionSkipText(input)) draft.description = "";
@@ -399,21 +521,41 @@ const definitions: Record<FlowName, FlowDefinition> = {
       if (flow.step === "options") {
         const current = draft.options ?? [];
         if (isPredictionOptionsFinishText(input)) {
-          if (current.length < 2) return { text: "❌ حداقل ۲ گزینه لازم است. گزینه بعدی را ارسال کنید.", keyboard: predictionCreateKeyboard("options", draft) };
+          if (current.length < 2)
+            return { text: "❌ حداقل ۲ گزینه لازم است. گزینه بعدی را ارسال کنید.", keyboard: predictionCreateKeyboard("options", draft) };
           return { text: "نوع جایزه را انتخاب کنید:", nextStep: "rewardType", keyboard: predictionCreateKeyboard("rewardType", draft) };
         }
         const option = validateLength(text, "گزینه", 1, 64);
-        if (current.length >= 10) return { text: "❌ حداکثر ۱۰ گزینه مجاز است. روی «پایان گزینه‌ها» بزنید.", keyboard: predictionCreateKeyboard("options", draft) };
-        if (current.some((item) => item.trim().toLowerCase() === option.toLowerCase())) return { text: "❌ گزینه تکراری است. گزینه دیگری ارسال کنید.", keyboard: predictionCreateKeyboard("options", draft) };
+        if (current.length >= 10)
+          return { text: "❌ حداکثر ۱۰ گزینه مجاز است. روی «پایان گزینه‌ها» بزنید.", keyboard: predictionCreateKeyboard("options", draft) };
+        if (current.some((item) => item.trim().toLowerCase() === option.toLowerCase()))
+          return { text: "❌ گزینه تکراری است. گزینه دیگری ارسال کنید.", keyboard: predictionCreateKeyboard("options", draft) };
         current.push(option);
         draft.options = current;
         const suffix = current.length >= 2 ? "\n\nمی‌توانید گزینه بعدی را ارسال کنید یا روی «پایان گزینه‌ها» بزنید." : "\n\nگزینه دوم را ارسال کنید.";
-        return { text: `✅ گزینه ثبت شد.\nتعداد گزینه‌ها: ${current.length.toLocaleString("fa-IR")}${suffix}`, keyboard: predictionCreateKeyboard("options", draft) };
+        return {
+          text: `✅ گزینه ثبت شد.\nتعداد گزینه‌ها: ${current.length.toLocaleString("fa-IR")}${suffix}`,
+          keyboard: predictionCreateKeyboard("options", draft),
+        };
       }
       if (flow.step === "rewardType") {
         const normalized = input.toLowerCase();
-        if (normalized.includes("کیف") || normalized.includes("wallet") || normalized.includes("شارژ")) { draft.rewardType = "wallet"; return { text: "مبلغ جایزه کیف پول را به تومان ارسال کنید.", nextStep: "walletAmount", keyboard: predictionCreateKeyboard("walletAmount", draft) }; }
-        if (normalized.includes("محصول") || normalized.includes("product")) { draft.rewardType = "product"; return { text: "شناسه محصول جایزه را ارسال کنید. محصول باید فعال باشد.", nextStep: "productId", keyboard: predictionCreateKeyboard("productId", draft) }; }
+        if (normalized.includes("کیف") || normalized.includes("wallet") || normalized.includes("شارژ")) {
+          draft.rewardType = "wallet";
+          return {
+            text: "مبلغ جایزه کیف پول را به تومان ارسال کنید.",
+            nextStep: "walletAmount",
+            keyboard: predictionCreateKeyboard("walletAmount", draft),
+          };
+        }
+        if (normalized.includes("محصول") || normalized.includes("product")) {
+          draft.rewardType = "product";
+          return {
+            text: "شناسه محصول جایزه را ارسال کنید. محصول باید فعال باشد.",
+            nextStep: "productId",
+            keyboard: predictionCreateKeyboard("productId", draft),
+          };
+        }
         return { text: "❌ نوع جایزه معتبر نیست. یکی از گزینه‌های جایزه را انتخاب کنید.", keyboard: predictionCreateKeyboard("rewardType", draft) };
       }
       if (flow.step === "walletAmount") {
@@ -432,10 +574,15 @@ const definitions: Record<FlowName, FlowDefinition> = {
       }
       if (flow.step === "confirm") {
         const publish = input.includes("انتشار");
-        if (!publish && !input.includes("پیش‌نویس")) return { text: "❌ لطفاً «انتشار» یا «ذخیره پیش‌نویس» را انتخاب کنید.", keyboard: predictionCreateKeyboard("confirm", draft) };
+        if (!publish && !input.includes("پیش‌نویس"))
+          return { text: "❌ لطفاً «انتشار» یا «ذخیره پیش‌نویس» را انتخاب کنید.", keyboard: predictionCreateKeyboard("confirm", draft) };
         const contest = await PredictionService.createContest(predictionDraftForService(draft), ctx.from?.id, publish);
         ctx.session.predictionCreate = undefined;
-        return { done: true, text: publish ? "✅ پیش‌بینی منتشر شد." : "💾 پیش‌نویس ذخیره شد.", returnTo: { id: "admin.predictionDetail", params: { contestId: contest.id } } };
+        return {
+          done: true,
+          text: publish ? "✅ پیش‌بینی منتشر شد." : "💾 پیش‌نویس ذخیره شد.",
+          returnTo: { id: "admin.predictionDetail", params: { contestId: contest.id } },
+        };
       }
       return invalidPredictionCreateStep(ctx, flow.step);
     },
@@ -684,7 +831,13 @@ ${message}
       if (flow.step === "order") {
         const displayOrder = parseNonNegativeIntegerInput(text, "ترتیب نمایش");
         const category = await AdminService.saveCategory(
-          { name: String(flow.data.name), description: String(flow.data.description ?? ""), icon: String(flow.data.icon ?? ""), displayOrder, isActive: true },
+          {
+            name: String(flow.data.name),
+            description: String(flow.data.description ?? ""),
+            icon: String(flow.data.icon ?? ""),
+            displayOrder,
+            isActive: true,
+          },
           String(ctx.from?.id ?? "admin"),
         );
         return { done: true, text: "✅ دسته‌بندی با موفقیت ذخیره شد.", returnTo: { id: "admin.category", params: { categoryId: category.id } } };
@@ -828,15 +981,23 @@ ${message}
       const detail = await AdminService.productDetail(productId);
       const isXray = detail.product?.mode === "xray_auto";
       const xrayOnly = ["trafficGB", "durationDays", "stockLimit", "limitIp", "xrayLimitIp", "soldCount"];
-      if (!field) return { done: true, text: "⚠️ برای ویرایش محصول از دکمه‌های اختصاصی هر فیلد استفاده کنید.", returnTo: { id: "admin.product", params: { productId } } };
-      if (xrayOnly.includes(field) && !isXray) return { done: true, text: "⚠️ این گزینه فقط برای محصولات Xray فعال است.", returnTo: { id: "admin.product", params: { productId } } };
+      if (!field)
+        return {
+          done: true,
+          text: "⚠️ برای ویرایش محصول از دکمه‌های اختصاصی هر فیلد استفاده کنید.",
+          returnTo: { id: "admin.product", params: { productId } },
+        };
+      if (xrayOnly.includes(field) && !isXray)
+        return { done: true, text: "⚠️ این گزینه فقط برای محصولات Xray فعال است.", returnTo: { id: "admin.product", params: { productId } } };
       const selectedCategoryId = flow.data.categoryId ? String(flow.data.categoryId) : undefined;
       const patch: any = {};
       if (field === "title") patch.title = validateLength(text, "عنوان محصول", 2, 100);
       else if (field === "description") patch.description = text.trim() === "-" ? "" : validateLength(text, "توضیحات", 0, 1000, true);
       else if (field === "price") patch.price = parsePositiveIntegerInput(text, "قیمت");
-      else if (field === "duration" || field === "durationDays") { const v = parsePositiveIntegerInput(text, "مدت"); patch[isXray ? "durationDays" : "duration"] = v; }
-      else if (field === "trafficGB") patch.trafficGB = parseTrafficGbInput(text);
+      else if (field === "duration" || field === "durationDays") {
+        const v = parsePositiveIntegerInput(text, "مدت");
+        patch[isXray ? "durationDays" : "duration"] = v;
+      } else if (field === "trafficGB") patch.trafficGB = parseTrafficGbInput(text);
       else if (field === "stockLimit") patch.stockLimit = parseNonNegativeIntegerInput(text, "موجودی");
       else if (field === "limitIp" || field === "xrayLimitIp") patch.xrayLimitIp = parseNonNegativeIntegerInput(text, "محدودیت IP");
       else if (field === "soldCount") patch.soldCount = parseNonNegativeIntegerInput(text, "تعداد فروخته‌شده");
@@ -1470,11 +1631,13 @@ status: ${detail.wallet.status}`;
     prompt: (ctx) => {
       const field = String(ctx.session.flow?.data.field ?? "");
       if (field === "name") return "✏️ نام پنل را وارد کنید (۲ تا ۶۴ کاراکتر):";
-      if (field === "apiBaseUrl") return `🌐 آدرس پنل Xray را وارد کنید:
+      if (field === "apiBaseUrl")
+        return `🌐 آدرس پنل Xray را وارد کنید:
 
 مثال: https://domain.com:port/securityPath`;
       if (field === "apiToken") return "🔑 توکن/API پنل Xray را وارد کنید. مقدار کامل نمایش داده نمی‌شود:";
-      if (field === "subscriptionBaseUrl") return `🔗 لینک پایه اشتراک را وارد کنید (اختیاری):
+      if (field === "subscriptionBaseUrl")
+        return `🔗 لینک پایه اشتراک را وارد کنید (اختیاری):
 
 مثال: https://domain.com:2096/sub/`;
       return "⚙️ فقط یک فیلد را از دکمه‌های پنل انتخاب و ویرایش کنید.";
@@ -1493,11 +1656,20 @@ status: ${detail.wallet.status}`;
         if (field === "subscriptionBaseUrl") patch.subscriptionBaseUrl = value;
         if (!Object.keys(patch).length) return { text: "این فیلد پشتیبانی نمی‌شود." };
         if (panelId === "new") {
-          await XrayPanelService.upsertConfigPatch({ name: patch.name ?? "پنل جدید", apiBaseUrl: "https://example.invalid", apiToken: "temporary-token", enabled: false });
+          await XrayPanelService.upsertConfigPatch({
+            name: patch.name ?? "پنل جدید",
+            apiBaseUrl: "https://example.invalid",
+            apiToken: "temporary-token",
+            enabled: false,
+          });
         } else {
           await XrayPanelService.upsertConfigPatch(patch, panelId || undefined);
         }
-        return { done: true, text: "✅ تغییرات با موفقیت ذخیره شد.", returnTo: panelId && panelId !== "new" ? { id: "admin.xrayPanel", params: { panelId } } : { id: "admin.xrayPanels" } };
+        return {
+          done: true,
+          text: "✅ تغییرات با موفقیت ذخیره شد.",
+          returnTo: panelId && panelId !== "new" ? { id: "admin.xrayPanel", params: { panelId } } : { id: "admin.xrayPanels" },
+        };
       } catch (error) {
         return { text: error instanceof Error ? `❌ ${error.message}` : "❌ ذخیره تنظیمات پنل ناموفق بود." };
       }
@@ -1526,7 +1698,13 @@ export async function startFlow(ctx: AppContext, name: FlowName, data: Record<st
   const definition = definitions[name];
   if (!definition) throw new Error("جریان پیدا نشد");
   ctx.session.flow = { name, step: definition.firstStep, data, returnTo: currentReturnTo(ctx), draft: createDraft(name, definition.firstStep, data) };
-  WorkflowTelemetryService.record({ type: "started", flow: name, step: definition.firstStep, draftId: ctx.session.flow.draft?.id, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined });
+  WorkflowTelemetryService.record({
+    type: "started",
+    flow: name,
+    step: definition.firstStep,
+    draftId: ctx.session.flow.draft?.id,
+    telegramId: ctx.from?.id ? String(ctx.from.id) : undefined,
+  });
   if (name === "prediction_create") ctx.session.predictionCreate = {};
   await flowPrompt(
     ctx,
@@ -1573,7 +1751,13 @@ export async function handleActiveFlowText(ctx: AppContext, text: string) {
   }
   if (result.nextStep && ctx.session.flow) ctx.session.flow.step = result.nextStep;
   touchDraft(ctx);
-  WorkflowTelemetryService.record({ type: "advanced", flow: flow.name, step: ctx.session.flow?.step ?? flow.step, draftId: flow.draft?.id, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined });
+  WorkflowTelemetryService.record({
+    type: "advanced",
+    flow: flow.name,
+    step: ctx.session.flow?.step ?? flow.step,
+    draftId: flow.draft?.id,
+    telegramId: ctx.from?.id ? String(ctx.from.id) : undefined,
+  });
   await flowPrompt(ctx, result.text, result.keyboard);
   return true;
 }
@@ -1731,7 +1915,6 @@ export function registerFlowEngine(bot: AppBot) {
     await renderPanel(ctx, { id: "admin.notifications" }, "replace");
   });
 
-
   bot.action(/^dtp:(start|y|m|d|h|min|back|confirm|cancel)(?::([^:]+))?(?::([^:]+))?$/, async (ctx) => {
     await ctx.answerCbQuery();
     const op = ctx.match[1];
@@ -1740,21 +1923,43 @@ export function registerFlowEngine(bot: AppBot) {
       const mode = ctx.match[2];
       const contestId = ctx.match[3];
       if (mode !== "pe" || !contestId) return;
-      const contest = await (await import("../../services/prisma")).prisma.predictionContest.findUnique({ where: { id: contestId } }) as any;
+      const contest = (await (await import("../../services/prisma")).prisma.predictionContest.findUnique({ where: { id: contestId } })) as any;
       if (!contest) return void (await ctx.reply("❌ پیش‌بینی پیدا نشد."));
       if (contest.status === "archived") return void (await ctx.reply("❌ پیش‌بینی آرشیوشده قابل ویرایش نیست."));
-      if (contest.status === "announced" || contest.announcedAt) return void (await ctx.reply("❌ نتیجه این پیش‌بینی اعلام شده و تغییر زمان بسته شدن مجاز نیست."));
+      if (contest.status === "announced" || contest.announcedAt)
+        return void (await ctx.reply("❌ نتیجه این پیش‌بینی اعلام شده و تغییر زمان بسته شدن مجاز نیست."));
       startPersianDateTimePicker(ctx, { flow: "prediction.edit.closesAt", contestId, returnView: "admin.predictionDetail" });
     }
     const state = ctx.session.dateTimePicker;
     if (!state) return void (await ctx.reply("❌ انتخاب‌گر تاریخ فعال نیست."));
-    if (op === "cancel") { ctx.session.dateTimePicker = undefined; return void (await ctx.reply("❌ انتخاب زمان لغو شد.")); }
+    if (op === "cancel") {
+      ctx.session.dateTimePicker = undefined;
+      return void (await ctx.reply("❌ انتخاب زمان لغو شد."));
+    }
     if (op === "back") {
       const target = ctx.match[2];
-      if (target === "year") { delete state.selectedYear; delete state.selectedMonth; delete state.selectedDay; delete state.selectedHour; delete state.selectedMinute; }
-      if (target === "month") { delete state.selectedMonth; delete state.selectedDay; delete state.selectedHour; delete state.selectedMinute; }
-      if (target === "day") { delete state.selectedDay; delete state.selectedHour; delete state.selectedMinute; }
-      if (target === "hour") { delete state.selectedHour; delete state.selectedMinute; }
+      if (target === "year") {
+        delete state.selectedYear;
+        delete state.selectedMonth;
+        delete state.selectedDay;
+        delete state.selectedHour;
+        delete state.selectedMinute;
+      }
+      if (target === "month") {
+        delete state.selectedMonth;
+        delete state.selectedDay;
+        delete state.selectedHour;
+        delete state.selectedMinute;
+      }
+      if (target === "day") {
+        delete state.selectedDay;
+        delete state.selectedHour;
+        delete state.selectedMinute;
+      }
+      if (target === "hour") {
+        delete state.selectedHour;
+        delete state.selectedMinute;
+      }
     } else if (op === "y") state.selectedYear = Number(ctx.match[2]);
     else if (op === "m") state.selectedMonth = Number(ctx.match[2]);
     else if (op === "d") state.selectedDay = Number(ctx.match[2]);
@@ -1764,14 +1969,24 @@ export function registerFlowEngine(bot: AppBot) {
       const date = selectedPickerDate(state);
       if (date <= new Date()) return void (await ctx.reply("❌ زمان بسته شدن باید در آینده باشد."));
       if (state.flow === "prediction.create.closesAt") {
-        const draft = ensurePredictionCreateDraft(ctx); draft.closesAt = date.toISOString();
+        const draft = ensurePredictionCreateDraft(ctx);
+        draft.closesAt = date.toISOString();
         if (ctx.session.flow?.name === "prediction_create") ctx.session.flow.step = "confirm";
         ctx.session.dateTimePicker = undefined;
-        const reward = draft.rewardType === "wallet" ? `شارژ کیف پول ${Number(draft.rewardWalletAmount).toLocaleString("fa-IR")} تومان` : `محصول ${draft.rewardProductId}`;
-        return void (await flowPrompt(ctx, `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${draft.title}\nسؤال: ${draft.question}\nتوضیحات: ${draft.description || "—"}\nگزینه‌ها: ${(draft.options ?? []).join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(draft.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${formatJalaliDateTime(date)}\n\nبرای انتشار روی «انتشار» و برای پیش‌نویس روی «ذخیره پیش‌نویس» بزنید.`, predictionCreateKeyboard("confirm", draft)));
+        const reward =
+          draft.rewardType === "wallet"
+            ? `شارژ کیف پول ${Number(draft.rewardWalletAmount).toLocaleString("fa-IR")} تومان`
+            : `محصول ${draft.rewardProductId}`;
+        return void (await flowPrompt(
+          ctx,
+          `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${draft.title}\nسؤال: ${draft.question}\nتوضیحات: ${draft.description || "—"}\nگزینه‌ها: ${(draft.options ?? []).join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(draft.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${formatJalaliDateTime(date)}\n\nبرای انتشار روی «انتشار» و برای پیش‌نویس روی «ذخیره پیش‌نویس» بزنید.`,
+          predictionCreateKeyboard("confirm", draft),
+        ));
       }
       const contestId = state.contestId!;
-      await (await import("../../services/prisma")).prisma.predictionContest.update({ where: { id: contestId }, data: { closesAt: date, status: "open" } });
+      await (
+        await import("../../services/prisma")
+      ).prisma.predictionContest.update({ where: { id: contestId }, data: { closesAt: date, status: "open" } });
       ctx.session.dateTimePicker = undefined;
       await ctx.reply("✅ زمان بسته شدن پیش‌بینی بروزرسانی شد.");
       return void (await renderPanel(ctx, { id: "admin.predictionDetail", params: { contestId } }, "replace"));
