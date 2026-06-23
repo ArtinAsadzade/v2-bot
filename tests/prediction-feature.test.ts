@@ -59,7 +59,7 @@ describe("prediction feature", () => {
     const home = buildInlineKeyboard(homeKeyboard(false));
     const admin = buildInlineKeyboard(adminDashboardViewKeyboard());
     expect(home.reply_markup.inline_keyboard.flat().map((b) => b.text)).toContain("🔮 پیش‌بینی");
-    expect(admin.reply_markup.inline_keyboard.flat().map((b) => b.text)).toContain("🔮 پیش‌بینی");
+    expect(admin.reply_markup.inline_keyboard.flat().map((b) => b.text)).toContain("📣 بازاریابی");
     for (const cb of [...callbacks(home), ...callbacks(admin), callbackFor("prediction.detail", { contestId: "507f1f77bcf86cd799439011" })]) expect(isValidCallbackData(cb)).toBe(true);
     expect(views).toContain("tone:\"success\"");
     expect(views).toContain("tone:\"primary\"");

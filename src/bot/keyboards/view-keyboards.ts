@@ -45,10 +45,9 @@ export function accountListViewKeyboard(rows: UiKeyboard): UiKeyboard {
 
 export function adminDashboardViewKeyboard(): UiKeyboard {
   return [
-    [{ text: "📦 فروشگاه", action: callbackFor("admin.store"), tone: "primary" as const }, { text: "👥 کاربران", action: callbackFor("admin.usersSupport"), tone: "primary" as const }],
-    [{ text: "🧩 Xray", action: callbackFor("admin.xrayCenter"), tone: "primary" as const }, { text: "💳 مالی", action: callbackFor("admin.finance"), tone: "primary" as const }],
-    [{ text: "🔮 پیش‌بینی", action: callbackFor("admin.predictions"), tone: "primary" as const }, { text: "📣 اطلاع‌رسانی", action: callbackFor("admin.content"), tone: "primary" as const }],
-    [{ text: "⚙️ تنظیمات", action: callbackFor("admin.botSettings"), tone: "primary" as const }, { text: "📊 آمار", action: callbackFor("admin.dashboard"), tone: "primary" as const }],
-    [{ text: "🏠 خانه", action: callbackFor("home"), tone: "neutral" as const }],
+    [{ text: "🛍 تجارت", action: callbackFor("admin.store"), tone: "primary" as const }, { text: "👥 مشتریان", action: callbackFor("admin.usersSupport"), tone: "primary" as const }],
+    [{ text: "🧩 Xray", action: callbackFor("admin.xrayCenter"), tone: "primary" as const }, { text: "📣 بازاریابی", action: callbackFor("admin.content"), tone: "primary" as const }],
+    [{ text: "⚙️ سیستم", action: callbackFor("admin.botSettings"), tone: "primary" as const }, { text: "💳 مالی", action: callbackFor("admin.finance"), tone: "primary" as const }],
+    [{ text: "📊 داشبورد", action: callbackFor("admin.dashboard"), tone: "neutral" as const }, { text: "🏠 خانه", action: callbackFor("home"), tone: "neutral" as const }],
   ];
 }

@@ -63,7 +63,7 @@ describe("styled Telegram buttons", () => {
     expect(first(home)).toMatchObject({ text: "🛒 خرید سرویس", style: "success" });
     expect(home[1][1]).toMatchObject({ text: "💳 کیف پول", style: "primary" });
     expect(home[4][0]).toMatchObject({ text: "📘 راهنما" });
-    expect(home[4][0]).not.toHaveProperty("style");
+    expect(home[4][0]).toMatchObject({ style: "primary" });
 
     const detail = buildInlineKeyboard(productDetailViewKeyboard("p1", 1)).reply_markup.inline_keyboard;
     expect(first(detail)).toMatchObject({ text: "🛒 خرید", style: "success" });
@@ -75,8 +75,8 @@ describe("styled Telegram buttons", () => {
     expect(checkout[3][0]).toMatchObject({ style: "danger" });
 
     const admin = buildInlineKeyboard(adminDashboardViewKeyboard()).reply_markup.inline_keyboard;
-    expect(admin[0][0]).toMatchObject({ text: "📦 فروشگاه", style: "primary" });
+    expect(admin[0][0]).toMatchObject({ text: "🛍 تجارت", style: "primary" });
     expect(admin[1][0]).toMatchObject({ text: "🧩 Xray", style: "primary" });
-    expect(admin[4][0]).not.toHaveProperty("style");
+    expect(admin[3][0]).not.toHaveProperty("style");
   });
 });
