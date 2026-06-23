@@ -149,7 +149,7 @@ export function registerAdminViews() {
           `آدرس پنل: ${panel.apiBaseUrl}`,
           `وضعیت اتصال: ${panel.enabled ? "✅ فعال" : "⛔ غیرفعال"}`,
           `inbound پیش‌فرض: ${panel.defaultInboundId ?? "انتخاب نشده"}`,
-  `تعداد inbound: ${panel.lastInboundCount.toLocaleString("fa-IR")}`,
+          `تعداد inbound: ${panel.lastInboundCount.toLocaleString("fa-IR")}`,
           `آخرین تست اتصال: ${panel.lastSuccessAt ? panel.lastSuccessAt.toLocaleString("fa-IR") : "انجام نشده"}`,
           `توکن/API key: ${maskAdminSecret(panel.apiToken)}`,
           `آخرین خطا: ${panel.lastError ?? "—"}`,
@@ -185,23 +185,23 @@ export function registerAdminViews() {
     const panels = await prisma.xrayPanelConfig.findMany({ where: { enabled: true }, orderBy: { updatedAt: "desc" } });
     return {
       text: joinSections([
-      card("🔄 سینک محصولات با 3x-ui", ["برای جلوگیری از تغییر ناخواسته، سینک در چند مرحله و با پیش‌نمایش انجام می‌شود."]),
-      section("۱. انتخاب پنل", ["ابتدا پنل مقصد را انتخاب کنید."]),
-      section("۲. انتخاب inbound", ["پس از انتخاب پنل، inboundهای همان پنل نمایش داده می‌شوند."]),
-      section("۳. پیش‌نمایش قبل از تأیید", [
-        "پنل انتخاب‌شده: پس از انتخاب نمایش داده می‌شود.",
-        "inbound انتخاب‌شده: پس از انتخاب نمایش داده می‌شود.",
-        "محصولات درگیر: قبل از ذخیره بررسی می‌شوند.",
-        "حجم پیش‌فرض و مدت پیش‌فرض: از تنظیمات محصول خوانده می‌شود.",
-        "تعداد محصولات ساخته/آپدیت‌شونده: قبل از تأیید اعلام می‌شود.",
+        card("🔄 سینک محصولات با 3x-ui", ["برای جلوگیری از تغییر ناخواسته، سینک در چند مرحله و با پیش‌نمایش انجام می‌شود."]),
+        section("۱. انتخاب پنل", ["ابتدا پنل مقصد را انتخاب کنید."]),
+        section("۲. انتخاب inbound", ["پس از انتخاب پنل، inboundهای همان پنل نمایش داده می‌شوند."]),
+        section("۳. پیش‌نمایش قبل از تأیید", [
+          "پنل انتخاب‌شده: پس از انتخاب نمایش داده می‌شود.",
+          "inbound انتخاب‌شده: پس از انتخاب نمایش داده می‌شود.",
+          "محصولات درگیر: قبل از ذخیره بررسی می‌شوند.",
+          "حجم پیش‌فرض و مدت پیش‌فرض: از تنظیمات محصول خوانده می‌شود.",
+          "تعداد محصولات ساخته/آپدیت‌شونده: قبل از تأیید اعلام می‌شود.",
+        ]),
+        section("۴. نتیجه", ["ساخته شد، بروزرسانی شد، رد شد، ناموفق و جزئیات خطاها به فارسی نمایش داده می‌شود."]),
       ]),
-      section("۴. نتیجه", ["ساخته شد، بروزرسانی شد، رد شد، ناموفق و جزئیات خطاها به فارسی نمایش داده می‌شود."]),
-    ]),
       keyboard: [
-      ...panels.map((panel) => [{ text: `📡 ${panel.name}`.slice(0, 60), action: `admin:xsync:p:${panel.id}` }]),
-      [{ text: "👁 نمایش پیش‌نمایش", action: callbackFor("admin.xraySyncPreview") }],
-      [{ text: "🔙 مرکز Xray", action: callbackFor("admin.xrayCenter") }],
-    ],
+        ...panels.map((panel) => [{ text: `📡 ${panel.name}`.slice(0, 60), action: `admin:xsync:p:${panel.id}` }]),
+        [{ text: "👁 نمایش پیش‌نمایش", action: callbackFor("admin.xraySyncPreview") }],
+        [{ text: "🔙 مرکز Xray", action: callbackFor("admin.xrayCenter") }],
+      ],
     };
   });
 
@@ -1253,13 +1253,16 @@ ${recentLines}`,
   registerView("admin.settings", async () => {
     const stats = await AdminService.cryptoWalletStats();
     return {
-      text: joinSections([card("⚙️ تنظیمات بات", [
-        `وضعیت فروشگاه: ${stats.setting.storeStatus === "active" ? "فعال ✅" : "غیرفعال ⛔"}`,
-        "عضویت اجباری: از بخش اختصاصی مدیریت می‌شود",
-        "درگاه پرداخت: تنظیمات مالی و پرداخت آنی",
-        "پشتیبانی: تیکت‌ها و پاسخ‌گویی",
-        "اعلان‌ها: پیام‌رسانی هدفمند",
-      ]), section("راهنما", ["هر گزینه یک صفحه کاری مشخص دارد و تنظیمات حساس ماسک می‌شوند."])]),
+      text: joinSections([
+        card("⚙️ تنظیمات بات", [
+          `وضعیت فروشگاه: ${stats.setting.storeStatus === "active" ? "فعال ✅" : "غیرفعال ⛔"}`,
+          "عضویت اجباری: از بخش اختصاصی مدیریت می‌شود",
+          "درگاه پرداخت: تنظیمات مالی و پرداخت آنی",
+          "پشتیبانی: تیکت‌ها و پاسخ‌گویی",
+          "اعلان‌ها: پیام‌رسانی هدفمند",
+        ]),
+        section("راهنما", ["هر گزینه یک صفحه کاری مشخص دارد و تنظیمات حساس ماسک می‌شوند."]),
+      ]),
       keyboard: [
         [
           { text: "🛍 وضعیت فروشگاه", action: callbackFor("admin.store") },

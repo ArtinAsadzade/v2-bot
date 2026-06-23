@@ -80,8 +80,8 @@ export function registerSupportViews() {
       ]),
       keyboard: [
         navRow({ text: "✉️ تیکت جدید", view: "support.new" }),
-        navRow({ text: "📋 تیکت‌های من", view: "support.tickets" }, { text: "📡 مشکل اتصال", view: "support.connection", tone: "danger" }),
-        navRow({ text: "💳 مشکل پرداخت", view: "support.payment", tone: "danger" }, { text: "💬 ارتباط با پشتیبانی", view: "support.contact" }),
+        navRow({ text: "📋 تیکت‌های من", view: "support.tickets" }, { text: "💳 مشکل پرداخت", view: "support.payment", tone: "danger" }),
+        navRow({ text: "📡 مشکل اتصال", view: "support.connection", tone: "danger" }, { text: "💬 ارتباط با پشتیبانی", view: "support.contact" }),
       ],
     };
   });

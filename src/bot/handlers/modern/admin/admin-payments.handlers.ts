@@ -1,44 +1,10 @@
-import type { AppBot, AppContext } from "../../../../types/bot";
-import { registerModernViews } from "../../../views/modern.views";
-import { goBack, parseNavAction, renderPanel, callbackFor, actionFor, RenderMode } from "../../../navigation/panel-ui";
-import { createCallbackToken, resolveCallbackToken, tokenAction } from "../../../navigation/callback-tokens";
-import { registerFlowEngine, handleActiveFlowPhoto, handleActiveFlowText, startFlow } from "../../../flows/flow-engine";
-import { UserService } from "../../../../modules/user/user.service";
-import { ReferralService } from "../../../../modules/referral/referral.service";
-import { PurchaseService } from "../../../../modules/product/purchase.service";
-import { ProductService } from "../../../../modules/product/product.service";
-import { CryptoWalletService, DepositService } from "../../../../modules/deposit/deposit.service";
+import type { AppBot } from "../../../../types/bot";
+import { renderPanel, callbackFor, actionFor } from "../../../navigation/panel-ui";
+import { DepositService } from "../../../../modules/deposit/deposit.service";
 import { AdminService } from "../../../../modules/admin/admin.service";
-import { CouponService } from "../../../../modules/coupon/coupon.service";
-import { SupportService } from "../../../../modules/support/support.service";
-import {
-  FreeAccountError,
-  FreeAccountService,
-  FREE_ACCOUNT_STATUS_LABELS,
-  formatFreeAccountError,
-  formatFreeAccountDate,
-  freeAccountExpiresAt,
-} from "../../../../modules/free-account/free-account.service";
-import { PaymentGatewayService, PaymentInvoiceService } from "../../../../modules/payment/payment.service";
 import { isAdminByTelegramId } from "../../../middlewares/admin.middleware";
-import { quickReplyTarget } from "../../../keyboards/reply.keyboard";
-import { InvoiceActionKeyboard } from "../../../keyboards/design-system";
-import { supportCloseHomeInlineKeyboard } from "../../../keyboards/common.keyboard";
 import { adminDangerConfirmKeyboard } from "../../../keyboards/admin-danger.keyboard";
 import { adminDangerConfirmMessage } from "../../../messages/admin.messages";
-import { xraySubscriptionKeyboard, xrayConfigsSentKeyboard, xrayRenewedKeyboard, xrayRenewalInvoiceKeyboard } from "../../../keyboards/account.keyboard";
-import { accountHomeInlineKeyboard, expiredCheckoutRecoveryKeyboard, pendingInvoiceRecoveryKeyboard, processingPurchaseRecoveryKeyboard, standardPurchaseDeliveryKeyboard, xrayPurchaseDeliveryKeyboard } from "../../../keyboards/purchase.keyboard";
-import { buyCallbacks, nav, xrayCallbacks } from "../../../callbacks";
-import { pendingInvoiceExistsMessage, previousPurchaseProcessingMessage, unauthorizedMessage } from "../../../messages/purchase.messages";
-import { serviceNotFoundMessage, xrayConfigsSentMessage, xrayRenewalInvoiceMessage, xrayRenewedMessage, xraySubscriptionMessage } from "../../../messages/account.messages";
-import { adminOnlyCommandMessage, publicPlansDisabledInGroupsMessage } from "../../../messages/common.messages";
-import { couponApplyFromProductMessage, couponRemovedMessage } from "../../../messages/coupon.messages";
-import { purchaseSuccessMessage } from "../../../../utils/messages";
-import { MonitoringService } from "../../../../services/monitoring.service";
-import { ProductGuideService } from "../../../../modules/system/product-guide.service";
-import { PublicPlansService } from "../../../../modules/product/public-plans.service";
-import { XrayClientService, XrayPanelService, xrayInboundSnapshot } from "../../../../modules/xray/xray.service";
-import { prisma } from "../../../../services/prisma";
 
 export function registerAdminPaymentsHandlers(bot: AppBot) {
   bot.action(/^admin:wallet:status:([^:]+):(active|inactive)$/, async (ctx) => {
