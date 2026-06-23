@@ -5,11 +5,7 @@ import { UserService } from "../../modules/user/user.service";
 import { ProductService } from "../../modules/product/product.service";
 import { AdminService } from "../../modules/admin/admin.service";
 import { ReferralService } from "../../modules/referral/referral.service";
-import {
-  FreeAccountService,
-  FREE_ACCOUNT_STATUS_LABELS,
-  formatFreeAccountDate,
-} from "../../modules/free-account/free-account.service";
+import { FreeAccountService, FREE_ACCOUNT_STATUS_LABELS, formatFreeAccountDate } from "../../modules/free-account/free-account.service";
 import { SupportService } from "../../modules/support/support.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
 import { BroadcastService, BROADCAST_TARGET_LABELS } from "../../modules/broadcast/broadcast.service";
@@ -73,7 +69,12 @@ export function registerPurchaseViews() {
     let payableAmount = product.price;
     let couponLine: string | undefined;
     if (couponCode) {
-      const validation = await CouponService.validateForCheckout({ code: couponCode, userId: user.id, originalAmount: product.price, productId: product.id });
+      const validation = await CouponService.validateForCheckout({
+        code: couponCode,
+        userId: user.id,
+        originalAmount: product.price,
+        productId: product.id,
+      });
       if (validation.ok) {
         discountAmount = validation.discountAmount;
         payableAmount = validation.finalAmount;
@@ -86,14 +87,19 @@ export function registerPurchaseViews() {
     const shortage = Math.max(payableAmount - user.balance, 0);
     const gateway = await PaymentGatewayService.get();
     const keyboard = checkoutViewKeyboard(product.id, gateway.enabled, Boolean(couponLine));
-    // Manual navigation label preserved by checkoutViewKeyboard: 🔙 بازگشت
     return {
       text: joinSections([
         card(`${uiIcons.invoice} خلاصه سفارش`, [`${uiIcons.product} محصول: ${product.title}`]),
         section(sectionTitles.price, [`مبلغ پایه: ${money(product.price)}`]),
-        section(sectionTitles.discount, [couponLine ? `کد تخفیف: ${couponLine}` : "کدی ثبت نشده است.", discountAmount > 0 ? `مبلغ تخفیف: ${money(discountAmount)}` : undefined]),
+        section(sectionTitles.discount, [
+          couponLine ? `کد تخفیف: ${couponLine}` : "کدی ثبت نشده است.",
+          discountAmount > 0 ? `مبلغ تخفیف: ${money(discountAmount)}` : undefined,
+        ]),
         section(sectionTitles.finalAmount, [`${money(payableAmount)}`]),
-        section(sectionTitles.wallet, [`موجودی کیف پول: ${money(user.balance)}`, shortage > 0 ? `${uiIcons.warning} کسری کیف پول: ${money(shortage)}` : statusLabels.success]),
+        section(sectionTitles.wallet, [
+          `موجودی کیف پول: ${money(user.balance)}`,
+          shortage > 0 ? `${uiIcons.warning} کسری کیف پول: ${money(shortage)}` : statusLabels.success,
+        ]),
       ]),
       keyboard,
       navigation: { back: false, home: false },
