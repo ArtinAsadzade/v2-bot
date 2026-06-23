@@ -17,6 +17,8 @@ import { ProductGuideService } from "../../modules/system/product-guide.service"
 import { isProductValidationError, normalizeNumericInput, productValidationError } from "../../modules/product/product.validation";
 import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 import { MainMenuKeyboard } from "../keyboards/design-system";
+import { WorkflowTelemetryService } from "../../services/workflow-telemetry.service";
+import { MonitoringService } from "../../services/monitoring.service";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
 const parseInteger = (value: string) => Number(normalizeNumericInput(value));
@@ -173,6 +175,70 @@ function parseProductAccountStatus(value?: string): ProductAccountAdminStatus | 
 }
 
 type FlowStepResult = { done?: boolean; text: string; nextStep?: string; returnTo?: ViewState; keyboard?: UiKeyboard };
+const FLOW_DRAFT_TTL_MS = 2 * 60 * 60_000;
+
+function createDraft(name: FlowName, firstStep: string, data: Record<string, string | number | boolean | undefined>) {
+  const now = new Date();
+  return {
+    type: name,
+    id: `${name}:${now.getTime()}:${Math.random().toString(36).slice(2, 10)}`,
+    currentStep: firstStep,
+    data: { ...data },
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + FLOW_DRAFT_TTL_MS).toISOString(),
+  };
+}
+
+function touchDraft(ctx: AppContext) {
+  const flow = ctx.session.flow;
+  if (!flow?.draft) return;
+  flow.draft.currentStep = flow.step;
+  flow.draft.data = { ...flow.data };
+  flow.draft.updatedAt = new Date().toISOString();
+}
+
+function clearFlow(ctx: AppContext, reason: "completed" | "cancelled" | "recovered" | "expired" | "failed") {
+  const flow = ctx.session.flow;
+  if (flow) WorkflowTelemetryService.record({ type: reason, flow: flow.name, step: flow.step, draftId: flow.draft?.id, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined });
+  ctx.session.flow = undefined;
+  if (flow?.name === "prediction_create") ctx.session.predictionCreate = undefined;
+}
+
+async function recoverCorruptedFlow(ctx: AppContext, reason: string, returnTo?: ViewState) {
+  const flow = ctx.session.flow;
+  MonitoringService.record({ type: "WORKFLOW_RECOVERED", section: "Flow Engine", description: reason, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined, severity: "warning", suggestedAction: "تعریف مراحل و داده‌های پیش‌نویس جریان را بررسی کنید.", metadata: { flow: flow?.name, step: flow?.step, draftId: flow?.draft?.id } });
+  clearFlow(ctx, reason.includes("منقضی") ? "expired" : "recovered");
+  await ctx.reply(`${reason}
+
+برای جلوگیری از خطا، عملیات قبلی بسته شد. می‌توانید دوباره از همین صفحه شروع کنید.`);
+  await renderPanel(ctx, returnTo ?? flow?.returnTo ?? { id: "home" }, "replace", RenderMode.SEND_NEW);
+  return true;
+}
+
+async function ensureActiveFlow(ctx: AppContext) {
+  const flow = ctx.session.flow;
+  if (!flow) return undefined;
+  if (!isFlowName(flow.name)) {
+    await recoverCorruptedFlow(ctx, "⚠️ جریان فعال معتبر نیست.");
+    return undefined;
+  }
+  if (!flow.draft) {
+    await recoverCorruptedFlow(ctx, "⚠️ پیش‌نویس جریان پیدا نشد.", flow.returnTo);
+    return undefined;
+  }
+  if (flow.draft.type !== flow.name) {
+    await recoverCorruptedFlow(ctx, "⚠️ پیش‌نویس با جریان فعال همخوانی ندارد.", flow.returnTo);
+    return undefined;
+  }
+  if (Number.isNaN(Date.parse(flow.draft.expiresAt)) || Date.parse(flow.draft.expiresAt) <= Date.now()) {
+    await recoverCorruptedFlow(ctx, "⌛ مهلت پیش‌نویس این عملیات منقضی شده است.", flow.returnTo);
+    return undefined;
+  }
+  flow.draft.currentStep = flow.step;
+  return flow;
+}
+
 type FlowDefinition = {
   firstStep: string;
   prompt: ((ctx: AppContext) => Promise<string> | string) | string;
@@ -233,7 +299,7 @@ async function completePaymentGatewaySetup(ctx: AppContext) {
   PaymentGatewayService.validateConfig({ ...saved, enabled: true });
   const result = await PaymentGatewayService.testConnection(String(ctx.from?.id ?? "admin"));
   if (result.ok) await PaymentGatewayService.updateConfigField("enabled", true, String(ctx.from?.id ?? "admin"));
-  ctx.session.flow = undefined;
+  clearFlow(ctx, "completed");
   await ctx.reply(
     `✅ تنظیمات با موفقیت ذخیره شد\n\n${result.ok ? "📡 تست اتصال موفق بود" : `📡 تست اتصال ناموفق بود\n${result.error}`}\n\n${result.ok ? "درگاه آماده استفاده است." : "لطفاً اطلاعات درگاه را بررسی کنید."}`,
   );
@@ -290,15 +356,13 @@ function predictionDraftForService(draft: PredictionCreateDraft) {
 }
 
 function cancelPredictionCreate(ctx: AppContext): FlowStepResult {
-  ctx.session.flow = undefined;
-  ctx.session.predictionCreate = undefined;
+  clearFlow(ctx, "cancelled");
   return { done: true, text: "❌ ساخت پیش‌بینی لغو شد.", returnTo: { id: "admin.predictions" } };
 }
 
 function invalidPredictionCreateStep(ctx: AppContext, step: string): FlowStepResult {
   console.warn("PREDICTION_FLOW_INVALID_STEP", { step, telegramId: ctx.from?.id });
-  ctx.session.flow = undefined;
-  ctx.session.predictionCreate = undefined;
+  clearFlow(ctx, "recovered");
   return { done: true, text: "⚠️ ساخت پیش‌بینی ناقص مانده است. لطفاً دوباره شروع کنید.", returnTo: { id: "admin.predictions" } };
 }
 
@@ -1464,7 +1528,8 @@ function isFlowName(value: string): value is FlowName {
 export async function startFlow(ctx: AppContext, name: FlowName, data: Record<string, string | number | boolean | undefined> = {}) {
   const definition = definitions[name];
   if (!definition) throw new Error("جریان پیدا نشد");
-  ctx.session.flow = { name, step: definition.firstStep, data, returnTo: currentReturnTo(ctx) };
+  ctx.session.flow = { name, step: definition.firstStep, data, returnTo: currentReturnTo(ctx), draft: createDraft(name, definition.firstStep, data) };
+  WorkflowTelemetryService.record({ type: "started", flow: name, step: definition.firstStep, draftId: ctx.session.flow.draft?.id, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined });
   if (name === "prediction_create") ctx.session.predictionCreate = {};
   await flowPrompt(
     ctx,
@@ -1474,7 +1539,7 @@ export async function startFlow(ctx: AppContext, name: FlowName, data: Record<st
 }
 
 export async function handleActiveFlowText(ctx: AppContext, text: string) {
-  const flow = ctx.session.flow;
+  const flow = await ensureActiveFlow(ctx);
   if (!flow) return false;
   let result: FlowStepResult | false | undefined;
   try {
@@ -1488,7 +1553,7 @@ export async function handleActiveFlowText(ctx: AppContext, text: string) {
   }
   if (!result) return false;
   if (result.done) {
-    ctx.session.flow = undefined;
+    clearFlow(ctx, "completed");
     await ctx.reply(
       result.text,
       flow.name === "instant_topup"
@@ -1510,21 +1575,24 @@ export async function handleActiveFlowText(ctx: AppContext, text: string) {
     return true;
   }
   if (result.nextStep && ctx.session.flow) ctx.session.flow.step = result.nextStep;
+  touchDraft(ctx);
+  WorkflowTelemetryService.record({ type: "advanced", flow: flow.name, step: ctx.session.flow?.step ?? flow.step, draftId: flow.draft?.id, telegramId: ctx.from?.id ? String(ctx.from.id) : undefined });
   await flowPrompt(ctx, result.text, result.keyboard);
   return true;
 }
 
 export async function handleActiveFlowPhoto(ctx: AppContext, fileId: string) {
-  const flow = ctx.session.flow;
+  const flow = await ensureActiveFlow(ctx);
   if (!flow) return false;
   const result = await definitions[flow.name].handlePhoto?.(ctx, fileId);
   if (!result) return false;
   if (result.done) {
-    ctx.session.flow = undefined;
+    clearFlow(ctx, "completed");
     await ctx.reply(result.text);
     await renderPanel(ctx, result.returnTo ?? flow.returnTo ?? { id: "home" }, "replace", RenderMode.SEND_NEW);
     return true;
   }
+  touchDraft(ctx);
   await flowPrompt(ctx, result.text, result.keyboard);
   return true;
 }
@@ -1533,8 +1601,7 @@ export function registerFlowEngine(bot: AppBot) {
   bot.action("flow:prediction_cancel", async (ctx) => {
     await ctx.answerCbQuery();
     if (ctx.session.flow?.name !== "prediction_create") return renderPanel(ctx, { id: "admin.predictions" }, "replace", RenderMode.EDIT_CURRENT);
-    ctx.session.flow = undefined;
-    ctx.session.predictionCreate = undefined;
+    clearFlow(ctx, "cancelled");
     await ctx.reply("❌ ساخت پیش‌بینی لغو شد.");
     await renderPanel(ctx, { id: "admin.predictions" }, "replace", RenderMode.SEND_NEW);
   });
@@ -1589,7 +1656,7 @@ export function registerFlowEngine(bot: AppBot) {
       flow.data.categoryId = category.id;
       if (String(flow.data.field ?? "") === "category") {
         const product = await AdminService.updateProduct(String(flow.data.productId), { categoryId: category.id }, String(ctx.from?.id ?? "admin"));
-        ctx.session.flow = undefined;
+        clearFlow(ctx, "completed");
         await ctx.reply(`✅ دسته‌بندی محصول به «${category.name}» تغییر کرد.`);
         await renderPanel(ctx, { id: "admin.product", params: { productId: product.id } }, "replace", RenderMode.SEND_NEW);
         return;
@@ -1621,7 +1688,7 @@ export function registerFlowEngine(bot: AppBot) {
   });
 
   bot.action("flow:cancel", async (ctx) => {
-    ctx.session.flow = undefined;
+    clearFlow(ctx, "cancelled");
     await ctx.answerCbQuery("لغو شد");
     await renderPanel(ctx, currentReturnTo(ctx), "replace");
   });
@@ -1661,7 +1728,7 @@ export function registerFlowEngine(bot: AppBot) {
 
     const result = await completeBroadcast(ctx);
 
-    ctx.session.flow = undefined;
+    clearFlow(ctx, "completed");
 
     await ctx.reply(result);
     await renderPanel(ctx, { id: "admin.notifications" }, "replace");
@@ -1748,7 +1815,7 @@ export function registerFlowEngine(bot: AppBot) {
 
     await AdminService.setStoreStatus(status, String(ctx.from.id));
 
-    ctx.session.flow = undefined;
+    clearFlow(ctx, "completed");
 
     await ctx.reply(
       status === "active"

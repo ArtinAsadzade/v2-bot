@@ -18,7 +18,8 @@ export type MonitoringEventType =
   | "JOB_FAILED"
   | "BUTTON_DATA_INVALID"
   | "UNHANDLED_BOT_ERROR"
-  | "RATE_LIMIT_HIT";
+  | "RATE_LIMIT_HIT"
+  | "WORKFLOW_RECOVERED";
 
 type Severity = "info" | "warning" | "critical";
 
