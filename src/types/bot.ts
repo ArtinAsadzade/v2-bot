@@ -74,6 +74,7 @@ export interface SessionData {
   liveTicketId?: string;
   liveTicketRole?: "user" | "admin";
   flow?: ActiveFlow;
+  predictionCreate?: { title?: string; question?: string; description?: string; options?: string[]; rewardType?: "wallet" | "product"; rewardWalletAmount?: number; rewardProductId?: string; winnerCount?: number; closesAt?: string };
   navigation?: { panelMessageId?: number; stack: ViewState[] };
   quickKeyboardSignature?: string;
   xrayPicker?: { target: "free_test" | "product_create" | "product_edit"; productId?: string; inboundOptions?: string; selectedIds?: number[]; groups?: string; returnTo?: ViewState };
