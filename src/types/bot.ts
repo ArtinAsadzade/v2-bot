@@ -88,6 +88,7 @@ export interface SessionData {
   quickKeyboardSignature?: string;
   xrayPicker?: { target: "free_test" | "product_create" | "product_edit"; productId?: string; inboundOptions?: string; selectedIds?: number[]; groups?: string; returnTo?: ViewState };
   freeTestInboundSelection?: { inboundOptions: string; selectedIds: number[] };
+  xrayBulkInbound?: { selectedProductIds: string[]; panelId?: string; inboundId?: number; inboundSnapshot?: string };
   callbackTokens?: Record<string, CallbackTokenEntry>;
 }
 

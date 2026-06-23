@@ -59,12 +59,13 @@ describe("premium Telegram design system refactor", () => {
     const keyboard = buildInlineKeyboard(adminDashboardViewKeyboard()).reply_markup.inline_keyboard as any[][];
     expect(texts(keyboard)).toEqual([
       ["🛍 تجارت", "👥 مشتریان"],
-      ["🧩 Xray", "📣 بازاریابی"],
-      ["⚙️ سیستم", "💳 مالی"],
+      ["🧩 Xray", "🔮 پیش‌بینی‌ها"],
+      ["📣 بازاریابی", "⚙️ سیستم"],
+      ["💳 مالی"],
       ["📊 داشبورد", "🏠 خانه"],
     ]);
     expect(styles(keyboard).slice(0, 3).flat().every((style) => style === "primary")).toBe(true);
-    expect(styles(keyboard)[3]).toEqual(["default", "default"]);
+    expect(styles(keyboard)[4]).toEqual(["default", "default"]);
   });
 
   test("purchase and product keyboards separate main, management, navigation, and danger rows", () => {

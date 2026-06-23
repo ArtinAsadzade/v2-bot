@@ -3,6 +3,7 @@ import { callbackFor, renderPanel } from "../../../navigation/panel-ui";
 import { isAdminByTelegramId } from "../../../middlewares/admin.middleware";
 import { XrayDiagnosticsService } from "../../../../modules/xray/xray-diagnostics.service";
 import { XrayClientService, XrayPanelService, xrayInboundSnapshot } from "../../../../modules/xray/xray.service";
+import { AdminService } from "../../../../modules/admin/admin.service";
 import { prisma } from "../../../../services/prisma";
 
 export function registerAdminXrayHandlers(bot: AppBot) {
@@ -73,6 +74,64 @@ export function registerAdminXrayHandlers(bot: AppBot) {
     await ctx.answerCbQuery("سینک در پس‌زمینه شروع شد");
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
     await ctx.reply("✅ نتیجه همگام‌سازی\nساخته شد: ۰\nبروزرسانی شد: ۰\nرد شد: ۰\nناموفق: ۰\nخطاها: موردی ثبت نشد.\n\nاین اجرای امن بدون تغییر مخرب انجام شد.");
+  });
+
+  bot.action(/^admin:xb:t:([^:]+)$/, async (ctx) => {
+    await ctx.answerCbQuery("انتخاب بروزرسانی شد");
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
+    const state = (ctx.session.xrayBulkInbound ??= { selectedProductIds: [] });
+    state.selectedProductIds = state.selectedProductIds.includes(ctx.match[1]) ? state.selectedProductIds.filter((id) => id !== ctx.match[1]) : [...state.selectedProductIds, ctx.match[1]];
+    await renderPanel(ctx, { id: "admin.xrayBulkInbound" }, "replace");
+  });
+
+  bot.action("admin:xb:all", async (ctx) => {
+    await ctx.answerCbQuery("محصولات صفحه انتخاب شدند");
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
+    const products = await prisma.product.findMany({ where: { mode: "xray_auto", deletedAt: null }, select: { id: true }, orderBy: { updatedAt: "desc" }, take: 20 });
+    ctx.session.xrayBulkInbound = { ...(ctx.session.xrayBulkInbound ?? {}), selectedProductIds: products.map((product) => product.id) };
+    await renderPanel(ctx, { id: "admin.xrayBulkInbound" }, "replace");
+  });
+
+  bot.action("admin:xb:clear", async (ctx) => {
+    await ctx.answerCbQuery("انتخاب‌ها پاک شد");
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
+    ctx.session.xrayBulkInbound = { selectedProductIds: [] };
+    await renderPanel(ctx, { id: "admin.xrayBulkInbound" }, "replace");
+  });
+
+  bot.action(/^admin:xb:p:([^:]+)$/, async (ctx) => {
+    await ctx.answerCbQuery("در حال دریافت inboundها...");
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
+    const selectedProductIds = ctx.session.xrayBulkInbound?.selectedProductIds ?? [];
+    if (!selectedProductIds.length) return void (await ctx.reply("❌ ابتدا حداقل یک محصول را انتخاب کنید."));
+    const panel = await prisma.xrayPanelConfig.findUnique({ where: { id: ctx.match[1] } });
+    if (!panel) return void (await ctx.reply("❌ پنل پیدا نشد."));
+    const inbounds = await XrayClientService.listInbounds(panel);
+    ctx.session.xrayBulkInbound = { selectedProductIds, panelId: panel.id };
+    await ctx.reply(`📥 inbound مقصد را برای ${selectedProductIds.length.toLocaleString("fa-IR")} محصول انتخاب کنید.`, { reply_markup: { inline_keyboard: inbounds.slice(0, 20).map((inbound) => [{ text: `📥 ${inbound.remark ?? inbound.tag ?? inbound.id}`.slice(0, 60), callback_data: `admin:xb:i:${inbound.id}` }]).concat([[{ text: "🔙 بازگشت", callback_data: callbackFor("admin.xrayBulkInboundPanel") }]]) } });
+  });
+
+  bot.action(/^admin:xb:i:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery("inbound انتخاب شد");
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
+    const state = ctx.session.xrayBulkInbound;
+    if (!state?.panelId || !state.selectedProductIds.length) return void (await ctx.reply("❌ انتخاب محصولات یا پنل کامل نیست."));
+    const panel = await prisma.xrayPanelConfig.findUnique({ where: { id: state.panelId } });
+    const inbounds = panel ? await XrayClientService.listInbounds(panel) : [];
+    const inboundId = Number(ctx.match[1]);
+    ctx.session.xrayBulkInbound = { ...state, inboundId, inboundSnapshot: xrayInboundSnapshot(inbounds, [inboundId]) };
+    await renderPanel(ctx, { id: "admin.xrayBulkInboundPreview" }, "replace");
+  });
+
+  bot.action("admin:xb:apply", async (ctx) => {
+    await ctx.answerCbQuery("در حال اعمال بروزرسانی...");
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return;
+    const state = ctx.session.xrayBulkInbound;
+    if (!state?.panelId || !state.inboundId || !state.selectedProductIds.length) return void (await ctx.reply("❌ پیش‌نمایش کامل نیست. دوباره محصولات، پنل و inbound را انتخاب کنید."));
+    const report = await AdminService.bulkUpdateXrayInbounds(state.selectedProductIds, { panelId: state.panelId, inboundIds: [state.inboundId], inboundSnapshot: state.inboundSnapshot }, String(ctx.from.id));
+    ctx.session.xrayBulkInbound = { selectedProductIds: [] };
+    await ctx.reply(`✅ نتیجه بروزرسانی گروهی اینباند\nدرخواست‌شده: ${report.requested.toLocaleString("fa-IR")}\nبروزرسانی‌شده: ${report.updated.length.toLocaleString("fa-IR")}\nردشده: ${report.skipped.length.toLocaleString("fa-IR")}\nناموفق: ${report.failed.length.toLocaleString("fa-IR")}`);
+    await renderPanel(ctx, { id: "admin.xrayCenter" }, "replace");
   });
 
   bot.action("admin:xray:center:test-sub", async (ctx) => {

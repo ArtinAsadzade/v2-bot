@@ -77,6 +77,6 @@ describe("styled Telegram buttons", () => {
     const admin = buildInlineKeyboard(adminDashboardViewKeyboard()).reply_markup.inline_keyboard;
     expect(admin[0][0]).toMatchObject({ text: "🛍 تجارت", style: "primary" });
     expect(admin[1][0]).toMatchObject({ text: "🧩 Xray", style: "primary" });
-    expect(admin[3][0]).not.toHaveProperty("style");
+    expect(admin[4][0]).not.toHaveProperty("style");
   });
 });

@@ -38,7 +38,7 @@ export type ProductAccountAdminStatus = "available" | "reserved" | "sold" | "dis
 export type XrayClientAdminStatus = "provisioning" | "active" | "failed" | "expired";
 
 type CategoryInput = { name: string; description?: string; icon?: string; displayOrder?: number; isActive?: boolean };
-type ProductInput = { title?: string; categoryId?: string; price?: number; duration?: number; isActive?: boolean; trafficGB?: number; durationDays?: number; stockLimit?: number; soldCount?: number; resetSoldCount?: boolean; inboundIds?: number[]; inboundSnapshot?: string; xrayLimitIp?: number; xrayGroupName?: string | null };
+type ProductInput = { title?: string; categoryId?: string; price?: number; duration?: number; isActive?: boolean; trafficGB?: number; durationDays?: number; stockLimit?: number; soldCount?: number; resetSoldCount?: boolean; inboundIds?: number[]; inboundSnapshot?: string; xrayLimitIp?: number; xrayGroupName?: string | null; xrayPanelConfigId?: string };
 
 const MSG_IP = "❌ محدودیت IP باید عدد صحیح صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.";
 const MSG_TRAFFIC = "❌ حجم باید عدد صفر یا بزرگ‌تر باشد. عدد ۰ یعنی نامحدود.";
@@ -469,6 +469,29 @@ export class AdminService {
   static async updateXrayInbounds(productId: string, inboundIds: number[], inboundSnapshot: string | undefined, actorId: string) {
     await this.requireXrayProduct(productId);
     return this.updateProduct(productId, { inboundIds: [...new Set(inboundIds)], inboundSnapshot }, actorId);
+  }
+
+  static async bulkUpdateXrayInbounds(productIds: string[], input: { panelId: string; inboundIds: number[]; inboundSnapshot?: string }, actorId: string) {
+    const uniqueProductIds = [...new Set(productIds)].filter(Boolean);
+    if (!uniqueProductIds.length) throw productValidationError("❌ حداقل یک محصول باید انتخاب شود.");
+    if (!input.inboundIds.length) throw productValidationError("❌ حداقل یک اینباند لازم است");
+    const panel = await prisma.xrayPanelConfig.findUnique({ where: { id: input.panelId } });
+    if (!panel) throw productValidationError("❌ پنل Xray پیدا نشد.");
+    const products = await prisma.product.findMany({ where: { id: { in: uniqueProductIds }, mode: "xray_auto", AND: [productNotDeletedWhere()] }, select: { id: true, title: true } });
+    const validIds = new Set(products.map((product) => product.id));
+    const skipped = uniqueProductIds.filter((id) => !validIds.has(id));
+    const updated: string[] = [];
+    const failed: Array<{ productId: string; error: string }> = [];
+    for (const product of products) {
+      try {
+        await this.updateProduct(product.id, { xrayPanelConfigId: input.panelId, inboundIds: [...new Set(input.inboundIds)], inboundSnapshot: input.inboundSnapshot }, actorId);
+        updated.push(product.id);
+      } catch (error) {
+        failed.push({ productId: product.id, error: error instanceof Error ? error.message : "خطای نامشخص" });
+      }
+    }
+    await prisma.auditLog.create({ data: { actorId, action: "product.bulk_update_xray_inbounds", metadata: JSON.stringify({ panelId: input.panelId, inboundIds: input.inboundIds, requested: uniqueProductIds.length, updated: updated.length, skipped: skipped.length, failed: failed.length, timestamp: new Date().toISOString() }) } });
+    return { requested: uniqueProductIds.length, updated, skipped, failed };
   }
 
   static async deleteProduct(productId: string, actorId: string) {
