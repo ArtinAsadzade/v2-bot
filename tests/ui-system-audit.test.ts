@@ -4,6 +4,7 @@ import { test } from "vitest";
 import { buildInlineKeyboard } from "../src/bot/keyboards/design-system";
 import { callbackFor, panelKeyboard, type UiKeyboard } from "../src/bot/navigation/panel-ui";
 import { normalizeKeyboardLayout, uiSystem } from "../src/bot/ui/ui-system";
+import { readAdminViewsSource } from "./helpers/view-source";
 
 const sourceFiles = [
   "src/bot/navigation/panel-ui.ts",
@@ -27,7 +28,7 @@ const sourceFiles = [
   "src/bot/handlers/modern/admin/admin-xray.handlers.ts",
   "src/bot/handlers/modern/admin/admin-inventory.handlers.ts",
 ];
-const uiSource = sourceFiles.map((file) => `${file}\n${readFileSync(file, "utf8")}`).join("\n");
+const uiSource = sourceFiles.map((file) => `${file}\n${readFileSync(file, "utf8")}`).concat(readAdminViewsSource()).join("\n");
 
 test("all Telegram button styling flows through the central UI system", () => {
   assert.match(readFileSync("src/bot/navigation/panel-ui.ts", "utf8"), /normalizeKeyboardLayout/);

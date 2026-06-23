@@ -2,10 +2,12 @@ import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { ADMIN_MODULE_ARCHITECTURE, CLICK_DEPTH_REPORT, NAVIGATION_AUDIT, NAVIGATION_GRAPH, USER_MODULE_ARCHITECTURE } from "../src/bot/navigation/information-architecture";
 import type { PanelViewId } from "../src/bot/navigation/panel-ui";
+import { readAdminViewsSource } from "./helpers/view-source";
 
 const allAreas = [...USER_MODULE_ARCHITECTURE, ...ADMIN_MODULE_ARCHITECTURE];
-const registeredViewSource = ["src/bot/views/home.views.ts", "src/bot/views/product.views.ts", "src/bot/views/purchase.views.ts", "src/bot/views/account.views.ts", "src/bot/views/wallet.views.ts", "src/bot/views/support.views.ts", "src/bot/views/free-account.views.ts", "src/bot/views/prediction.views.ts", "src/bot/views/admin.views.ts"]
+const registeredViewSource = ["src/bot/views/home.views.ts", "src/bot/views/product.views.ts", "src/bot/views/purchase.views.ts", "src/bot/views/account.views.ts", "src/bot/views/wallet.views.ts", "src/bot/views/support.views.ts", "src/bot/views/free-account.views.ts", "src/bot/views/prediction.views.ts"]
   .map((file) => readFileSync(file, "utf8"))
+  .concat(readAdminViewsSource())
   .join("\n");
 
 const hasRegisteredView = (view: PanelViewId) => registeredViewSource.includes(`registerView("${view}"`);
@@ -37,7 +39,7 @@ describe("Phase 2 information architecture", () => {
     const searchable = new Set(allAreas.flatMap((area) => area.searchable ?? []));
     expect([...searchable]).toEqual(expect.arrayContaining(["shop.searchResults", "admin.products", "admin.users", "admin.tickets", "admin.predictionList", "admin.xrayClients"]));
     expect(readFileSync("src/bot/views/product.views.ts", "utf8")).toContain("flow:start:product_search");
-    expect(readFileSync("src/bot/views/admin.views.ts", "utf8")).toContain("flow:start:admin_product_search");
+    expect(readAdminViewsSource()).toContain("flow:start:admin_product_search");
   });
 
   test("common workflows meet one-to-three click depth target", () => {
