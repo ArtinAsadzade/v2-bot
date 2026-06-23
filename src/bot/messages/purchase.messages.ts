@@ -1,7 +1,7 @@
 export const pendingInvoiceExistsMessage = () =>
   "شما از قبل یک فاکتور پرداخت‌نشده برای این محصول دارید. می‌توانید پرداخت را ادامه دهید یا آن را لغو کرده و فاکتور جدید بسازید.";
 export const previousPurchaseProcessingMessage = () =>
-  "Your previous purchase is still being processed. Please wait or cancel it if it is stuck.";
+  "⏳ خرید قبلی شما هنوز باز است\n\nشما یک سفارش نیمه‌تمام یا در حال پردازش دارید. برای جلوگیری از پرداخت تکراری، ابتدا وضعیت سفارش قبلی را مشخص کنید.";
 export const unauthorizedMessage = () => "⛔ دسترسی غیرمجاز";
 
 export function purchaseStepMessage(step: 1 | 2 | 3 | 4 | 5, title: string) {

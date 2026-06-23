@@ -2,7 +2,7 @@ import { test } from "vitest";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const payment = (fs.readFileSync("src/modules/payment/payment.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment.types.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment-fulfillment.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment-delivery.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment-callback.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/wallet-payment.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/gateway-payment.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment-discount.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment-notification.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment-repository.ts", "utf8"));
+const payment = (fs.readFileSync("src/modules/payment/pending-purchase-resolver.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment.types.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment-fulfillment.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment-delivery.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment-callback.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/wallet-payment.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/gateway-payment.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment-discount.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment-notification.service.ts", "utf8") + "\n" + fs.readFileSync("src/modules/payment/payment-repository.ts", "utf8"));
 const rateLimit = fs.readFileSync("src/bot/middlewares/rate-limit.middleware.ts", "utf8");
 const modern = (fs.readFileSync("src/bot/handlers/modern/register-modern-handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/navigation.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/home.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/product.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/purchase.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/wallet.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/coupon.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/account.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/xray.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/free-account.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/support.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/admin.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/admin/index.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/admin/admin-products.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/admin/admin-payments.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/admin/admin-coupons.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/admin/admin-inventory.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/admin/admin-settings.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/admin/admin-support.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/handlers/modern/admin/admin-users.handlers.ts", "utf8") + "\n" + fs.readFileSync("src/bot/messages/coupon.messages.ts", "utf8") + "\n" + fs.readFileSync("src/bot/messages/purchase.messages.ts", "utf8") + "\n" + fs.readFileSync("src/bot/callbacks/index.ts", "utf8") + "\n" + fs.readFileSync("src/bot/keyboards/purchase.keyboard.ts", "utf8") + "\n" + fs.readFileSync("src/bot/messages/coupon.messages.ts", "utf8") + "\n" + fs.readFileSync("src/bot/messages/purchase.messages.ts", "utf8") + "\n" + fs.readFileSync("src/bot/callbacks/index.ts", "utf8") + "\n" + fs.readFileSync("src/bot/keyboards/purchase.keyboard.ts", "utf8"));
 const cleaner = fs.readFileSync("src/jobs/purchaseCleaner.ts", "utf8");
@@ -18,11 +18,15 @@ test("pending product purchase intent resolves to reusable invoice, processing, 
   assert.match(payment, /INVOICE_PENDING_TTL_SECONDS/);
 });
 
-test("purchase UI resumes invoices and offers cancel/back instead of dead-end errors", () => {
-  assert.match(modern, /Pay previous invoice/);
-  assert.match(modern, /Cancel and create new invoice/);
-  assert.match(modern, /Cancel stuck purchase/);
-  assert.match(modern, /Your previous purchase request expired/);
+test("purchase UI shows Persian pending resolver actions instead of English dead-end errors", () => {
+  assert.match(modern, /خرید قبلی شما هنوز باز است/);
+  assert.match(modern, /ادامه پرداخت \/ پرداخت مجدد/);
+  assert.match(modern, /لغو سفارش و خرید جدید/);
+  assert.match(modern, /تلاش مجدد برای تحویل/);
+  assert.match(modern, /شروع خرید جدید/);
+  assert.match(modern, /purchase\.pending\./);
+  assert.doesNotMatch(modern + payment, new RegExp(["Your previous", "purchase", "is still", "being processed"].join(".*")));
+  assert.doesNotMatch(modern + payment, new RegExp(["Please wait", "cancel it", "stuck"].join(".*")));
 });
 
 test("wallet top-up has a short configurable rate limit with remaining seconds", () => {

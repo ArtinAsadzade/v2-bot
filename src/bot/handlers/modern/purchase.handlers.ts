@@ -20,12 +20,13 @@ import {
   freeAccountExpiresAt,
 } from "../../../modules/free-account/free-account.service";
 import { PaymentGatewayService, PaymentInvoiceService } from "../../../modules/payment/payment.service";
+import { PendingPurchaseResolverService, type PendingPurchaseResolution } from "../../../modules/payment/pending-purchase-resolver.service";
 import { isAdminByTelegramId } from "../../middlewares/admin.middleware";
 import { quickReplyTarget } from "../../keyboards/reply.keyboard";
 import { InvoiceActionKeyboard } from "../../keyboards/design-system";
 import { supportCloseHomeInlineKeyboard } from "../../keyboards/common.keyboard";
 import { xraySubscriptionKeyboard, xrayConfigsSentKeyboard, xrayRenewedKeyboard, xrayRenewalInvoiceKeyboard } from "../../keyboards/account.keyboard";
-import { accountHomeInlineKeyboard, expiredCheckoutRecoveryKeyboard, pendingInvoiceRecoveryKeyboard, processingPurchaseRecoveryKeyboard, standardPurchaseDeliveryKeyboard, xrayPurchaseDeliveryKeyboard } from "../../keyboards/purchase.keyboard";
+import { accountHomeInlineKeyboard, expiredCheckoutRecoveryKeyboard, pendingInvoiceRecoveryKeyboard, processingPurchaseRecoveryKeyboard, standardPurchaseDeliveryKeyboard, xrayPurchaseDeliveryKeyboard, pendingPurchaseResolverKeyboard } from "../../keyboards/purchase.keyboard";
 import { buyCallbacks, nav, xrayCallbacks } from "../../callbacks";
 import { pendingInvoiceExistsMessage, previousPurchaseProcessingMessage, unauthorizedMessage } from "../../messages/purchase.messages";
 import { serviceNotFoundMessage, xrayConfigsSentMessage, xrayRenewalInvoiceMessage, xrayRenewedMessage, xraySubscriptionMessage } from "../../messages/account.messages";
@@ -37,6 +38,53 @@ import { ProductGuideService } from "../../../modules/system/product-guide.servi
 import { PublicPlansService } from "../../../modules/product/public-plans.service";
 import { XrayClientService, XrayPanelService, xrayInboundSnapshot } from "../../../modules/xray/xray.service";
 import { prisma } from "../../../services/prisma";
+
+function faDate(date?: Date | null) {
+  return date ? new Intl.DateTimeFormat("fa-IR", { dateStyle: "short", timeStyle: "short" }).format(date) : "—";
+}
+
+function paymentLabel(status?: string | null) {
+  return ({ PENDING: "در انتظار پرداخت", PAID: "پرداخت‌شده", FAILED: "ناموفق", EXPIRED: "منقضی‌شده", CANCELED: "لغوشده", COMPLETED: "پرداخت‌شده" } as Record<string, string>)[String(status ?? "PENDING")] ?? "در انتظار پرداخت";
+}
+
+function deliveryLabel(status?: string | null) {
+  return ({ PENDING: "در انتظار تحویل", PROCESSING: "در حال ساخت سرویس", COMPLETED: "تحویل‌شده", FAILED: "تحویل ناموفق", FAILED_DELIVERY: "تحویل ناموفق", MANUAL_REVIEW: "نیازمند بررسی پشتیبانی", EXPIRED: "منقضی‌شده", CANCELED: "لغوشده" } as Record<string, string>)[String(status ?? "PENDING")] ?? "در انتظار تحویل";
+}
+
+function orderLabel(status?: string | null) {
+  return ({ pending: "باز", reserving: "در حال پردازش", panel_creating: "در حال ساخت سرویس", panel_verified: "در حال پردازش", completed: "تکمیل‌شده", cancelled: "لغوشده", failed: "ناموفق", failed_delivery: "تحویل ناموفق" } as Record<string, string>)[String(status ?? "pending")] ?? "باز";
+}
+
+function pendingPurchaseMessage(resolution: PendingPurchaseResolution) {
+  const invoice = resolution.invoice;
+  const order = resolution.order;
+  const productTitle = resolution.product?.title ?? order?.product?.title ?? "—";
+  const amount = invoice?.amount ?? order?.finalPaidAmount ?? order?.totalAmount;
+  const createdAt = invoice?.createdAt ?? order?.createdAt;
+  const shortId = (invoice?.id ?? order?.id ?? "--------").slice(-8);
+  return `⏳ خرید قبلی شما هنوز باز است
+
+شما یک سفارش نیمه‌تمام یا در حال پردازش دارید.
+برای جلوگیری از پرداخت تکراری، ابتدا وضعیت سفارش قبلی را مشخص کنید.
+
+📦 محصول: ${productTitle}
+💰 مبلغ: ${typeof amount === "number" ? amount.toLocaleString("fa-IR") + " تومان" : "—"}
+💳 وضعیت پرداخت: ${invoice ? paymentLabel(invoice.status) : orderLabel(order?.status)}
+🚚 وضعیت تحویل: ${deliveryLabel(invoice?.deliveryStatus ?? (order?.status === "failed_delivery" ? "FAILED_DELIVERY" : undefined))}
+🕒 زمان ایجاد: ${faDate(createdAt)}
+🔖 شماره سفارش کوتاه: ${shortId}
+
+اگر پرداخت را انجام داده‌اید اما سرویس تحویل نشده، گزینه «پیگیری/تلاش مجدد» را بزنید.
+اگر این سفارش دیگر لازم نیست، می‌توانید آن را لغو کنید و خرید جدید بسازید.`;
+}
+
+async function showPendingPurchase(ctx: AppContext, userId: string, productId: string) {
+  const resolution = await PendingPurchaseResolverService.resolve(userId, productId);
+  if (resolution.state === "no_blocking_purchase") return false;
+  const mode = resolution.state === "stale_unpaid" ? "stale_unpaid" : resolution.state === "unpaid_invoice" ? "unpaid_invoice" : resolution.state === "failed_delivery" ? "failed_delivery" : resolution.state === "paid_delivery_pending" ? "paid_delivery_pending" : resolution.state === "stale_processing" ? "stale_processing" : "active_processing";
+  await ctx.reply(pendingPurchaseMessage(resolution), pendingPurchaseResolverKeyboard(productId, mode, resolution.invoice?.paymentLink));
+  return true;
+}
 
 
 export function registerPurchaseHandlers(bot: AppBot) {
@@ -105,16 +153,7 @@ export function registerPurchaseHandlers(bot: AppBot) {
     if (!user) return;
     const productId = ctx.match[1];
     try {
-      const existing = await PaymentInvoiceService.resolveExistingPurchaseIntent(user.id, productId);
-      if (existing.action === "reuse_invoice") {
-        await ctx.reply(pendingInvoiceExistsMessage(), { reply_markup: pendingInvoiceRecoveryKeyboard(productId, existing.invoice.paymentLink) });
-        return;
-      }
-      if (existing.action === "processing") {
-        await ctx.reply(previousPurchaseProcessingMessage(), { reply_markup: processingPurchaseRecoveryKeyboard(productId) });
-        return;
-      }
-      if (existing.action === "expired_and_released") await ctx.reply("Your previous purchase request expired. You can start a new purchase now.");
+      if (await showPendingPurchase(ctx, user.id, productId)) return;
       await ctx.editMessageText("⏳ در حال بررسی موجودی کیف پول و آماده‌سازی اکانت...", { reply_markup: { inline_keyboard: [] } });
       const coupon = ctx.session.selectedCoupons?.[productId];
       const result = await PurchaseService.buyProduct(user.id, productId, coupon);
@@ -156,6 +195,33 @@ export function registerPurchaseHandlers(bot: AppBot) {
     }
   });
 
+  bot.action(/^purchase\.pending\.(view|continuePayment|cancel|retryDelivery|startNew|support):(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from) return;
+    const user = await UserService.getByTelegramId(ctx.from.id);
+    if (!user) return;
+    const action = ctx.match[1];
+    const productId = ctx.match[2];
+    if (action === "cancel" || action === "startNew") {
+      await PendingPurchaseResolverService.cancelUnpaid(user.id, productId);
+      await ctx.reply("✅ سفارش پرداخت‌نشده قبلی بسته شد. اکنون می‌توانید خرید جدید را با خیال راحت ادامه دهید.");
+      await renderPanel(ctx, { id: "shop.checkout", params: { productId } }, "replace", RenderMode.SEND_NEW);
+      return;
+    }
+    if (action === "retryDelivery") {
+      await ctx.reply("🔄 درخواست تلاش مجدد برای تحویل ثبت شد. نتیجه پس از بررسی وضعیت پرداخت اعلام می‌شود.");
+      await PendingPurchaseResolverService.retryDelivery(user.id, productId);
+      await showPendingPurchase(ctx, user.id, productId);
+      return;
+    }
+    if (action === "support") {
+      await ctx.reply("🎫 برای بررسی دستی سفارش، لطفاً پیام خود را برای پشتیبانی ارسال کنید.", { reply_markup: { inline_keyboard: [[{ text: "🎫 پشتیبانی", callback_data: nav.support() }], [{ text: "🏠 خانه", callback_data: nav.home() }]] } });
+      await renderPanel(ctx, { id: "support" }, "replace", RenderMode.SEND_NEW);
+      return;
+    }
+    await showPendingPurchase(ctx, user.id, productId);
+  });
+
   bot.action(/^buy:instant:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     if (!ctx.from) return;
@@ -164,16 +230,7 @@ export function registerPurchaseHandlers(bot: AppBot) {
     const productId = ctx.match[1];
     try {
       await ctx.editMessageText("⏳ در حال ایجاد فاکتور پرداخت آنی...", { reply_markup: { inline_keyboard: [] } });
-      const existing = await PaymentInvoiceService.resolveExistingPurchaseIntent(user.id, productId);
-      if (existing.action === "reuse_invoice") {
-        await ctx.reply(pendingInvoiceExistsMessage(), { reply_markup: pendingInvoiceRecoveryKeyboard(productId, existing.invoice.paymentLink) });
-        return;
-      }
-      if (existing.action === "processing") {
-        await ctx.reply(previousPurchaseProcessingMessage(), { reply_markup: processingPurchaseRecoveryKeyboard(productId) });
-        return;
-      }
-      if (existing.action === "expired_and_released") await ctx.reply("Your previous purchase request expired. You can start a new purchase now.");
+      if (await showPendingPurchase(ctx, user.id, productId)) return;
       const product = await ProductService.getProduct(productId);
       const coupon = ctx.session.selectedCoupons?.[productId];
       const invoice = await PaymentInvoiceService.createProductInvoice(user.id, productId, coupon, { ignoreExisting: true });
