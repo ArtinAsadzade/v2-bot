@@ -84,6 +84,7 @@ export interface SessionData {
   liveTicketRole?: "user" | "admin";
   flow?: ActiveFlow;
   predictionCreate?: { title?: string; question?: string; description?: string; options?: string[]; rewardType?: "wallet" | "product"; rewardWalletAmount?: number; rewardProductId?: string; winnerCount?: number; closesAt?: string };
+  dateTimePicker?: { flow: "prediction.create.closesAt" | "prediction.edit.closesAt"; returnView?: string; contestId?: string; selectedYear?: number; selectedMonth?: number; selectedDay?: number; selectedHour?: number; selectedMinute?: number };
   navigation?: { panelMessageId?: number; stack: ViewState[] };
   quickKeyboardSignature?: string;
   xrayPicker?: { target: "free_test" | "product_create" | "product_edit"; productId?: string; inboundOptions?: string; selectedIds?: number[]; groups?: string; returnTo?: ViewState };

@@ -4,9 +4,10 @@ import { card, joinSections } from "../ui/layout";
 import { prisma } from "../../services/prisma";
 import { UserService } from "../../modules/user/user.service";
 import { PredictionService } from "../../modules/prediction/prediction.service";
+import { formatJalaliDateTime } from "../../utils/persianDateTime";
 
 const db = prisma as any;
-const fmt = (d: Date) => new Date(d).toLocaleString("fa-IR", { timeZone: "Europe/Istanbul" });
+const fmt = (d: Date) => formatJalaliDateTime(new Date(d));
 const statusFa: Record<string, string> = {
   draft: "پیش‌نویس",
   open: "باز",
@@ -23,7 +24,7 @@ export function registerPredictionViews() {
       where: { status: "open" },
       orderBy: [{ status: "asc" }, { closesAt: "desc" }],
       take: 10,
-      include: { entries: user ? { where: { userId: user.id } } : false },
+      include: { _count: { select: { entries: true } }, entries: user ? { where: { userId: user.id } } : false },
     });
     const rows: UiKeyboard = contests.map((c: any) => [
       {
@@ -90,7 +91,7 @@ export function registerPredictionViews() {
       where: { id: params.contestId },
       include: {
         options: { orderBy: { order: "asc" } },
-        entries: user ? { where: { userId: user.id }, include: { option: true } } : true,
+        _count: { select: { entries: true } },
       },
     });
     if (!contest)
@@ -106,7 +107,7 @@ export function registerPredictionViews() {
           ],
         ],
       };
-    const entry = user ? contest.entries[0] : undefined;
+    const entry = user ? await db.predictionEntry.findFirst({ where: { contestId: contest.id, userId: user.id }, include: { option: true } }) : undefined;
     const open = contest.status === "open" && new Date(contest.closesAt) > new Date();
     const archived = contest.status === "archived";
     const optionRows: UiKeyboard =
@@ -133,7 +134,7 @@ export function registerPredictionViews() {
           `🎁 جایزه: ${PredictionService.rewardLabel(contest)}`,
           `🏆 تعداد برنده‌ها: ${contest.winnerCount.toLocaleString("fa-IR")}`,
           `⏳ مهلت: ${fmt(contest.closesAt)}`,
-          `👥 شرکت‌کنندگان: ${contest.entries.length.toLocaleString("fa-IR")}`,
+          `👥 شرکت‌کنندگان: ${contest._count.entries.toLocaleString("fa-IR")} نفر`,
           entry
             ? `✅ انتخاب شما: ${entry.option?.title ?? "ثبت‌شده"}`
             : archived
@@ -267,6 +268,7 @@ export function registerPredictionViews() {
         options: { orderBy: { order: "asc" } },
         entries: true,
         winners: true,
+        _count: { select: { entries: true } },
       },
     });
     if (!c)
@@ -289,8 +291,9 @@ export function registerPredictionViews() {
           `سؤال: ${c.question}`,
           `وضعیت: ${statusFa[c.status]}`,
           `زمان بسته شدن: ${fmt(c.closesAt)}`,
+          `جوایز دریافت‌شده: ${c.winners.filter((w: any) => w.status === "claimed").length.toLocaleString("fa-IR")}`,
           `گزینه‌ها: ${c.options.map((o: any) => o.title).join("، ")}`,
-          `شرکت‌کنندگان: ${c.entries.length.toLocaleString("fa-IR")}`,
+          `شرکت‌کنندگان: ${c._count.entries.toLocaleString("fa-IR")}`,
           `درست: ${correct.toLocaleString("fa-IR")}`,
           `برنده‌ها: ${c.winners.length.toLocaleString("fa-IR")} از ${c.winnerCount.toLocaleString("fa-IR")}`,
           `جایزه: ${PredictionService.rewardLabel(c)}`,
@@ -325,7 +328,7 @@ export function registerPredictionViews() {
         [
           {
             text: "🕒 تغییر زمان بسته شدن",
-            action: actionFor("flow:start", "prediction_close", c.id),
+            action: actionFor("dtp", "start", "pe", c.id),
             tone: "primary",
           },
           {
