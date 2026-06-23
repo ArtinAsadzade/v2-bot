@@ -143,16 +143,7 @@ export function registerPredictionViews() {
                 : "⏳ زمان ثبت پیش‌بینی به پایان رسیده است.",
         ]),
       ]),
-      keyboard: [
-        ...optionRows,
-        [
-          {
-            text: "🔙 لیست پیش‌بینی‌ها",
-            action: callbackFor("prediction"),
-            tone: "neutral",
-          },
-        ],
-      ],
+      keyboard: [...optionRows],
     };
   });
 
