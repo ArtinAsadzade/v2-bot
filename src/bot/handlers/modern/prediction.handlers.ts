@@ -9,6 +9,7 @@ import {
 } from "../../navigation/callback-tokens";
 import { UserService } from "../../../modules/user/user.service";
 import { PredictionService } from "../../../modules/prediction/prediction.service";
+import { RewardService } from "../../../modules/reward/reward.service";
 import { prisma } from "../../../services/prisma";
 import { isAdminByTelegramId } from "../../middlewares/admin.middleware";
 
@@ -70,25 +71,42 @@ export function registerPredictionHandlers(bot: AppBot) {
 
   bot.action(/^pr:cl:([^:]+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const payload = resolveCallbackToken(ctx, "predictionClaim", ctx.match[1]);
-    if (!payload || !ctx.from)
-      return void (await ctx.reply("❌ دکمه دریافت جایزه منقضی شده است."));
+    if (!ctx.from) return void (await ctx.reply("❌ درخواست معتبر نیست."));
+    const tokenPayload = resolveCallbackToken(ctx, "predictionClaim", ctx.match[1]);
+    const winnerId = tokenPayload?.winnerId ?? ctx.match[1];
+    if (!tokenPayload && !/^[a-f\d]{24}$/i.test(winnerId)) {
+      return void (await ctx.reply("برای دریافت جایزه، از بخش «جوایز من» اقدام کنید.", Markup.inlineKeyboard([[Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))]])));
+    }
     try {
-      const result = await PredictionService.claimReward(
-        payload.winnerId,
-        String(ctx.from.id),
-      );
-      await ctx.reply(
-        result.alreadyClaimed
-          ? "✅ جایزه شما قبلاً دریافت شده است."
-          : "🎁 جایزه شما با موفقیت دریافت شد.",
-      );
+      const result = await RewardService.claimPredictionReward(winnerId, String(ctx.from.id));
+      await ctx.reply(result.alreadyClaimed ? "✅ این جایزه قبلاً دریافت شده است." : "🎁 جایزه شما با موفقیت دریافت شد.", Markup.inlineKeyboard([[Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))]]));
     } catch (error) {
-      await ctx.reply(
-        error instanceof Error
-          ? error.message
-          : "❌ دریافت جایزه انجام نشد. لطفاً با پشتیبانی تماس بگیرید.",
-      );
+      await ctx.reply(error instanceof Error ? error.message : "❌ دریافت جایزه انجام نشد. لطفاً با پشتیبانی تماس بگیرید.");
+    }
+  });
+
+  bot.action(/^reward:claim:prediction:([^:]+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from) return void (await ctx.reply("❌ درخواست معتبر نیست."));
+    try {
+      const result = await RewardService.claimPredictionReward(ctx.match[1], String(ctx.from.id));
+      await ctx.reply(result.alreadyClaimed ? "✅ این جایزه قبلاً دریافت شده است." : "🎁 جایزه شما با موفقیت دریافت شد.");
+      await renderPanel(ctx, { id: "account.rewards" }, "replace");
+    } catch (error) {
+      await ctx.reply(error instanceof Error ? error.message : "❌ دریافت جایزه انجام نشد. لطفاً با پشتیبانی تماس بگیرید.");
+    }
+  });
+
+  bot.action("reward:claim:referral", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from) return void (await ctx.reply("❌ درخواست معتبر نیست."));
+    try {
+      const user = await UserService.findOrCreateUser(ctx);
+      const result = await RewardService.claimReferralRewards(user.id);
+      await ctx.reply(`✅ ${result.amount.toLocaleString("fa-IR")} تومان پاداش دعوت دوستان به کیف پول شما اضافه شد.`);
+      await renderPanel(ctx, { id: "account.rewards" }, "replace");
+    } catch (error) {
+      await ctx.reply(error instanceof Error ? error.message : "❌ دریافت جایزه انجام نشد.");
     }
   });
 
@@ -149,19 +167,12 @@ export function registerPredictionHandlers(bot: AppBot) {
       try {
         const winner = winnerByUser.get(entry.userId) as any;
         if (winner) {
-          const token = createCallbackToken(ctx, "predictionClaim", {
-            winnerId: winner.id,
-          });
           await ctx.telegram.sendMessage(
             entry.telegramId,
-            "🎉 تبریک! پیش‌بینی شما درست بود و شما برنده شدید.",
+            "🎉 تبریک! پیش‌بینی شما درست بود و شما برنده شدید.\nجایزه شما در بخش «جوایز من» آماده دریافت است.",
             Markup.inlineKeyboard([
-              [
-                Markup.button.callback(
-                  "🎁 دریافت جایزه",
-                  tokenAction("pr:cl", token),
-                ),
-              ],
+              [Markup.button.callback("🎁 دریافت جایزه", actionFor("pr:cl", winner.id))],
+              [Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))],
             ]),
           );
           await db.predictionWinner.update({
