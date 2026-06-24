@@ -65,7 +65,6 @@ function invoicePendingTtlSeconds() {
   return envSeconds("INVOICE_PENDING_TTL_SECONDS", 30 * 60);
 }
 
-
 const ALREADY_PROCESSED_FA = "⚠️ این پرداخت قبلاً پردازش شده است.";
 const DEFAULT_GATEWAY_API_BASE_URL = "http://136.244.104.77:5000/api/v1";
 
@@ -84,13 +83,6 @@ export function maskApiKey(apiKey?: string | null) {
   if (!apiKey) return "ثبت نشده";
   const suffix = apiKey.slice(-4).toUpperCase();
   return `********${suffix}`;
-}
-
-function xrayClientEmail(input: { telegramId: string; productId: string; orderId: string }) {
-  return `tg${input.telegramId}-p${input.productId.slice(-8)}-o${input.orderId.slice(-8)}`
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "")
-    .slice(0, 64);
 }
 
 export class PaymentGatewayService {
@@ -401,7 +393,13 @@ export class PaymentService {
     let couponId: string | null = null;
     let couponCode: string | null = null;
     if (data.couponCode?.trim()) {
-      const validation = await CouponService.validateForCheckout({ code: data.couponCode, userId: data.userId, originalAmount, productId: data.productId, tx });
+      const validation = await CouponService.validateForCheckout({
+        code: data.couponCode,
+        userId: data.userId,
+        originalAmount,
+        productId: data.productId,
+        tx,
+      });
       if (!validation.ok) {
         paymentLog("COUPON_RECHECK_FAILED", {
           userId: data.userId,
@@ -711,7 +709,6 @@ export class PaymentService {
       throw new Error("ارتباط با درگاه پرداخت برقرار نشد. لطفاً چند دقیقه دیگر دوباره تلاش کنید");
     }
   }
-
 
   private static notificationInvoice(invoice: Pick<PaymentInvoice, "id" | "userId" | "amount">) {
     return PaymentNotificationService.notificationInvoice(invoice);
@@ -1058,8 +1055,7 @@ export class PaymentInvoiceService {
     if (!options.ignoreExisting) {
       const existing = await PaymentService.resolveExistingPurchaseIntent(userId, productId);
       if (existing.action === "reuse_invoice") return existing.invoice;
-      if (existing.action === "processing")
-        throw new Error("خرید قبلی شما هنوز باز است. لطفاً ابتدا وضعیت سفارش قبلی را از صفحه پیگیری مشخص کنید.");
+      if (existing.action === "processing") throw new Error("خرید قبلی شما هنوز باز است. لطفاً ابتدا وضعیت سفارش قبلی را از صفحه پیگیری مشخص کنید.");
     }
     const quote = await prisma.$transaction((tx) => PaymentService.quoteProductInvoice(tx, { userId, productId, couponCode }));
     return PaymentService.createInvoice({

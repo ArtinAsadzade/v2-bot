@@ -35,7 +35,8 @@ export class FreeAccountError extends Error {
 }
 
 function assertFreeAccountInput(data: FreeAccountInput) {
-  if (!data.username.trim() || !data.subscriptionLink.trim() || !data.configLink.trim()) throw new FreeAccountError("INVALID_INPUT", "اطلاعات اکانت تست کامل نیست");
+  if (!data.username.trim() || !data.subscriptionLink.trim() || !data.configLink.trim())
+    throw new FreeAccountError("INVALID_INPUT", "اطلاعات اکانت تست کامل نیست");
   if (!Number.isInteger(data.durationDays) || data.durationDays <= 0) throw new FreeAccountError("INVALID_INPUT", "مدت اعتبار اکانت تست معتبر نیست");
 }
 
@@ -100,13 +101,14 @@ ${formatFreeAccountDate(nextAvailableAt)}
   return "دریافت اکانت تست ناموفق بود. لطفاً چند لحظه دیگر دوباره تلاش کنید.";
 }
 
-
 function isUniqueConstraint(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
-
-export function validateFreeTestActivation(config: { trafficBytes: bigint | number; durationDays: number; stockLimit: number; inboundIds: number[]; limitIp?: number | null }, panelEnabled: boolean) {
+export function validateFreeTestActivation(
+  config: { trafficBytes: bigint | number; durationDays: number; stockLimit: number; inboundIds: number[]; limitIp?: number | null },
+  panelEnabled: boolean,
+) {
   if (!panelEnabled) return "اتصال پنل Xray برقرار نیست.";
   if (BigInt(config.trafficBytes) <= 0n) return "حجم تست باید بیشتر از صفر باشد.";
   if (config.durationDays <= 0) return "مدت اکانت تست باید بیشتر از صفر باشد.";
@@ -143,8 +145,14 @@ export class FreeAccountService {
         assignedAt: null,
       },
     });
-    logger.info("Free test account inventory created", { accountId: account.id, actorId, username: account.username, durationDays: account.durationDays });
-    if (actorId) await prisma.auditLog.create({ data: { actorId, action: "free_account.create", metadata: JSON.stringify({ accountId: account.id }) } });
+    logger.info("Free test account inventory created", {
+      accountId: account.id,
+      actorId,
+      username: account.username,
+      durationDays: account.durationDays,
+    });
+    if (actorId)
+      await prisma.auditLog.create({ data: { actorId, action: "free_account.create", metadata: JSON.stringify({ accountId: account.id }) } });
     return account;
   }
 
@@ -170,7 +178,9 @@ export class FreeAccountService {
     if (data.status === "expired") await prisma.freeAccountAssignment.updateMany({ where: { accountId }, data: { isActive: false } });
     if (data.status === "assigned") await prisma.freeAccountAssignment.updateMany({ where: { accountId }, data: { isActive: true } });
     logger.info("Free test account inventory updated", { accountId, actorId, fields: Object.keys(normalized), status: account.status });
-    await prisma.auditLog.create({ data: { actorId, action: "free_account.update", metadata: JSON.stringify({ accountId, fields: Object.keys(normalized) }) } });
+    await prisma.auditLog.create({
+      data: { actorId, action: "free_account.update", metadata: JSON.stringify({ accountId, fields: Object.keys(normalized) }) },
+    });
     return account;
   }
 
@@ -179,7 +189,9 @@ export class FreeAccountService {
       const assignment = await tx.freeAccountAssignment.findUnique({ where: { accountId } });
       if (assignment) await tx.freeAccountAssignment.delete({ where: { accountId } });
       const account = await tx.freeAccount.delete({ where: { id: accountId } });
-      await tx.auditLog.create({ data: { actorId, action: "free_account.delete", metadata: JSON.stringify({ accountId, assignmentId: assignment?.id }) } });
+      await tx.auditLog.create({
+        data: { actorId, action: "free_account.delete", metadata: JSON.stringify({ accountId, assignmentId: assignment?.id }) },
+      });
       logger.info("Free test account inventory deleted", { accountId, actorId, assignmentId: assignment?.id });
       return account;
     });
@@ -196,14 +208,21 @@ export class FreeAccountService {
       prisma.freeAccountAssignment.count({ where: { createdAt: { gte: monthStart } } }),
       prisma.freeAccountAssignment.findMany({ distinct: ["userId"], select: { userId: true } }),
       prisma.freeAccountAssignment.findMany({ include: { user: true, account: true }, orderBy: { createdAt: "desc" }, take: 10 }),
-      prisma.freeAccount.findMany({ include: { assignment: { include: { user: true } } }, orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 20 }),
+      prisma.freeAccount.findMany({
+        include: { assignment: { include: { user: true } } },
+        orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+        take: 20,
+      }),
     ]);
     return { total, available, assigned, expired, monthlyAssignments, uniqueUsers: uniqueUsers.length, recentAssignments, inventory };
   }
 
   static async listInventory(page = 1, take = 10, status?: FreeAccountStatus, query?: string) {
     const skip = (page - 1) * take;
-    const where = { ...(status === "available" ? availableInventoryWhere : status ? { status } : {}), ...(query ? { username: { contains: query } } : {}) };
+    const where = {
+      ...(status === "available" ? availableInventoryWhere : status ? { status } : {}),
+      ...(query ? { username: { contains: query } } : {}),
+    };
     return Promise.all([
       prisma.freeAccount.findMany({ where, orderBy: [{ status: "asc" }, { createdAt: "desc" }], skip, take }),
       prisma.freeAccount.count({ where }),
@@ -212,7 +231,9 @@ export class FreeAccountService {
 
   static async assignmentHistory(page = 1, take = 10, query?: string) {
     const skip = (page - 1) * take;
-    const where = query ? { OR: [{ user: { is: { telegramId: { contains: query } } } }, { account: { is: { username: { contains: query } } } }] } : {};
+    const where = query
+      ? { OR: [{ user: { is: { telegramId: { contains: query } } } }, { account: { is: { username: { contains: query } } } }] }
+      : {};
     return Promise.all([
       prisma.freeAccountAssignment.findMany({ where, include: { user: true, account: true }, orderBy: { createdAt: "desc" }, skip, take }),
       prisma.freeAccountAssignment.count({ where }),
@@ -222,7 +243,12 @@ export class FreeAccountService {
   static async activeForUser(userId: string) {
     const now = new Date();
     await this.expireDueAccounts(now);
-    const assignments = await prisma.freeAccountAssignment.findMany({ where: { userId, isActive: true, account: { is: { status: "assigned" } } }, include: { account: true }, orderBy: { createdAt: "desc" }, take: 20 });
+    const assignments = await prisma.freeAccountAssignment.findMany({
+      where: { userId, isActive: true, account: { is: { status: "assigned" } } },
+      include: { account: true },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
     return assignments.filter((item) => {
       const assignedAt = item.assignedAt ?? item.createdAt;
       const expiresAt = item.expiresAt ?? freeAccountExpiresAt(assignedAt, item.account.durationDays);
@@ -239,20 +265,38 @@ export class FreeAccountService {
       prisma.freeAccountAssignment.findFirst({ where: { userId }, orderBy: { createdAt: "desc" }, include: { account: true } }),
       prisma.freeAccount.count({ where: availableInventoryWhere }),
     ]);
-    logger.info("Free test account eligibility checked", { userId, isBanned: Boolean(user?.isBanned), hasActiveAccount: Boolean(activeAccount), lastClaimAt: last?.assignedAt ?? last?.createdAt, available });
+    logger.info("Free test account eligibility checked", {
+      userId,
+      isBanned: Boolean(user?.isBanned),
+      hasActiveAccount: Boolean(activeAccount),
+      lastClaimAt: last?.assignedAt ?? last?.createdAt,
+      available,
+    });
     if (user?.isBanned) return { eligible: false, reason: "blocked" as const, activeAccount, last, nextAvailableAt: undefined, available };
     if (activeAccount) return { eligible: false, reason: "active" as const, activeAccount, last, nextAvailableAt: undefined, available };
     if (!last) return { eligible: true, activeAccount, last, nextAvailableAt: undefined, available };
     const lastClaimAt = last.assignedAt ?? last.createdAt;
     const nextAvailableAt = new Date(lastClaimAt.getTime() + COOLDOWN_DAYS * DAY_MS);
-    return { eligible: nextAvailableAt <= now, reason: nextAvailableAt <= now ? undefined : ("cooldown" as const), activeAccount, last, nextAvailableAt, available };
+    return {
+      eligible: nextAvailableAt <= now,
+      reason: nextAvailableAt <= now ? undefined : ("cooldown" as const),
+      activeAccount,
+      last,
+      nextAvailableAt,
+      available,
+    };
   }
 
   static async assertEligible(userId: string) {
     const status = await this.eligibility(userId);
     if (status.reason === "blocked") throw new FreeAccountError("USER_BLOCKED", "حساب شما مسدود است و امکان دریافت اکانت تست وجود ندارد");
-    if (status.reason === "active") throw new FreeAccountError("ACTIVE_ACCOUNT", "شما در حال حاضر یک اکانت تست فعال دارید", { accountId: status.activeAccount?.accountId });
-    if (status.reason === "cooldown") throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", { lastClaimAt: status.last?.assignedAt ?? status.last?.createdAt, nextAvailableAt: status.nextAvailableAt });
+    if (status.reason === "active")
+      throw new FreeAccountError("ACTIVE_ACCOUNT", "شما در حال حاضر یک اکانت تست فعال دارید", { accountId: status.activeAccount?.accountId });
+    if (status.reason === "cooldown")
+      throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", {
+        lastClaimAt: status.last?.assignedAt ?? status.last?.createdAt,
+        nextAvailableAt: status.nextAvailableAt,
+      });
     return status;
   }
 
@@ -267,26 +311,43 @@ export class FreeAccountService {
         logger.info("Free test account assignment user check", { userId, userFound: Boolean(user), isBanned: Boolean(user?.isBanned) });
         if (!user || user.isBanned) throw new FreeAccountError("USER_BLOCKED", "حساب شما مسدود است و امکان دریافت اکانت تست وجود ندارد");
 
-        const assignedAccounts = await tx.freeAccountAssignment.findMany({ where: { userId, isActive: true, account: { is: { status: "assigned" } } }, include: { account: true }, orderBy: { createdAt: "desc" }, take: 20 });
+        const assignedAccounts = await tx.freeAccountAssignment.findMany({
+          where: { userId, isActive: true, account: { is: { status: "assigned" } } },
+          include: { account: true },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+        });
         const active = assignedAccounts.find((item) => {
           const assignedAt = item.assignedAt ?? item.createdAt;
           const expiresAt = item.expiresAt ?? freeAccountExpiresAt(assignedAt, item.account.durationDays);
           return expiresAt > now;
         });
-        logger.info("Free test account assignment active-account check", { userId, assignedAccountCount: assignedAccounts.length, activeAccountId: active?.accountId });
+        logger.info("Free test account assignment active-account check", {
+          userId,
+          assignedAccountCount: assignedAccounts.length,
+          activeAccountId: active?.accountId,
+        });
         if (active) throw new FreeAccountError("ACTIVE_ACCOUNT", "شما در حال حاضر یک اکانت تست فعال دارید", { accountId: active.accountId });
 
         const last = await tx.freeAccountAssignment.findFirst({ where: { userId }, orderBy: { createdAt: "desc" } });
-        const lastClaimAt = last ? last.assignedAt ?? last.createdAt : undefined;
+        const lastClaimAt = last ? (last.assignedAt ?? last.createdAt) : undefined;
         logger.info("Free test account assignment cooldown check", { userId, lastClaimAt, cooldownCutoff: cutoff });
-        if (lastClaimAt && lastClaimAt > cutoff) throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", { lastClaimAt, nextAvailableAt: new Date(lastClaimAt.getTime() + COOLDOWN_DAYS * DAY_MS) });
+        if (lastClaimAt && lastClaimAt > cutoff)
+          throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", {
+            lastClaimAt,
+            nextAvailableAt: new Date(lastClaimAt.getTime() + COOLDOWN_DAYS * DAY_MS),
+          });
 
         const lock = await tx.freeAccountUserLock.findUnique({ where: { userId } });
         logger.info("Free test account assignment lock check", { userId, hasLock: Boolean(lock), lockLastClaimAt: lock?.lastClaimAt });
         if (!lock) {
           await tx.freeAccountUserLock.create({ data: { userId, lastClaimAt: now } });
         } else {
-          if (lock.lastClaimAt > cutoff) throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", { lastClaimAt: lock.lastClaimAt, nextAvailableAt: new Date(lock.lastClaimAt.getTime() + COOLDOWN_DAYS * DAY_MS) });
+          if (lock.lastClaimAt > cutoff)
+            throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", {
+              lastClaimAt: lock.lastClaimAt,
+              nextAvailableAt: new Date(lock.lastClaimAt.getTime() + COOLDOWN_DAYS * DAY_MS),
+            });
           const locked = await tx.freeAccountUserLock.updateMany({ where: { userId, lastClaimAt: { lte: cutoff } }, data: { lastClaimAt: now } });
           logger.info("Free test account assignment lock acquired", { userId, updatedLocks: locked.count });
           if (locked.count !== 1) throw new FreeAccountError("RACE_CONDITION", "درخواست شما در حال پردازش است. لطفاً چند لحظه دیگر دوباره تلاش کنید");
@@ -299,10 +360,22 @@ export class FreeAccountService {
         if (!candidates.length) throw new FreeAccountError("NO_INVENTORY", "در حال حاضر موجودی اکانت تست تکمیل شده است");
 
         for (const candidate of candidates) {
-          const updated = await tx.freeAccount.updateMany({ where: { id: candidate.id, status: "available", assignedTo: null, assignment: { is: null } }, data: { status: "assigned", assignedTo: userId, assignedAt: now } });
+          const updated = await tx.freeAccount.updateMany({
+            where: { id: candidate.id, status: "available", assignedTo: null, assignment: { is: null } },
+            data: { status: "assigned", assignedTo: userId, assignedAt: now },
+          });
           logger.info("Free test account assignment candidate update", { userId, accountId: candidate.id, updated: updated.count });
           if (updated.count !== 1) continue;
-          const assignment = await tx.freeAccountAssignment.create({ data: { userId, accountId: candidate.id, reason, isActive: true, assignedAt: now, expiresAt: freeAccountExpiresAt(now, candidate.durationDays) } });
+          const assignment = await tx.freeAccountAssignment.create({
+            data: {
+              userId,
+              accountId: candidate.id,
+              reason,
+              isActive: true,
+              assignedAt: now,
+              expiresAt: freeAccountExpiresAt(now, candidate.durationDays),
+            },
+          });
           await tx.freeAccountUserLock.update({ where: { userId }, data: { lastAssignmentId: assignment.id, lastClaimAt: now } });
           return { ...candidate, status: "assigned" as const, assignedTo: userId, assignedAt: now, assignment };
         }
@@ -314,7 +387,11 @@ export class FreeAccountService {
       return assigned;
     } catch (error) {
       if (isUniqueConstraint(error)) {
-        logger.warn("Free test account assignment unique constraint", { userId, reason, error: error instanceof Error ? error.message : String(error) });
+        logger.warn("Free test account assignment unique constraint", {
+          userId,
+          reason,
+          error: error instanceof Error ? error.message : String(error),
+        });
         throw new FreeAccountError("RACE_CONDITION", "درخواست شما در حال پردازش است. لطفاً چند لحظه دیگر دوباره تلاش کنید");
       }
       logger.warn("Free test account assignment failed", { userId, reason, error: error instanceof Error ? error.message : String(error) });
@@ -323,7 +400,11 @@ export class FreeAccountService {
   }
 
   static async expireDueAccounts(now = new Date()) {
-    const assigned = await prisma.freeAccountAssignment.findMany({ where: { isActive: true, account: { is: { status: "assigned" } } }, include: { account: true }, take: 500 });
+    const assigned = await prisma.freeAccountAssignment.findMany({
+      where: { isActive: true, account: { is: { status: "assigned" } } },
+      include: { account: true },
+      take: 500,
+    });
     const due = assigned.filter((item) => {
       const assignedAt = item.assignedAt ?? item.createdAt;
       const expiresAt = item.expiresAt ?? freeAccountExpiresAt(assignedAt, item.account.durationDays);
@@ -338,32 +419,70 @@ export class FreeAccountService {
       prisma.freeAccount.updateMany({ where: { id: { in: ids }, status: "assigned" }, data: { status: "expired" } }),
       prisma.freeAccountAssignment.updateMany({ where: { accountId: { in: ids }, isActive: true }, data: { isActive: false } }),
     ]);
-    logger.info("Free test account expiration checked", { checked: assigned.length, expired: accountResult.count, deactivatedAssignments: assignmentResult.count });
+    logger.info("Free test account expiration checked", {
+      checked: assigned.length,
+      expired: accountResult.count,
+      deactivatedAssignments: assignmentResult.count,
+    });
     if (accountResult.count > 0) eventBus.emit("free_account.expired", { count: accountResult.count });
     return accountResult;
   }
 
   static async assignedForUser(userId: string, onlyActive = false) {
     if (onlyActive) await this.expireDueAccounts();
-    return prisma.freeAccountAssignment.findMany({ where: { userId, ...(onlyActive ? { isActive: true, account: { is: { status: "assigned" } } } : {}) }, include: { account: true }, orderBy: { createdAt: "desc" } });
+    return prisma.freeAccountAssignment.findMany({
+      where: { userId, ...(onlyActive ? { isActive: true, account: { is: { status: "assigned" } } } : {}) },
+      include: { account: true },
+      orderBy: { createdAt: "desc" },
+    });
   }
 
   static async getXrayConfig() {
-    const config = await prisma.freeTestConfig.upsert({ where: { id: "singleton" }, update: {}, create: { id: "singleton", enabled: false, trafficBytes: 0n, durationDays: 1, stockLimit: 0, usedCount: 0, inboundIds: [] } });
+    const config = await prisma.freeTestConfig.upsert({
+      where: { id: "singleton" },
+      update: {},
+      create: { id: "singleton", enabled: false, trafficBytes: 0n, durationDays: 1, stockLimit: 0, usedCount: 0, inboundIds: [] },
+    });
     return { ...config, available: Math.max(config.stockLimit - config.usedCount, 0) };
   }
 
-  static async updateXrayConfig(data: { enabled?: boolean; trafficGB?: number; durationDays?: number; stockLimit?: number; inboundIds?: number[]; inboundSnapshot?: string; limitIp?: number; groupName?: string | null }, actorId: string) {
+  static async updateXrayConfig(
+    data: {
+      enabled?: boolean;
+      trafficGB?: number;
+      durationDays?: number;
+      stockLimit?: number;
+      inboundIds?: number[];
+      inboundSnapshot?: string;
+      limitIp?: number;
+      groupName?: string | null;
+    },
+    actorId: string,
+  ) {
     const current = await this.getXrayConfig();
     const enabledConfig = await XrayPanelService.getEnabledConfig();
-    const next = { ...current, ...data, trafficBytes: data.trafficGB !== undefined ? gbToBytes(data.trafficGB) : current.trafficBytes, stockLimit: data.stockLimit ?? current.stockLimit, durationDays: data.durationDays ?? current.durationDays, inboundIds: data.inboundIds ?? current.inboundIds, limitIp: data.limitIp ?? current.limitIp };
-    if (data.limitIp !== undefined && (!Number.isInteger(data.limitIp) || data.limitIp < 0)) throw new FreeAccountError("INVALID_INPUT", "محدودیت IP معتبر نیست");
+    const next = {
+      ...current,
+      ...data,
+      trafficBytes: data.trafficGB !== undefined ? gbToBytes(data.trafficGB) : current.trafficBytes,
+      stockLimit: data.stockLimit ?? current.stockLimit,
+      durationDays: data.durationDays ?? current.durationDays,
+      inboundIds: data.inboundIds ?? current.inboundIds,
+      limitIp: data.limitIp ?? current.limitIp,
+    };
+    if (data.limitIp !== undefined && (!Number.isInteger(data.limitIp) || data.limitIp < 0))
+      throw new FreeAccountError("INVALID_INPUT", "محدودیت IP معتبر نیست");
     let inboundSnapshot = data.inboundSnapshot ?? current.inboundSnapshot;
     if (data.enabled) {
       const reason = validateFreeTestActivation(next, Boolean(enabledConfig));
-      if (reason) throw new FreeAccountError(reason.includes("پنل") ? "XRAY_UNAVAILABLE" : "INVALID_INPUT", reason === "ابتدا حداقل یک اینباند انتخاب کنید." ? "ابتدا حداقل یک اینباند را از بخش «🔗 انتخاب اینباندها» انتخاب کنید." : reason);
+      if (reason)
+        throw new FreeAccountError(
+          reason.includes("پنل") ? "XRAY_UNAVAILABLE" : "INVALID_INPUT",
+          reason === "ابتدا حداقل یک اینباند انتخاب کنید." ? "ابتدا حداقل یک اینباند را از بخش «🔗 انتخاب اینباندها» انتخاب کنید." : reason,
+        );
     }
-    if (data.stockLimit !== undefined && data.stockLimit < current.usedCount) throw new FreeAccountError("INVALID_INPUT", "موجودی کل نمی‌تواند کمتر از تعداد مصرف‌شده باشد");
+    if (data.stockLimit !== undefined && data.stockLimit < current.usedCount)
+      throw new FreeAccountError("INVALID_INPUT", "موجودی کل نمی‌تواند کمتر از تعداد مصرف‌شده باشد");
     if (data.inboundIds !== undefined) {
       const live = await XrayClientService.listInbounds();
       const validated = validateFreeTestInboundSelection(live, data.inboundIds);
@@ -391,8 +510,14 @@ export class FreeAccountService {
     const config = await this.getXrayConfig();
     const [user, last, active] = await Promise.all([
       prisma.user.findUnique({ where: { id: userId }, select: { isBanned: true } }),
-      prisma.xrayClient.findFirst({ where: { userId, isFreeTest: true, status: { in: ["active", "provisioning", "creating"] } }, orderBy: { createdAt: "desc" } }),
-      prisma.xrayClient.findFirst({ where: { userId, isFreeTest: true, status: { in: ["active", "provisioning", "creating"] }, expiresAt: { gt: now } }, orderBy: { createdAt: "desc" } }),
+      prisma.xrayClient.findFirst({
+        where: { userId, isFreeTest: true, status: { in: ["active", "provisioning", "creating"] } },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.xrayClient.findFirst({
+        where: { userId, isFreeTest: true, status: { in: ["active", "provisioning", "creating"] }, expiresAt: { gt: now } },
+        orderBy: { createdAt: "desc" },
+      }),
     ]);
     const lastClaimAt = last?.createdAt;
     const nextAvailableAt = lastClaimAt ? new Date(lastClaimAt.getTime() + COOLDOWN_DAYS * DAY_MS) : undefined;
@@ -410,26 +535,80 @@ export class FreeAccountService {
         if (!user || user.isBanned) throw new FreeAccountError("USER_BLOCKED", "حساب شما مسدود است");
         const config = await tx.freeTestConfig.findUnique({ where: { id: "singleton" } });
         if (!config?.enabled) throw new FreeAccountError("NO_INVENTORY", "اکانت تست فعال نیست");
-        if (!config.inboundIds.length || config.trafficBytes <= 0n || config.durationDays <= 0 || config.stockLimit <= 0) throw new FreeAccountError("INVALID_INPUT", "تنظیمات اکانت تست کامل نیست");
-        const last = await tx.xrayClient.findFirst({ where: { userId, isFreeTest: true, status: { in: ["active", "provisioning", "creating"] } }, orderBy: { createdAt: "desc" } });
-        if (last && last.createdAt > cutoff) throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", { lastClaimAt: last.createdAt, nextAvailableAt: new Date(last.createdAt.getTime() + COOLDOWN_DAYS * DAY_MS) });
+        if (!config.inboundIds.length || config.trafficBytes <= 0n || config.durationDays <= 0 || config.stockLimit <= 0)
+          throw new FreeAccountError("INVALID_INPUT", "تنظیمات اکانت تست کامل نیست");
+        const last = await tx.xrayClient.findFirst({
+          where: { userId, isFreeTest: true, status: { in: ["active", "provisioning", "creating"] } },
+          orderBy: { createdAt: "desc" },
+        });
+        if (last && last.createdAt > cutoff)
+          throw new FreeAccountError("COOLDOWN", "شما در ۳۰ روز گذشته اکانت تست دریافت کرده‌اید", {
+            lastClaimAt: last.createdAt,
+            nextAvailableAt: new Date(last.createdAt.getTime() + COOLDOWN_DAYS * DAY_MS),
+          });
         if (config.usedCount >= config.stockLimit) throw new FreeAccountError("NO_INVENTORY", "موجودی اکانت تست تکمیل شده است");
         const expiresAt = new Date(now.getTime() + config.durationDays * DAY_MS);
-        const client = await tx.xrayClient.create({ data: { userId, telegramId: user.telegramId, isFreeTest: true, clientEmail: `pending-test-${user.telegramId}-${now.getTime()}`, inboundIds: config.inboundIds, limitIp: config.limitIp ?? 0, groupName: config.groupName, expiresAt, trafficBytes: config.trafficBytes, status: "provisioning" } });
-        const email = `test-tg${user.telegramId}-${client.id.slice(-6)}`;
+        const client = await tx.xrayClient.create({
+          data: {
+            userId,
+            telegramId: user.telegramId,
+            isFreeTest: true,
+            clientEmail: `pending-test-${user.telegramId}-${now.getTime()}`,
+            inboundIds: config.inboundIds,
+            limitIp: config.limitIp ?? 0,
+            groupName: config.groupName,
+            expiresAt,
+            trafficBytes: config.trafficBytes,
+            status: "provisioning",
+          },
+        });
+        const email = `test-@nimeshabsell_bot-${user.telegramId}-${client.id.slice(-6)}`;
         return tx.xrayClient.update({ where: { id: client.id }, data: { clientEmail: email } });
       });
       const live = await XrayClientService.listInbounds();
       const valid = new Set(live.map((i) => i.id));
       if (reserved.inboundIds.some((id: number) => !valid.has(id))) throw new Error("اینباندهای اکانت تست در پنل معتبر نیستند");
-      const created = await XrayClientService.createClient({ email: reserved.clientEmail, trafficBytes: reserved.trafficBytes, expiresAt: reserved.expiresAt, telegramId: reserved.telegramId, inboundIds: reserved.inboundIds, limitIp: reserved.limitIp, groupName: reserved.groupName });
+      const created = await XrayClientService.createClient({
+        email: reserved.clientEmail,
+        trafficBytes: reserved.trafficBytes,
+        expiresAt: reserved.expiresAt,
+        telegramId: reserved.telegramId,
+        inboundIds: reserved.inboundIds,
+        limitIp: reserved.limitIp,
+        groupName: reserved.groupName,
+      });
       const verified = await XrayClientService.verifyPanelClient({ email: reserved.clientEmail, expectedInboundIds: reserved.inboundIds });
       const delivered = await prisma.$transaction(async (tx) => {
-        const stock = await tx.freeTestConfig.updateMany({ where: { id: "singleton", enabled: true, usedCount: { lt: (await tx.freeTestConfig.findUniqueOrThrow({ where: { id: "singleton" } })).stockLimit } }, data: { usedCount: { increment: 1 } } });
+        const stock = await tx.freeTestConfig.updateMany({
+          where: {
+            id: "singleton",
+            enabled: true,
+            usedCount: { lt: (await tx.freeTestConfig.findUniqueOrThrow({ where: { id: "singleton" } })).stockLimit },
+          },
+          data: { usedCount: { increment: 1 } },
+        });
         if (stock.count !== 1) throw new FreeAccountError("NO_INVENTORY", "موجودی اکانت تست تکمیل شده است");
-        const updated = await tx.xrayClient.update({ where: { id: reserved.id }, data: { status: "active", clientSubId: verified.subId ?? created.subId, panelClientId: verified.panelClientId ?? created.uuid ?? created.id, lastError: null } });
-        await tx.freeAccountUserLock.upsert({ where: { userId }, create: { userId, lastClaimAt: now, lastAssignmentId: reserved.id }, update: { lastClaimAt: now, lastAssignmentId: reserved.id } });
-        await tx.auditLog.create({ data: { actorId: userId, action: "free_xray.delivered", metadata: JSON.stringify({ xrayClientId: reserved.id, deliveryId: reserved.id, panelClientId: verified.panelClientId }) } });
+        const updated = await tx.xrayClient.update({
+          where: { id: reserved.id },
+          data: {
+            status: "active",
+            clientSubId: verified.subId ?? created.subId,
+            panelClientId: verified.panelClientId ?? created.uuid ?? created.id,
+            lastError: null,
+          },
+        });
+        await tx.freeAccountUserLock.upsert({
+          where: { userId },
+          create: { userId, lastClaimAt: now, lastAssignmentId: reserved.id },
+          update: { lastClaimAt: now, lastAssignmentId: reserved.id },
+        });
+        await tx.auditLog.create({
+          data: {
+            actorId: userId,
+            action: "free_xray.delivered",
+            metadata: JSON.stringify({ xrayClientId: reserved.id, deliveryId: reserved.id, panelClientId: verified.panelClientId }),
+          },
+        });
         return updated;
       });
       return delivered;
@@ -437,8 +616,22 @@ export class FreeAccountService {
       if (reserved?.id) {
         const message = error instanceof Error ? error.message : String(error);
         await prisma.xrayClient.update({ where: { id: reserved.id }, data: { status: "failed", lastError: message } });
-        await prisma.auditLog.create({ data: { actorId: userId, action: "free_xray.failed", metadata: JSON.stringify({ xrayClientId: reserved.id, deliveryId: reserved.id, error: message }) } });
-        MonitoringService.record({ type: "PAYMENT_DELIVERY_FAILED", section: "Free Test", description: message, userId, severity: "critical", suggestedAction: "اکانت تست در پنل ساخته/verify نشده؛ سهمیه ماهانه مصرف نشده است.", metadata: { xrayClientId: reserved.id } });
+        await prisma.auditLog.create({
+          data: {
+            actorId: userId,
+            action: "free_xray.failed",
+            metadata: JSON.stringify({ xrayClientId: reserved.id, deliveryId: reserved.id, error: message }),
+          },
+        });
+        MonitoringService.record({
+          type: "PAYMENT_DELIVERY_FAILED",
+          section: "Free Test",
+          description: message,
+          userId,
+          severity: "critical",
+          suggestedAction: "اکانت تست در پنل ساخته/verify نشده؛ سهمیه ماهانه مصرف نشده است.",
+          metadata: { xrayClientId: reserved.id },
+        });
       }
       throw error;
     }

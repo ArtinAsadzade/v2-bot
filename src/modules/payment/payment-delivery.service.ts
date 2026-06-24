@@ -21,14 +21,15 @@ type DeliveryDeps = {
 };
 
 function xrayClientEmail(input: { telegramId: string; productId: string; orderId: string }) {
-  return `tg${input.telegramId}-p${input.productId.slice(-8)}-o${input.orderId.slice(-8)}`
+  return `@nimeshabsell_bot-${input.telegramId}-p${input.productId.slice(-8)}-o${input.orderId.slice(-8)}`
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, "")
     .slice(0, 64);
 }
 
 export class PaymentDeliveryService {
-  static async purchaseProduct(deps: DeliveryDeps,
+  static async purchaseProduct(
+    deps: DeliveryDeps,
     tx: TxClient,
     data: {
       userId: string;
@@ -60,7 +61,13 @@ export class PaymentDeliveryService {
       totalAmount = data.invoice.amount;
       if (originalAmount - discountAmount !== totalAmount) throw new Error("مبلغ فاکتور با مبلغ خرید همخوانی ندارد");
     } else if (data.couponCode) {
-      const validation = await CouponService.validateForCheckout({ code: data.couponCode, userId: data.userId, originalAmount, productId: data.productId, tx });
+      const validation = await CouponService.validateForCheckout({
+        code: data.couponCode,
+        userId: data.userId,
+        originalAmount,
+        productId: data.productId,
+        tx,
+      });
       if (!validation.ok) {
         paymentLog("COUPON_RECHECK_FAILED", {
           userId: data.userId,
@@ -316,9 +323,20 @@ export class PaymentDeliveryService {
 
   static async provisionXrayClient(deps: DeliveryDeps, orderId: string, invoiceId?: string) {
     const client = await prisma.xrayClient.findFirstOrThrow({ where: { orderId }, include: { order: true, product: true } });
-    paymentLog("XRAY_IDEMPOTENCY_REUSE_CHECK", { orderId, invoiceId, xrayClientId: client.id, existingOrderId: client.orderId, status: client.status });
+    paymentLog("XRAY_IDEMPOTENCY_REUSE_CHECK", {
+      orderId,
+      invoiceId,
+      xrayClientId: client.id,
+      existingOrderId: client.orderId,
+      status: client.status,
+    });
     if (client.orderId !== orderId) {
-      logger.error("XRAY_IDEMPOTENCY_REUSE_REJECTED_DIFFERENT_ORDER", { orderId, invoiceId, xrayClientId: client.id, existingOrderId: client.orderId });
+      logger.error("XRAY_IDEMPOTENCY_REUSE_REJECTED_DIFFERENT_ORDER", {
+        orderId,
+        invoiceId,
+        xrayClientId: client.id,
+        existingOrderId: client.orderId,
+      });
       throw new Error("Xray idempotency scope mismatch: existing client belongs to another order");
     }
     if (client.status === "active") {
@@ -527,6 +545,4 @@ export class PaymentDeliveryService {
       );
     }
   }
-
-
 }
