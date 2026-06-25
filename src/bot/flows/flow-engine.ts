@@ -20,7 +20,7 @@ import { isAdminByTelegramId } from "../middlewares/admin.middleware";
 import { MainMenuKeyboard } from "../keyboards/design-system";
 import { WorkflowTelemetryService } from "../../services/workflow-telemetry.service";
 import { MonitoringService } from "../../services/monitoring.service";
-import { formatJalaliDateTime } from "../../utils/persianDateTime";
+import { PredictionDateService } from "../../modules/prediction/prediction-date.service";
 import { formatStockLabel } from "../../utils/formatters";
 import { formatXrayBytes } from "../../modules/xray/xray.service";
 import { pickerKeyboard, pickerStepFromState, pickerText, selectedPickerDate, startPersianDateTimePicker } from "../ui/persian-date-time-picker";
@@ -692,11 +692,11 @@ const definitions: Record<FlowName, FlowDefinition> = {
       if (flow.step === "winnerCount") {
         if (draft.winnerCount) {
           const closesAt = parsePredictionCloseDate(text);
-          if (!closesAt || closesAt <= new Date()) return { text: "❌ زمان بسته شدن باید در آینده باشد. مثال: 2099-06-26 23:59" };
+          if (!closesAt || PredictionDateService.hasPredictionClosed(closesAt)) return { text: "❌ زمان بسته شدن باید در آینده باشد. مثال: 2099-06-26 23:59" };
           draft.closesAt = closesAt.toISOString();
           const reward = await predictionDraftRewardPreview(draft);
           return {
-            text: `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${draft.title}\nسؤال: ${draft.question}\nتوضیحات: ${draft.description || "—"}\nگزینه‌ها: ${(draft.options ?? []).join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(draft.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${formatJalaliDateTime(closesAt)}\n\nبرای انتشار روی «انتشار» و برای پیش‌نویس روی «ذخیره پیش‌نویس» بزنید.`,
+            text: `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${draft.title}\nسؤال: ${draft.question}\nتوضیحات: ${draft.description || "—"}\nگزینه‌ها: ${(draft.options ?? []).join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(draft.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${PredictionDateService.formatPredictionDate(closesAt)}\n\nبرای انتشار روی «انتشار» و برای پیش‌نویس روی «ذخیره پیش‌نویس» بزنید.`,
             nextStep: "confirm",
             keyboard: predictionCreateKeyboard("confirm", draft),
           };
@@ -2249,7 +2249,7 @@ export function registerFlowEngine(bot: AppBot) {
         const reward = await predictionDraftRewardPreview(draft);
         return void (await flowPrompt(
           ctx,
-          `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${draft.title}\nسؤال: ${draft.question}\nتوضیحات: ${draft.description || "—"}\nگزینه‌ها: ${(draft.options ?? []).join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(draft.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${formatJalaliDateTime(date)}\n\nبرای انتشار روی «انتشار» و برای پیش‌نویس روی «ذخیره پیش‌نویس» بزنید.`,
+          `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${draft.title}\nسؤال: ${draft.question}\nتوضیحات: ${draft.description || "—"}\nگزینه‌ها: ${(draft.options ?? []).join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(draft.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${PredictionDateService.formatPredictionDate(date)}\n\nبرای انتشار روی «انتشار» و برای پیش‌نویس روی «ذخیره پیش‌نویس» بزنید.`,
           predictionCreateKeyboard("confirm", draft),
         ));
       }
