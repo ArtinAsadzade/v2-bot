@@ -6,7 +6,7 @@ export const homeKeyboard = (isAdmin: boolean): UiKeyboard => {
   const keyboard: UiKeyboard = [
     navRow({ text: "🛒 خرید سرویس", view: "shop", tone: "success" }, { text: "🎁 تست رایگان", view: "freeAccount", tone: "success" }),
     navRow({ text: "📦 سرویس‌های من", view: "services", tone: "primary" }, { text: "💳 کیف پول", view: "wallet", tone: "primary" }),
-    navRow({ text: "🎁 پاداش‌ها", view: "referral", tone: "success" }, { text: "🔮 پیش‌بینی", view: "prediction", tone: "success" }),
+    navRow({ text: "🎁 دعوت دوستان", view: "referral", tone: "success" }, { text: "🔮 پیش‌بینی", view: "prediction", tone: "success" }),
     navRow({ text: "🆘 پشتیبانی", view: "support", tone: "primary" }, { text: "👤 پروفایل", view: "account", tone: "primary" }),
     navRow({ text: "📘 راهنما", view: "help" }),
   ];
