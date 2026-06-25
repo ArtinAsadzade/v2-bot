@@ -23,10 +23,7 @@ const statusFa: Record<string, string> = {
 };
 
 export function registerPredictionViews() {
-  const navigationRows: UiKeyboard = [
-    [{ text: "🟢 پیش‌بینی‌های باز", action: callbackFor("prediction"), tone: "neutral" }],
-    [{ text: "🎯 پیش‌بینی‌های من", action: callbackFor("prediction.history"), tone: "neutral" }],
-  ];
+  const navigationRows: UiKeyboard = [[{ text: "🎯 پیش‌بینی‌های من", action: callbackFor("prediction.history"), tone: "neutral" }]];
   const contestRows = (contests: any[], tone: "primary" | "success" = "primary"): UiKeyboard =>
     contests.map((c: any) => [{ text: c.title, action: callbackFor("prediction.detail", { contestId: c.id }), tone }]);
 
