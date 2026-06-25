@@ -1,6 +1,7 @@
 import { prisma } from "../../services/prisma";
 import { WalletService } from "../wallet/wallet.service";
 import { ReferralService } from "../referral/referral.service";
+import { MISSING_REWARD_PRODUCT_LABEL, PredictionService } from "../prediction/prediction.service";
 
 const db = prisma as any;
 
@@ -46,6 +47,9 @@ export class RewardService {
       db.predictionWinner.findMany({ where: { userId }, include: { contest: true }, orderBy: { selectedAt: "desc" } }),
       db.referralReward.findMany({ where: { userId }, include: { tier: true }, orderBy: { createdAt: "desc" } }),
     ]);
+    const rewardProducts = await PredictionService.getRewardProductsById(
+      predictionWinners.map((winner: any) => winner.rewardProductId),
+    );
 
     const rewards: UserRewardDto[] = [
       ...predictionWinners.map((winner: any) => ({
@@ -57,7 +61,9 @@ export class RewardService {
         rewardType: winner.rewardType,
         walletAmount: winner.rewardWalletAmount ?? undefined,
         productId: winner.rewardProductId ?? undefined,
-        productTitle: winner.rewardType === "product" ? "محصول جایزه" : undefined,
+        productTitle: winner.rewardType === "product"
+          ? (rewardProducts.get(String(winner.rewardProductId)) as any)?.title ?? MISSING_REWARD_PRODUCT_LABEL.replace(/^📦\s*/, "")
+          : undefined,
         createdAt: winner.selectedAt,
         claimedAt: winner.claimedAt,
         claimAction: predictionStatus(winner.status) === "available" ? `reward:claim:prediction:${winner.id}` : undefined,

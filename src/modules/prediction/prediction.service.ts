@@ -3,6 +3,43 @@ import { WalletService } from "../wallet/wallet.service";
 
 const db = prisma as any;
 
+export const MISSING_REWARD_PRODUCT_LABEL = "📦 محصول حذف‌شده یا ناموجود";
+
+export type PredictionRewardProduct = {
+  id?: string;
+  title?: string | null;
+  price?: number | null;
+  duration?: number | null;
+  durationDays?: number | null;
+  trafficBytes?: bigint | number | null;
+  mode?: string | null;
+  category?: { name?: string | null } | null;
+};
+
+export type PredictionContestWithReward = {
+  rewardType?: string | null;
+  rewardWalletAmount?: number | null;
+  rewardProductId?: string | null;
+  rewardProduct?: PredictionRewardProduct | null;
+};
+
+const money = (amount: number) => `${Number(amount ?? 0).toLocaleString("fa-IR")} تومان`;
+
+const productDurationLabel = (product: PredictionRewardProduct) => {
+  const days = product.durationDays ?? product.duration;
+  return days ? `${Number(days).toLocaleString("fa-IR")} روز` : undefined;
+};
+
+const productTrafficLabel = (product: PredictionRewardProduct) => {
+  if (product.trafficBytes === undefined || product.trafficBytes === null) return undefined;
+  const bytes = typeof product.trafficBytes === "bigint" ? product.trafficBytes : BigInt(Math.max(0, Number(product.trafficBytes)));
+  if (bytes <= 0n) return undefined;
+  const gb = Number(bytes) / 1024 / 1024 / 1024;
+  return `${gb.toLocaleString("fa-IR", { maximumFractionDigits: 1 })} گیگابایت`;
+};
+
+const productModeLabel = (mode?: string | null) => mode === "xray_auto" ? "ساخت خودکار از پنل" : mode === "manual_inventory" ? "تحویل از موجودی دستی" : undefined;
+
 export type PredictionDraft = {
   title: string;
   question: string;
@@ -369,9 +406,65 @@ export class PredictionService {
     });
   }
 
-  static rewardLabel(contest: any) {
-    return contest.rewardType === "wallet"
-      ? `💰 ${Number(contest.rewardWalletAmount ?? 0).toLocaleString("fa-IR")} تومان`
-      : "📦 محصول";
+  static async getRewardProduct(productId?: string | null) {
+    if (!productId) return null;
+    return db.product.findUnique({
+      where: { id: productId },
+      include: { category: true },
+    });
+  }
+
+  static async getRewardProductsById(productIds: Array<string | null | undefined>) {
+    const ids = [...new Set(productIds.filter(Boolean).map(String))];
+    if (!ids.length) return new Map<string, PredictionRewardProduct>();
+    const products = await db.product.findMany({
+      where: { id: { in: ids } },
+      include: { category: true },
+    });
+    return new Map(products.map((product: PredictionRewardProduct) => [String(product.id), product]));
+  }
+
+  static attachRewardProduct<T extends PredictionContestWithReward>(contest: T, product?: PredictionRewardProduct | null): T {
+    return { ...contest, rewardProduct: product ?? contest.rewardProduct ?? null };
+  }
+
+  static rewardLabel(contest: PredictionContestWithReward) {
+    if (contest.rewardType === "wallet") {
+      return `💰 ${money(Number(contest.rewardWalletAmount ?? 0))} شارژ کیف پول`;
+    }
+    if (contest.rewardType === "product") {
+      return contest.rewardProduct?.title ? `📦 ${contest.rewardProduct.title}` : MISSING_REWARD_PRODUCT_LABEL;
+    }
+    return "🎁 جایزه نامشخص";
+  }
+
+  static rewardDetails(contest: PredictionContestWithReward, view: "user" | "admin" = "user") {
+    if (contest.rewardType === "wallet") return [`🎁 جایزه: ${this.rewardLabel(contest)}`];
+    if (contest.rewardType !== "product") return ["🎁 جایزه نامشخص"];
+
+    const product = contest.rewardProduct;
+    if (!product?.title) {
+      return view === "admin"
+        ? ["🎁 جایزه محصولی", "⚠️ محصول جایزه پیدا نشد. لطفاً جایزه را دوباره انتخاب کنید."]
+        : [`🎁 جایزه: ${MISSING_REWARD_PRODUCT_LABEL}`];
+    }
+
+    if (view === "admin") {
+      return [
+        "🎁 جایزه محصولی",
+        `📦 محصول: ${product.title}`,
+        `🏷 دسته‌بندی: ${product.category?.name ?? "نامشخص"}`,
+        product.price !== undefined && product.price !== null ? `💰 ارزش محصول: ${money(Number(product.price))}` : undefined,
+        productDurationLabel(product) ? `📅 اعتبار: ${productDurationLabel(product)}` : undefined,
+        productTrafficLabel(product) ? `📊 حجم: ${productTrafficLabel(product)}` : undefined,
+        productModeLabel(product.mode) ? `⚙️ نوع تحویل: ${productModeLabel(product.mode)}` : undefined,
+      ].filter(Boolean) as string[];
+    }
+
+    return [
+      `🎁 جایزه: 📦 ${product.title}`,
+      productDurationLabel(product) ? `📅 اعتبار: ${productDurationLabel(product)}` : undefined,
+      productTrafficLabel(product) ? `📊 حجم: ${productTrafficLabel(product)}` : undefined,
+    ].filter(Boolean) as string[];
   }
 }

@@ -480,6 +480,17 @@ const productDurationLabel = (product: { durationDays?: number | null; duration?
 
 const productModeLabel = (mode: string) => (mode === "xray_auto" ? "ساخت خودکار از پنل" : "تحویل از موجودی دستی");
 
+async function predictionDraftRewardPreview(draft: PredictionCreateDraft): Promise<string> {
+  if (draft.rewardType === "wallet") {
+    return `💰 ${Number(draft.rewardWalletAmount ?? 0).toLocaleString("fa-IR")} تومان شارژ کیف پول`;
+  }
+  if (!draft.rewardProductTitle && draft.rewardProductId) {
+    const product = await ProductService.getProduct(draft.rewardProductId);
+    draft.rewardProductTitle = product?.title;
+  }
+  return `📦 ${draft.rewardProductTitle ?? "محصول حذف‌شده یا ناموجود"}`;
+}
+
 async function predictionRewardCategoriesPrompt(ctx: AppContext): Promise<FlowStepResult> {
   const categories = await ProductService.getCategories();
   if (!categories.length) {
@@ -683,10 +694,7 @@ const definitions: Record<FlowName, FlowDefinition> = {
           const closesAt = parsePredictionCloseDate(text);
           if (!closesAt || closesAt <= new Date()) return { text: "❌ زمان بسته شدن باید در آینده باشد. مثال: 2099-06-26 23:59" };
           draft.closesAt = closesAt.toISOString();
-          const reward =
-            draft.rewardType === "wallet"
-              ? `شارژ کیف پول ${Number(draft.rewardWalletAmount).toLocaleString("fa-IR")} تومان`
-              : `محصول ${draft.rewardProductTitle ?? draft.rewardProductId}`;
+          const reward = await predictionDraftRewardPreview(draft);
           return {
             text: `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${draft.title}\nسؤال: ${draft.question}\nتوضیحات: ${draft.description || "—"}\nگزینه‌ها: ${(draft.options ?? []).join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(draft.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${formatJalaliDateTime(closesAt)}\n\nبرای انتشار روی «انتشار» و برای پیش‌نویس روی «ذخیره پیش‌نویس» بزنید.`,
             nextStep: "confirm",
@@ -2238,10 +2246,7 @@ export function registerFlowEngine(bot: AppBot) {
         draft.closesAt = date.toISOString();
         if (ctx.session.flow?.name === "prediction_create") ctx.session.flow.step = "confirm";
         ctx.session.dateTimePicker = undefined;
-        const reward =
-          draft.rewardType === "wallet"
-            ? `شارژ کیف پول ${Number(draft.rewardWalletAmount).toLocaleString("fa-IR")} تومان`
-            : `محصول ${draft.rewardProductTitle ?? draft.rewardProductId}`;
+        const reward = await predictionDraftRewardPreview(draft);
         return void (await flowPrompt(
           ctx,
           `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${draft.title}\nسؤال: ${draft.question}\nتوضیحات: ${draft.description || "—"}\nگزینه‌ها: ${(draft.options ?? []).join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(draft.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${formatJalaliDateTime(date)}\n\nبرای انتشار روی «انتشار» و برای پیش‌نویس روی «ذخیره پیش‌نویس» بزنید.`,
