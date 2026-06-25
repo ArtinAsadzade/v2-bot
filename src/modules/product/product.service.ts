@@ -85,6 +85,32 @@ export class ProductService {
     return products.filter((product) => this.isXrayInStock(product) || product._count.accounts > 0).map((product) => ({ ...product, availableStock: this.isXrayInStock(product) ? Math.max((product.stockLimit ?? 0) - product.soldCount, 0) : product._count.accounts }));
   }
 
+  static async getCategoryWithProducts(categoryId: string) {
+    if (!isValidObjectId(categoryId)) return null;
+    const category = await prisma.category.findFirst({
+      where: { id: categoryId, AND: [activeCategoryWhere()] },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        icon: true,
+        products: {
+          where: activeProductWhere(),
+          include: { _count: { select: { accounts: { where: availableInventoryWhere() } } } },
+          orderBy: { title: "asc" },
+        },
+      },
+    });
+    if (!category) return null;
+    const products = category.products
+      .filter((product) => this.isXrayInStock(product) || product._count.accounts > 0)
+      .map((product) => ({
+        ...product,
+        availableStock: this.isXrayInStock(product) ? Math.max((product.stockLimit ?? 0) - product.soldCount, 0) : product._count.accounts,
+      }));
+    return { ...category, products };
+  }
+
   static async listFeaturedProducts(take = 6) {
     const products = await prisma.product.findMany({
       where: { AND: [activeProductWhere(), { category: { is: activeCategoryWhere() } }] },
