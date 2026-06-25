@@ -7,7 +7,6 @@ import { productDetailViewKeyboard } from "../keyboards/view-keyboards";
 import { navRow } from "../keyboards/panel-keyboard.helpers";
 import { card, joinSections, section } from "../ui/layout";
 import { sectionTitles } from "../ui/sections";
-import { userLabels } from "../ui/labels";
 import { uiIcons } from "../ui/icons";
 import { errorMessage } from "../../utils/messages";
 
@@ -26,7 +25,12 @@ const productDurationLabel = (product: { durationDays?: number | null; duration?
 
 const productModeLabel = (mode: string) => (mode === "xray_auto" ? "ساخت خودکار از پنل" : "تحویل از موجودی دستی");
 
-const productButtonText = (product: { title: string; price: number }) => product.title.slice(0, 60);
+const productButtonText = (product: { title: string; price: number }) => `📦 ${product.title} · ${money(product.price)}`.slice(0, 60);
+
+const cleanOptionalText = (value?: string | null) => {
+  const trimmed = value?.trim();
+  return trimmed && !/^(null|undefined)$/i.test(trimmed) ? trimmed : undefined;
+};
 
 export function registerProductViews() {
   registerView("shop", async () => {
@@ -60,8 +64,9 @@ export function registerProductViews() {
       keyboard: [
         ...products.map((product) => [
           {
-            text: product.title,
+            text: productButtonText(product),
             action: callbackFor("shop.product", { productId: product.id }),
+            tone: "primary" as const,
           },
         ]),
         navRow({ text: "📋 مشاهده همه سرویس‌ها", view: "shop.categories" }),
@@ -93,24 +98,41 @@ export function registerProductViews() {
   });
 
   registerView("shop.products", async (_ctx, params) => {
-    const products = await ProductService.getProductsByCategory(params.categoryId);
+    const category = await ProductService.getCategoryWithProducts(params.categoryId);
+
+    if (!category) {
+      return {
+        replyKeyboard: "shop",
+        text: errorMessage("دسته‌بندی پیدا نشد", "این دسته‌بندی در حال حاضر در دسترس نیست.", "لطفاً از لیست دسته‌بندی‌ها دوباره انتخاب کنید."),
+        keyboard: [navRow({ text: "🔙 دسته‌بندی‌ها", view: "shop.categories", tone: "neutral" })],
+      };
+    }
+
+    const products = category.products;
+    const description = cleanOptionalText(category.description);
+    const categoryTitle = `${category.icon ?? "📁"} ${category.name}`;
 
     return {
       replyKeyboard: "shop",
       text: joinSections([
-        card(userLabels.services, [
-          products.length
-            ? "یک سرویس را انتخاب کنید تا جزئیات، موجودی و مبلغ نهایی را ببینید."
-            : "در این دسته‌بندی فعلاً سرویسی برای نمایش وجود ندارد.",
+        card(categoryTitle, [
+          ...(description ? ["📝 توضیحات", description] : []),
+          "📦 محصولات این دسته‌بندی",
+          "برای مشاهده جزئیات، موجودی و خرید، یک سرویس را انتخاب کنید.",
+          `تعداد سرویس‌ها: ${toFa(products.length)}`,
+          ...(products.length ? [] : ["فعلاً محصولی در این دسته‌بندی وجود ندارد."]),
         ]),
       ]),
       keyboard: [
         ...products.map((product) => [
           {
-            text: product.title,
+            text: productButtonText(product),
             action: callbackFor("shop.product", { productId: product.id }),
+            tone: "primary" as const,
           },
         ]),
+        ...(products.length ? [] : [[{ text: "🔎 جستجوی سرویس", action: "flow:start:product_search", tone: "primary" as const }]]),
+        navRow({ text: "🔙 دسته‌بندی‌ها", view: "shop.categories", tone: "neutral" }),
       ],
     };
   });
@@ -130,8 +152,9 @@ export function registerProductViews() {
       keyboard: [
         ...products.map((product) => [
           {
-            text: product.title,
+            text: productButtonText(product),
             action: callbackFor("shop.product", { productId: product.id }),
+            tone: "primary" as const,
           },
         ]),
         [{ text: "🔎 جستجوی جدید", action: "flow:start:product_search" }],
