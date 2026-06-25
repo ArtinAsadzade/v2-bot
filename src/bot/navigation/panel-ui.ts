@@ -73,8 +73,10 @@ export type PanelViewId =
   | "freeAccount"
   | "prediction"
   | "prediction.detail"
+  | "prediction.waiting"
   | "prediction.results"
   | "prediction.history"
+  | "prediction.archive"
   | "help"
   | "help.buy"
   | "help.connection"
@@ -198,6 +200,8 @@ const PARAM_VALUE_ALIASES: Record<string, Record<string, string>> = {
     open: "o",
     closed: "cl",
     resulted: "r",
+    waiting_result: "w",
+    archived: "ar",
     announced: "an",
     provisioning: "p",
     creating: "c",
@@ -328,8 +332,10 @@ export const PANEL_VIEW_IDS = new Set<string>([
   "freeAccount",
   "prediction",
   "prediction.detail",
+  "prediction.waiting",
   "prediction.results",
   "prediction.history",
+  "prediction.archive",
   "help",
   "help.buy",
   "help.connection",
