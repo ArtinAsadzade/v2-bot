@@ -74,6 +74,7 @@ export type PanelViewId =
   | "prediction"
   | "prediction.detail"
   | "prediction.results"
+  | "prediction.history"
   | "help"
   | "help.buy"
   | "help.connection"
@@ -328,6 +329,7 @@ export const PANEL_VIEW_IDS = new Set<string>([
   "prediction",
   "prediction.detail",
   "prediction.results",
+  "prediction.history",
   "help",
   "help.buy",
   "help.connection",
