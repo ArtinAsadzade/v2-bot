@@ -109,6 +109,7 @@ export function registerProductViews() {
           {
             text: product.title,
             action: callbackFor("shop.product", { productId: product.id }),
+            tone: "success",
           },
         ]),
         navRow({ text: "🔙 دسته‌بندی‌ها", view: "shop.categories" }),
