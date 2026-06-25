@@ -1,4 +1,4 @@
-export const BOT_TIME_ZONE = "Europe/Istanbul";
+export const BOT_TIME_ZONE = "Asia/Tehran";
 export const PERSIAN_MONTH_NAMES = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
 const breaks = [-61,9,38,199,426,686,756,818,1111,1181,1210,1635,2060,2097,2192,2262,2324,2394,2456,3178];
 function div(a:number,b:number){return ~~(a/b)}
@@ -17,4 +17,9 @@ export function zonedJalaliToUtcDate(jy:number,jm:number,jd:number,hour:number,m
 export function getCurrentJalaliYear(now=new Date(),timezone=BOT_TIME_ZONE):number{let year=Number(new Intl.DateTimeFormat("en-US-u-ca-persian",{timeZone:timezone,year:"numeric"}).formatToParts(now).find(p=>p.type==="year")?.value);if(!isValidJalaliYear(year)){console.error("JALALI_PICKER_INVALID_YEAR",{year,timezone,source:"intl"});year=fallbackJalaliYear(now,timezone)}if(!isValidJalaliYear(year)){console.error("JALALI_PICKER_INVALID_YEAR",{year,timezone,source:"fallback"});return 1400}return year}
 export function getSelectableJalaliYears(now=new Date()):number[]{const currentYear=getCurrentJalaliYear(now);const years=[currentYear,currentYear+1,currentYear+2].filter(isValidJalaliYear);if(years.length!==3){console.error("JALALI_PICKER_INVALID_YEAR",{currentYear,years});const safe=getCurrentJalaliYear(now,BOT_TIME_ZONE);return [safe,safe+1,safe+2].filter(isValidJalaliYear).slice(0,3)}return years}
 export const currentJalaliYear = getCurrentJalaliYear;
-export function formatJalaliDateTime(date:Date,timeZone=BOT_TIME_ZONE){return new Intl.DateTimeFormat("fa-IR-u-ca-persian",{timeZone,year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(date))}
+export function formatJalaliDateTime(date:Date,timeZone=BOT_TIME_ZONE){
+  const parts=new Intl.DateTimeFormat("fa-IR-u-ca-persian",{timeZone,year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date(date));
+  const val=(t:string)=>parts.find(p=>p.type===t)?.value ?? "";
+  return `${val("day")} ${val("month")} ${val("year")} ساعت ${val("hour")}:${val("minute")}`;
+}
+export function formatPredictionCountdown(closesAt:Date,now=new Date()){const ms=new Date(closesAt).getTime()-now.getTime();if(ms<=0)return "مهلت تمام شده";const totalMinutes=Math.ceil(ms/60000);const days=Math.floor(totalMinutes/1440);const hours=Math.floor((totalMinutes%1440)/60);const minutes=totalMinutes%60;const out:string[]=[];if(days)out.push(`${days.toLocaleString("fa-IR")} روز`);if(hours)out.push(`${hours.toLocaleString("fa-IR")} ساعت`);if(minutes||!out.length)out.push(`${minutes.toLocaleString("fa-IR")} دقیقه`);return out.join(" و ");}

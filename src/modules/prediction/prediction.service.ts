@@ -1,5 +1,6 @@
 import { prisma } from "../../services/prisma";
 import { WalletService } from "../wallet/wallet.service";
+import { BOT_TIME_ZONE, zonedJalaliToUtcDate } from "../../utils/persianDateTime";
 
 const db = prisma as any;
 
@@ -59,16 +60,14 @@ export function parsePredictionCloseDate(
   const text = input.trim().replace(/،/g, ",");
   const relative = text.match(/^(امروز|فردا)\s+(\d{1,2}):(\d{2})$/);
   if (relative) {
-    const date = new Date(now);
-    if (relative[1] === "فردا") date.setDate(date.getDate() + 1);
-    date.setHours(Number(relative[2]), Number(relative[3]), 0, 0);
-    return date;
+    const parts = new Intl.DateTimeFormat("en-US-u-ca-persian", { timeZone: BOT_TIME_ZONE, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(now);
+    const val = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+    let jy = val("year"), jm = val("month"), jd = val("day") + (relative[1] === "فردا" ? 1 : 0);
+    return zonedJalaliToUtcDate(jy, jm, jd, Number(relative[2]), Number(relative[3]));
   }
   const absolute = text.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})$/);
   if (!absolute) return null;
-  const date = new Date(
-    `${absolute[1]}-${absolute[2]}-${absolute[3]}T${absolute[4].padStart(2, "0")}:${absolute[5]}:00+03:00`,
-  );
+  const date = zonedJalaliToUtcDate(Number(absolute[1]), Number(absolute[2]), Number(absolute[3]), Number(absolute[4]), Number(absolute[5]));
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -112,7 +111,7 @@ export function validatePredictionDraft(
 }
 
 
-export type PredictionDisplayStatus = "open" | "waiting_result" | "resulted" | "announced" | "archived";
+export type PredictionDisplayStatus = "draft" | "open" | "submission_closed" | "waiting_result" | "resulted" | "announced" | "archived" | "deleted";
 
 export type PredictionStatusContest = {
   status?: string | null;
@@ -123,12 +122,7 @@ export type PredictionStatusContest = {
 };
 
 export function getPredictionDisplayStatus(contest: PredictionStatusContest, now = new Date()): PredictionDisplayStatus {
-  if (contest.status === "archived" || contest.archivedAt) return "archived";
-  if (contest.status === "announced" || contest.announcedAt) return "announced";
-  if (contest.status === "resulted" || contest.resultOptionId) return "resulted";
-  const closesAt = contest.closesAt ? new Date(contest.closesAt) : undefined;
-  if (contest.status === "open" && closesAt && closesAt > now) return "open";
-  return "waiting_result";
+  return resolvePredictionState(contest, now);
 }
 
 export function canSubmitPrediction(contest: PredictionStatusContest, now = new Date()): boolean {
@@ -137,12 +131,31 @@ export function canSubmitPrediction(contest: PredictionStatusContest, now = new 
 }
 
 export const predictionDisplayStatusFa: Record<PredictionDisplayStatus, string> = {
+  draft: "پیش‌نویس",
   open: "🟢 باز برای شرکت",
+  submission_closed: "🔒 ثبت پیش‌بینی بسته شده",
   waiting_result: "⏳ در انتظار اعلام نتیجه",
   resulted: "🏁 نتیجه ثبت شده",
   announced: "📣 نتیجه اعلام شده",
   archived: "🗄 آرشیوشده",
+  deleted: "🗑 حذف‌شده",
 };
+
+
+export function resolvePredictionState(contest: PredictionStatusContest, now = new Date()): PredictionDisplayStatus {
+  if (contest.status === "deleted") return "deleted";
+  if (contest.status === "archived" || contest.archivedAt) return "archived";
+  if (contest.status === "announced" || contest.announcedAt) return "announced";
+  if (contest.status === "resulted" || contest.resultOptionId) return "resulted";
+  if (contest.status === "draft") return "draft";
+  const closesAt = contest.closesAt ? new Date(contest.closesAt) : undefined;
+  if (contest.status === "open" && closesAt && closesAt > now) return "open";
+  if (contest.status === "closed") return "waiting_result";
+  return "waiting_result";
+}
+
+const notDeletedWhere = { status: { not: "deleted" } };
+const userVisibleWhere = { status: { in: ["open", "closed", "resulted", "announced"] } };
 
 export type PredictionDeleteMode =
   | "hard_delete_allowed"
@@ -150,6 +163,14 @@ export type PredictionDeleteMode =
   | "blocked_due_to_claimed_rewards";
 
 export class PredictionService {
+
+  static getOpenPredictions(args: any = {}, now = new Date()) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: "open", closesAt: { gt: now } } }); }
+  static getWaitingResultPredictions(args: any = {}, now = new Date()) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), resultOptionId: null, status: { in: ["open", "closed"] }, OR: [{ status: "closed" }, { closesAt: { lte: now } }] } }); }
+  static getAnnouncedPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: { in: ["resulted", "announced"] }, resultOptionId: { not: null } } }); }
+  static getArchivedPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: "archived" } }); }
+  static getUserPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { AND: [userVisibleWhere, args.where ?? {}] } }); }
+  static getAdminPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { AND: [notDeletedWhere, args.where ?? {}] } }); }
+  static visibilityReason(contest: PredictionStatusContest) { const state = resolvePredictionState(contest); return state === "draft" ? "draft_only_admin" : state === "archived" ? "archive_only" : state === "deleted" ? "deleted_hidden" : "visible"; }
   static async createContest(
     draft: PredictionDraft,
     adminTelegramId?: number | string,

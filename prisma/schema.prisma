@@ -854,6 +854,7 @@ enum PredictionContestStatus {
   resulted
   announced
   archived
+  deleted
 }
 
 enum PredictionRewardType {
