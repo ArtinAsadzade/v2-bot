@@ -25,10 +25,7 @@ const statusFa: Record<string, string> = {
 export function registerPredictionViews() {
   const navigationRows: UiKeyboard = [
     [{ text: "🟢 پیش‌بینی‌های باز", action: callbackFor("prediction"), tone: "neutral" }],
-    [{ text: "📂 بسته‌شده‌ها (در انتظار نتیجه)", action: callbackFor("prediction.waiting"), tone: "neutral" }],
-    [{ text: "🏁 نتایج نهایی", action: callbackFor("prediction.results"), tone: "neutral" }],
     [{ text: "🎯 پیش‌بینی‌های من", action: callbackFor("prediction.history"), tone: "neutral" }],
-    [{ text: "🎁 جوایز", action: callbackFor("account.rewards"), tone: "neutral" }],
   ];
   const contestRows = (contests: any[], tone: "primary" | "success" = "primary"): UiKeyboard =>
     contests.map((c: any) => [{ text: c.title, action: callbackFor("prediction.detail", { contestId: c.id }), tone }]);
@@ -54,11 +51,7 @@ export function registerPredictionViews() {
         ),
         card("ناوبری", ["برای مرور وضعیت‌های دیگر از دکمه‌های زیر استفاده کنید."]),
       ]),
-      keyboard: [
-        ...contestRows(contests, "primary"),
-        ...navigationRows,
-        [{ text: "🏠 خانه", action: callbackFor("home"), tone: "neutral" as const }],
-      ],
+      keyboard: [...contestRows(contests, "primary"), ...navigationRows],
     };
   });
 
@@ -86,8 +79,6 @@ export function registerPredictionViews() {
     };
   });
 
-
-
   registerView("prediction.results", async () => {
     const contests = await PredictionService.getAnnouncedPredictions({
       orderBy: { updatedAt: "desc" },
@@ -98,7 +89,9 @@ export function registerPredictionViews() {
       text: card(
         "🏁 نتایج نهایی",
         contests.length
-          ? contests.map((c: any) => `• ${c.title} · ${predictionDisplayStatusFa[getPredictionDisplayStatus(c)]} · نتیجه: ${c.resultOption?.title ?? "ثبت‌شده"}`)
+          ? contests.map(
+              (c: any) => `• ${c.title} · ${predictionDisplayStatusFa[getPredictionDisplayStatus(c)]} · نتیجه: ${c.resultOption?.title ?? "ثبت‌شده"}`,
+            )
           : ["نتیجه‌ای برای نمایش وجود ندارد."],
       ),
       keyboard: [...contestRows(contests)],
