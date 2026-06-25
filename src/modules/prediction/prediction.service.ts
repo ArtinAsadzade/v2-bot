@@ -111,6 +111,39 @@ export function validatePredictionDraft(
   return errors;
 }
 
+
+export type PredictionDisplayStatus = "open" | "waiting_result" | "resulted" | "announced" | "archived";
+
+export type PredictionStatusContest = {
+  status?: string | null;
+  closesAt?: Date | string | null;
+  resultOptionId?: string | null;
+  announcedAt?: Date | string | null;
+  archivedAt?: Date | string | null;
+};
+
+export function getPredictionDisplayStatus(contest: PredictionStatusContest, now = new Date()): PredictionDisplayStatus {
+  if (contest.status === "archived" || contest.archivedAt) return "archived";
+  if (contest.status === "announced" || contest.announcedAt) return "announced";
+  if (contest.status === "resulted" || contest.resultOptionId) return "resulted";
+  const closesAt = contest.closesAt ? new Date(contest.closesAt) : undefined;
+  if (contest.status === "open" && closesAt && closesAt > now) return "open";
+  return "waiting_result";
+}
+
+export function canSubmitPrediction(contest: PredictionStatusContest, now = new Date()): boolean {
+  const closesAt = contest.closesAt ? new Date(contest.closesAt) : undefined;
+  return contest.status === "open" && Boolean(closesAt && closesAt > now) && getPredictionDisplayStatus(contest, now) !== "archived";
+}
+
+export const predictionDisplayStatusFa: Record<PredictionDisplayStatus, string> = {
+  open: "🟢 باز برای شرکت",
+  waiting_result: "⏳ در انتظار اعلام نتیجه",
+  resulted: "🏁 نتیجه ثبت شده",
+  announced: "📣 نتیجه اعلام شده",
+  archived: "🗄 آرشیوشده",
+};
+
 export type PredictionDeleteMode =
   | "hard_delete_allowed"
   | "archive_required"
@@ -175,7 +208,7 @@ export class PredictionService {
       throw new Error(
         "❌ این پیش‌بینی آرشیو شده و امکان ثبت پیش‌بینی جدید وجود ندارد.",
       );
-    if (!contest || contest.status !== "open" || contest.closesAt <= new Date())
+    if (!contest || !canSubmitPrediction(contest, new Date()))
       throw new Error("⏳ زمان ثبت پیش‌بینی به پایان رسیده است.");
     const existing = await db.predictionEntry.findUnique({
       where: { contestId_userId: { contestId, userId: user.id } },
