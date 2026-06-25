@@ -478,7 +478,7 @@ const productTrafficLabel = (product: { mode: string; trafficBytes?: bigint | nu
 const productDurationLabel = (product: { durationDays?: number | null; duration?: number | null }) =>
   `${Number(product.durationDays ?? product.duration ?? 0).toLocaleString("fa-IR")} روز`;
 
-const productModeLabel = (mode: string) => (mode === "xray_auto" ? "ساخت خودکار از پنل Xray" : "تحویل از موجودی دستی");
+const productModeLabel = (mode: string) => (mode === "xray_auto" ? "ساخت خودکار از پنل" : "تحویل از موجودی دستی");
 
 async function predictionRewardCategoriesPrompt(ctx: AppContext): Promise<FlowStepResult> {
   const categories = await ProductService.getCategories();

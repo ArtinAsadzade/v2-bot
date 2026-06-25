@@ -24,7 +24,7 @@ const productTrafficLabel = (product: { mode: string; trafficBytes?: bigint | nu
 const productDurationLabel = (product: { durationDays?: number | null; duration?: number | null }) =>
   `${toFa(product.durationDays ?? product.duration ?? 0)} روز`;
 
-const productModeLabel = (mode: string) => (mode === "xray_auto" ? "ساخت خودکار از پنل Xray" : "تحویل از موجودی دستی");
+const productModeLabel = (mode: string) => (mode === "xray_auto" ? "ساخت خودکار از پنل" : "تحویل از موجودی دستی");
 
 const productButtonText = (product: { title: string; price: number }) => product.title.slice(0, 60);
 
