@@ -3,12 +3,11 @@ import type { UiKeyboard } from "../navigation/panel-ui";
 import { actionFor } from "../navigation/panel-ui";
 import {
   BOT_TIME_ZONE,
-  formatJalaliDateTime,
   getSelectableJalaliYears,
   jalaliMonthLength,
   PERSIAN_MONTH_NAMES,
-  zonedJalaliToUtcDate,
 } from "../../utils/persianDateTime";
+import { PredictionDateService } from "../../modules/prediction/prediction-date.service";
 
 export type DateTimePickerFlow = "prediction.create.closesAt" | "prediction.edit.closesAt";
 export type DateTimePickerState = {
@@ -34,7 +33,7 @@ export function startPersianDateTimePicker(ctx: AppContext, state: DateTimePicke
   ctx.session.dateTimePicker = { ...state };
 }
 export function selectedPickerDate(state: DateTimePickerState) {
-  return zonedJalaliToUtcDate(state.selectedYear!, state.selectedMonth!, state.selectedDay!, state.selectedHour!, state.selectedMinute!);
+  return PredictionDateService.fromJalaliSelection(state.selectedYear!, state.selectedMonth!, state.selectedDay!, state.selectedHour!, state.selectedMinute!);
 }
 export function pickerText(state: DateTimePickerState, step: string) {
   const title = "📅 انتخاب زمان بسته شدن";
@@ -44,7 +43,7 @@ export function pickerText(state: DateTimePickerState, step: string) {
   if (step === "hour") return `${title}\n\nساعت را انتخاب کنید.`;
   if (step === "minute") return `${title}\n\nدقیقه را انتخاب کنید.`;
   const d = selectedPickerDate(state);
-  return `📅 پیش‌نمایش زمان\n\nزمان بسته شدن: ${formatJalaliDateTime(d)}\nTimezone: ${BOT_TIME_ZONE}\nUTC: ${d.toISOString()}\n\nآیا تأیید می‌کنید؟`;
+  return `📅 پیش‌نمایش زمان\n\nزمان بسته شدن: ${PredictionDateService.formatPredictionDate(d)}\nTimezone: ${BOT_TIME_ZONE}\n\nآیا تأیید می‌کنید؟`;
 }
 export function pickerKeyboard(state: DateTimePickerState, step: string): UiKeyboard {
   if (step === "year") {

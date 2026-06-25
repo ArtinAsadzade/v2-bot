@@ -1,6 +1,7 @@
 import { prisma } from "../../services/prisma";
 import { WalletService } from "../wallet/wallet.service";
-import { BOT_TIME_ZONE, zonedJalaliToUtcDate } from "../../utils/persianDateTime";
+import { BOT_TIME_ZONE } from "../../utils/persianDateTime";
+import { PredictionDateService } from "./prediction-date.service";
 
 const db = prisma as any;
 
@@ -63,11 +64,11 @@ export function parsePredictionCloseDate(
     const parts = new Intl.DateTimeFormat("en-US-u-ca-persian", { timeZone: BOT_TIME_ZONE, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(now);
     const val = (t: string) => Number(parts.find((p) => p.type === t)?.value);
     let jy = val("year"), jm = val("month"), jd = val("day") + (relative[1] === "فردا" ? 1 : 0);
-    return zonedJalaliToUtcDate(jy, jm, jd, Number(relative[2]), Number(relative[3]));
+    return PredictionDateService.fromJalaliSelection(jy, jm, jd, Number(relative[2]), Number(relative[3]));
   }
   const absolute = text.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})$/);
   if (!absolute) return null;
-  const date = zonedJalaliToUtcDate(Number(absolute[1]), Number(absolute[2]), Number(absolute[3]), Number(absolute[4]), Number(absolute[5]));
+  const date = PredictionDateService.fromJalaliSelection(Number(absolute[1]), Number(absolute[2]), Number(absolute[3]), Number(absolute[4]), Number(absolute[5]));
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -105,7 +106,7 @@ export function validatePredictionDraft(
     errors.push("مبلغ شارژ کیف پول باید مثبت باشد.");
   if (draft.rewardType === "product" && !draft.rewardProductId)
     errors.push("محصول جایزه را انتخاب کنید.");
-  if (publish && (!draft.closesAt || draft.closesAt <= new Date()))
+  if (publish && (!draft.closesAt || PredictionDateService.hasPredictionClosed(draft.closesAt)))
     errors.push("زمان بسته شدن باید در آینده باشد.");
   return errors;
 }
@@ -126,8 +127,7 @@ export function getPredictionDisplayStatus(contest: PredictionStatusContest, now
 }
 
 export function canSubmitPrediction(contest: PredictionStatusContest, now = new Date()): boolean {
-  const closesAt = contest.closesAt ? new Date(contest.closesAt) : undefined;
-  return contest.status === "open" && Boolean(closesAt && closesAt > now) && getPredictionDisplayStatus(contest, now) !== "archived";
+  return PredictionDateService.isPredictionOpen(contest, now) && getPredictionDisplayStatus(contest, now) === "open";
 }
 
 export const predictionDisplayStatusFa: Record<PredictionDisplayStatus, string> = {
@@ -148,8 +148,7 @@ export function resolvePredictionState(contest: PredictionStatusContest, now = n
   if (contest.status === "announced" || contest.announcedAt) return "announced";
   if (contest.status === "resulted" || contest.resultOptionId) return "resulted";
   if (contest.status === "draft") return "draft";
-  const closesAt = contest.closesAt ? new Date(contest.closesAt) : undefined;
-  if (contest.status === "open" && closesAt && closesAt > now) return "open";
+  if (PredictionDateService.isPredictionOpen(contest, now)) return "open";
   if (contest.status === "closed") return "waiting_result";
   return "waiting_result";
 }
@@ -164,8 +163,8 @@ export type PredictionDeleteMode =
 
 export class PredictionService {
 
-  static getOpenPredictions(args: any = {}, now = new Date()) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: "open", closesAt: { gt: now } } }); }
-  static getWaitingResultPredictions(args: any = {}, now = new Date()) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), resultOptionId: null, status: { in: ["open", "closed"] }, OR: [{ status: "closed" }, { closesAt: { lte: now } }] } }); }
+  static async getOpenPredictions(args: any = {}, now = new Date()) { const rows = await db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: "open" } }); return rows.filter((contest: PredictionStatusContest) => PredictionDateService.isPredictionOpen(contest, now)); }
+  static async getWaitingResultPredictions(args: any = {}, now = new Date()) { const rows = await db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), resultOptionId: null, status: { in: ["open", "closed"] } } }); return rows.filter((contest: PredictionStatusContest) => contest.status === "closed" || PredictionDateService.hasResultTimeReached(contest, now)); }
   static getAnnouncedPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: { in: ["resulted", "announced"] }, resultOptionId: { not: null } } }); }
   static getArchivedPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: "archived" } }); }
   static getUserPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { AND: [userVisibleWhere, args.where ?? {}] } }); }
@@ -211,8 +210,11 @@ export class PredictionService {
   }
 
   static async closeExpired(now = new Date()) {
+    const contests = await db.predictionContest.findMany({ where: { status: "open" }, select: { id: true, status: true, closesAt: true } });
+    const expiredIds = contests.filter((contest: PredictionStatusContest) => PredictionDateService.hasPredictionClosed(contest.closesAt, now)).map((contest: { id: string }) => contest.id);
+    if (!expiredIds.length) return { count: 0 };
     return db.predictionContest.updateMany({
-      where: { status: "open", closesAt: { lte: now } },
+      where: { id: { in: expiredIds }, status: "open" },
       data: { status: "closed" },
     });
   }
@@ -225,7 +227,7 @@ export class PredictionService {
     const contest = await db.predictionContest.findUnique({
       where: { id: contestId },
     });
-    if (contest?.status === "archived")
+    if (contest?.status === "archived" || contest?.status === "deleted")
       throw new Error(
         "❌ این پیش‌بینی آرشیو شده و امکان ثبت پیش‌بینی جدید وجود ندارد.",
       );
@@ -294,7 +296,7 @@ export class PredictionService {
       where: { id: contestId },
     });
     if (!contest?.resultOptionId) throw new Error("ابتدا نتیجه را ثبت کنید.");
-    if (contest.status === "open" && contest.closesAt > new Date())
+    if (PredictionDateService.isPredictionOpen(contest))
       throw new Error("پیش‌بینی هنوز باز است.");
     const candidates = await db.predictionEntry.findMany({
       where: { contestId, status: "correct" },
