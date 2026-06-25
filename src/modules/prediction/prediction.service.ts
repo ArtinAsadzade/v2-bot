@@ -1,7 +1,45 @@
 import { prisma } from "../../services/prisma";
 import { WalletService } from "../wallet/wallet.service";
+import { BOT_TIME_ZONE, zonedJalaliToUtcDate } from "../../utils/persianDateTime";
 
 const db = prisma as any;
+
+export const MISSING_REWARD_PRODUCT_LABEL = "📦 محصول حذف‌شده یا ناموجود";
+
+export type PredictionRewardProduct = {
+  id?: string;
+  title?: string | null;
+  price?: number | null;
+  duration?: number | null;
+  durationDays?: number | null;
+  trafficBytes?: bigint | number | null;
+  mode?: string | null;
+  category?: { name?: string | null } | null;
+};
+
+export type PredictionContestWithReward = {
+  rewardType?: string | null;
+  rewardWalletAmount?: number | null;
+  rewardProductId?: string | null;
+  rewardProduct?: PredictionRewardProduct | null;
+};
+
+const money = (amount: number) => `${Number(amount ?? 0).toLocaleString("fa-IR")} تومان`;
+
+const productDurationLabel = (product: PredictionRewardProduct) => {
+  const days = product.durationDays ?? product.duration;
+  return days ? `${Number(days).toLocaleString("fa-IR")} روز` : undefined;
+};
+
+const productTrafficLabel = (product: PredictionRewardProduct) => {
+  if (product.trafficBytes === undefined || product.trafficBytes === null) return undefined;
+  const bytes = typeof product.trafficBytes === "bigint" ? product.trafficBytes : BigInt(Math.max(0, Number(product.trafficBytes)));
+  if (bytes <= 0n) return undefined;
+  const gb = Number(bytes) / 1024 / 1024 / 1024;
+  return `${gb.toLocaleString("fa-IR", { maximumFractionDigits: 1 })} گیگابایت`;
+};
+
+const productModeLabel = (mode?: string | null) => mode === "xray_auto" ? "ساخت خودکار از پنل" : mode === "manual_inventory" ? "تحویل از موجودی دستی" : undefined;
 
 export type PredictionDraft = {
   title: string;
@@ -22,16 +60,14 @@ export function parsePredictionCloseDate(
   const text = input.trim().replace(/،/g, ",");
   const relative = text.match(/^(امروز|فردا)\s+(\d{1,2}):(\d{2})$/);
   if (relative) {
-    const date = new Date(now);
-    if (relative[1] === "فردا") date.setDate(date.getDate() + 1);
-    date.setHours(Number(relative[2]), Number(relative[3]), 0, 0);
-    return date;
+    const parts = new Intl.DateTimeFormat("en-US-u-ca-persian", { timeZone: BOT_TIME_ZONE, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(now);
+    const val = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+    let jy = val("year"), jm = val("month"), jd = val("day") + (relative[1] === "فردا" ? 1 : 0);
+    return zonedJalaliToUtcDate(jy, jm, jd, Number(relative[2]), Number(relative[3]));
   }
   const absolute = text.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})$/);
   if (!absolute) return null;
-  const date = new Date(
-    `${absolute[1]}-${absolute[2]}-${absolute[3]}T${absolute[4].padStart(2, "0")}:${absolute[5]}:00+03:00`,
-  );
+  const date = zonedJalaliToUtcDate(Number(absolute[1]), Number(absolute[2]), Number(absolute[3]), Number(absolute[4]), Number(absolute[5]));
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -74,12 +110,67 @@ export function validatePredictionDraft(
   return errors;
 }
 
+
+export type PredictionDisplayStatus = "draft" | "open" | "submission_closed" | "waiting_result" | "resulted" | "announced" | "archived" | "deleted";
+
+export type PredictionStatusContest = {
+  status?: string | null;
+  closesAt?: Date | string | null;
+  resultOptionId?: string | null;
+  announcedAt?: Date | string | null;
+  archivedAt?: Date | string | null;
+};
+
+export function getPredictionDisplayStatus(contest: PredictionStatusContest, now = new Date()): PredictionDisplayStatus {
+  return resolvePredictionState(contest, now);
+}
+
+export function canSubmitPrediction(contest: PredictionStatusContest, now = new Date()): boolean {
+  const closesAt = contest.closesAt ? new Date(contest.closesAt) : undefined;
+  return contest.status === "open" && Boolean(closesAt && closesAt > now) && getPredictionDisplayStatus(contest, now) !== "archived";
+}
+
+export const predictionDisplayStatusFa: Record<PredictionDisplayStatus, string> = {
+  draft: "پیش‌نویس",
+  open: "🟢 باز برای شرکت",
+  submission_closed: "🔒 ثبت پیش‌بینی بسته شده",
+  waiting_result: "⏳ در انتظار اعلام نتیجه",
+  resulted: "🏁 نتیجه ثبت شده",
+  announced: "📣 نتیجه اعلام شده",
+  archived: "🗄 آرشیوشده",
+  deleted: "🗑 حذف‌شده",
+};
+
+
+export function resolvePredictionState(contest: PredictionStatusContest, now = new Date()): PredictionDisplayStatus {
+  if (contest.status === "deleted") return "deleted";
+  if (contest.status === "archived" || contest.archivedAt) return "archived";
+  if (contest.status === "announced" || contest.announcedAt) return "announced";
+  if (contest.status === "resulted" || contest.resultOptionId) return "resulted";
+  if (contest.status === "draft") return "draft";
+  const closesAt = contest.closesAt ? new Date(contest.closesAt) : undefined;
+  if (contest.status === "open" && closesAt && closesAt > now) return "open";
+  if (contest.status === "closed") return "waiting_result";
+  return "waiting_result";
+}
+
+const notDeletedWhere = { status: { not: "deleted" } };
+const userVisibleWhere = { status: { in: ["open", "closed", "resulted", "announced"] } };
+
 export type PredictionDeleteMode =
   | "hard_delete_allowed"
   | "archive_required"
   | "blocked_due_to_claimed_rewards";
 
 export class PredictionService {
+
+  static getOpenPredictions(args: any = {}, now = new Date()) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: "open", closesAt: { gt: now } } }); }
+  static getWaitingResultPredictions(args: any = {}, now = new Date()) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), resultOptionId: null, status: { in: ["open", "closed"] }, OR: [{ status: "closed" }, { closesAt: { lte: now } }] } }); }
+  static getAnnouncedPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: { in: ["resulted", "announced"] }, resultOptionId: { not: null } } }); }
+  static getArchivedPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: "archived" } }); }
+  static getUserPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { AND: [userVisibleWhere, args.where ?? {}] } }); }
+  static getAdminPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { AND: [notDeletedWhere, args.where ?? {}] } }); }
+  static visibilityReason(contest: PredictionStatusContest) { const state = resolvePredictionState(contest); return state === "draft" ? "draft_only_admin" : state === "archived" ? "archive_only" : state === "deleted" ? "deleted_hidden" : "visible"; }
   static async createContest(
     draft: PredictionDraft,
     adminTelegramId?: number | string,
@@ -138,7 +229,7 @@ export class PredictionService {
       throw new Error(
         "❌ این پیش‌بینی آرشیو شده و امکان ثبت پیش‌بینی جدید وجود ندارد.",
       );
-    if (!contest || contest.status !== "open" || contest.closesAt <= new Date())
+    if (!contest || !canSubmitPrediction(contest, new Date()))
       throw new Error("⏳ زمان ثبت پیش‌بینی به پایان رسیده است.");
     const existing = await db.predictionEntry.findUnique({
       where: { contestId_userId: { contestId, userId: user.id } },
@@ -369,9 +460,65 @@ export class PredictionService {
     });
   }
 
-  static rewardLabel(contest: any) {
-    return contest.rewardType === "wallet"
-      ? `💰 ${Number(contest.rewardWalletAmount ?? 0).toLocaleString("fa-IR")} تومان`
-      : "📦 محصول";
+  static async getRewardProduct(productId?: string | null) {
+    if (!productId) return null;
+    return db.product.findUnique({
+      where: { id: productId },
+      include: { category: true },
+    });
+  }
+
+  static async getRewardProductsById(productIds: Array<string | null | undefined>) {
+    const ids = [...new Set(productIds.filter(Boolean).map(String))];
+    if (!ids.length) return new Map<string, PredictionRewardProduct>();
+    const products = await db.product.findMany({
+      where: { id: { in: ids } },
+      include: { category: true },
+    });
+    return new Map(products.map((product: PredictionRewardProduct) => [String(product.id), product]));
+  }
+
+  static attachRewardProduct<T extends PredictionContestWithReward>(contest: T, product?: PredictionRewardProduct | null): T {
+    return { ...contest, rewardProduct: product ?? contest.rewardProduct ?? null };
+  }
+
+  static rewardLabel(contest: PredictionContestWithReward) {
+    if (contest.rewardType === "wallet") {
+      return `💰 ${money(Number(contest.rewardWalletAmount ?? 0))} شارژ کیف پول`;
+    }
+    if (contest.rewardType === "product") {
+      return contest.rewardProduct?.title ? `📦 ${contest.rewardProduct.title}` : MISSING_REWARD_PRODUCT_LABEL;
+    }
+    return "🎁 جایزه نامشخص";
+  }
+
+  static rewardDetails(contest: PredictionContestWithReward, view: "user" | "admin" = "user") {
+    if (contest.rewardType === "wallet") return [`🎁 جایزه: ${this.rewardLabel(contest)}`];
+    if (contest.rewardType !== "product") return ["🎁 جایزه نامشخص"];
+
+    const product = contest.rewardProduct;
+    if (!product?.title) {
+      return view === "admin"
+        ? ["🎁 جایزه محصولی", "⚠️ محصول جایزه پیدا نشد. لطفاً جایزه را دوباره انتخاب کنید."]
+        : [`🎁 جایزه: ${MISSING_REWARD_PRODUCT_LABEL}`];
+    }
+
+    if (view === "admin") {
+      return [
+        "🎁 جایزه محصولی",
+        `📦 محصول: ${product.title}`,
+        `🏷 دسته‌بندی: ${product.category?.name ?? "نامشخص"}`,
+        product.price !== undefined && product.price !== null ? `💰 ارزش محصول: ${money(Number(product.price))}` : undefined,
+        productDurationLabel(product) ? `📅 اعتبار: ${productDurationLabel(product)}` : undefined,
+        productTrafficLabel(product) ? `📊 حجم: ${productTrafficLabel(product)}` : undefined,
+        productModeLabel(product.mode) ? `⚙️ نوع تحویل: ${productModeLabel(product.mode)}` : undefined,
+      ].filter(Boolean) as string[];
+    }
+
+    return [
+      `🎁 جایزه: 📦 ${product.title}`,
+      productDurationLabel(product) ? `📅 اعتبار: ${productDurationLabel(product)}` : undefined,
+      productTrafficLabel(product) ? `📊 حجم: ${productTrafficLabel(product)}` : undefined,
+    ].filter(Boolean) as string[];
   }
 }
