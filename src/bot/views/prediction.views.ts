@@ -3,7 +3,12 @@ import { createCallbackToken, tokenAction } from "../navigation/callback-tokens"
 import { card, joinSections } from "../ui/layout";
 import { prisma } from "../../services/prisma";
 import { UserService } from "../../modules/user/user.service";
-import { PredictionService, canSubmitPrediction, getPredictionDisplayStatus, predictionDisplayStatusFa } from "../../modules/prediction/prediction.service";
+import {
+  PredictionService,
+  canSubmitPrediction,
+  getPredictionDisplayStatus,
+  predictionDisplayStatusFa,
+} from "../../modules/prediction/prediction.service";
 import { formatJalaliDateTime, formatPredictionCountdown } from "../../utils/persianDateTime";
 
 const db = prisma as any;
@@ -17,33 +22,33 @@ const statusFa: Record<string, string> = {
   archived: predictionDisplayStatusFa.archived,
 };
 
-
 export function registerPredictionViews() {
   const navigationRows: UiKeyboard = [
-    [
-      { text: "📂 در انتظار نتیجه", action: callbackFor("prediction.waiting"), tone: "neutral" },
-      { text: "🏁 نتایج اعلام‌شده", action: callbackFor("prediction.results"), tone: "neutral" },
-    ],
-    [
-      { text: "🎯 پیش‌بینی‌های من", action: callbackFor("prediction.history"), tone: "neutral" },
-      { text: "📜 آرشیو", action: callbackFor("prediction.archive"), tone: "neutral" },
-    ],
+    [{ text: "📂 در انتظار نتیجه", action: callbackFor("prediction.waiting"), tone: "neutral" }],
+    [{ text: "🎯 پیش‌بینی‌های من", action: callbackFor("prediction.history"), tone: "neutral" }],
   ];
-  const contestRows = (contests: any[], tone: "primary" | "success" = "primary"): UiKeyboard => contests.map((c: any) => [
-    { text: c.title, action: callbackFor("prediction.detail", { contestId: c.id }), tone },
-  ]);
+  const contestRows = (contests: any[], tone: "primary" | "success" = "primary"): UiKeyboard =>
+    contests.map((c: any) => [{ text: c.title, action: callbackFor("prediction.detail", { contestId: c.id }), tone }]);
 
   registerView("prediction", async () => {
     const now = new Date();
-    const contests = await PredictionService.getOpenPredictions({
-      orderBy: { closesAt: "asc" },
-      take: 20,
-      include: { _count: { select: { entries: true } } },
-    }, now);
+    const contests = await PredictionService.getOpenPredictions(
+      {
+        orderBy: { closesAt: "asc" },
+        take: 20,
+        include: { _count: { select: { entries: true } } },
+      },
+      now,
+    );
     return {
       replyKeyboard: "home",
       text: joinSections([
-        card("🔮 پیش‌بینی مسابقات", contests.length ? contests.map((c: any) => `• ${c.title} · تا ${fmt(c.closesAt)} · باقی‌مانده: ${formatPredictionCountdown(c.closesAt, now)}`) : ["در حال حاضر پیش‌بینی بازی فعالی وجود ندارد."]),
+        card(
+          "🔮 پیش‌بینی مسابقات",
+          contests.length
+            ? contests.map((c: any) => `• ${c.title} · تا ${fmt(c.closesAt)} · باقی‌مانده: ${formatPredictionCountdown(c.closesAt, now)}`)
+            : ["در حال حاضر پیش‌بینی بازی فعالی وجود ندارد."],
+        ),
         card("ناوبری", ["برای مرور وضعیت‌های دیگر از دکمه‌های زیر استفاده کنید."]),
       ]),
       keyboard: [
@@ -56,73 +61,73 @@ export function registerPredictionViews() {
 
   registerView("prediction.waiting", async () => {
     const now = new Date();
-    const contests = await PredictionService.getWaitingResultPredictions({
-      orderBy: { closesAt: "desc" },
-      take: 20,
-      include: { _count: { select: { entries: true } } },
-    }, now);
-    return {
-      text: card("📂 در انتظار نتیجه", contests.length ? contests.map((c: any) => `• ${c.title} · ⏳ در انتظار اعلام نتیجه · جایزه: ${PredictionService.rewardLabel(c)} · شرکت‌کننده: ${(c._count?.entries ?? 0).toLocaleString("fa-IR")}`) : ["پیش‌بینی در انتظار نتیجه وجود ندارد."]),
-      keyboard: [
-        ...contestRows(contests),
-        [{ text: "🔙 بازگشت", action: callbackFor("prediction"), tone: "neutral" as const }],
-      ],
-    };
-  });
-
-  registerView("prediction.results", async () => {
-    const contests = await PredictionService.getAnnouncedPredictions({
-      orderBy: [{ announcedAt: "desc" }, { closesAt: "desc" }],
-      take: 20,
-      include: { resultOption: true },
-    });
+    const contests = await PredictionService.getWaitingResultPredictions(
+      {
+        orderBy: { closesAt: "desc" },
+        take: 20,
+        include: { _count: { select: { entries: true } } },
+      },
+      now,
+    );
     return {
       text: card(
-        "🏁 نتایج اعلام‌شده",
-        contests.length ? contests.map((c: any) => `• ${c.title} · 📣 نتیجه اعلام شده${c.resultOption?.title ? ` · نتیجه: ${c.resultOption.title}` : ""}`) : ["هنوز نتیجه‌ای اعلام نشده است."],
+        "📂 در انتظار نتیجه",
+        contests.length
+          ? contests.map(
+              (c: any) =>
+                `• ${c.title} · ⏳ در انتظار اعلام نتیجه · جایزه: ${PredictionService.rewardLabel(c)} · شرکت‌کننده: ${(c._count?.entries ?? 0).toLocaleString("fa-IR")}`,
+            )
+          : ["پیش‌بینی در انتظار نتیجه وجود ندارد."],
       ),
-      keyboard: [
-        ...contestRows(contests),
-        [{ text: "🔙 بازگشت", action: callbackFor("prediction"), tone: "neutral" as const }],
-      ],
+      keyboard: [...contestRows(contests)],
     };
   });
 
   registerView("prediction.history", async (ctx) => {
     const user = ctx.from ? await UserService.findOrCreateUser(ctx) : undefined;
-    const contests = user ? await PredictionService.getAdminPredictions({
-      where: { entries: { some: { userId: user.id } } },
-      orderBy: { updatedAt: "desc" },
-      take: 20,
-      include: { entries: { where: { userId: user.id }, include: { option: true } } },
-    }) : [];
-    return {
-      text: card("🎯 پیش‌بینی‌های من", contests.length ? contests.map((c: any) => `• ${c.title} · ${predictionDisplayStatusFa[getPredictionDisplayStatus(c)]} · انتخاب شما: ${c.entries?.[0]?.option?.title ?? "ثبت‌شده"}`) : ["هنوز در پیش‌بینی‌ای شرکت نکرده‌اید."]),
-      keyboard: [
-        ...contestRows(contests),
-        [{ text: "🔙 بازگشت", action: callbackFor("prediction"), tone: "neutral" as const }],
-      ],
-    };
-  });
 
-  registerView("prediction.archive", async (_ctx, params) => {
-    const page = Math.max(1, Number(params.page ?? 1) || 1);
-    const take = 10;
-    const contests = await PredictionService.getArchivedPredictions({
-      orderBy: [{ archivedAt: "desc" }, { closesAt: "desc" }],
-      skip: (page - 1) * take,
-      take,
-    });
+    const contests = user
+      ? await PredictionService.getAdminPredictions({
+          where: {
+            status: {
+              not: "archived",
+            },
+            entries: {
+              some: {
+                userId: user.id,
+              },
+            },
+          },
+          orderBy: {
+            updatedAt: "desc",
+          },
+          take: 20,
+          include: {
+            entries: {
+              where: {
+                userId: user.id,
+              },
+              include: {
+                option: true,
+              },
+            },
+          },
+        })
+      : [];
+
     return {
-      text: card("📜 آرشیو", contests.length ? contests.map((c: any) => `• ${c.title} · ${predictionDisplayStatusFa[getPredictionDisplayStatus(c)]}`) : ["موردی در آرشیو وجود ندارد."]),
-      keyboard: [
-        ...contestRows(contests),
-        [
-          ...(page > 1 ? [{ text: "⬅️ قبلی", action: callbackFor("prediction.archive", { page: page - 1 }), tone: "neutral" as const }] : []),
-          ...(contests.length === take ? [{ text: "بعدی ➡️", action: callbackFor("prediction.archive", { page: page + 1 }), tone: "neutral" as const }] : []),
-        ],
-        [{ text: "🔙 بازگشت", action: callbackFor("prediction"), tone: "neutral" as const }],
-      ].filter((row) => row.length),
+      text: card(
+        "🎯 پیش‌بینی‌های من",
+        contests.length
+          ? contests.map(
+              (c: any) =>
+                `• ${c.title} · ${predictionDisplayStatusFa[getPredictionDisplayStatus(c)]} · انتخاب شما: ${
+                  c.entries?.[0]?.option?.title ?? "ثبت‌شده"
+                }`,
+            )
+          : ["هنوز در پیش‌بینی‌ای شرکت نکرده‌اید."],
+      ),
+      keyboard: [...contestRows(contests)],
     };
   });
 
@@ -286,7 +291,12 @@ export function registerPredictionViews() {
       take: 20,
     });
     return {
-      text: card("📋 لیست پیش‌بینی‌ها", contests.length ? contests.map((c: any) => `• ${c.title} · ${predictionDisplayStatusFa[getPredictionDisplayStatus(c)]}`) : ["موردی وجود ندارد."]),
+      text: card(
+        "📋 لیست پیش‌بینی‌ها",
+        contests.length
+          ? contests.map((c: any) => `• ${c.title} · ${predictionDisplayStatusFa[getPredictionDisplayStatus(c)]}`)
+          : ["موردی وجود ندارد."],
+      ),
       keyboard: [
         ...contests.map((c: any) => [
           {
@@ -344,7 +354,11 @@ export function registerPredictionViews() {
           `درست: ${correct.toLocaleString("fa-IR")}`,
           `برنده‌ها: ${c.winners.length.toLocaleString("fa-IR")} از ${c.winnerCount.toLocaleString("fa-IR")}`,
           ...PredictionService.rewardDetails(contestWithReward, "admin"),
-          c.resultOptionId ? "نتیجه ثبت شده است." : (getPredictionDisplayStatus(c) === "waiting_result" ? "⏳ مهلت ثبت پیش‌بینی تمام شده است. نتیجه هنوز ثبت نشده." : "نتیجه هنوز ثبت نشده است."),
+          c.resultOptionId
+            ? "نتیجه ثبت شده است."
+            : getPredictionDisplayStatus(c) === "waiting_result"
+              ? "⏳ مهلت ثبت پیش‌بینی تمام شده است. نتیجه هنوز ثبت نشده."
+              : "نتیجه هنوز ثبت نشده است.",
         ]),
       ]),
       keyboard: [
