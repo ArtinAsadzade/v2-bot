@@ -111,7 +111,6 @@ export function registerProductViews() {
             action: callbackFor("shop.product", { productId: product.id }),
           },
         ]),
-        navRow({ text: "🔙 دسته‌بندی‌ها", view: "shop.categories" }),
       ],
     };
   });
