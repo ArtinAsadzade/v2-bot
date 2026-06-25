@@ -5,6 +5,7 @@ import { UserService } from "../../modules/user/user.service";
 import { ProductService } from "../../modules/product/product.service";
 import { AdminService } from "../../modules/admin/admin.service";
 import { ReferralService } from "../../modules/referral/referral.service";
+import { RewardService, REWARD_STATUS_LABELS, type UserRewardDto } from "../../modules/reward/reward.service";
 import { FreeAccountService, FREE_ACCOUNT_STATUS_LABELS, formatFreeAccountDate } from "../../modules/free-account/free-account.service";
 import { SupportService } from "../../modules/support/support.service";
 import { CouponService } from "../../modules/coupon/coupon.service";
@@ -87,8 +88,45 @@ export function registerAccountViews() {
       keyboard: [
         navRow({ text: "💰 کیف پول", view: "wallet" }, { text: "📦 سرویس‌های من", view: "services" }),
         navRow({ text: "♻️ تمدید سرویس", view: "services.renew", tone: "success" }, { text: "🛒 خرید سرویس جدید", view: "shop" }),
-        navRow({ text: "👤 اطلاعات حساب", view: "account.profile" }, { text: "🧾 تاریخچه خرید", view: "account.history" }),
-        navRow({ text: "🎫 پشتیبانی", view: "support" }),
+        navRow({ text: "🎁 جوایز من", view: "account.rewards", tone: "success" }, { text: "👤 اطلاعات حساب", view: "account.profile" }),
+        navRow({ text: "🧾 تاریخچه خرید", view: "account.history" }, { text: "🎫 پشتیبانی", view: "support" }),
+      ],
+    };
+  });
+
+  registerView("account.rewards", async (ctx) => {
+    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
+    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد. لطفاً /start را ارسال کنید.", keyboard: [] };
+    const rewards = await RewardService.listUserRewards(user.id);
+    const available = rewards.filter((reward) => reward.status === "available");
+    const claimed = rewards.filter((reward) => reward.status === "claimed");
+    const needsReview = rewards.filter((reward) => reward.status === "failed" || reward.status === "manual_review");
+    const sourceLabel = (reward: UserRewardDto) => reward.source === "prediction" ? "🔮 پیش‌بینی" : reward.source === "referral" ? "🎁 دعوت دوستان" : "🎁 جایزه";
+    const valueLabel = (reward: UserRewardDto) => reward.rewardType === "wallet" ? `💰 ${money(reward.walletAmount ?? 0)}` : `📦 ${reward.productTitle ?? "محصول جایزه"}`;
+    const lines = rewards.slice(0, 10).map((reward, index) =>
+      card(`${(index + 1).toLocaleString("fa-IR")}. ${reward.title}`, [
+        `منبع: ${sourceLabel(reward)}`,
+        `ارزش: ${valueLabel(reward)}`,
+        `وضعیت: ${REWARD_STATUS_LABELS[reward.status]}`,
+        `تاریخ ایجاد: ${reward.createdAt.toLocaleDateString("fa-IR")}`,
+        reward.claimedAt ? `تاریخ دریافت: ${reward.claimedAt.toLocaleDateString("fa-IR")}` : undefined,
+      ]),
+    );
+    const claimRows: UiKeyboard = available.slice(0, 8).map((reward) => [{ text: `🎁 دریافت جایزه: ${reward.title}`.slice(0, 60), action: reward.claimAction ?? "reward:noop", tone: "success" }]);
+    return {
+      replyKeyboard: "profile",
+      text: joinSections([
+        card("🎁 جوایز من", [
+          `🎁 آماده دریافت: ${available.length.toLocaleString("fa-IR")}`,
+          `✅ دریافت‌شده: ${claimed.length.toLocaleString("fa-IR")}`,
+          `⚠️ نیازمند بررسی: ${needsReview.length.toLocaleString("fa-IR")}`,
+        ]),
+        lines.join("\n\n") || "فعلاً جایزه‌ای برای دریافت ندارید.\n\nبا دعوت دوستان یا شرکت در پیش‌بینی‌ها می‌توانید جایزه بگیرید.",
+      ]),
+      keyboard: [
+        ...claimRows,
+        navRow({ text: "🔮 شرکت در پیش‌بینی‌ها", view: "prediction", tone: "primary" }, { text: "🎁 دعوت دوستان", view: "referral", tone: "success" }),
+        navRow({ text: "🔙 حساب کاربری", view: "account", tone: "neutral" }, { text: "🏠 خانه", view: "home", tone: "neutral" }),
       ],
     };
   });
@@ -118,7 +156,8 @@ export function registerAccountViews() {
       ]),
       keyboard: [
         navRow({ text: "💰 کیف پول", view: "wallet" }, { text: "📦 سرویس‌های من", view: "services" }),
-        navRow({ text: "🧾 تاریخچه خرید", view: "account.history" }, { text: "🎫 پشتیبانی", view: "support" }),
+        navRow({ text: "🎁 جوایز من", view: "account.rewards", tone: "success" }, { text: "🧾 تاریخچه خرید", view: "account.history" }),
+        navRow({ text: "🎫 پشتیبانی", view: "support" }),
       ],
     };
   });

@@ -45,6 +45,7 @@ export type PanelViewId =
   | "account.membership"
   | "account.settings"
   | "account.security"
+  | "account.rewards"
   | "services"
   | "services.active"
   | "services.expired"
@@ -298,6 +299,7 @@ export const PANEL_VIEW_IDS = new Set<string>([
   "account.membership",
   "account.settings",
   "account.security",
+  "account.rewards",
   "services",
   "services.active",
   "services.expired",
