@@ -92,7 +92,7 @@ describe("prediction navigation IA", () => {
     const view = await render("prediction.results");
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { OR: [{ status: { in: ["resulted", "announced"] } }, { resultOptionId: { not: null } }] },
+      where: { status: { in: ["resulted", "announced"] }, resultOptionId: { not: null } },
     }));
     expect(view.text).toContain("🏁 نتایج اعلام‌شده");
     expect(view.text).toContain("📣 نتیجه اعلام شده");
@@ -105,7 +105,7 @@ describe("prediction navigation IA", () => {
     const view = await render("prediction.history");
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { entries: { some: { userId: "user-1" } } },
+      where: { AND: [{ status: { not: "deleted" } }, { entries: { some: { userId: "user-1" } } }] },
     }));
     expect(view.text).toContain("🎯 پیش‌بینی‌های من");
     expect(view.text).toContain("انتخاب شما: برد میزبان");
