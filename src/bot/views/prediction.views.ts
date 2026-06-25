@@ -108,9 +108,13 @@ export function registerPredictionViews() {
           ],
         ],
       };
-    const entry = user
-      ? await db.predictionEntry.findFirst({ where: { contestId: contest.id, userId: user.id }, include: { option: true } })
-      : undefined;
+    const [entry, rewardProduct] = await Promise.all([
+      user
+        ? db.predictionEntry.findFirst({ where: { contestId: contest.id, userId: user.id }, include: { option: true } })
+        : Promise.resolve(undefined),
+      PredictionService.getRewardProduct(contest.rewardProductId),
+    ]);
+    const contestWithReward = PredictionService.attachRewardProduct(contest, rewardProduct);
     const open = contest.status === "open" && new Date(contest.closesAt) > new Date();
     const archived = contest.status === "archived";
     const optionRows: UiKeyboard =
@@ -134,7 +138,7 @@ export function registerPredictionViews() {
         card(`🔮 ${contest.title}`, [
           contest.question,
           contest.description ?? "",
-          `🎁 جایزه: ${PredictionService.rewardLabel(contest)}`,
+          ...PredictionService.rewardDetails(contestWithReward, "user"),
           `🏆 تعداد برنده‌ها: ${contest.winnerCount.toLocaleString("fa-IR")}`,
           `⏳ مهلت: ${fmt(contest.closesAt)}`,
           `👥 شرکت‌کنندگان: ${contest._count.entries.toLocaleString("fa-IR")} نفر`,
@@ -280,6 +284,8 @@ export function registerPredictionViews() {
           ],
         ],
       };
+    const rewardProduct = await PredictionService.getRewardProduct(c.rewardProductId);
+    const contestWithReward = PredictionService.attachRewardProduct(c, rewardProduct);
     const correct = c.entries.filter((e: any) => ["correct", "winner", "rewarded"].includes(e.status)).length;
     return {
       text: joinSections([
@@ -292,7 +298,7 @@ export function registerPredictionViews() {
           `شرکت‌کنندگان: ${c._count.entries.toLocaleString("fa-IR")}`,
           `درست: ${correct.toLocaleString("fa-IR")}`,
           `برنده‌ها: ${c.winners.length.toLocaleString("fa-IR")} از ${c.winnerCount.toLocaleString("fa-IR")}`,
-          `جایزه: ${PredictionService.rewardLabel(c)}`,
+          ...PredictionService.rewardDetails(contestWithReward, "admin"),
           c.resultOptionId ? "نتیجه ثبت شده است." : "نتیجه هنوز ثبت نشده است.",
         ]),
       ]),

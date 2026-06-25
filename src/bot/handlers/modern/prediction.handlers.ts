@@ -154,6 +154,8 @@ export function registerPredictionHandlers(bot: AppBot) {
       where: { id: ctx.match[1] },
       include: { entries: true, winners: true },
     });
+    const rewardProduct = await PredictionService.getRewardProduct(contest?.rewardProductId);
+    const contestWithReward = contest ? PredictionService.attachRewardProduct(contest, rewardProduct) : contest;
     if (!contest?.winners?.length)
       return void (await ctx.reply("ابتدا برنده‌ها را انتخاب کنید."));
     if (contest.status === "announced")
@@ -169,7 +171,7 @@ export function registerPredictionHandlers(bot: AppBot) {
         if (winner) {
           await ctx.telegram.sendMessage(
             entry.telegramId,
-            "🎉 تبریک! پیش‌بینی شما درست بود و شما برنده شدید.\nجایزه شما در بخش «جوایز من» آماده دریافت است.",
+            `🎉 تبریک! پیش‌بینی شما درست بود و شما برنده شدید.\n🎁 جایزه شما: ${PredictionService.rewardLabel(contestWithReward)}\nجایزه شما در بخش «جوایز من» آماده دریافت است.`,
             Markup.inlineKeyboard([
               [Markup.button.callback("🎁 دریافت جایزه", actionFor("pr:cl", winner.id))],
               [Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))],
