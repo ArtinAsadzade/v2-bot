@@ -314,13 +314,6 @@ export function registerPredictionViews() {
             tone: "primary" as const,
           },
         ]),
-        [
-          {
-            text: "🔙 مدیریت پیش‌بینی‌ها",
-            action: callbackFor("admin.predictions"),
-            tone: "neutral",
-          },
-        ],
       ],
     };
   });
@@ -507,17 +500,7 @@ export function registerPredictionViews() {
           `خطاهای اطلاع‌رسانی: ${c?.winners.filter((w: any) => w.status === "failed").length.toLocaleString("fa-IR")}`,
         ]),
       ]),
-      keyboard: [
-        [
-          {
-            text: "🔙 جزئیات",
-            action: callbackFor("admin.predictionDetail", {
-              contestId: params.contestId,
-            }),
-            tone: "neutral",
-          },
-        ],
-      ],
+      keyboard: [],
     };
   });
 
