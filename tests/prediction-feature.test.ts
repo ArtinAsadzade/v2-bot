@@ -210,14 +210,31 @@ describe("prediction bug regressions", () => {
     expect(flow).toContain('if (name === "prediction_create") ctx.session.predictionCreate = {};');
   });
 
-  test("product reward opens a button list and never asks for product code", () => {
-    expect(flow).toContain('📦 انتخاب محصول جایزه');
-    expect(flow).toContain('محصولی را که می‌خواهید به عنوان جایزه پیش‌بینی اهدا شود انتخاب کنید.');
-    expect(flow).toContain('flow:prediction_product');
-    expect(flow).toContain('rewardProductId = product.id');
-    expect(flow).toContain('rewardProductTitle = product.title');
-    expect(flow).toContain('isActive: true, deletedAt: null');
-    expect(flow).toContain('take = 9');
+  test("product reward uses guided shop-style category/product picker and never asks for product code", () => {
+    expect(flow).toContain('ProductService.getCategories()');
+    expect(flow).toContain('ProductService.getProductsByCategory(categoryId)');
+    expect(flow).toContain('ProductService.getActiveProductForUser(productId)');
+    expect(flow).toContain('📦 انتخاب دسته‌بندی جایزه');
+    expect(flow).toContain('ابتدا دسته‌بندی محصول جایزه را انتخاب کنید.');
+    expect(flow).toContain('فعلاً محصول فعالی برای انتخاب به عنوان جایزه وجود ندارد.');
+    expect(flow).toContain('flow:prediction_reward_category');
+    expect(flow).toContain('flow:prediction_reward_product');
+    expect(flow).toContain('flow:prediction_reward_confirm');
+    expect(flow).toContain('📦 ${product.title} · ${money(product.price)}');
+    expect(flow).toContain('🎁 محصول جایزه انتخاب شد');
+    expect(flow).toContain('✅ تأیید محصول جایزه');
+    expect(flow).toContain('draft.rewardProductId = product.id');
+    expect(flow).toContain('draft.rewardProductTitle = product.title');
+    expect(flow).toContain('✅ جایزه محصولی پیش‌بینی بروزرسانی شد.');
+    expect(flow).toContain('PREDICTION_REWARD_PRODUCTS_PER_PAGE = 9');
+    expect(flow).toContain('صفحه بعد ➡️');
     expect(flow).not.toContain('شناسه محصول جایزه را ارسال کنید');
+    expect(flow).not.toContain('کد محصول را وارد کنید');
+  });
+
+  test("prediction reward callback prefixes stay compact", () => {
+    for (const callback of ["flow:prediction_reward_category", "flow:prediction_reward_product", "flow:prediction_reward_confirm", "flow:prediction_products"]) {
+      expect(callback.length + 1 + 16).toBeLessThanOrEqual(64);
+    }
   });
 });

@@ -21,6 +21,8 @@ import { MainMenuKeyboard } from "../keyboards/design-system";
 import { WorkflowTelemetryService } from "../../services/workflow-telemetry.service";
 import { MonitoringService } from "../../services/monitoring.service";
 import { formatJalaliDateTime } from "../../utils/persianDateTime";
+import { formatStockLabel } from "../../utils/formatters";
+import { formatXrayBytes } from "../../modules/xray/xray.service";
 import { pickerKeyboard, pickerStepFromState, pickerText, selectedPickerDate, startPersianDateTimePicker } from "../ui/persian-date-time-picker";
 
 const money = (value: number) => `${value.toLocaleString("fa-IR")} تومان`;
@@ -357,7 +359,9 @@ type PredictionCreateStep =
   | "options"
   | "rewardType"
   | "walletAmount"
+  | "productCategory"
   | "productId"
+  | "productConfirm"
   | "winnerCount"
   | "confirm";
 type PredictionEditField = "title" | "question" | "description" | "winnerCount" | "reward" | "closesAt";
@@ -380,7 +384,9 @@ const predictionCreateSteps = new Set<string>([
   "options",
   "rewardType",
   "walletAmount",
+  "productCategory",
   "productId",
+  "productConfirm",
   "winnerCount",
   "confirm",
 ]);
@@ -465,32 +471,83 @@ function ensurePredictionCreateDraft(ctx: AppContext): PredictionCreateDraft {
 }
 
 
-async function predictionProductRewardKeyboard(ctx: AppContext, page = 0, categoryId?: string): Promise<UiKeyboard> {
-  const take = 9;
-  const where: any = { AND: [{ isActive: true, deletedAt: null }, { category: { is: { isActive: true, deletedAt: null } } }] };
-  if (categoryId) where.categoryId = categoryId;
-  const products = await (await import("../../services/prisma")).prisma.product.findMany({
-    where, orderBy: { title: "asc" }, skip: page * take, take: take + 1, select: { id: true, title: true, price: true }
-  }) as any[];
-  const visible = products.slice(0, take);
+
+const PREDICTION_REWARD_PRODUCTS_PER_PAGE = 9;
+
+const productTrafficLabel = (product: { mode: string; trafficBytes?: bigint | number | null }) =>
+  product.mode === "xray_auto" ? formatXrayBytes(product.trafficBytes ?? 0) : "موجودی دستی";
+
+const productDurationLabel = (product: { durationDays?: number | null; duration?: number | null }) =>
+  `${Number(product.durationDays ?? product.duration ?? 0).toLocaleString("fa-IR")} روز`;
+
+const productModeLabel = (mode: string) => (mode === "xray_auto" ? "ساخت خودکار از پنل Xray" : "تحویل از موجودی دستی");
+
+async function predictionRewardCategoriesPrompt(ctx: AppContext): Promise<FlowStepResult> {
+  const categories = await ProductService.getCategories();
+  if (!categories.length) {
+    return {
+      text: "📦 انتخاب دسته‌بندی جایزه\n\nفعلاً محصول فعالی برای انتخاب به عنوان جایزه وجود ندارد.",
+      nextStep: "productCategory",
+      keyboard: [
+        [{ text: "🔙 بازگشت", action: actionFor("flow:prediction_reward", "back"), tone: "neutral" }],
+        [{ text: "🛍 مدیریت محصولات", action: callbackFor("admin.products"), tone: "primary" }],
+      ],
+    };
+  }
+  return {
+    text: "📦 انتخاب دسته‌بندی جایزه\n\nابتدا دسته‌بندی محصول جایزه را انتخاب کنید.",
+    nextStep: "productCategory",
+    keyboard: [
+      ...categories.map((category) => [{
+        text: `📁 ${category.name} · ${Number(category.products.length).toLocaleString("fa-IR")} محصول`,
+        action: tokenAction("flow:prediction_reward_category", createCallbackToken(ctx, "predictionProductReward", { categoryId: category.id })),
+        tone: "primary" as const,
+      }]),
+      [{ text: "🔙 بازگشت", action: actionFor("flow:prediction_reward", "back"), tone: "neutral" }, { text: "❌ لغو", action: "flow:cancel", tone: "danger" }],
+    ],
+  };
+}
+
+async function predictionProductRewardKeyboard(ctx: AppContext, page = 0, categoryId: string): Promise<UiKeyboard> {
+  const products = await ProductService.getProductsByCategory(categoryId);
+  const visible = products.slice(page * PREDICTION_REWARD_PRODUCTS_PER_PAGE, (page + 1) * PREDICTION_REWARD_PRODUCTS_PER_PAGE);
   const rows: UiKeyboard = visible.map((product) => [{
-    text: `📦 ${product.title} · ${Number(product.price).toLocaleString("fa-IR")} تومان`,
-    action: tokenAction("flow:prediction_product", createCallbackToken(ctx, "predictionProductReward", { productId: product.id })),
+    text: `📦 ${product.title} · ${money(product.price)}`,
+    action: tokenAction("flow:prediction_reward_product", createCallbackToken(ctx, "predictionProductReward", { productId: product.id })),
     tone: "success",
   }]);
   const nav: UiKeyboard[number] = [];
-  if (page > 0) nav.push({ text: "⬅️ قبلی", action: tokenAction("flow:prediction_products", createCallbackToken(ctx, "predictionProductReward", { page: page - 1, categoryId })), tone: "neutral" });
-  if (products.length > take) nav.push({ text: "بعدی ➡️", action: tokenAction("flow:prediction_products", createCallbackToken(ctx, "predictionProductReward", { page: page + 1, categoryId })), tone: "primary" });
+  if (page > 0) nav.push({ text: "⬅️ صفحه قبل", action: tokenAction("flow:prediction_products", createCallbackToken(ctx, "predictionProductReward", { page: page - 1, categoryId })), tone: "neutral" });
+  if ((page + 1) * PREDICTION_REWARD_PRODUCTS_PER_PAGE < products.length) nav.push({ text: "صفحه بعد ➡️", action: tokenAction("flow:prediction_products", createCallbackToken(ctx, "predictionProductReward", { page: page + 1, categoryId })), tone: "primary" });
   if (nav.length) rows.push(nav);
-  rows.push([{ text: "🔙 بازگشت", action: actionFor("flow:prediction_reward", "back"), tone: "neutral" }, { text: "❌ لغو", action: "flow:cancel", tone: "danger" }]);
+  rows.push([{ text: "🔙 دسته‌بندی‌ها", action: actionFor("flow:prediction_reward", "product"), tone: "neutral" }, { text: "❌ لغو", action: "flow:cancel", tone: "danger" }]);
   return rows;
 }
 
 async function predictionProductRewardPrompt(ctx: AppContext, page = 0, categoryId?: string): Promise<FlowStepResult> {
+  if (!categoryId) return predictionRewardCategoriesPrompt(ctx);
+  const categories = await ProductService.getCategories();
+  const category = categories.find((item) => item.id === categoryId);
+  const products = await ProductService.getProductsByCategory(categoryId);
+  const pageCount = Math.max(1, Math.ceil(products.length / PREDICTION_REWARD_PRODUCTS_PER_PAGE));
   return {
-    text: "📦 انتخاب محصول جایزه\n\nمحصولی را که می‌خواهید به عنوان جایزه پیش‌بینی اهدا شود انتخاب کنید.",
+    text: `📦 انتخاب محصول جایزه\n\nمحصولی را که می‌خواهید به عنوان جایزه پیش‌بینی اهدا شود انتخاب کنید.\n\n🏷 دسته‌بندی: ${category?.name ?? "نامشخص"}\n📦 تعداد محصولات: ${Number(products.length).toLocaleString("fa-IR")}\n📄 صفحه: ${Number(page + 1).toLocaleString("fa-IR")} از ${Number(pageCount).toLocaleString("fa-IR")}`,
     nextStep: "productId",
     keyboard: await predictionProductRewardKeyboard(ctx, page, categoryId),
+  };
+}
+
+async function predictionProductConfirmPrompt(ctx: AppContext, productId: string): Promise<FlowStepResult> {
+  const product = await ProductService.getActiveProductForUser(productId) as any;
+  if (!product) return { text: "❌ محصول فعال پیدا نشد.", keyboard: (await predictionRewardCategoriesPrompt(ctx)).keyboard };
+  const stock = await ProductService.availableStock(product.id);
+  return {
+    text: `🎁 محصول جایزه انتخاب شد\n\n📦 محصول: ${product.title}\n🏷 دسته‌بندی: ${product.category?.name ?? "نامشخص"}\n💰 قیمت: ${money(product.price)}\n📅 مدت: ${productDurationLabel(product)}\n📊 ترافیک: ${productTrafficLabel(product)}\n⚙️ نوع تحویل: ${productModeLabel(product.mode)}\n📦 موجودی: ${formatStockLabel(stock)}`,
+    nextStep: "productConfirm",
+    keyboard: [
+      [{ text: "✅ تأیید محصول جایزه", action: tokenAction("flow:prediction_reward_confirm", createCallbackToken(ctx, "predictionProductReward", { productId: product.id })), tone: "success" }],
+      [{ text: "🔙 انتخاب محصول دیگر", action: actionFor("flow:prediction_reward", "product"), tone: "neutral" }, { text: "❌ لغو", action: "flow:cancel", tone: "danger" }],
+    ],
   };
 }
 
@@ -591,8 +648,8 @@ const definitions: Record<FlowName, FlowDefinition> = {
         draft.rewardWalletAmount = parsePositiveIntegerInput(text, "مبلغ جایزه");
         return { text: "تعداد برنده‌ها را ارسال کنید.", nextStep: "winnerCount", keyboard: predictionCreateKeyboard("winnerCount", draft) };
       }
-      if (flow.step === "productId") {
-        return { text: "لطفاً محصول جایزه را از دکمه‌های فهرست انتخاب کنید.", keyboard: await predictionProductRewardKeyboard(ctx) };
+      if (flow.step === "productCategory" || flow.step === "productId" || flow.step === "productConfirm") {
+        return { text: "لطفاً محصول جایزه را از دکمه‌های فهرست انتخاب کنید.", keyboard: (await predictionRewardCategoriesPrompt(ctx)).keyboard };
       }
       if (flow.step === "winnerCount") {
         if (draft.winnerCount) {
@@ -658,7 +715,7 @@ const definitions: Record<FlowName, FlowDefinition> = {
       else if (field === "reward") {
         const normalized = text.trim().toLowerCase();
         if (normalized.includes("کیف") || normalized.includes("wallet") || normalized.includes("شارژ")) { flow.step = "walletAmount"; return { text: "مبلغ جایزه کیف پول را به تومان ارسال کنید." }; }
-        if (normalized.includes("محصول") || normalized.includes("product")) { flow.step = "productId"; return predictionProductRewardPrompt(ctx); }
+        if (normalized.includes("محصول") || normalized.includes("product")) { flow.step = "productCategory"; return predictionProductRewardPrompt(ctx); }
         return { text: "❌ نوع جایزه معتبر نیست. یکی از گزینه‌های جایزه را انتخاب کنید.", keyboard: predictionCreateKeyboard("rewardType") };
       } else if (field === "closesAt") return { text: "برای تغییر زمان بسته شدن از دکمه انتخاب‌گر تاریخ استفاده کنید." };
       ctx.session.predictionEdit = undefined;
@@ -1881,7 +1938,7 @@ export function registerFlowEngine(bot: AppBot) {
     await ctx.answerCbQuery();
     if (!ctx.session.flow || !["prediction_create", "prediction_edit"].includes(ctx.session.flow.name)) return;
     if (ctx.match[1] === "back") { ctx.session.flow.step = "rewardType"; await flowPrompt(ctx, "نوع جایزه را انتخاب کنید:", predictionCreateKeyboard("rewardType")); return; }
-    if (!["rewardType", "value"].includes(ctx.session.flow.step)) return;
+    if (!["rewardType", "value", "productCategory", "productId", "productConfirm"].includes(ctx.session.flow.step)) return;
     await handleActiveFlowText(ctx, ctx.match[1] === "wallet" ? "💰 شارژ کیف پول" : "📦 محصول");
   });
 
@@ -1892,39 +1949,60 @@ export function registerFlowEngine(bot: AppBot) {
   });
 
 
+  bot.action(/^flow:prediction_reward_category:([^:]+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const payload = resolveCallbackToken(ctx, "predictionProductReward", ctx.match[1]);
+    if (!payload?.categoryId) return void (await ctx.reply("❌ دسته‌بندی محصول منقضی شده است."));
+    const result = await predictionProductRewardPrompt(ctx, 0, payload.categoryId);
+    if (ctx.session.flow) ctx.session.flow.step = result.nextStep ?? "productId";
+    await flowPrompt(ctx, result.text, result.keyboard);
+  });
+
   bot.action(/^flow:prediction_products:([^:]+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     const payload = resolveCallbackToken(ctx, "predictionProductReward", ctx.match[1]);
-    if (!payload) return void (await ctx.reply("❌ فهرست محصول منقضی شده است."));
-    await flowPrompt(ctx, "📦 انتخاب محصول جایزه\n\nمحصولی را که می‌خواهید به عنوان جایزه پیش‌بینی اهدا شود انتخاب کنید.", await predictionProductRewardKeyboard(ctx, Number(payload.page ?? 0), payload.categoryId));
+    if (!payload?.categoryId) return void (await ctx.reply("❌ فهرست محصول منقضی شده است."));
+    const result = await predictionProductRewardPrompt(ctx, Number(payload.page ?? 0), payload.categoryId);
+    if (ctx.session.flow) ctx.session.flow.step = result.nextStep ?? "productId";
+    await flowPrompt(ctx, result.text, result.keyboard);
   });
 
-  bot.action(/^flow:prediction_product:([^:]+)$/, async (ctx) => {
+  bot.action(/^flow:prediction_reward_product:([^:]+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     const payload = resolveCallbackToken(ctx, "predictionProductReward", ctx.match[1]);
     if (!payload?.productId) return void (await ctx.reply("❌ انتخاب محصول منقضی شده است."));
-    const product = await (await import("../../services/prisma")).prisma.product.findFirst({ where: { id: payload.productId, isActive: true, deletedAt: null }, select: { id: true, title: true } }) as any;
+    const flow = ctx.session.flow;
+    if (!flow || !["prediction_create", "prediction_edit"].includes(flow.name)) return;
+    const result = await predictionProductConfirmPrompt(ctx, payload.productId);
+    if (ctx.session.flow) ctx.session.flow.step = result.nextStep ?? "productConfirm";
+    await flowPrompt(ctx, result.text, result.keyboard);
+  });
+
+  bot.action(/^flow:prediction_reward_confirm:([^:]+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const payload = resolveCallbackToken(ctx, "predictionProductReward", ctx.match[1]);
+    if (!payload?.productId) return void (await ctx.reply("❌ تأیید محصول منقضی شده است."));
+    const product = await ProductService.getActiveProductForUser(payload.productId) as any;
     if (!product) return void (await ctx.reply("❌ محصول فعال پیدا نشد."));
     const flow = ctx.session.flow;
     if (!flow || !["prediction_create", "prediction_edit"].includes(flow.name)) return;
     if (flow.name === "prediction_create") {
       const draft = ensurePredictionCreateDraft(ctx);
+      draft.rewardType = "product";
       draft.rewardProductId = product.id;
       draft.rewardProductTitle = product.title;
       flow.step = "winnerCount";
       deleteCallbackToken(ctx, ctx.match[1]);
-      await flowPrompt(ctx, `✅ محصول جایزه انتخاب شد: ${product.title}\n\nتعداد برنده‌ها را ارسال کنید.`);
+      await flowPrompt(ctx, `✅ محصول جایزه تأیید شد: ${product.title}\n\nتعداد برنده‌ها را ارسال کنید.`);
       return;
     }
-    if (flow.name === "prediction_edit") {
-      const contestId = String(flow.data.contestId ?? ctx.session.predictionEdit?.contestId ?? "");
-      await (await import("../../services/prisma")).prisma.predictionContest.update({ where: { id: contestId }, data: { rewardType: "product", rewardProductId: product.id, rewardWalletAmount: null } });
-      clearFlow(ctx, "completed");
-      ctx.session.predictionEdit = undefined;
-      deleteCallbackToken(ctx, ctx.match[1]);
-      await ctx.reply(`✅ محصول جایزه انتخاب شد: ${product.title}\n✅ تغییرات با موفقیت ذخیره شد.`);
-      await renderPanel(ctx, { id: "admin.predictionDetail", params: { contestId } }, "replace", RenderMode.SEND_NEW);
-    }
+    const contestId = String(flow.data.contestId ?? ctx.session.predictionEdit?.contestId ?? "");
+    await (await import("../../services/prisma")).prisma.predictionContest.update({ where: { id: contestId }, data: { rewardType: "product", rewardProductId: product.id, rewardWalletAmount: null } });
+    clearFlow(ctx, "completed");
+    ctx.session.predictionEdit = undefined;
+    deleteCallbackToken(ctx, ctx.match[1]);
+    await ctx.reply("✅ جایزه محصولی پیش‌بینی بروزرسانی شد.");
+    await renderPanel(ctx, { id: "admin.predictionDetail", params: { contestId } }, "replace", RenderMode.SEND_NEW);
   });
 
   bot.action("flow:prediction_add_option", async (ctx) => {
