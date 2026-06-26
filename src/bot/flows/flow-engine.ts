@@ -2240,7 +2240,7 @@ export function registerFlowEngine(bot: AppBot) {
     else if (op === "min") state.selectedMinute = Number(ctx.match[2]);
     else if (op === "confirm") {
       const date = selectedPickerDate(state);
-      if (date <= new Date()) return void (await ctx.reply("❌ زمان بسته شدن باید در آینده باشد."));
+      if (PredictionDateService.hasPredictionClosed(date)) return void (await ctx.reply("❌ زمان بسته شدن باید در آینده باشد."));
       if (state.flow === "prediction.create.closesAt") {
         const draft = ensurePredictionCreateDraft(ctx);
         draft.closesAt = date.toISOString();
@@ -2249,7 +2249,7 @@ export function registerFlowEngine(bot: AppBot) {
         const reward = await predictionDraftRewardPreview(draft);
         return void (await flowPrompt(
           ctx,
-          `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${draft.title}\nسؤال: ${draft.question}\nتوضیحات: ${draft.description || "—"}\nگزینه‌ها: ${(draft.options ?? []).join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(draft.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${PredictionDateService.formatPredictionDate(date)}\n\nبرای انتشار روی «انتشار» و برای پیش‌نویس روی «ذخیره پیش‌نویس» بزنید.`,
+          `🔎 پیش‌نمایش پیش‌بینی\n\nعنوان: ${draft.title}\nسؤال: ${draft.question}\nتوضیحات: ${draft.description || "—"}\nگزینه‌ها: ${(draft.options ?? []).join("، ")}\nجایزه: ${reward}\nتعداد برنده‌ها: ${Number(draft.winnerCount).toLocaleString("fa-IR")}\nمهلت: ${PredictionDateService.formatPredictionDateTime(date)}\n\nبرای انتشار روی «انتشار» و برای پیش‌نویس روی «ذخیره پیش‌نویس» بزنید.`,
           predictionCreateKeyboard("confirm", draft),
         ));
       }

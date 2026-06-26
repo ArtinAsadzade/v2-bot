@@ -12,7 +12,7 @@ import {
 import { PredictionDateService } from "../../modules/prediction/prediction-date.service";
 
 const db = prisma as any;
-const fmt = (d: Date) => PredictionDateService.formatPredictionDate(d);
+const fmt = (d: Date) => PredictionDateService.formatPredictionDateTime(d);
 const statusFa: Record<string, string> = {
   draft: "پیش‌نویس",
   open: predictionDisplayStatusFa.open,
@@ -146,8 +146,7 @@ export function registerPredictionViews() {
 
 
   registerView("prediction.archive", async () => {
-    const contests = await PredictionService.getArchivedPredictions({ where: { status: "archived" }, skip: 0, take: 10, orderBy: { archivedAt: "desc" } });
-    return { text: card("📜 آرشیو", contests.length ? contests.map((c: any) => `• ${c.title} · ${predictionDisplayStatusFa[getPredictionDisplayStatus(c)]}`) : ["آرشیو پیش‌بینی خالی است."]), keyboard: [...contestRows(contests)] };
+    return { text: card("📜 آرشیو", ["آرشیو پیش‌بینی برای کاربران در دسترس نیست."]), keyboard: [] };
   });
 
   registerView("prediction.detail", async (ctx, params) => {
@@ -161,7 +160,7 @@ export function registerPredictionViews() {
     });
     if (!contest || contest.status === "deleted" || contest.status === "archived")
       return {
-        text: "❌ پیش‌بینی پیدا نشد.",
+        text: "❌ این پیش‌بینی در دسترس نیست.",
         keyboard: [
           [
             {
@@ -179,9 +178,8 @@ export function registerPredictionViews() {
       PredictionService.getRewardProduct(contest.rewardProductId),
     ]);
     const contestWithReward = PredictionService.attachRewardProduct(contest, rewardProduct);
-    const now = new Date();
-    const displayStatus = getPredictionDisplayStatus(contest, now);
-    const open = canSubmitPrediction(contest, now);
+    const displayStatus = getPredictionDisplayStatus(contest);
+    const open = canSubmitPrediction(contest);
     const archived = displayStatus === "archived";
     const optionRows: UiKeyboard =
       open && (!entry || contest.allowUserEdit)
@@ -340,7 +338,7 @@ export function registerPredictionViews() {
     });
     if (!c || c.status === "deleted")
       return {
-        text: "❌ پیش‌بینی پیدا نشد.",
+        text: "❌ این پیش‌بینی در دسترس نیست.",
         keyboard: [
           [
             {
@@ -567,7 +565,7 @@ export function registerPredictionViews() {
     });
     if (!c)
       return {
-        text: "❌ پیش‌بینی پیدا نشد.",
+        text: "❌ این پیش‌بینی در دسترس نیست.",
         keyboard: [
           [
             {

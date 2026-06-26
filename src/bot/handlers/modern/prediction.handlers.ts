@@ -8,7 +8,7 @@ import {
   tokenAction,
 } from "../../navigation/callback-tokens";
 import { UserService } from "../../../modules/user/user.service";
-import { PredictionService } from "../../../modules/prediction/prediction.service";
+import { PredictionService, canSubmitPrediction } from "../../../modules/prediction/prediction.service";
 import { RewardService } from "../../../modules/reward/reward.service";
 import { prisma } from "../../../services/prisma";
 import { isAdminByTelegramId } from "../../middlewares/admin.middleware";
@@ -20,6 +20,9 @@ export function registerPredictionHandlers(bot: AppBot) {
     await ctx.answerCbQuery();
     const payload = resolveCallbackToken(ctx, "predictionPick", ctx.match[1]);
     if (!payload) return void (await ctx.reply("❌ انتخاب منقضی شده است."));
+    const contest = await db.predictionContest.findUnique({ where: { id: payload.contestId } });
+    if (!contest || contest.status === "archived" || contest.status === "deleted") return void (await ctx.reply("❌ این پیش‌بینی در دسترس نیست."));
+    if (!canSubmitPrediction(contest)) return void (await ctx.reply("⏳ زمان ثبت پیش‌بینی به پایان رسیده است."));
     const option = await db.predictionOption.findUnique({
       where: { id: payload.optionId },
     });
