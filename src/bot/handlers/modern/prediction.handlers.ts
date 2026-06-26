@@ -147,13 +147,22 @@ export function registerPredictionHandlers(bot: AppBot) {
     await ctx.answerCbQuery();
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return void (await ctx.reply("دسترسی غیرمجاز"));
     try {
-      const result = await PredictionService.announcePredictionResults(ctx.match[1], ctx.from.id, async (telegramId, text, winner) => {
-        if (winner) await ctx.telegram.sendMessage(telegramId, text, Markup.inlineKeyboard([[Markup.button.callback("🎁 دریافت جایزه", actionFor("pr:cl", winner.id))]]));
-        else await ctx.telegram.sendMessage(telegramId, text);
+      const result = await PredictionService.announcePredictionResults(ctx.match[1], ctx.from.id, async (telegramId, text) => {
+        await ctx.telegram.sendMessage(telegramId, text, Markup.inlineKeyboard([[Markup.button.callback(PredictionService.resultNotificationButton().text, callbackFor(PredictionService.resultNotificationButton().view))]]));
       });
       const preview = await PredictionService.getWinnerSelectionPreview(ctx.match[1]);
       if (preview.totalParticipants === 0) await ctx.reply("✅ پیش‌بینی بدون شرکت‌کننده پایان یافت.");
-      else await ctx.reply(`📣 اعلام نتایج انجام شد.\nارسال موفق: ${result.sent.toLocaleString("fa-IR")}\nناموفق: ${result.failed.toLocaleString("fa-IR")}`);
+      else await ctx.reply(`📣 گزارش اطلاع‌رسانی
+
+🔮 پیش‌بینی:
+${preview.contest.title}
+
+👥 کل شرکت‌کنندگان: ${result.totalParticipants.toLocaleString("fa-IR")}
+✅ پیش‌بینی درست: ${result.correctCount.toLocaleString("fa-IR")}
+❌ پیش‌بینی اشتباه: ${result.wrongCount.toLocaleString("fa-IR")}
+🏆 برنده‌ها: ${result.winnerCount.toLocaleString("fa-IR")}
+📨 ارسال موفق: ${result.sent.toLocaleString("fa-IR")}
+⚠️ ارسال ناموفق: ${result.failed.toLocaleString("fa-IR")}`, Markup.inlineKeyboard([[Markup.button.callback("🔙 جزئیات پیش‌بینی", callbackFor("admin.predictionDetail", { contestId: ctx.match[1] })), Markup.button.callback("🔮 مدیریت پیش‌بینی‌ها", callbackFor("admin.predictions"))]]));
       await renderPanel(ctx, { id: "admin.predictionWinners", params: { contestId: ctx.match[1] } }, "replace");
     } catch (e) { await ctx.reply(e instanceof Error ? e.message : "❌ اعلام نتایج انجام نشد."); }
   });

@@ -338,30 +338,84 @@ export class PredictionService {
   static async finishPredictionWithoutWinners(contestId: string, adminId?: number | string) {
     const contest = await db.predictionContest.findUnique({ where: { id: contestId } });
     if (!contest?.resultOptionId) throw new Error("ابتدا نتیجه را ثبت کنید.");
-    if (contest.status === "announced" && contest.announcedAt) return { sent: 0, failed: 0, alreadyAnnounced: true };
+    if (contest.status === "announced" && contest.announcedAt) return { sent: 0, failed: 0, alreadyAnnounced: true, totalParticipants: 0, correctCount: 0, wrongCount: 0, winnerCount: 0 };
     await db.predictionContest.update({ where: { id: contestId }, data: { status: "announced", announcedAt: contest.announcedAt ?? new Date() } });
     await db.predictionAuditLog.create({ data: { contestId, adminTelegramId: adminId ? String(adminId) : null, action: "PREDICTION_ANNOUNCED_NO_WINNERS", metadata: { noParticipants: true } } });
-    return { sent: 0, failed: 0, alreadyAnnounced: false };
+    return { sent: 0, failed: 0, alreadyAnnounced: false, totalParticipants: 0, correctCount: 0, wrongCount: 0, winnerCount: 0 };
+  }
+
+  static resultNotificationButton() {
+    return { text: "🔮 پیش‌بینی‌های باز", view: "prediction" as const };
+  }
+
+  static buildResultNotification(args: { contestTitle: string; userOptionTitle?: string | null; correctOptionTitle: string; outcome: "winner" | "correct" | "wrong"; rewardLabel?: string }) {
+    const userOption = args.userOptionTitle || "ثبت‌شده";
+    if (args.outcome === "winner") return `🎉 تبریک! شما برنده شدید
+
+🔮 پیش‌بینی:
+${args.contestTitle}
+
+✅ انتخاب شما:
+${userOption}
+
+🏁 نتیجه نهایی:
+${args.correctOptionTitle}
+
+🎁 جایزه:
+${args.rewardLabel ?? "🎁 جایزه نامشخص"}
+
+جایزه شما در بخش «جوایز من» آماده دریافت است.`;
+    if (args.outcome === "correct") return `✅ پیش‌بینی شما درست بود
+
+🔮 پیش‌بینی:
+${args.contestTitle}
+
+✅ انتخاب شما:
+${userOption}
+
+🏁 نتیجه نهایی:
+${args.correctOptionTitle}
+
+متأسفانه این بار جزو برنده‌ها نبودید.
+شانس خودتان را در پیش‌بینی‌های بعدی امتحان کنید.`;
+    return `❌ پیش‌بینی شما درست نبود
+
+🔮 پیش‌بینی:
+${args.contestTitle}
+
+🎯 انتخاب شما:
+${userOption}
+
+🏁 نتیجه نهایی:
+${args.correctOptionTitle}
+
+شانس خودتان را در پیش‌بینی‌های بعدی امتحان کنید.`;
   }
 
   static async announcePredictionResults(contestId: string, adminId?: number | string, notifier?: (telegramId: string, text: string, winner?: any) => Promise<void>) {
-    const contest = await db.predictionContest.findUnique({ where: { id: contestId }, include: { entries: true, winners: true } });
-    if (!contest?.resultOptionId) throw new Error("ابتدا نتیجه را ثبت کنید.");
-    if (contest.status === "announced" && contest.announcedAt) return { sent: 0, failed: 0, alreadyAnnounced: true };
+    const contest = await db.predictionContest.findUnique({ where: { id: contestId }, include: { entries: { include: { option: true } }, winners: true, options: true } });
+    if (!contest?.resultOptionId) throw new Error("⚠️ نتیجه پیش‌بینی هنوز ثبت نشده است.");
+    const correctOption = contest.options.find((option: any) => option.id === contest.resultOptionId);
+    if (!correctOption) throw new Error("⚠️ نتیجه پیش‌بینی هنوز ثبت نشده است.");
+    if (contest.status === "announced" && contest.announcedAt) return { sent: 0, failed: 0, alreadyAnnounced: true, totalParticipants: contest.entries.length, correctCount: 0, wrongCount: 0, winnerCount: contest.winners.length };
     if (!contest.entries.length) return this.finishPredictionWithoutWinners(contestId, adminId);
     if (!contest.winners.length) await this.selectPredictionWinners(contestId, adminId);
     const winners = await db.predictionWinner.findMany({ where: { contestId } });
+    const rewardProduct = await this.getRewardProduct(contest.rewardProductId);
+    const rewardLabel = this.rewardLabel(this.attachRewardProduct(contest, rewardProduct));
     const winnerByUser = new Map(winners.map((w: any) => [w.userId, w]));
-    let sent = 0, failed = 0;
+    let sent = 0, failed = 0, correctCount = 0, wrongCount = 0;
     for (const entry of contest.entries) {
+      const isCorrect = ["correct", "winner", "rewarded"].includes(entry.status) || entry.optionId === contest.resultOptionId;
+      if (isCorrect) correctCount++; else wrongCount++;
       const winner = winnerByUser.get(entry.userId) as any;
-      const text = winner ? "🎉 تبریک! پیش‌بینی شما درست بود و شما برنده شدید.\n🎁 جایزه شما آماده دریافت است." : (["correct", "winner", "rewarded"].includes(entry.status) || entry.optionId === contest.resultOptionId) ? "✅ پیش‌بینی شما درست بود، اما این بار جزو برنده‌ها نبودید.\nشانس خودتان را در پیش‌بینی‌های بعدی امتحان کنید." : "❌ پیش‌بینی شما درست نبود.\nشانس خودتان را در پیش‌بینی‌های بعدی امتحان کنید.";
+      const text = this.buildResultNotification({ contestTitle: contest.title, userOptionTitle: entry.option?.title, correctOptionTitle: correctOption.title, outcome: winner ? "winner" : isCorrect ? "correct" : "wrong", rewardLabel });
       try { if (notifier) await notifier(entry.telegramId, text, winner); sent++; if (winner) await db.predictionWinner.update({ where: { id: winner.id }, data: { status: "notified", notifiedAt: new Date(), failureReason: null } }); }
       catch (error) { failed++; if (winner) await db.predictionWinner.update({ where: { id: winner.id }, data: { status: "failed", failureReason: error instanceof Error ? error.message : "unknown" } }); await db.predictionAuditLog.create({ data: { contestId, userId: entry.userId, action: "announce.failed", metadata: { message: error instanceof Error ? error.message : "unknown" } } }); }
     }
     await db.predictionContest.update({ where: { id: contestId }, data: { status: "announced", announcedAt: new Date() } });
-    await db.predictionAuditLog.create({ data: { contestId, adminTelegramId: adminId ? String(adminId) : null, action: winners.length ? "PREDICTION_ANNOUNCED" : "PREDICTION_ANNOUNCED_NO_WINNERS", metadata: { sent, failed, winners: winners.length } } });
-    return { sent, failed, alreadyAnnounced: false };
+    await db.predictionAuditLog.create({ data: { contestId, adminTelegramId: adminId ? String(adminId) : null, action: winners.length ? "PREDICTION_ANNOUNCED" : "PREDICTION_ANNOUNCED_NO_WINNERS", metadata: { sent, failed, winners: winners.length, totalParticipants: contest.entries.length, correctCount, wrongCount } } });
+    return { sent, failed, alreadyAnnounced: false, totalParticipants: contest.entries.length, correctCount, wrongCount, winnerCount: winners.length };
   }
 
   static async claimReward(winnerId: string, telegramId: string) {
