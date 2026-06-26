@@ -3,9 +3,12 @@ import { BOT_TIME_ZONE, formatJalaliDateTime, formatPredictionCountdown, zonedJa
 import { canSubmitPrediction, getPredictionDisplayStatus, PredictionService, resolvePredictionState } from "../src/modules/prediction/prediction.service";
 
 describe("prediction finite-state visibility and Iran timezone", () => {
-  const now = new Date("2026-06-25T12:00:00.000Z");
-  const past = new Date("2026-06-25T11:00:00.000Z");
-  const future = new Date("2026-06-25T13:30:00.000Z");
+  const countdownNow = new Date("2026-06-25T12:00:00.000Z");
+  const countdownPast = new Date("2026-06-25T11:00:00.000Z");
+  const countdownFuture = new Date("2026-06-25T13:30:00.000Z");
+  const now = new Date("2026-06-25T21:49:00.000Z"); // 1405/04/06 01:19 Asia/Tehran
+  const past = new Date("2026-06-26T01:18:00.000Z"); // stored legacy Iran wall-clock
+  const future = new Date("2026-06-26T01:20:00.000Z"); // stored legacy Iran wall-clock
 
   it("enforces Asia/Tehran and renders Persian calendar date-times", () => {
     expect(BOT_TIME_ZONE).toBe("Asia/Tehran");
@@ -13,8 +16,8 @@ describe("prediction finite-state visibility and Iran timezone", () => {
   });
 
   it("computes countdowns from absolute instants without browser/server timezone", () => {
-    expect(formatPredictionCountdown(future, now)).toBe("۱ ساعت و ۳۰ دقیقه");
-    expect(formatPredictionCountdown(past, now)).toBe("مهلت تمام شده");
+    expect(formatPredictionCountdown(countdownFuture, countdownNow)).toBe("۱ ساعت و ۳۰ دقیقه");
+    expect(formatPredictionCountdown(countdownPast, countdownNow)).toBe("مهلت تمام شده");
   });
 
   it("keeps every non-deleted business state deterministic and visible where it belongs", () => {

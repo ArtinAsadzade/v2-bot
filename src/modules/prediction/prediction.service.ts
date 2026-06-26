@@ -123,11 +123,12 @@ export type PredictionStatusContest = {
 };
 
 export function getPredictionDisplayStatus(contest: PredictionStatusContest, now = new Date()): PredictionDisplayStatus {
-  return resolvePredictionState(contest, now);
+  if (contest.status === "draft") return "draft";
+  return PredictionDateService.getPredictionDisplayStatus(contest, now);
 }
 
 export function canSubmitPrediction(contest: PredictionStatusContest, now = new Date()): boolean {
-  return PredictionDateService.isPredictionOpen(contest, now) && getPredictionDisplayStatus(contest, now) === "open";
+  return PredictionDateService.canSubmitPrediction(contest, now);
 }
 
 export const predictionDisplayStatusFa: Record<PredictionDisplayStatus, string> = {
@@ -143,18 +144,11 @@ export const predictionDisplayStatusFa: Record<PredictionDisplayStatus, string> 
 
 
 export function resolvePredictionState(contest: PredictionStatusContest, now = new Date()): PredictionDisplayStatus {
-  if (contest.status === "deleted") return "deleted";
-  if (contest.status === "archived" || contest.archivedAt) return "archived";
-  if (contest.status === "announced" || contest.announcedAt) return "announced";
-  if (contest.status === "resulted" || contest.resultOptionId) return "resulted";
-  if (contest.status === "draft") return "draft";
-  if (PredictionDateService.isPredictionOpen(contest, now)) return "open";
-  if (contest.status === "closed") return "waiting_result";
-  return "waiting_result";
+  return getPredictionDisplayStatus(contest, now);
 }
 
 const notDeletedWhere = { status: { not: "deleted" } };
-const userVisibleWhere = { status: { not: "deleted" } };
+const userVisibleWhere = { status: { notIn: ["deleted", "archived"] } };
 
 export type PredictionDeleteMode =
   | "hard_delete_allowed"
@@ -163,10 +157,16 @@ export type PredictionDeleteMode =
 
 export class PredictionService {
 
-  static async getOpenPredictions(args: any = {}, now = new Date()) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: "open", closesAt: { gt: now } } }); }
-  static async getWaitingResultPredictions(args: any = {}, now = new Date()) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), resultOptionId: null, OR: [{ status: "closed" }, { status: "open", closesAt: { lte: now } }] } }); }
+  static async getOpenPredictions(args: any = {}, now = new Date()) {
+    const contests = await db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: "open" } });
+    return contests.filter((contest: PredictionStatusContest) => canSubmitPrediction(contest, now));
+  }
+  static async getWaitingResultPredictions(args: any = {}, now = new Date()) {
+    const contests = await db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: { notIn: ["deleted", "archived"] }, resultOptionId: null } });
+    return contests.filter((contest: PredictionStatusContest) => getPredictionDisplayStatus(contest, now) === "waiting_result");
+  }
   static getAnnouncedPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: { in: ["resulted", "announced"] }, resultOptionId: { not: null } } }); }
-  static getArchivedPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: "archived" } }); }
+  static async getArchivedPredictions(_args: any = {}) { return []; }
   static getUserPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { AND: [userVisibleWhere, args.where ?? {}] } }); }
   static getAdminPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { AND: [notDeletedWhere, args.where ?? {}] } }); }
   static visibilityReason(contest: PredictionStatusContest) { const state = resolvePredictionState(contest); return state === "draft" ? "draft_only_admin" : state === "archived" ? "archive_only" : state === "deleted" ? "deleted_hidden" : "visible"; }
@@ -231,7 +231,7 @@ export class PredictionService {
       throw new Error(
         "❌ این پیش‌بینی آرشیو شده و امکان ثبت پیش‌بینی جدید وجود ندارد.",
       );
-    if (!contest || !canSubmitPrediction(contest, new Date()))
+    if (!contest || !canSubmitPrediction(contest))
       throw new Error("⏳ زمان ثبت پیش‌بینی به پایان رسیده است.");
     const existing = await db.predictionEntry.findUnique({
       where: { contestId_userId: { contestId, userId: user.id } },

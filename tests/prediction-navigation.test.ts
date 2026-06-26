@@ -34,7 +34,7 @@ const contest = (id: string, title: string, overrides: Record<string, any> = {})
   id,
   title,
   status: "open",
-  closesAt: new Date("2026-06-25T13:00:00.000Z"),
+  closesAt: new Date("2030-06-25T13:00:00.000Z"),
   resultOptionId: null,
   _count: { entries: 3 },
   ...overrides,
@@ -55,7 +55,7 @@ describe("prediction navigation IA", () => {
     const view = await render("prediction");
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { status: "open", closesAt: { gt: expect.any(Date) } },
+      where: { status: "open" },
       orderBy: { closesAt: "asc" },
     }));
     expect(view.text).toContain("🔮 پیش‌بینی مسابقات");
@@ -79,7 +79,7 @@ describe("prediction navigation IA", () => {
     const view = await render("prediction.waiting");
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ resultOptionId: null, OR: expect.any(Array) }),
+      where: expect.objectContaining({ resultOptionId: null, status: { notIn: ["deleted", "archived"] } }),
     }));
     expect(view.text).toContain("📂 در انتظار نتیجه");
     expect(view.text).toContain("⏳ در انتظار اعلام نتیجه");
@@ -105,20 +105,18 @@ describe("prediction navigation IA", () => {
     const view = await render("prediction.history");
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { AND: [{ status: { not: "deleted" } }, { entries: { some: { userId: "user-1" } } }] },
+      where: { AND: [{ status: { notIn: ["deleted", "archived"] } }, { entries: { some: { userId: "user-1" } } }] },
     }));
     expect(view.text).toContain("🎯 پیش‌بینی‌های من");
     expect(view.text).toContain("انتخاب شما: برد میزبان");
   });
 
-  it("archive page shows archived contests", async () => {
-    findMany.mockResolvedValue([contest("arch-1", "آرشیوی", { status: "archived", archivedAt: new Date("2026-06-25T12:00:00.000Z") })]);
-
+  it("archive page hides archived contests from users", async () => {
     const view = await render("prediction.archive");
 
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: "archived" }, skip: 0, take: 10 }));
+    expect(findMany).not.toHaveBeenCalled();
     expect(view.text).toContain("📜 آرشیو");
-    expect(view.text).toContain("آرشیوی");
+    expect(view.text).toContain("در دسترس نیست");
   });
 
   it("empty main page still shows neutral navigation", async () => {
