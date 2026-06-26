@@ -68,8 +68,8 @@ export class PredictionDateService {
   }
 
   static hasPredictionClosed(closesAt: PredictionDateInput, now: Date = new Date()): boolean {
-    const closes = wallClockMs(closesAt);
-    return closes === undefined ? true : closes <= tehranWallClockNowMs(now);
+    const closes = toDate(closesAt);
+    return !closes ? true : closes.getTime() <= now.getTime();
   }
 
   static isPredictionOpen(contest: { status?: string | null; closesAt?: PredictionDateInput }, now: Date = new Date()): boolean {

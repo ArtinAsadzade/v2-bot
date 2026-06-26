@@ -176,6 +176,7 @@ export const ADMIN_MODULE_ARCHITECTURE: ProductArea[] = [
       "admin.predictionDetail",
       "admin.predictionDeleteConfirm",
       "admin.predictionResult",
+      "admin.predictionWinners",
       "admin.predictionStats",
       "admin.predictionParticipants",
       "admin.analytics",

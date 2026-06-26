@@ -127,92 +127,35 @@ export function registerPredictionHandlers(bot: AppBot) {
 
   bot.action(/^ap:win:([^:]+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))
-      return void (await ctx.reply("دسترسی غیرمجاز"));
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return void (await ctx.reply("دسترسی غیرمجاز"));
     try {
-      const winners = await PredictionService.selectWinners(ctx.match[1]);
-      await ctx.reply(
-        `🏆 برنده‌ها انتخاب شدند.\nتعداد برنده‌ها: ${winners.length.toLocaleString("fa-IR")}\nاگر قبلاً انتخاب شده باشند، همان لیست قبلی نمایش داده می‌شود.`,
-      );
-      await renderPanel(
-        ctx,
-        { id: "admin.predictionDetail", params: { contestId: ctx.match[1] } },
-        "replace",
-      );
-    } catch (e) {
-      await ctx.reply(
-        e instanceof Error ? e.message : "❌ انتخاب برنده‌ها انجام نشد.",
-      );
-    }
+      const before = await PredictionService.getWinnerSelectionPreview(ctx.match[1]);
+      const winners = await PredictionService.selectPredictionWinners(ctx.match[1], ctx.from.id);
+      const message = before.totalParticipants === 0
+        ? "هیچ کاربری در این پیش‌بینی شرکت نکرده است."
+        : before.correctPredictions === 0
+          ? "هیچ پیش‌بینی درستی ثبت نشده است."
+          : before.correctPredictions < before.winnerCount
+            ? "تعداد پیش‌بینی‌های درست کمتر از تعداد برنده‌های تنظیم‌شده است؛ همه کاربران با پیش‌بینی درست به عنوان برنده انتخاب شدند."
+            : `🏆 برنده‌ها انتخاب شدند.\nتعداد برنده‌ها: ${winners.length.toLocaleString("fa-IR")}`;
+      await ctx.reply(message);
+      await renderPanel(ctx, { id: "admin.predictionWinners", params: { contestId: ctx.match[1] } }, "replace");
+    } catch (e) { await ctx.reply(e instanceof Error ? e.message : "❌ انتخاب برنده‌ها انجام نشد."); }
   });
 
   bot.action(/^ap:ann:([^:]+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))
-      return void (await ctx.reply("دسترسی غیرمجاز"));
-    const contest = await db.predictionContest.findUnique({
-      where: { id: ctx.match[1] },
-      include: { entries: true, winners: true },
-    });
-    const rewardProduct = await PredictionService.getRewardProduct(contest?.rewardProductId);
-    const contestWithReward = contest ? PredictionService.attachRewardProduct(contest, rewardProduct) : contest;
-    if (!contest?.winners?.length)
-      return void (await ctx.reply("ابتدا برنده‌ها را انتخاب کنید."));
-    if (contest.status === "announced")
-      return void (await ctx.reply("📣 نتایج قبلاً اعلام شده‌اند."));
-    let sent = 0,
-      failed = 0;
-    const winnerByUser = new Map(
-      contest.winners.map((w: any) => [w.userId, w]),
-    );
-    for (const entry of contest.entries) {
-      try {
-        const winner = winnerByUser.get(entry.userId) as any;
-        if (winner) {
-          await ctx.telegram.sendMessage(
-            entry.telegramId,
-            `🎉 تبریک! پیش‌بینی شما درست بود و شما برنده شدید.\n🎁 جایزه شما: ${PredictionService.rewardLabel(contestWithReward)}\nجایزه شما در بخش «جوایز من» آماده دریافت است.`,
-            Markup.inlineKeyboard([
-              [Markup.button.callback("🎁 دریافت جایزه", actionFor("pr:cl", winner.id))],
-              [Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))],
-            ]),
-          );
-          await db.predictionWinner.update({
-            where: { id: winner.id },
-            data: { status: "notified", notifiedAt: new Date() },
-          });
-        } else if (entry.status === "correct")
-          await ctx.telegram.sendMessage(
-            entry.telegramId,
-            "✅ پیش‌بینی شما درست بود، اما این بار جزو برنده‌ها نبودید.",
-          );
-        else
-          await ctx.telegram.sendMessage(
-            entry.telegramId,
-            "❌ پیش‌بینی شما درست نبود. شانس خودتان را در پیش‌بینی‌های بعدی امتحان کنید.",
-          );
-        sent++;
-      } catch (error) {
-        failed++;
-        await db.predictionAuditLog.create({
-          data: {
-            contestId: contest.id,
-            userId: entry.userId,
-            action: "announce.failed",
-            metadata: {
-              message: error instanceof Error ? error.message : "unknown",
-            },
-          },
-        });
-      }
-    }
-    await db.predictionContest.update({
-      where: { id: contest.id },
-      data: { status: "announced", announcedAt: new Date() },
-    });
-    await ctx.reply(
-      `📣 اعلام نتایج انجام شد.\nارسال موفق: ${sent.toLocaleString("fa-IR")}\nناموفق: ${failed.toLocaleString("fa-IR")}`,
-    );
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return void (await ctx.reply("دسترسی غیرمجاز"));
+    try {
+      const result = await PredictionService.announcePredictionResults(ctx.match[1], ctx.from.id, async (telegramId, text, winner) => {
+        if (winner) await ctx.telegram.sendMessage(telegramId, text, Markup.inlineKeyboard([[Markup.button.callback("🎁 دریافت جایزه", actionFor("pr:cl", winner.id))]]));
+        else await ctx.telegram.sendMessage(telegramId, text);
+      });
+      const preview = await PredictionService.getWinnerSelectionPreview(ctx.match[1]);
+      if (preview.totalParticipants === 0) await ctx.reply("✅ پیش‌بینی بدون شرکت‌کننده پایان یافت.");
+      else await ctx.reply(`📣 اعلام نتایج انجام شد.\nارسال موفق: ${result.sent.toLocaleString("fa-IR")}\nناموفق: ${result.failed.toLocaleString("fa-IR")}`);
+      await renderPanel(ctx, { id: "admin.predictionWinners", params: { contestId: ctx.match[1] } }, "replace");
+    } catch (e) { await ctx.reply(e instanceof Error ? e.message : "❌ اعلام نتایج انجام نشد."); }
   });
 
   bot.action(/^ap:close:([^:]+)$/, async (ctx) => {
