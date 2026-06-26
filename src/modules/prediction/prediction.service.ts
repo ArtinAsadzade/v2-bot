@@ -154,7 +154,7 @@ export function resolvePredictionState(contest: PredictionStatusContest, now = n
 }
 
 const notDeletedWhere = { status: { not: "deleted" } };
-const userVisibleWhere = { status: { in: ["open", "closed", "resulted", "announced"] } };
+const userVisibleWhere = { status: { not: "deleted" } };
 
 export type PredictionDeleteMode =
   | "hard_delete_allowed"
@@ -163,8 +163,8 @@ export type PredictionDeleteMode =
 
 export class PredictionService {
 
-  static async getOpenPredictions(args: any = {}, now = new Date()) { const rows = await db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: "open" } }); return rows.filter((contest: PredictionStatusContest) => PredictionDateService.isPredictionOpen(contest, now)); }
-  static async getWaitingResultPredictions(args: any = {}, now = new Date()) { const rows = await db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), resultOptionId: null, status: { in: ["open", "closed"] } } }); return rows.filter((contest: PredictionStatusContest) => contest.status === "closed" || PredictionDateService.hasResultTimeReached(contest, now)); }
+  static async getOpenPredictions(args: any = {}, now = new Date()) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: "open", closesAt: { gt: now } } }); }
+  static async getWaitingResultPredictions(args: any = {}, now = new Date()) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), resultOptionId: null, OR: [{ status: "closed" }, { status: "open", closesAt: { lte: now } }] } }); }
   static getAnnouncedPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: { in: ["resulted", "announced"] }, resultOptionId: { not: null } } }); }
   static getArchivedPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { ...(args.where ?? {}), status: "archived" } }); }
   static getUserPredictions(args: any = {}) { return db.predictionContest.findMany({ ...args, where: { AND: [userVisibleWhere, args.where ?? {}] } }); }
@@ -287,47 +287,81 @@ export class PredictionService {
     });
   }
 
-  static async selectWinners(contestId: string) {
-    const existing = await db.predictionWinner.findMany({
-      where: { contestId },
-    });
-    if (existing.length) return existing;
+  static async getPredictionStats(contestId: string) {
     const contest = await db.predictionContest.findUnique({
       where: { id: contestId },
+      include: { entries: { include: { option: true } }, winners: true, options: true },
     });
+    if (!contest) throw new Error("پیش‌بینی پیدا نشد.");
+    const totalParticipants = contest.entries.length;
+    const correctPredictions = contest.entries.filter((e: any) => ["correct", "winner", "rewarded"].includes(e.status) || e.optionId === contest.resultOptionId).length;
+    const wrongPredictions = contest.resultOptionId ? totalParticipants - correctPredictions : contest.entries.filter((e: any) => e.status === "wrong").length;
+    const selectedWinners = contest.winners.length;
+    const selectableWinners = Math.min(Number(contest.winnerCount ?? 0), correctPredictions);
+    return { contest, totalParticipants, correctPredictions, wrongPredictions, winnerCount: contest.winnerCount, selectableWinners, selectedWinners, announced: contest.status === "announced" || Boolean(contest.announcedAt), resultSet: Boolean(contest.resultOptionId) };
+  }
+
+  static async getWinnerSelectionPreview(contestId: string) {
+    const stats = await this.getPredictionStats(contestId);
+    const winners = await db.predictionWinner.findMany({ where: { contestId }, include: { entry: { include: { option: true } } }, orderBy: { selectedAt: "asc" } });
+    const reason = !stats.resultSet ? "result_not_set" : stats.totalParticipants === 0 ? "no_participants" : stats.correctPredictions === 0 ? "no_correct" : winners.length ? "winners_selected" : stats.correctPredictions < stats.winnerCount ? "fewer_correct_than_winner_count" : "ready";
+    return { ...stats, winners, reason };
+  }
+
+  static async selectPredictionWinners(contestId: string, adminId?: number | string) {
+    const existing = await db.predictionWinner.findMany({ where: { contestId }, include: { entry: { include: { option: true } } } });
+    if (existing.length) return existing;
+    const contest = await db.predictionContest.findUnique({ where: { id: contestId } });
     if (!contest?.resultOptionId) throw new Error("ابتدا نتیجه را ثبت کنید.");
-    if (PredictionDateService.isPredictionOpen(contest))
-      throw new Error("پیش‌بینی هنوز باز است.");
-    const candidates = await db.predictionEntry.findMany({
-      where: { contestId, status: "correct" },
-    });
-    const shuffled = [...candidates]
-      .sort(() => Math.random() - 0.5)
-      .slice(0, contest.winnerCount);
+    if (PredictionDateService.isPredictionOpen(contest)) throw new Error("پیش‌بینی هنوز باز است.");
+    const totalEntries = await db.predictionEntry.count({ where: { contestId } });
+    const candidates = await db.predictionEntry.findMany({ where: { contestId, OR: [{ status: "correct" }, { optionId: contest.resultOptionId }] } });
+    const action = candidates.length === 0 ? (totalEntries === 0 ? "PREDICTION_WINNER_SELECTION_EMPTY" : "PREDICTION_WINNER_SELECTION_NO_CORRECT") : "PREDICTION_WINNERS_SELECTED";
+    if (candidates.length === 0) {
+      await db.predictionAuditLog.create({ data: { contestId, adminTelegramId: adminId ? String(adminId) : null, action, metadata: { selected: 0, participants: totalEntries } } });
+      return [];
+    }
+    const shuffled = [...candidates].sort(() => Math.random() - 0.5).slice(0, contest.winnerCount);
     return db.$transaction(async (tx: any) => {
       const winners = [];
       for (const entry of shuffled) {
-        await tx.predictionEntry.update({
-          where: { id: entry.id },
-          data: { status: "winner" },
-        });
-        winners.push(
-          await tx.predictionWinner.create({
-            data: {
-              contestId,
-              entryId: entry.id,
-              userId: entry.userId,
-              telegramId: entry.telegramId,
-              rewardType: contest.rewardType,
-              rewardWalletAmount: contest.rewardWalletAmount,
-              rewardProductId: contest.rewardProductId,
-              status: "selected",
-            },
-          }),
-        );
+        await tx.predictionEntry.update({ where: { id: entry.id }, data: { status: "winner" } });
+        winners.push(await tx.predictionWinner.create({ data: { contestId, entryId: entry.id, userId: entry.userId, telegramId: entry.telegramId, rewardType: contest.rewardType, rewardWalletAmount: contest.rewardWalletAmount, rewardProductId: contest.rewardProductId, status: "selected" } }));
       }
+      await tx.predictionAuditLog.create({ data: { contestId, adminTelegramId: adminId ? String(adminId) : null, action, metadata: { selected: winners.length, candidates: candidates.length } } });
       return winners;
     });
+  }
+
+  static async selectWinners(contestId: string) { return this.selectPredictionWinners(contestId); }
+
+  static async finishPredictionWithoutWinners(contestId: string, adminId?: number | string) {
+    const contest = await db.predictionContest.findUnique({ where: { id: contestId } });
+    if (!contest?.resultOptionId) throw new Error("ابتدا نتیجه را ثبت کنید.");
+    if (contest.status === "announced" && contest.announcedAt) return { sent: 0, failed: 0, alreadyAnnounced: true };
+    await db.predictionContest.update({ where: { id: contestId }, data: { status: "announced", announcedAt: contest.announcedAt ?? new Date() } });
+    await db.predictionAuditLog.create({ data: { contestId, adminTelegramId: adminId ? String(adminId) : null, action: "PREDICTION_ANNOUNCED_NO_WINNERS", metadata: { noParticipants: true } } });
+    return { sent: 0, failed: 0, alreadyAnnounced: false };
+  }
+
+  static async announcePredictionResults(contestId: string, adminId?: number | string, notifier?: (telegramId: string, text: string, winner?: any) => Promise<void>) {
+    const contest = await db.predictionContest.findUnique({ where: { id: contestId }, include: { entries: true, winners: true } });
+    if (!contest?.resultOptionId) throw new Error("ابتدا نتیجه را ثبت کنید.");
+    if (contest.status === "announced" && contest.announcedAt) return { sent: 0, failed: 0, alreadyAnnounced: true };
+    if (!contest.entries.length) return this.finishPredictionWithoutWinners(contestId, adminId);
+    if (!contest.winners.length) await this.selectPredictionWinners(contestId, adminId);
+    const winners = await db.predictionWinner.findMany({ where: { contestId } });
+    const winnerByUser = new Map(winners.map((w: any) => [w.userId, w]));
+    let sent = 0, failed = 0;
+    for (const entry of contest.entries) {
+      const winner = winnerByUser.get(entry.userId) as any;
+      const text = winner ? "🎉 تبریک! پیش‌بینی شما درست بود و شما برنده شدید.\n🎁 جایزه شما آماده دریافت است." : (["correct", "winner", "rewarded"].includes(entry.status) || entry.optionId === contest.resultOptionId) ? "✅ پیش‌بینی شما درست بود، اما این بار جزو برنده‌ها نبودید.\nشانس خودتان را در پیش‌بینی‌های بعدی امتحان کنید." : "❌ پیش‌بینی شما درست نبود.\nشانس خودتان را در پیش‌بینی‌های بعدی امتحان کنید.";
+      try { if (notifier) await notifier(entry.telegramId, text, winner); sent++; if (winner) await db.predictionWinner.update({ where: { id: winner.id }, data: { status: "notified", notifiedAt: new Date(), failureReason: null } }); }
+      catch (error) { failed++; if (winner) await db.predictionWinner.update({ where: { id: winner.id }, data: { status: "failed", failureReason: error instanceof Error ? error.message : "unknown" } }); await db.predictionAuditLog.create({ data: { contestId, userId: entry.userId, action: "announce.failed", metadata: { message: error instanceof Error ? error.message : "unknown" } } }); }
+    }
+    await db.predictionContest.update({ where: { id: contestId }, data: { status: "announced", announcedAt: new Date() } });
+    await db.predictionAuditLog.create({ data: { contestId, adminTelegramId: adminId ? String(adminId) : null, action: winners.length ? "PREDICTION_ANNOUNCED" : "PREDICTION_ANNOUNCED_NO_WINNERS", metadata: { sent, failed, winners: winners.length } } });
+    return { sent, failed, alreadyAnnounced: false };
   }
 
   static async claimReward(winnerId: string, telegramId: string) {
@@ -374,12 +408,10 @@ export class PredictionService {
     const announcementsSent =
       Boolean(contest.announcedAt) ||
       contest.status === "announced" ||
-      contest.auditLogs.some((l: any) => String(l.action).includes("announce"));
+      contest.auditLogs.some((l: any) => String(l.action).toLowerCase().includes("announce"));
     return (
       contest.entries.length === 0 &&
       contest.winners.length === 0 &&
-      !contest.resultOptionId &&
-      !contest.resultedAt &&
       !rewardsClaimed &&
       !announcementsSent
     );
@@ -430,12 +462,10 @@ export class PredictionService {
         contest &&
         contest.entries.length === 0 &&
         contest.winners.length === 0 &&
-        !contest.resultOptionId &&
-        !contest.resultedAt &&
         !contest.announcedAt &&
         contest.status !== "announced" &&
         !contest.auditLogs.some((l: any) =>
-          String(l.action).includes("announce"),
+          String(l.action).toLowerCase().includes("announce"),
         );
       if (!safe) {
         await tx.predictionAuditLog.create({
