@@ -137,11 +137,7 @@ ${divider}
         ]),
         card("🔗 لینک اختصاصی شما", [link]),
       ]),
-      keyboard: [
-        [{ text: "📤 ارسال متن دعوت", url: shareUrl, tone: "success" }],
-        navRow({ text: "👥 دعوت‌شده‌ها", view: "referral.users" }, { text: "💎 پاداش‌ها", view: "referral.rewards", tone: "primary" }),
-        navRow({ text: "📜 قوانین دعوت", view: "referral.rules" }),
-      ],
+      keyboard: [[{ text: "📤 ارسال متن دعوت", url: shareUrl, tone: "success" }]],
     };
   });
 
