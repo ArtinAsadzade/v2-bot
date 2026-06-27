@@ -10,6 +10,7 @@ import {
 import { UserService } from "../../../modules/user/user.service";
 import { PredictionService, canSubmitPrediction } from "../../../modules/prediction/prediction.service";
 import { RewardService } from "../../../modules/reward/reward.service";
+import { productRewardAlreadyClaimedMessage, productRewardClaimKeyboard, productRewardFailedKeyboard, productRewardSuccessMessage } from "../../../modules/reward/reward-messages";
 import { prisma } from "../../../services/prisma";
 import { isAdminByTelegramId } from "../../middlewares/admin.middleware";
 
@@ -84,8 +85,8 @@ export function registerPredictionHandlers(bot: AppBot) {
       const result = await RewardService.claimPredictionReward(winnerId, String(ctx.from.id));
       if (result.rewardType === "product") {
         await ctx.reply(
-          result.alreadyClaimed ? "✅ این جایزه قبلاً دریافت و فعال شده است." : "🎁 جایزه شما با موفقیت فعال شد.",
-          Markup.inlineKeyboard([[Markup.button.callback("📦 سرویس‌های من", callbackFor("services"))], [Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))]]),
+          result.alreadyClaimed ? productRewardAlreadyClaimedMessage() : productRewardSuccessMessage(result.delivered!),
+          Markup.inlineKeyboard(productRewardClaimKeyboard),
         );
       } else {
         await ctx.reply(result.alreadyClaimed ? "✅ این جایزه قبلاً دریافت شده است." : "🎁 جایزه شما با موفقیت دریافت شد.", Markup.inlineKeyboard([[Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))]]));
@@ -93,7 +94,7 @@ export function registerPredictionHandlers(bot: AppBot) {
     } catch (error) {
       const message = error instanceof Error ? error.message : "❌ دریافت جایزه انجام نشد. لطفاً با پشتیبانی تماس بگیرید.";
       const keyboard = message.includes("فعال‌سازی سرویس نیاز به بررسی")
-        ? Markup.inlineKeyboard([[Markup.button.callback("🎫 پشتیبانی", callbackFor("support"))], [Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))]])
+        ? Markup.inlineKeyboard(productRewardFailedKeyboard)
         : undefined;
       await ctx.reply(message, keyboard);
     }
@@ -106,14 +107,15 @@ export function registerPredictionHandlers(bot: AppBot) {
       const result = await RewardService.claimPredictionReward(ctx.match[1], String(ctx.from.id));
       await ctx.reply(
         result.rewardType === "product"
-          ? (result.alreadyClaimed ? "✅ این جایزه قبلاً دریافت و فعال شده است." : "🎁 جایزه شما با موفقیت فعال شد.")
+          ? (result.alreadyClaimed ? productRewardAlreadyClaimedMessage() : productRewardSuccessMessage(result.delivered!))
           : (result.alreadyClaimed ? "✅ این جایزه قبلاً دریافت شده است." : "🎁 جایزه شما با موفقیت دریافت شد."),
+        result.rewardType === "product" ? Markup.inlineKeyboard(productRewardClaimKeyboard) : undefined,
       );
       await renderPanel(ctx, { id: "account.rewards" }, "replace");
     } catch (error) {
       const message = error instanceof Error ? error.message : "❌ دریافت جایزه انجام نشد. لطفاً با پشتیبانی تماس بگیرید.";
       const keyboard = message.includes("فعال‌سازی سرویس نیاز به بررسی")
-        ? Markup.inlineKeyboard([[Markup.button.callback("🎫 پشتیبانی", callbackFor("support"))], [Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))]])
+        ? Markup.inlineKeyboard(productRewardFailedKeyboard)
         : undefined;
       await ctx.reply(message, keyboard);
     }
