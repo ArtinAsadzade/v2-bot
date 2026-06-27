@@ -229,7 +229,9 @@ export function registerAccountViews() {
           `${uiIcons.dashboard} حجم: ${formatXrayBytes(client.trafficBytes, { unlimitedIfZero: true })}`,
         ]),
       );
-      keyboard.push([{ text: `🆓 اکانت تست ${client.clientEmail}`.slice(0, 60), action: callbackFor("account.xray", { xrayClientId: client.id }) }]);
+      keyboard.push([
+        { text: `🆓 ${client.clientEmail}`.slice(0, 60), action: callbackFor("account.xray", { xrayClientId: client.id }), tone: "primary" },
+      ]);
       index++;
     }
     for (const item of activeFreeAccounts) {
@@ -280,9 +282,10 @@ export function registerAccountViews() {
   registerView("services", async () => ({
     text: joinSections([card(labels.orders, ["بخش موردنظر سرویس‌ها را انتخاب کنید."])]),
     keyboard: [
-      navRow({ text: "✅ سرویس‌های فعال", view: "services.active", tone: "success" }, { text: "⛔ سرویس‌های منقضی", view: "services.expired" }),
-      navRow({ text: "♻️ تمدید سرویس", view: "services.renew", tone: "success" }, { text: "🛒 خرید سرویس جدید", view: "shop" }),
-      navRow({ text: "🛠 مشکل در سرویس", view: "services.issue", tone: "danger" }),
+      navRow({ text: "✅ سرویس‌های فعال", view: "services.active", tone: "success" }),
+      navRow({ text: "⛔ سرویس‌های منقضی", view: "services.expired", tone: "danger" }),
+      navRow({ text: "♻️ تمدید سرویس", view: "services.renew", tone: "success" }, { text: "🛒 خرید سرویس جدید", view: "shop", tone: "success" }),
+      navRow({ text: "🛠 مشکل در سرویس", view: "support.connection", tone: "danger" }),
     ],
   }));
   registerView("services.expired", async (ctx) => {
@@ -299,12 +302,6 @@ export function registerAccountViews() {
     };
   });
   registerView("services.renew", async (ctx, params) => renderRenewService(ctx, params));
-  registerView("services.issue", async () => ({
-    text: card("🛠 مشکل در سرویس", ["برای بررسی مشکل اتصال یا سرویس، مسیر پشتیبانی را انتخاب کنید."]),
-    keyboard: [
-      navRow({ text: "🆘 مشکل اتصال", view: "support.connection", tone: "danger" }, { text: "ارتباط با پشتیبانی", view: "support.contact" }),
-    ],
-  }));
   registerView("account.xray", async (ctx, params) => {
     const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
     if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
