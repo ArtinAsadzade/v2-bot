@@ -2,7 +2,6 @@ import { registerView } from "../navigation/panel-ui";
 import { UserService } from "../../modules/user/user.service";
 import { SupportService } from "../../modules/support/support.service";
 import { shortId } from "../../utils/formatters";
-import { navRow } from "../keyboards/panel-keyboard.helpers";
 import { card, joinSections, section } from "../ui/layout";
 import { statusLabels, userLabels } from "../ui/labels";
 import { uiIcons } from "../ui/icons";
@@ -30,12 +29,10 @@ export function registerSupportViews() {
         ]),
       ]),
       keyboard: [
-        navRow({ text: "✉️ ثبت تیکت جدید", view: "support.new" }),
-        navRow({ text: "📋 تیکت‌های من", view: "support.tickets" }, { text: "💬 گفتگو با پشتیبانی", view: "support.contact" }),
-        navRow(
-          { text: "💳 مشکل پرداخت", view: "support.payment", tone: "danger" },
-          { text: "📡 مشکل اتصال", view: "support.connection", tone: "danger" },
-        ),
+        [
+          { text: "✉️ ثبت تیکت جدید", action: "support:chat:start", tone: "success" },
+          { text: "📋 تیکت‌های من", view: "support.tickets" },
+        ],
       ],
     };
   });
@@ -52,26 +49,4 @@ export function registerSupportViews() {
       keyboard: tickets.slice(0, 5).map((ticket) => [{ text: `👁 تیکت #${shortId(ticket.id)}`, action: `support:chat:${ticket.id}` }]),
     };
   });
-  registerView("support.new", async () => ({
-    text: card("✉️ ثبت تیکت جدید", ["برای ارتباط با پشتیبانی، گفتگو را شروع کنید و پیام خود را ارسال کنید."]),
-    keyboard: [[{ text: "✉️ شروع گفتگو با پشتیبانی", action: "support:chat:start" }]],
-  }));
-
-  registerView("support.connection", async () => ({
-    text: card("📡 مشکل اتصال", [
-      "اگر سرویس شما وصل نمی‌شود، ابتدا اشتراک را به‌روزرسانی کنید.",
-      "اگر مشکل ادامه داشت، برای بررسی دقیق‌تر تیکت ثبت کنید.",
-    ]),
-    keyboard: [[{ text: "📡 ثبت تیکت مشکل اتصال", action: "support:chat:start" }]],
-  }));
-
-  registerView("support.payment", async () => ({
-    text: card("💳 مشکل پرداخت", ["برای پیگیری پرداخت، لطفاً رسید یا شناسه تراکنش را ارسال کنید."]),
-    keyboard: [[{ text: "💳 ثبت تیکت مشکل پرداخت", action: "support:chat:start" }]],
-  }));
-
-  registerView("support.contact", async () => ({
-    text: card("💬 ارتباط با پشتیبانی", ["پیام خود را ارسال کنید؛ پاسخ پشتیبانی در همین چت نمایش داده می‌شود."]),
-    keyboard: [[{ text: "💬 شروع گفتگو با پشتیبانی", action: "support:chat:start" }]],
-  }));
 }
