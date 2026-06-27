@@ -28,25 +28,7 @@ export function registerSupportViews() {
             .join("\n") || "هنوز تیکتی ثبت نشده است.",
         ]),
       ]),
-      keyboard: [
-        [
-          { text: "✉️ ثبت تیکت جدید", action: "support:chat:start", tone: "success" },
-          { text: "📋 تیکت‌های من", view: "support.tickets" },
-        ],
-      ],
-    };
-  });
-  registerView("support.tickets", async (ctx) => {
-    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-    if (!user) return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
-    const tickets = await SupportService.listUserTickets(user.id);
-    return {
-      text: card("📋 تیکت‌های من", [
-        tickets.length
-          ? tickets.map((ticket) => `#${shortId(ticket.id)} · ${ticket.status === "open" ? "باز" : "بسته"}`).join("\n")
-          : "تیکتی ثبت نشده است.",
-      ]),
-      keyboard: tickets.slice(0, 5).map((ticket) => [{ text: `👁 تیکت #${shortId(ticket.id)}`, action: `support:chat:${ticket.id}` }]),
+      keyboard: [[{ text: "✉️ ثبت تیکت جدید", action: "support:chat:start", tone: "success" }]],
     };
   });
 }
