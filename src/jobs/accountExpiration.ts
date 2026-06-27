@@ -37,7 +37,10 @@ export async function deactivateExpiredAccounts(batchSize = DEFAULT_BATCH_SIZE):
 
   try {
     await sendExpirationReminders().catch((error) => {
-      logger.warn("ACCOUNT_EXPIRATION_REMINDERS_FAILED", { event: "ACCOUNT_EXPIRATION_REMINDERS_FAILED", error: error instanceof Error ? error.message : String(error) });
+      logger.warn("ACCOUNT_EXPIRATION_REMINDERS_FAILED", {
+        event: "ACCOUNT_EXPIRATION_REMINDERS_FAILED",
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
 
     const freeResult = await FreeAccountService.expireDueAccounts().catch((error) => {
@@ -62,12 +65,22 @@ export async function deactivateExpiredAccounts(batchSize = DEFAULT_BATCH_SIZE):
           summary.expired += 1;
           if (result.kind === "manual") summary.manualExpired += 1;
           if (result.kind === "xray") summary.xrayExpired += 1;
-          logger.info("ACCOUNT_EXPIRATION_ITEM_EXPIRED", { event: "ACCOUNT_EXPIRATION_ITEM_EXPIRED", orderItemId: item.id, orderId: item.orderId, kind: result.kind });
+          logger.info("ACCOUNT_EXPIRATION_ITEM_EXPIRED", {
+            event: "ACCOUNT_EXPIRATION_ITEM_EXPIRED",
+            orderItemId: item.id,
+            orderId: item.orderId,
+            kind: result.kind,
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           summary.failed += 1;
           errors.push(message);
-          logger.error("ACCOUNT_EXPIRATION_ITEM_FAILED", { event: "ACCOUNT_EXPIRATION_ITEM_FAILED", orderItemId: item.id, orderId: item.orderId, error: message });
+          logger.error("ACCOUNT_EXPIRATION_ITEM_FAILED", {
+            event: "ACCOUNT_EXPIRATION_ITEM_FAILED",
+            orderItemId: item.id,
+            orderId: item.orderId,
+            error: message,
+          });
         }
       }
     }
@@ -98,30 +111,72 @@ async function findDueOrderItems(now: Date, take: number) {
 }
 
 async function expireOneOrderItem(item: DueOrderItem, now: Date): Promise<{ expired: boolean; kind: "manual" | "xray" | "order_item" }> {
-  return prisma.$transaction(async (tx) => {
-    const deactivated = await tx.orderItem.updateMany({ where: { id: item.id, isActive: true, expiresAt: { lte: now } }, data: { isActive: false } });
-    if (deactivated.count === 0) return { expired: false, kind: "order_item" as const };
+  return prisma.$transaction(
+    async (tx) => {
+      const deactivated = await tx.orderItem.updateMany({
+        where: { id: item.id, isActive: true, expiresAt: { lte: now } },
+        data: { isActive: false },
+      });
+      if (deactivated.count === 0) return { expired: false, kind: "order_item" as const };
 
-    if (item.productAccountId) {
-      const accountUpdate = await tx.productAccount.updateMany({ where: { id: item.productAccountId, status: "sold" }, data: { status: "expired" } });
-      if (accountUpdate.count > 0) {
-        const existingHistory = await tx.productAccountHistory.findFirst({ where: { accountId: item.productAccountId, action: "account.expire", metadata: { contains: item.id } }, select: { id: true } });
-        if (!existingHistory) {
-          await tx.productAccountHistory.create({ data: { accountId: item.productAccountId, actorId: "system", action: "account.expire", fromValue: "sold", toValue: "expired", metadata: JSON.stringify({ orderId: item.orderId, orderItemId: item.id, productId: item.productId, expiresAt: item.expiresAt }) } });
+      if (item.productAccountId) {
+        const accountUpdate = await tx.productAccount.updateMany({
+          where: { id: item.productAccountId, status: "sold" },
+          data: { status: "expired" },
+        });
+        if (accountUpdate.count > 0) {
+          const existingHistory = await tx.productAccountHistory.findFirst({
+            where: { accountId: item.productAccountId, action: "account.expire", metadata: { contains: item.id } },
+            select: { id: true },
+          });
+          if (!existingHistory) {
+            await tx.productAccountHistory.create({
+              data: {
+                accountId: item.productAccountId,
+                actorId: "system",
+                action: "account.expire",
+                fromValue: "sold",
+                toValue: "expired",
+                metadata: JSON.stringify({ orderId: item.orderId, orderItemId: item.id, productId: item.productId, expiresAt: item.expiresAt }),
+              },
+            });
+          }
         }
+        return { expired: true, kind: "manual" as const };
       }
-      return { expired: true, kind: "manual" as const };
-    }
 
-    if (item.xrayClientId) {
-      await tx.xrayClient.updateMany({ where: { id: item.xrayClientId, status: { in: ["creating", "provisioning", "active", "renewal_failed", "missing_on_panel"] } }, data: { status: "expired", lastError: null } });
-      await tx.auditLog.create({ data: { actorId: "system", action: "xray_client.expire", metadata: JSON.stringify({ orderId: item.orderId, orderItemId: item.id, productId: item.productId, xrayClientId: item.xrayClientId, expiresAt: item.expiresAt }) } });
-      return { expired: true, kind: "xray" as const };
-    }
+      if (item.xrayClientId) {
+        await tx.xrayClient.updateMany({
+          where: { id: item.xrayClientId, status: { in: ["creating", "provisioning", "active", "renewal_failed", "missing_on_panel"] } },
+          data: { status: "expired", lastError: null },
+        });
+        await tx.auditLog.create({
+          data: {
+            actorId: "system",
+            action: "xray_client.expire",
+            metadata: JSON.stringify({
+              orderId: item.orderId,
+              orderItemId: item.id,
+              productId: item.productId,
+              xrayClientId: item.xrayClientId,
+              expiresAt: item.expiresAt,
+            }),
+          },
+        });
+        return { expired: true, kind: "xray" as const };
+      }
 
-    await tx.auditLog.create({ data: { actorId: "system", action: "order_item.expire", metadata: JSON.stringify({ orderId: item.orderId, orderItemId: item.id, productId: item.productId, expiresAt: item.expiresAt }) } });
-    return { expired: true, kind: "order_item" as const };
-  }, { timeout: 15_000, maxWait: 5_000 });
+      await tx.auditLog.create({
+        data: {
+          actorId: "system",
+          action: "order_item.expire",
+          metadata: JSON.stringify({ orderId: item.orderId, orderItemId: item.id, productId: item.productId, expiresAt: item.expiresAt }),
+        },
+      });
+      return { expired: true, kind: "order_item" as const };
+    },
+    { timeout: 15_000, maxWait: 5_000 },
+  );
 }
 
 async function alertExpirationFailures(summary: AccountExpirationSummary, sampleError = "unknown", databaseFailure = false) {
@@ -155,16 +210,18 @@ async function sendExpirationReminders() {
       take: 100,
     });
     for (const item of items) {
-      const marker = await prisma.accountExpirationNotification.upsert({
-        where: { orderItemId_daysBefore: { orderItemId: item.id, daysBefore } },
-        update: {},
-        create: { orderItemId: item.id, daysBefore },
-      }).catch(() => undefined);
+      const marker = await prisma.accountExpirationNotification
+        .upsert({
+          where: { orderItemId_daysBefore: { orderItemId: item.id, daysBefore } },
+          update: {},
+          create: { orderItemId: item.id, daysBefore },
+        })
+        .catch(() => undefined);
       if (!marker) continue;
       const label = daysBefore === 0 ? "امروز" : `${daysBefore.toLocaleString("fa-IR")} روز دیگر`;
       await notificationService.notifyUser(item.order.userId, {
         text: `⏰ یادآوری تمدید\n\nسرویس ${item.product.title} ${label} منقضی می‌شود.`,
-        actions: [[{ text: "🔄 تمدید", callbackData: "nav:shop.categories" }]],
+        actions: [[{ text: "🔄 تمدید", callbackData: "nav:shop" }]],
       });
     }
   }

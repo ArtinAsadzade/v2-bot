@@ -8,7 +8,7 @@ export const homeKeyboard = (isAdmin: boolean): UiKeyboard => {
     navRow({ text: "📦 سرویس‌های من", view: "services", tone: "primary" }, { text: "💳 کیف پول", view: "wallet", tone: "primary" }),
     navRow({ text: "🎁 دعوت دوستان", view: "referral", tone: "success" }, { text: "🔮 پیش‌بینی", view: "prediction", tone: "success" }),
     navRow({ text: "🆘 پشتیبانی", view: "support", tone: "primary" }, { text: "👤 پروفایل", view: "account", tone: "primary" }),
-    navRow({ text: "📘 راهنما", view: "help" }),
+    navRow({ text: "📘 راهنما", view: "productGuide" }),
   ];
   if (isAdmin) keyboard.push(navRow({ text: "🛠 پنل مدیریت", view: "admin.dashboard", tone: "warning" }));
   return keyboard;

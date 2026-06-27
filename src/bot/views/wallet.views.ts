@@ -76,8 +76,8 @@ export function registerWalletViews() {
         section(sectionTitles.quickActions, ["روش شارژ یا گزارش مالی موردنظر را انتخاب کنید."]),
       ]),
       keyboard: [
-        navRow({ text: "💳 موجودی", view: "wallet.balance" }, { text: "➕ افزایش موجودی", view: "wallet.topup", tone: "success" }),
-        navRow({ text: "📜 تراکنش‌ها", view: "wallet.transactions" }, { text: "🧾 فاکتورها", view: "wallet.invoices" }),
+        navRow({ text: "➕ افزایش موجودی", view: "wallet.topup", tone: "success" }),
+        navRow({ text: "📜 تراکنش‌ها", view: "wallet.transactions" }, { text: "💳 موجودی", view: "wallet.balance" }),
       ],
     };
   });
@@ -119,9 +119,20 @@ export function registerWalletViews() {
     if (gateway.enabled) keyboard[0].push({ text: "⚡ پرداخت آنی", action: "flow:start:instant_topup" });
     return {
       text: joinSections([
-        card(`${uiIcons.wallet} شارژ کیف پول`, ["در مرحله بعد مبلغ شارژ را وارد می‌کنید."]),
-        section(sectionTitles.wallet, [gateway.enabled ? "پرداخت آنی و پرداخت با رمزارز فعال هستند." : "در حال حاضر پرداخت با رمزارز فعال است."]),
-        section(sectionTitles.dangerZone, ["موجودی فقط پس از تأیید نهایی پرداخت به کیف پول اضافه می‌شود."]),
+        card(`${uiIcons.wallet} شارژ کیف پول`, [
+          "💳 با شارژ کیف پول، خرید سرویس‌ها سریع‌تر و راحت‌تر انجام می‌شود.",
+          "",
+          "💰 در مرحله بعد فقط کافی است مبلغ موردنظر خود را وارد کنید.",
+        ]),
+        section(sectionTitles.wallet, [
+          gateway.enabled
+            ? "⚡ پرداخت آنی یا 💎 پرداخت با رمزارز را انتخاب کنید و کیف پول خود را در چند لحظه شارژ کنید."
+            : "💎 در حال حاضر امکان شارژ کیف پول از طریق پرداخت با رمزارز فراهم است.",
+        ]),
+        section(sectionTitles.dangerZone, [
+          "🔒 موجودی تنها پس از تأیید موفق پرداخت به کیف پول شما افزوده خواهد شد.",
+          "📞 اگر در روند پرداخت با مشکلی مواجه شدید، از طریق پشتیبانی با ما در ارتباط باشید.",
+        ]),
       ]),
       keyboard,
     };

@@ -35,47 +35,6 @@ const cleanOptionalText = (value?: string | null) => {
 export function registerProductViews() {
   registerView("shop", async () => {
     const categories = await ProductService.getCategories();
-    const totalProducts = categories.reduce((sum, category) => sum + category.products.length, 0);
-
-    return {
-      replyKeyboard: "shop",
-      text: joinSections([
-        card("🛒 فروشگاه نیمه‌شب", ["سرویس موردنیاز خود را انتخاب کنید.", "تمام سرویس‌ها پس از پرداخت به‌صورت خودکار تحویل داده می‌شوند."]),
-        card("📊 وضعیت فروشگاه", [`🗂 دسته‌بندی‌ها: ${toFa(categories.length)}`, `📦 سرویس‌های قابل خرید: ${toFa(totalProducts)}`]),
-      ]),
-      keyboard: [
-        navRow({ text: "📋 مشاهده همه سرویس‌ها", view: "shop.categories" }, { text: "⭐ سرویس‌های پیشنهادی", view: "shop.recommended" }),
-        [{ text: "🔎 جستجوی سرویس", action: "flow:start:product_search" }],
-      ],
-    };
-  });
-
-  registerView("shop.recommended", async () => {
-    const categories = await ProductService.getCategories();
-    const products = categories.flatMap((category) => category.products).slice(0, 6);
-
-    return {
-      replyKeyboard: "shop",
-      text: joinSections([
-        card("⭐ سرویس‌های پیشنهادی", [
-          products.length ? "چند سرویس پرکاربرد برای خرید سریع آماده شده است." : "فعلاً سرویس پیشنهادی برای نمایش وجود ندارد.",
-        ]),
-      ]),
-      keyboard: [
-        ...products.map((product) => [
-          {
-            text: productButtonText(product),
-            action: callbackFor("shop.product", { productId: product.id }),
-            tone: "primary" as const,
-          },
-        ]),
-        navRow({ text: "📋 مشاهده همه سرویس‌ها", view: "shop.categories" }),
-      ],
-    };
-  });
-
-  registerView("shop.categories", async () => {
-    const categories = await ProductService.getCategories();
 
     return {
       replyKeyboard: "shop",
@@ -86,7 +45,6 @@ export function registerProductViews() {
         section(sectionTitles.serviceSpecs, ["سرویس‌ها فعال، قابل خرید و آماده تحویل خودکار هستند."]),
       ]),
       keyboard: [
-        [{ text: "🔎 جستجوی سرویس", action: "flow:start:product_search" }],
         ...categories.map((category) => [
           {
             text: `📁 ${category.name} · ${toFa(category.products.length)} سرویس`,
@@ -104,7 +62,7 @@ export function registerProductViews() {
       return {
         replyKeyboard: "shop",
         text: errorMessage("دسته‌بندی پیدا نشد", "این دسته‌بندی در حال حاضر در دسترس نیست.", "لطفاً از لیست دسته‌بندی‌ها دوباره انتخاب کنید."),
-        keyboard: [navRow({ text: "🔙 دسته‌بندی‌ها", view: "shop.categories", tone: "neutral" })],
+        keyboard: [],
       };
     }
 
@@ -132,33 +90,6 @@ export function registerProductViews() {
           },
         ]),
         ...(products.length ? [] : [[{ text: "🔎 جستجوی سرویس", action: "flow:start:product_search", tone: "primary" as const }]]),
-        navRow({ text: "🔙 دسته‌بندی‌ها", view: "shop.categories", tone: "neutral" }),
-      ],
-    };
-  });
-
-  registerView("shop.searchResults", async (ctx, params) => {
-    const query = params.q || ctx.session.productSearchQuery || "";
-    const products = await ProductService.searchActiveProducts(query, 10);
-
-    return {
-      replyKeyboard: "shop",
-      text: joinSections([
-        card(`${uiIcons.info} نتیجه جستجو`, [
-          `عبارت جستجو: ${query || "—"}`,
-          products.length ? "از نتایج زیر یک سرویس را انتخاب کنید." : "موردی پیدا نشد. لطفاً با نام کوتاه‌تر سرویس یا دسته‌بندی دوباره جستجو کنید.",
-        ]),
-      ]),
-      keyboard: [
-        ...products.map((product) => [
-          {
-            text: productButtonText(product),
-            action: callbackFor("shop.product", { productId: product.id }),
-            tone: "primary" as const,
-          },
-        ]),
-        [{ text: "🔎 جستجوی جدید", action: "flow:start:product_search" }],
-        navRow({ text: "📋 مشاهده همه سرویس‌ها", view: "shop.categories" }),
       ],
     };
   });
@@ -170,7 +101,7 @@ export function registerProductViews() {
       return {
         replyKeyboard: "shop",
         text: errorMessage("محصول در دسترس نیست", "این سرویس در حال حاضر قابل خرید نیست یا غیرفعال شده است.", "لطفاً سرویس دیگری را انتخاب کنید."),
-        keyboard: [navRow({ text: "📋 مشاهده سرویس‌ها", view: "shop.categories" })],
+        keyboard: [navRow({ text: "📋 مشاهده سرویس‌ها", view: "shop" })],
       };
     }
 

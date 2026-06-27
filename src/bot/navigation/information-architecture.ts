@@ -29,16 +29,7 @@ export const USER_MODULE_ARCHITECTURE: ProductArea[] = [
     module: "Buy",
     goal: "I want to buy",
     entry: "shop",
-    screens: [
-      "shop",
-      "shop.categories",
-      "shop.recommended",
-      "shop.products",
-      "shop.product",
-      "shop.checkout",
-      "shop.searchResults",
-      "coupon.info",
-    ],
+    screens: ["shop", "shop", "shop.recommended", "shop.products", "shop.product", "shop.checkout", "shop.searchResults", "coupon.info"],
     searchable: ["shop.searchResults"],
   },
   {
@@ -65,15 +56,7 @@ export const USER_MODULE_ARCHITECTURE: ProductArea[] = [
     module: "Wallet",
     goal: "I want to recharge wallet",
     entry: "wallet",
-    screens: [
-      "wallet",
-      "wallet.balance",
-      "wallet.topup",
-      "wallet.transactions",
-      "wallet.invoices",
-      "wallet.history",
-      "deposit",
-    ],
+    screens: ["wallet", "wallet.balance", "wallet.topup", "wallet.transactions", "wallet.invoices", "wallet.history", "deposit"],
   },
   {
     domain: "user",
@@ -151,12 +134,7 @@ export const ADMIN_MODULE_ARCHITECTURE: ProductArea[] = [
       "admin.transactions",
       "admin.crypto",
     ],
-    searchable: [
-      "admin.products",
-      "admin.wallets",
-      "admin.invoices",
-      "admin.deposits",
-    ],
+    searchable: ["admin.products", "admin.wallets", "admin.invoices", "admin.deposits"],
   },
   {
     domain: "admin",
@@ -209,26 +187,14 @@ export const ADMIN_MODULE_ARCHITECTURE: ProductArea[] = [
     module: "Marketing",
     goal: "Manage broadcasts, announcements, campaigns, rewards, and guides",
     entry: "admin.content",
-    screens: [
-      "admin.content",
-      "admin.notifications",
-      "admin.productGuides",
-      "admin.referrals",
-      "admin.predictions",
-    ],
+    screens: ["admin.content", "admin.notifications", "admin.productGuides", "admin.referrals", "admin.predictions"],
   },
   {
     domain: "admin",
     module: "System",
     goal: "Manage settings, forced join, maintenance, logs, and monitoring",
     entry: "admin.botSettings",
-    screens: [
-      "admin.botSettings",
-      "admin.settings",
-      "admin.forcedJoin",
-      "admin.monitoring",
-      "admin.dashboard",
-    ],
+    screens: ["admin.botSettings", "admin.settings", "admin.forcedJoin", "admin.monitoring", "admin.dashboard"],
   },
 ];
 
@@ -243,9 +209,9 @@ export const NAVIGATION_GRAPH: NavigationEdge[] = [
     to: area.entry,
     label: area.module,
   })),
-  { from: "shop", to: "shop.categories", label: "browse catalog" },
+  { from: "shop", to: "shop", label: "browse catalog" },
   { from: "shop", to: "shop.searchResults", label: "search catalog" },
-  { from: "shop.categories", to: "shop.products", label: "category products" },
+  { from: "shop", to: "shop.products", label: "category products" },
   { from: "shop.products", to: "shop.product", label: "product details" },
   { from: "shop.product", to: "shop.checkout", label: "checkout" },
   { from: "services", to: "services.active", label: "active services" },
@@ -344,18 +310,14 @@ export const NAVIGATION_AUDIT = {
     "Referral, free test, and prediction rewards grouped under Rewards",
     "Broadcasts, product guides, and announcements grouped under Marketing",
   ],
-  deadEndsPolicy:
-    "Every module page must expose a domain parent or home navigation action.",
-  circularNavigationPolicy:
-    "Allowed loops are only explicit Back/Home returns; workflow forward paths remain acyclic.",
+  deadEndsPolicy: "Every module page must expose a domain parent or home navigation action.",
+  circularNavigationPolicy: "Allowed loops are only explicit Back/Home returns; workflow forward paths remain acyclic.",
   hiddenFeaturesSurfaced: [
     "Wallet top-up on home",
     "Search in large catalog/admin lists",
     "Xray clients from Xray Center",
     "Broadcasts from Marketing",
   ],
-  screensReorganizedCount: USER_MODULE_ARCHITECTURE.concat(
-    ADMIN_MODULE_ARCHITECTURE,
-  ).reduce((sum, area) => sum + area.screens.length, 0),
+  screensReorganizedCount: USER_MODULE_ARCHITECTURE.concat(ADMIN_MODULE_ARCHITECTURE).reduce((sum, area) => sum + area.screens.length, 0),
   navigationImprovementsCount: NAVIGATION_GRAPH.length,
 };

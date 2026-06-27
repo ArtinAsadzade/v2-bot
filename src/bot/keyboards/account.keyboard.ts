@@ -76,10 +76,6 @@ export function accountActionViewKeyboard(xrayClientId: string, options: { renew
         text: accountActionLabels.support,
         action: callbackFor("support"),
       },
-      {
-        text: accountActionLabels.home,
-        action: callbackFor("home"),
-      },
     ],
   ];
 }

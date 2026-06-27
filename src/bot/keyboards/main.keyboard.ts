@@ -6,7 +6,7 @@ type HomeButton = { text: string; action: string; tone?: ButtonTone };
 export function homeKeyboard(isAdmin = false) {
   const rows: HomeButton[][] = [
     [
-      { text: "🛒 خرید سرویس", action: callbackFor("shop.categories"), tone: "success" as const },
+      { text: "🛒 خرید سرویس", action: callbackFor("shop"), tone: "success" as const },
       { text: "🎁 دریافت تست", action: callbackFor("freeAccount"), tone: "success" as const },
     ],
     [

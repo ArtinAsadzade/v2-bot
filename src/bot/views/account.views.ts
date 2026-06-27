@@ -86,10 +86,13 @@ export function registerAccountViews() {
         section(sectionTitles.quickActions, ["از گزینه‌های زیر برای مدیریت حساب، کیف پول و سرویس‌های خود استفاده کنید."]),
       ]),
       keyboard: [
-        navRow({ text: "💰 کیف پول", view: "wallet" }, { text: "📦 سرویس‌های من", view: "services" }),
-        navRow({ text: "♻️ تمدید سرویس", view: "services.renew", tone: "success" }, { text: "🛒 خرید سرویس جدید", view: "shop" }),
-        navRow({ text: "🎁 جوایز من", view: "account.rewards", tone: "success" }, { text: "👤 اطلاعات حساب", view: "account.profile" }),
-        navRow({ text: "🧾 تاریخچه خرید", view: "account.history" }, { text: "🎫 پشتیبانی", view: "support" }),
+        navRow({ text: "👤 اطلاعات حساب", view: "account.profile" }, { text: "📦 سرویس‌های من", view: "services" }),
+        navRow(
+          { text: "♻️ تمدید سرویس", view: "services.renew", tone: "success" },
+          { text: "🎁 جوایز من", view: "account.rewards", tone: "success" },
+        ),
+        navRow({ text: "🧾 تاریخچه خرید", view: "account.history" }, { text: "💰 کیف پول", view: "wallet" }),
+        navRow({ text: "🛒 خرید سرویس جدید", view: "shop", tone: "success" }),
       ],
     };
   });
@@ -101,18 +104,24 @@ export function registerAccountViews() {
     const available = rewards.filter((reward) => reward.status === "available");
     const claimed = rewards.filter((reward) => reward.status === "claimed");
     const needsReview = rewards.filter((reward) => reward.status === "failed" || reward.status === "manual_review");
-    const sourceLabel = (reward: UserRewardDto) => reward.source === "prediction" ? "🔮 پیش‌بینی" : reward.source === "referral" ? "🎁 دعوت دوستان" : "🎁 جایزه";
-    const valueLabel = (reward: UserRewardDto) => reward.rewardType === "wallet" ? `💰 ${money(reward.walletAmount ?? 0)}` : `📦 ${reward.productTitle ?? "محصول جایزه"}`;
-    const lines = rewards.slice(0, 10).map((reward, index) =>
-      card(`${(index + 1).toLocaleString("fa-IR")}. ${reward.title}`, [
-        `منبع: ${sourceLabel(reward)}`,
-        `ارزش: ${valueLabel(reward)}`,
-        `وضعیت: ${REWARD_STATUS_LABELS[reward.status]}`,
-        `تاریخ ایجاد: ${reward.createdAt.toLocaleDateString("fa-IR")}`,
-        reward.claimedAt ? `تاریخ دریافت: ${reward.claimedAt.toLocaleDateString("fa-IR")}` : undefined,
-      ]),
-    );
-    const claimRows: UiKeyboard = available.slice(0, 8).map((reward) => [{ text: `🎁 دریافت جایزه: ${reward.title}`.slice(0, 60), action: reward.claimAction ?? "reward:noop", tone: "success" }]);
+    const sourceLabel = (reward: UserRewardDto) =>
+      reward.source === "prediction" ? "🔮 پیش‌بینی" : reward.source === "referral" ? "🎁 دعوت دوستان" : "🎁 جایزه";
+    const valueLabel = (reward: UserRewardDto) =>
+      reward.rewardType === "wallet" ? `💰 ${money(reward.walletAmount ?? 0)}` : `📦 ${reward.productTitle ?? "محصول جایزه"}`;
+    const lines = rewards
+      .slice(0, 10)
+      .map((reward, index) =>
+        card(`${(index + 1).toLocaleString("fa-IR")}. ${reward.title}`, [
+          `منبع: ${sourceLabel(reward)}`,
+          `ارزش: ${valueLabel(reward)}`,
+          `وضعیت: ${REWARD_STATUS_LABELS[reward.status]}`,
+          `تاریخ ایجاد: ${reward.createdAt.toLocaleDateString("fa-IR")}`,
+          reward.claimedAt ? `تاریخ دریافت: ${reward.claimedAt.toLocaleDateString("fa-IR")}` : undefined,
+        ]),
+      );
+    const claimRows: UiKeyboard = available
+      .slice(0, 8)
+      .map((reward) => [{ text: `🎁 دریافت جایزه: ${reward.title}`.slice(0, 60), action: reward.claimAction ?? "reward:noop", tone: "success" }]);
     return {
       replyKeyboard: "profile",
       text: joinSections([
@@ -125,8 +134,10 @@ export function registerAccountViews() {
       ]),
       keyboard: [
         ...claimRows,
-        navRow({ text: "🔮 شرکت در پیش‌بینی‌ها", view: "prediction", tone: "primary" }, { text: "🎁 دعوت دوستان", view: "referral", tone: "success" }),
-        navRow({ text: "🔙 حساب کاربری", view: "account", tone: "neutral" }, { text: "🏠 خانه", view: "home", tone: "neutral" }),
+        navRow(
+          { text: "🔮 شرکت در پیش‌بینی‌ها", view: "prediction", tone: "primary" },
+          { text: "🎁 دعوت دوستان", view: "referral", tone: "success" },
+        ),
       ],
     };
   });
@@ -155,9 +166,12 @@ export function registerAccountViews() {
         ]),
       ]),
       keyboard: [
-        navRow({ text: "💰 کیف پول", view: "wallet" }, { text: "📦 سرویس‌های من", view: "services" }),
-        navRow({ text: "🎁 جوایز من", view: "account.rewards", tone: "success" }, { text: "🧾 تاریخچه خرید", view: "account.history" }),
-        navRow({ text: "🎫 پشتیبانی", view: "support" }),
+        navRow({ text: "💰 کیف پول", view: "wallet", tone: "primary" }, { text: "📦 سرویس‌های من", view: "services", tone: "primary" }),
+        navRow(
+          { text: "🎁 جوایز من", view: "account.rewards", tone: "success" },
+          { text: "🧾 تاریخچه خرید", view: "account.history", tone: "success" },
+        ),
+        navRow({ text: "🎫 پشتیبانی", view: "support", tone: "warning" }),
       ],
     };
   });
@@ -301,12 +315,7 @@ export function registerAccountViews() {
       if (!exists.exists)
         return {
           text: "این سرویس در پنل فعال نیست و از لیست سرویس‌های فعال حذف شد.",
-          keyboard: [
-            [
-              { text: "🔙 بازگشت", action: callbackFor("services") },
-              { text: "🎫 پشتیبانی", action: callbackFor("support") },
-            ],
-          ],
+          keyboard: [[{ text: "🎫 پشتیبانی", action: callbackFor("support") }]],
         };
     } catch {
       warning = "\n\n⚠️ اطلاعات لحظه‌ای پنل در دسترس نیست؛ اطلاعات ذخیره‌شده نمایش داده شد.";
@@ -329,7 +338,7 @@ export function registerAccountViews() {
     const status = client.expiresAt <= new Date() ? "منقضی شده ⛔" : normalizeXrayStatus(client.status);
     // Callback compatibility is provided by accountActionViewKeyboard: xray:sub:${client.id} / xray:configs:${client.id}
     return {
-      text: `🧩 سرویس Xray\n\n📦 سرویس:\n${client.isFreeTest ? "🆓 اکانت تست" : (client.product?.title ?? "سرویس Xray")}\n\n👤 شناسه:\n${client.clientEmail}\n\n📊 حجم:\n${formatXrayBytes(snap.usedBytes)} / ${formatXrayBytes(snap.totalBytes, { unlimitedIfZero: true })}\n\n📉 باقی‌مانده:\n${formatXrayBytes(snap.remainingBytes, { unlimitedIfZero: snap.totalBytes === 0n })}\n\n⏳ اعتبار:\n${client.expiresAt.toLocaleDateString("fa-IR")}\n${days.toLocaleString("fa-IR")} روز باقی‌مانده\n\n📌 وضعیت:\n${status}${warning}`,
+      text: `🧩 سرویس\n\n📦 سرویس:\n${client.isFreeTest ? "🆓 اکانت تست" : (client.product?.title ?? "سرویس Xray")}\n\n👤 شناسه:\n${client.clientEmail}\n\n📊 حجم:\n${formatXrayBytes(snap.usedBytes)} / ${formatXrayBytes(snap.totalBytes, { unlimitedIfZero: true })}\n\n📉 باقی‌مانده:\n${formatXrayBytes(snap.remainingBytes, { unlimitedIfZero: snap.totalBytes === 0n })}\n\n⏳ اعتبار:\n${client.expiresAt.toLocaleDateString("fa-IR")}\n${days.toLocaleString("fa-IR")} روز باقی‌مانده\n\n📌 وضعیت:\n${status}${warning}`,
       keyboard: accountActionViewKeyboard(client.id, { renewable: !client.isFreeTest }),
     };
   });
@@ -357,7 +366,7 @@ export function registerAccountViews() {
           ]),
           [
             { text: "🧩 سرویس‌های من", action: callbackFor("services") },
-            { text: "🛒 خرید سرویس", action: callbackFor("shop.categories") },
+            { text: "🛒 خرید سرویس", action: callbackFor("shop") },
           ],
           [{ text: userLabels.home, action: callbackFor("home") }],
         ],
@@ -371,7 +380,7 @@ export function registerAccountViews() {
     if (!client)
       return {
         text: "این سرویس برای تمدید پیدا نشد.",
-        keyboard: [[{ text: "🔙 بازگشت", action: callbackFor("services") }]],
+        keyboard: [],
         navigation: { back: false, home: false },
       };
     const currentProductTitle = client.product?.title ?? "سرویس Xray";
@@ -402,11 +411,7 @@ ${currentProductTitle}
 ${client.clientEmail}
 
 در حال حاضر پلنی برای تمدید موجود نیست.`,
-        keyboard: [
-          [{ text: "🛒 فروشگاه", action: callbackFor("shop.categories") }],
-          [{ text: "🎫 پشتیبانی", action: callbackFor("support") }],
-          [{ text: "🔙 بازگشت", action: callbackFor("account.xray", { xrayClientId: client.id }) }],
-        ],
+        keyboard: [[{ text: "🛒 فروشگاه", action: callbackFor("shop") }], [{ text: "🎫 پشتیبانی", action: callbackFor("support") }]],
         navigation: { back: false, home: false },
       };
     }
@@ -420,7 +425,7 @@ ${currentProductTitle}
 ${client.clientEmail}
 
 لطفاً پلن تمدید را انتخاب کنید:`,
-      keyboard: [...rows, [{ text: "🔙 بازگشت", action: callbackFor("account.xray", { xrayClientId: client.id }) }]],
+      keyboard: [...rows],
       navigation: { back: false, home: false },
     };
   };
@@ -435,7 +440,7 @@ ${client.clientEmail}
     if (!client)
       return {
         text: "این سرویس برای تمدید پیدا نشد.",
-        keyboard: [[{ text: "🔙 بازگشت", action: callbackFor("services") }]],
+        keyboard: [],
         navigation: { back: false, home: false },
       };
     const currentProductTitle = client.product?.title ?? "سرویس Xray";
@@ -451,11 +456,7 @@ ${currentProductTitle}
 ${client.clientEmail}
 
 در حال حاضر پلنی برای تمدید موجود نیست.`,
-        keyboard: [
-          [{ text: "🛒 فروشگاه", action: callbackFor("shop.categories") }],
-          [{ text: "🎫 پشتیبانی", action: callbackFor("support") }],
-          [{ text: "🔙 بازگشت", action: callbackFor("services.renew", { xrayClientId: client.id }) }],
-        ],
+        keyboard: [[{ text: "🛒 فروشگاه", action: callbackFor("shop") }], [{ text: "🎫 پشتیبانی", action: callbackFor("support") }]],
         navigation: { back: false, home: false },
       };
     }
@@ -473,7 +474,6 @@ ${client.clientEmail}
         ...available.map((p) => [
           { text: p.title, action: tokenAction("xr:r:s", createCallbackToken(ctx, "renewal", { xrayClientId: client.id, productId: p.id })) },
         ]),
-        [{ text: "🔙 بازگشت", action: callbackFor("services.renew", { xrayClientId: client.id }) }],
       ],
       navigation: { back: false, home: false },
     };
@@ -536,12 +536,6 @@ ${money(quote.product.price)}${quote.liveOk ? "" : "\n\n⚠️ اطلاعات ل
             action: tokenAction("xr:r:i", createCallbackToken(ctx, "renewal", { xrayClientId: quote.client.id, productId: quote.product.id })),
           },
         ],
-        [
-          {
-            text: "🔙 بازگشت",
-            action: callbackFor("account.renew.products", { xrayClientId: quote.client.id, categoryId: quote.product.categoryId }),
-          },
-        ],
       ],
       navigation: { back: false, home: false },
     };
@@ -552,7 +546,7 @@ ${money(quote.product.price)}${quote.liveOk ? "" : "\n\n⚠️ اطلاعات ل
     const dashboard = await UserService.dashboard(user.id);
     return {
       text: `🧾 تاریخچه خرید\n\n${dashboard.recentOrders.map((order) => `• #${shortId(order.id)} · ${order.product.title}\n  مبلغ: ${money(order.finalPaidAmount)} · تاریخ: ${order.createdAt.toLocaleDateString("fa-IR")}`).join("\n") || "هنوز خریدی ثبت نشده است."}\n\n⏳ اکانت‌های منقضی‌شده: ${dashboard.expiredAccounts.length.toLocaleString("fa-IR")}`,
-      keyboard: [[{ text: "🛒 خرید جدید", action: callbackFor("shop.categories") }]],
+      keyboard: [[{ text: "🛒 خرید جدید", action: callbackFor("shop") }]],
     };
   });
 }

@@ -27,7 +27,7 @@ const statusFa: Record<string, string> = {
 };
 
 export function registerPredictionViews() {
-  const navigationRows: UiKeyboard = [[{ text: "📂 در انتظار نتیجه", action: callbackFor("prediction.waiting"), tone: "neutral" }, { text: "🏁 نتایج اعلام‌شده", action: callbackFor("prediction.results"), tone: "neutral" }], [{ text: "🎯 پیش‌بینی‌های من", action: callbackFor("prediction.history"), tone: "neutral" }, { text: "📜 آرشیو", action: callbackFor("prediction.archive"), tone: "neutral" }]];
+  const navigationRows: UiKeyboard = [[{ text: "🎯 پیش‌بینی‌های من", action: callbackFor("prediction.history"), tone: "neutral" }]];
   const contestRows = (contests: any[], tone: "primary" | "success" = "primary"): UiKeyboard =>
     contests.map((c: any) => [{ text: c.title, action: callbackFor("prediction.detail", { contestId: c.id }), tone }]);
 
@@ -53,49 +53,6 @@ export function registerPredictionViews() {
         card("ناوبری", ["برای مرور وضعیت‌های دیگر از دکمه‌های زیر استفاده کنید."]),
       ]),
       keyboard: [...contestRows(contests, "primary"), ...navigationRows],
-    };
-  });
-
-  registerView("prediction.waiting", async () => {
-    const now = new Date();
-    const contests = await PredictionService.getWaitingResultPredictions(
-      {
-        orderBy: { closesAt: "desc" },
-        take: 20,
-        include: { _count: { select: { entries: true } } },
-      },
-      now,
-    );
-    return {
-      text: card(
-        "📂 در انتظار نتیجه",
-        contests.length
-          ? contests.map(
-              (c: any) =>
-                `• ${c.title} · ⏳ در انتظار اعلام نتیجه · جایزه: ${PredictionService.rewardLabel(c)} · شرکت‌کننده: ${(c._count?.entries ?? 0).toLocaleString("fa-IR")}`,
-            )
-          : ["پیش‌بینی در انتظار نتیجه وجود ندارد."],
-      ),
-      keyboard: [...contestRows(contests)],
-    };
-  });
-
-  registerView("prediction.results", async () => {
-    const contests = await PredictionService.getAnnouncedPredictions({
-      orderBy: { updatedAt: "desc" },
-      take: 20,
-      include: { resultOption: true, _count: { select: { entries: true } } },
-    });
-    return {
-      text: card(
-        "🏁 نتایج اعلام‌شده",
-        contests.length
-          ? contests.map(
-              (c: any) => `• ${c.title} · ${predictionDisplayStatusFa[getPredictionDisplayStatus(c)]} · نتیجه: ${c.resultOption?.title ?? "ثبت‌شده"}`,
-            )
-          : ["نتیجه‌ای برای نمایش وجود ندارد."],
-      ),
-      keyboard: [...contestRows(contests)],
     };
   });
 
@@ -144,11 +101,6 @@ export function registerPredictionViews() {
     };
   });
 
-
-  registerView("prediction.archive", async () => {
-    return { text: card("📜 آرشیو", ["آرشیو پیش‌بینی برای کاربران در دسترس نیست."]), keyboard: [] };
-  });
-
   registerView("prediction.detail", async (ctx, params) => {
     const user = ctx.from ? await UserService.findOrCreateUser(ctx) : undefined;
     const contest = await db.predictionContest.findUnique({
@@ -161,15 +113,7 @@ export function registerPredictionViews() {
     if (!contest || contest.status === "deleted" || contest.status === "archived")
       return {
         text: "❌ این پیش‌بینی در دسترس نیست.",
-        keyboard: [
-          [
-            {
-              text: "🔙 بازگشت",
-              action: callbackFor("prediction"),
-              tone: "neutral",
-            },
-          ],
-        ],
+        keyboard: [],
       };
     const [entry, rewardProduct] = await Promise.all([
       user
@@ -462,7 +406,6 @@ export function registerPredictionViews() {
     };
   });
 
-
   registerView("admin.predictionWinners", async (_ctx, params) => {
     const p = await PredictionService.getWinnerSelectionPreview(params.contestId);
     const fa = (n: number) => Number(n ?? 0).toLocaleString("fa-IR");
@@ -476,16 +419,35 @@ export function registerPredictionViews() {
       `وضعیت اعلام نتایج: ${p.announced ? "اعلام شده" : "اعلام نشده"}`,
     ];
     if (p.winners.length) {
-      lines.push("", "برنده‌ها:", ...p.winners.map((w: any) => `• ${w.telegramId} · ${w.entry?.option?.title ?? "گزینه"} · ${statusFa[w.status] ?? w.status}`));
+      lines.push(
+        "",
+        "برنده‌ها:",
+        ...p.winners.map((w: any) => `• ${w.telegramId} · ${w.entry?.option?.title ?? "گزینه"} · ${statusFa[w.status] ?? w.status}`),
+      );
     } else if (p.reason === "no_participants") lines.push("", "هیچ کاربری در این پیش‌بینی شرکت نکرده است.");
     else if (p.reason === "no_correct") lines.push("", "هیچ پیش‌بینی درستی ثبت نشده است.");
-    else if (p.reason === "fewer_correct_than_winner_count") lines.push("", "تعداد پیش‌بینی‌های درست کمتر از تعداد برنده‌های تنظیم‌شده است؛ همه کاربران با پیش‌بینی درست به عنوان برنده انتخاب شدند.");
+    else if (p.reason === "fewer_correct_than_winner_count")
+      lines.push("", "تعداد پیش‌بینی‌های درست کمتر از تعداد برنده‌های تنظیم‌شده است؛ همه کاربران با پیش‌بینی درست به عنوان برنده انتخاب شدند.");
     const keyboard: UiKeyboard = [];
-    if (!p.resultSet) keyboard.push([{ text: "🏁 ثبت نتیجه", action: callbackFor("admin.predictionResult", { contestId: params.contestId }), tone: "primary" }]);
-    else if (p.totalParticipants === 0) keyboard.push([{ text: "📣 پایان بدون برنده", action: actionFor("ap:ann", params.contestId), tone: "success" }]);
-    else if (p.correctPredictions === 0) keyboard.push([{ text: "📣 اطلاع‌رسانی بدون برنده", action: actionFor("ap:ann", params.contestId), tone: "success" }], [{ text: "📊 آمار", action: callbackFor("admin.predictionStats", { contestId: params.contestId }), tone: "primary" }]);
-    else if (p.selectedWinners > 0) keyboard.push([{ text: "📣 اعلام نتایج", action: actionFor("ap:ann", params.contestId), tone: "success" }], [{ text: "👥 لیست برنده‌ها", action: callbackFor("admin.predictionParticipants", { contestId: params.contestId }), tone: "primary" }]);
-    else keyboard.push([{ text: "🏆 انتخاب برنده‌ها", action: actionFor("ap:win", params.contestId), tone: "success" }], [{ text: "📊 آمار", action: callbackFor("admin.predictionStats", { contestId: params.contestId }), tone: "primary" }]);
+    if (!p.resultSet)
+      keyboard.push([{ text: "🏁 ثبت نتیجه", action: callbackFor("admin.predictionResult", { contestId: params.contestId }), tone: "primary" }]);
+    else if (p.totalParticipants === 0)
+      keyboard.push([{ text: "📣 پایان بدون برنده", action: actionFor("ap:ann", params.contestId), tone: "success" }]);
+    else if (p.correctPredictions === 0)
+      keyboard.push(
+        [{ text: "📣 اطلاع‌رسانی بدون برنده", action: actionFor("ap:ann", params.contestId), tone: "success" }],
+        [{ text: "📊 آمار", action: callbackFor("admin.predictionStats", { contestId: params.contestId }), tone: "primary" }],
+      );
+    else if (p.selectedWinners > 0)
+      keyboard.push(
+        [{ text: "📣 اعلام نتایج", action: actionFor("ap:ann", params.contestId), tone: "success" }],
+        [{ text: "👥 لیست برنده‌ها", action: callbackFor("admin.predictionParticipants", { contestId: params.contestId }), tone: "primary" }],
+      );
+    else
+      keyboard.push(
+        [{ text: "🏆 انتخاب برنده‌ها", action: actionFor("ap:win", params.contestId), tone: "success" }],
+        [{ text: "📊 آمار", action: callbackFor("admin.predictionStats", { contestId: params.contestId }), tone: "primary" }],
+      );
     keyboard.push([{ text: "🔙 بازگشت", action: callbackFor("admin.predictionDetail", { contestId: params.contestId }), tone: "neutral" }]);
     return { text: joinSections([card("🏆 انتخاب برنده‌ها", lines)]), keyboard };
   });

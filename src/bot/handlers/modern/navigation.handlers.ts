@@ -25,10 +25,23 @@ import { quickReplyTarget } from "../../keyboards/reply.keyboard";
 import { InvoiceActionKeyboard } from "../../keyboards/design-system";
 import { supportCloseHomeInlineKeyboard } from "../../keyboards/common.keyboard";
 import { xraySubscriptionKeyboard, xrayConfigsSentKeyboard, xrayRenewedKeyboard, xrayRenewalInvoiceKeyboard } from "../../keyboards/account.keyboard";
-import { accountHomeInlineKeyboard, expiredCheckoutRecoveryKeyboard, pendingInvoiceRecoveryKeyboard, processingPurchaseRecoveryKeyboard, standardPurchaseDeliveryKeyboard, xrayPurchaseDeliveryKeyboard } from "../../keyboards/purchase.keyboard";
+import {
+  accountHomeInlineKeyboard,
+  expiredCheckoutRecoveryKeyboard,
+  pendingInvoiceRecoveryKeyboard,
+  processingPurchaseRecoveryKeyboard,
+  standardPurchaseDeliveryKeyboard,
+  xrayPurchaseDeliveryKeyboard,
+} from "../../keyboards/purchase.keyboard";
 import { buyCallbacks, nav, xrayCallbacks } from "../../callbacks";
 import { pendingInvoiceExistsMessage, previousPurchaseProcessingMessage, unauthorizedMessage } from "../../messages/purchase.messages";
-import { serviceNotFoundMessage, xrayConfigsSentMessage, xrayRenewalInvoiceMessage, xrayRenewedMessage, xraySubscriptionMessage } from "../../messages/account.messages";
+import {
+  serviceNotFoundMessage,
+  xrayConfigsSentMessage,
+  xrayRenewalInvoiceMessage,
+  xrayRenewedMessage,
+  xraySubscriptionMessage,
+} from "../../messages/account.messages";
 import { adminOnlyCommandMessage, publicPlansDisabledInGroupsMessage } from "../../messages/common.messages";
 import { couponApplyFromProductMessage, couponRemovedMessage } from "../../messages/coupon.messages";
 import { purchaseSuccessMessage } from "../../../utils/messages";
@@ -37,7 +50,6 @@ import { ProductGuideService } from "../../../modules/system/product-guide.servi
 import { PublicPlansService } from "../../../modules/product/public-plans.service";
 import { XrayClientService, XrayPanelService, xrayInboundSnapshot } from "../../../modules/xray/xray.service";
 import { prisma } from "../../../services/prisma";
-
 
 export function registerNavigationHandlers(bot: AppBot) {
   registerFlowEngine(bot);
@@ -90,7 +102,7 @@ export function registerNavigationHandlers(bot: AppBot) {
   // Temporary compatibility redirects for old inline buttons. New visible buttons must use callbackFor()/nav:* actions.
   const legacyViews = new Map<string, Parameters<typeof renderPanel>[1]>([
     ["home", { id: "home" }],
-    ["shop", { id: "shop.categories" }],
+    ["shop", { id: "shop" }],
     ["wallet", { id: "wallet" }],
     ["deposit", { id: "deposit" }],
     ["support", { id: "support" }],
@@ -130,7 +142,6 @@ export function registerNavigationHandlers(bot: AppBot) {
     await ctx.answerCbQuery("لغو شد");
     await renderPanel(ctx, { id: "home" }, "replace");
   });
-
 
   bot.action(/^nav:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery().catch(() => undefined);

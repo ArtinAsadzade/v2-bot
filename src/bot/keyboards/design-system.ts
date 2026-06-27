@@ -188,7 +188,7 @@ export function paymentSuccessKeyboard(_type: "wallet" | "product") {
   return buildInlineKeyboard([
     [
       { text: labels.orders, action: callbackFor("account.details"), tone: "success" },
-      { text: labels.buyAgain, action: callbackFor("shop.categories"), tone: "primary" },
+      { text: labels.buyAgain, action: callbackFor("shop"), tone: "primary" },
     ],
     [{ text: labels.home, action: callbackFor("home") }],
   ]);
@@ -205,9 +205,9 @@ export function paymentFailureKeyboard() {
 }
 
 export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record<string, string> } | "refresh" | "claimFree" | "newTicket"> = {
-  ["🛒 خرید سرویس"]: { id: "shop.categories" },
-  [labels.shop]: { id: "shop.categories" },
-  [labels.buyAgain]: { id: "shop.categories" },
+  ["🛒 خرید سرویس"]: { id: "shop" },
+  [labels.shop]: { id: "shop" },
+  [labels.buyAgain]: { id: "shop" },
   [labels.orders]: { id: "account.details" },
   "♻️ تمدید سرویس": { id: "account.renew" },
   [labels.account]: { id: "account" },
@@ -231,7 +231,7 @@ export const quickReplyRoutes: Record<string, { id: PanelViewId; params?: Record
   "➕ شارژ حساب": { id: "deposit" },
   [labels.transactions]: { id: "wallet.history" },
   "💳 تراکنش‌ها": { id: "wallet.history" },
-  [labels.instantPayment]: { id: "shop.categories" },
+  [labels.instantPayment]: { id: "shop" },
   "➕ تیکت جدید": "newTicket",
   "📂 تیکت‌های من": { id: "support" },
   "🎁 دریافت اکانت تست": "claimFree",

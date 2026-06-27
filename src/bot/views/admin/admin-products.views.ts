@@ -204,10 +204,6 @@ ${inboundSnapshot.length ? inboundSnapshot.map((i) => `• ${i.remark ?? `inboun
           ],
           [{ text: "🧪 تست ساخت سرویس", action: `admin:xray:refresh:${detail.product.id}` }],
           [{ text: "🗑 آرشیو محصول", action: `admin:product:delete:${detail.product.id}` }],
-          [
-            { text: "🔙 محصولات", action: callbackFor("admin.products") },
-            { text: "🛍 فروشگاه", action: callbackFor("admin.store") },
-          ],
         ],
       };
     }
@@ -242,10 +238,6 @@ ${inboundSnapshot.length ? inboundSnapshot.map((i) => `• ${i.remark ?? `inboun
           },
         ],
         [{ text: "🗑 آرشیو محصول", action: `admin:product:delete:${detail.product.id}` }],
-        [
-          { text: "🔙 محصولات", action: callbackFor("admin.products") },
-          { text: "🛍 فروشگاه", action: callbackFor("admin.store") },
-        ],
       ],
     };
   });
@@ -303,7 +295,6 @@ ${snapshot.map((i: any) => `• ${i.remark ?? i.tag ?? i.id} / ${i.protocol ?? "
           { text: cfg.enabled ? "🚫 غیرفعال‌سازی" : "✅ فعال‌سازی", action: `admin:free_test:enabled:${cfg.enabled ? "0" : "1"}` },
           { text: "🔄 بروزرسانی اینباندها", action: "admin:xray_picker:inbounds:free_test" },
         ],
-        [{ text: "🔙 بازگشت به فروشگاه", action: callbackFor("admin.store") }],
       ],
     };
   });

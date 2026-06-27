@@ -13,7 +13,7 @@ export const CallbackAction = {
 
 export const nav = {
   home: () => callbackFor("home"),
-  shopCategories: () => callbackFor("shop.categories"),
+  shopCategories: () => callbackFor("shop"),
   productGuide: () => callbackFor("productGuide"),
   product: (productId: string) => callbackFor("shop.product", { productId }),
   checkout: (productId: string) => callbackFor("shop.checkout", { productId }),

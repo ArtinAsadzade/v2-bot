@@ -31,10 +31,9 @@ export function accountListViewKeyboard(rows: UiKeyboard): UiKeyboard {
   return [
     ...rows,
     [
-      { text: userLabels.buyService, action: callbackFor("shop.categories"), tone: "success" as const },
+      { text: userLabels.buyService, action: callbackFor("shop"), tone: "success" as const },
       { text: userLabels.support, action: callbackFor("support"), tone: "primary" as const },
     ],
-    [{ text: actionLabels.home, action: callbackFor("home"), tone: "neutral" as const }],
   ];
 }
 
