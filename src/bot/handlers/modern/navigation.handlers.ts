@@ -1,103 +1,11 @@
-import type { AppBot, AppContext } from "../../../types/bot";
-import { registerModernViews } from "../../views/modern.views";
-import { goBack, parseNavAction, renderPanel, callbackFor, actionFor, RenderMode } from "../../navigation/panel-ui";
-import { createCallbackToken, resolveCallbackToken, tokenAction } from "../../navigation/callback-tokens";
-import { registerFlowEngine, handleActiveFlowPhoto, handleActiveFlowText, startFlow } from "../../flows/flow-engine";
-import { UserService } from "../../../modules/user/user.service";
-import { ReferralService } from "../../../modules/referral/referral.service";
-import { PurchaseService } from "../../../modules/product/purchase.service";
-import { ProductService } from "../../../modules/product/product.service";
-import { CryptoWalletService, DepositService } from "../../../modules/deposit/deposit.service";
-import { AdminService } from "../../../modules/admin/admin.service";
-import { CouponService } from "../../../modules/coupon/coupon.service";
-import { SupportService } from "../../../modules/support/support.service";
-import {
-  FreeAccountError,
-  FreeAccountService,
-  FREE_ACCOUNT_STATUS_LABELS,
-  formatFreeAccountError,
-  formatFreeAccountDate,
-  freeAccountExpiresAt,
-} from "../../../modules/free-account/free-account.service";
-import { PaymentGatewayService, PaymentInvoiceService } from "../../../modules/payment/payment.service";
+import type { AppBot } from "../../../types/bot";
+import { goBack, parseNavAction, renderPanel, RenderMode } from "../../navigation/panel-ui";
+import { registerFlowEngine, handleActiveFlowPhoto } from "../../flows/flow-engine";
 import { isAdminByTelegramId } from "../../middlewares/admin.middleware";
-import { quickReplyTarget } from "../../keyboards/reply.keyboard";
-import { InvoiceActionKeyboard } from "../../keyboards/design-system";
-import { supportCloseHomeInlineKeyboard } from "../../keyboards/common.keyboard";
-import { xraySubscriptionKeyboard, xrayConfigsSentKeyboard, xrayRenewedKeyboard, xrayRenewalInvoiceKeyboard } from "../../keyboards/account.keyboard";
-import {
-  accountHomeInlineKeyboard,
-  expiredCheckoutRecoveryKeyboard,
-  pendingInvoiceRecoveryKeyboard,
-  processingPurchaseRecoveryKeyboard,
-  standardPurchaseDeliveryKeyboard,
-  xrayPurchaseDeliveryKeyboard,
-} from "../../keyboards/purchase.keyboard";
-import { buyCallbacks, nav, xrayCallbacks } from "../../callbacks";
-import { pendingInvoiceExistsMessage, previousPurchaseProcessingMessage, unauthorizedMessage } from "../../messages/purchase.messages";
-import {
-  serviceNotFoundMessage,
-  xrayConfigsSentMessage,
-  xrayRenewalInvoiceMessage,
-  xrayRenewedMessage,
-  xraySubscriptionMessage,
-} from "../../messages/account.messages";
-import { adminOnlyCommandMessage, publicPlansDisabledInGroupsMessage } from "../../messages/common.messages";
-import { couponApplyFromProductMessage, couponRemovedMessage } from "../../messages/coupon.messages";
-import { purchaseSuccessMessage } from "../../../utils/messages";
 import { MonitoringService } from "../../../services/monitoring.service";
-import { ProductGuideService } from "../../../modules/system/product-guide.service";
-import { PublicPlansService } from "../../../modules/product/public-plans.service";
-import { XrayClientService, XrayPanelService, xrayInboundSnapshot } from "../../../modules/xray/xray.service";
-import { prisma } from "../../../services/prisma";
 
 export function registerNavigationHandlers(bot: AppBot) {
   registerFlowEngine(bot);
-
-  async function handleQuickReplyNavigation(ctx: AppContext, text: string) {
-    const target = quickReplyTarget(text);
-    if (!target) return false;
-    if (target === "refresh") {
-      const stack = ctx.session.navigation?.stack ?? [];
-      const current = stack[stack.length - 1] ?? { id: "home" as const };
-      await renderPanel(ctx, current, "replace", RenderMode.SEND_NEW);
-      return true;
-    }
-    if (target === "claimFree") {
-      await renderPanel(ctx, { id: "freeAccount" }, "replace");
-      return true;
-    }
-    if (target === "newTicket") {
-      if (!ctx.from) return true;
-      const user = await UserService.getByTelegramId(ctx.from.id);
-      if (!user) return true;
-      const ticket = await SupportService.getOrCreateOpenTicket(user.id);
-      ctx.session.liveTicketId = ticket.id;
-      ctx.session.liveTicketRole = "user";
-      await ctx.reply(
-        `💬 گفتگوی پشتیبانی فعال شد
-
-تیکت: #${ticket.id.slice(-6).toUpperCase()}
-
-پیام خود را ارسال کنید.`,
-        {
-          reply_markup: supportCloseHomeInlineKeyboard(ticket.id),
-        },
-      );
-      return true;
-    }
-    if (target.id.startsWith("admin") && (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))) {
-      await ctx.reply(unauthorizedMessage());
-      return true;
-    }
-    if (target.id === "home") {
-      ctx.session.liveTicketId = undefined;
-      ctx.session.liveTicketRole = undefined;
-      ctx.session.flow = undefined;
-    }
-    await renderPanel(ctx, target, "replace");
-    return true;
-  }
 
   // Temporary compatibility redirects for old inline buttons. New visible buttons must use callbackFor()/nav:* actions.
   const legacyViews = new Map<string, Parameters<typeof renderPanel>[1]>([
