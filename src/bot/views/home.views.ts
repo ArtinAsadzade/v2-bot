@@ -140,7 +140,7 @@ ${divider}
       keyboard: [
         [{ text: "📤 ارسال متن دعوت", url: shareUrl, tone: "success" }],
         navRow({ text: "👥 دعوت‌شده‌ها", view: "referral.users" }, { text: "💎 پاداش‌ها", view: "referral.rewards", tone: "primary" }),
-        navRow({ text: "📜 قوانین دعوت", view: "referral.rules" }, { text: "🏠 خانه", view: "home" }),
+        navRow({ text: "📜 قوانین دعوت", view: "referral.rules" }),
       ],
     };
   });
@@ -151,65 +151,6 @@ ${divider}
     const { link, shareUrl } = buildReferralShare(user.referralCode);
     return {
       text: card("🔗 لینک دعوت", [link]),
-      keyboard: [[{ text: "📤 ارسال متن دعوت", url: shareUrl }], [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }]],
-    };
-  });
-
-  registerView("referral.users", async (ctx) => {
-    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-
-    if (!user) {
-      return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
-    }
-
-    const stats = await ReferralService.getStats(user.id);
-    const { shareUrl } = buildReferralShare(user.referralCode as string);
-
-    return {
-      text: card("👥 دعوت‌شده‌ها", [
-        `✅ تعداد دعوت‌های موفق: ${stats.totalReferrals.toLocaleString("fa-IR")} نفر`,
-        "دعوت زمانی ثبت می‌شود که کاربر از لینک اختصاصی شما وارد ربات شود.",
-      ]),
-      keyboard: [[{ text: "📤 ارسال متن دعوت", url: shareUrl }], [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }]],
-    };
-  });
-
-  registerView("referral.rewards", async (ctx) => {
-    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-
-    if (!user) {
-      return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
-    }
-
-    const stats = await ReferralService.getStats(user.id);
-    const { shareUrl } = buildReferralShare(user.referralCode as string);
-
-    return {
-      text: card("💎 پاداش‌های دعوت", [
-        `💰 قابل برداشت: ${money(stats.pendingAmount)}`,
-        `✅ برداشت‌شده: ${money(stats.claimedAmount)}`,
-        stats.pendingAmount > 0 ? "برای انتقال پاداش به کیف پول، دکمه دریافت پاداش را بزنید." : "در حال حاضر پاداش قابل برداشتی ندارید.",
-      ]),
-      keyboard: stats.pendingAmount > 0 ? [[{ text: "💎 دریافت پاداش", action: "referral:claim" }]] : [[{ text: "📤 دعوت دوستان", url: shareUrl }]],
-    };
-  });
-
-  registerView("referral.rules", async (ctx) => {
-    const user = ctx.from ? await UserService.getByTelegramId(ctx.from.id) : undefined;
-
-    if (!user) {
-      return { text: "⚠️ پروفایل شما پیدا نشد.", keyboard: [] };
-    }
-
-    const { shareUrl } = buildReferralShare(user.referralCode as string);
-
-    return {
-      text: card("📜 قوانین دعوت", [
-        "هر کاربر فقط یک‌بار می‌تواند به عنوان دعوت‌شده ثبت شود.",
-        "دعوت فقط زمانی معتبر است که کاربر از لینک اختصاصی شما وارد ربات شود.",
-        "پاداش‌های تأییدشده در بخش پاداش‌ها نمایش داده می‌شوند.",
-        "در صورت ثبت دعوت غیرواقعی یا سوءاستفاده، پاداش قابل تأیید نخواهد بود.",
-      ]),
       keyboard: [[{ text: "📤 ارسال متن دعوت", url: shareUrl }], [{ text: "🎁 دعوت دوستان", action: callbackFor("referral") }]],
     };
   });
