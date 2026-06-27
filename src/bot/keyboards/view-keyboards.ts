@@ -4,10 +4,7 @@ import { actionLabels, userLabels } from "../ui/labels";
 export function productDetailViewKeyboard(productId: string, stock: number): UiKeyboard {
   return [
     ...(stock > 0 ? [[{ text: actionLabels.buy, action: callbackFor("shop.checkout", { productId }), tone: "success" as const }]] : []),
-    [
-      { text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId), tone: "primary" as const },
-      { text: "📋 جزئیات", action: callbackFor("shop.product", { productId }), tone: "primary" as const },
-    ],
+    [{ text: actionLabels.enterCoupon, action: actionFor("flow:start", "coupon_code", productId), tone: "primary" as const }],
   ];
 }
 
