@@ -82,9 +82,20 @@ export function registerPredictionHandlers(bot: AppBot) {
     }
     try {
       const result = await RewardService.claimPredictionReward(winnerId, String(ctx.from.id));
-      await ctx.reply(result.alreadyClaimed ? "✅ این جایزه قبلاً دریافت شده است." : "🎁 جایزه شما با موفقیت دریافت شد.", Markup.inlineKeyboard([[Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))]]));
+      if (result.rewardType === "product") {
+        await ctx.reply(
+          result.alreadyClaimed ? "✅ این جایزه قبلاً دریافت و فعال شده است." : "🎁 جایزه شما با موفقیت فعال شد.",
+          Markup.inlineKeyboard([[Markup.button.callback("📦 سرویس‌های من", callbackFor("services"))], [Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))]]),
+        );
+      } else {
+        await ctx.reply(result.alreadyClaimed ? "✅ این جایزه قبلاً دریافت شده است." : "🎁 جایزه شما با موفقیت دریافت شد.", Markup.inlineKeyboard([[Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))]]));
+      }
     } catch (error) {
-      await ctx.reply(error instanceof Error ? error.message : "❌ دریافت جایزه انجام نشد. لطفاً با پشتیبانی تماس بگیرید.");
+      const message = error instanceof Error ? error.message : "❌ دریافت جایزه انجام نشد. لطفاً با پشتیبانی تماس بگیرید.";
+      const keyboard = message.includes("فعال‌سازی سرویس نیاز به بررسی")
+        ? Markup.inlineKeyboard([[Markup.button.callback("🎫 پشتیبانی", callbackFor("support"))], [Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))]])
+        : undefined;
+      await ctx.reply(message, keyboard);
     }
   });
 
@@ -93,10 +104,18 @@ export function registerPredictionHandlers(bot: AppBot) {
     if (!ctx.from) return void (await ctx.reply("❌ درخواست معتبر نیست."));
     try {
       const result = await RewardService.claimPredictionReward(ctx.match[1], String(ctx.from.id));
-      await ctx.reply(result.alreadyClaimed ? "✅ این جایزه قبلاً دریافت شده است." : "🎁 جایزه شما با موفقیت دریافت شد.");
+      await ctx.reply(
+        result.rewardType === "product"
+          ? (result.alreadyClaimed ? "✅ این جایزه قبلاً دریافت و فعال شده است." : "🎁 جایزه شما با موفقیت فعال شد.")
+          : (result.alreadyClaimed ? "✅ این جایزه قبلاً دریافت شده است." : "🎁 جایزه شما با موفقیت دریافت شد."),
+      );
       await renderPanel(ctx, { id: "account.rewards" }, "replace");
     } catch (error) {
-      await ctx.reply(error instanceof Error ? error.message : "❌ دریافت جایزه انجام نشد. لطفاً با پشتیبانی تماس بگیرید.");
+      const message = error instanceof Error ? error.message : "❌ دریافت جایزه انجام نشد. لطفاً با پشتیبانی تماس بگیرید.";
+      const keyboard = message.includes("فعال‌سازی سرویس نیاز به بررسی")
+        ? Markup.inlineKeyboard([[Markup.button.callback("🎫 پشتیبانی", callbackFor("support"))], [Markup.button.callback("🎁 جوایز من", callbackFor("account.rewards"))]])
+        : undefined;
+      await ctx.reply(message, keyboard);
     }
   });
 
@@ -150,8 +169,11 @@ export function registerPredictionHandlers(bot: AppBot) {
     await ctx.answerCbQuery();
     if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return void (await ctx.reply("دسترسی غیرمجاز"));
     try {
-      const result = await PredictionService.announcePredictionResults(ctx.match[1], ctx.from.id, async (telegramId, text) => {
-        await ctx.telegram.sendMessage(telegramId, text, Markup.inlineKeyboard([[Markup.button.callback(PredictionService.resultNotificationButton().text, callbackFor(PredictionService.resultNotificationButton().view))]]));
+      const result = await PredictionService.announcePredictionResults(ctx.match[1], ctx.from.id, async (telegramId, text, winner) => {
+        const rows = winner
+          ? PredictionService.winnerNotificationButtons().map((row) => row.map((button) => Markup.button.callback(button.text, callbackFor(button.view))))
+          : [[Markup.button.callback(PredictionService.resultNotificationButton().text, callbackFor(PredictionService.resultNotificationButton().view))]];
+        await ctx.telegram.sendMessage(telegramId, text, Markup.inlineKeyboard(rows));
       });
       const preview = await PredictionService.getWinnerSelectionPreview(ctx.match[1]);
       if (preview.totalParticipants === 0) await ctx.reply("✅ پیش‌بینی بدون شرکت‌کننده پایان یافت.");

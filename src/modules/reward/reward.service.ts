@@ -2,6 +2,9 @@ import { prisma } from "../../services/prisma";
 import { WalletService } from "../wallet/wallet.service";
 import { ReferralService } from "../referral/referral.service";
 import { MISSING_REWARD_PRODUCT_LABEL, PredictionService } from "../prediction/prediction.service";
+import { PaymentService } from "../payment/payment.service";
+import { logger } from "../../services/logger";
+import { assertProductDeliverySuccess, type ProductDeliverySuccess } from "../payment/payment.types";
 
 const db = prisma as any;
 
@@ -31,6 +34,7 @@ export const REWARD_STATUS_LABELS: Record<UserRewardDto["status"], string> = {
 function predictionStatus(status: string): UserRewardDto["status"] {
   if (status === "claimed") return "claimed";
   if (status === "failed") return "failed";
+  if (status === "manual_review") return "manual_review";
   return "available";
 }
 
@@ -89,25 +93,98 @@ export class RewardService {
   }
 
   static async claimPredictionReward(winnerId: string, telegramId: string) {
-    return db.$transaction(async (tx: any) => {
+    const initial = await db.$transaction(async (tx: any) => {
       const winner = await tx.predictionWinner.findUnique({ where: { id: winnerId }, include: { contest: true } });
       if (!winner || winner.telegramId !== String(telegramId)) throw new Error("جایزه‌ای برای شما پیدا نشد.");
-      if (winner.status === "claimed") return { alreadyClaimed: true };
+      if (winner.status === "claimed") return { alreadyClaimed: true, rewardType: winner.rewardType };
       if (winner.status === "failed") throw new Error("⚠️ این جایزه نیازمند بررسی پشتیبانی است.");
+      if (winner.status === "manual_review") throw new Error("⚠️ جایزه شما ثبت شد، اما فعال‌سازی سرویس نیاز به بررسی پشتیبانی دارد.");
 
       const claimedAt = new Date();
-      const claimed = await tx.predictionWinner.updateMany({ where: { id: winner.id, status: { not: "claimed" } }, data: { status: "claimed", claimedAt } });
-      if (claimed.count !== 1) return { alreadyClaimed: true };
-
       if (winner.rewardType === "wallet") {
+        const claimed = await tx.predictionWinner.updateMany({ where: { id: winner.id, status: { not: "claimed" } }, data: { status: "claimed", claimedAt } });
+        if (claimed.count !== 1) return { alreadyClaimed: true, rewardType: "wallet" };
         await WalletService.credit(winner.userId, winner.rewardWalletAmount ?? 0, `جایزه پیش‌بینی: ${winner.contest?.title ?? "پیش‌بینی"}`, tx, { actorId: "system", referenceId: `prediction:${winner.id}` });
-      } else {
-        await tx.predictionAuditLog.create({ data: { contestId: winner.contestId, userId: winner.userId, action: "reward.product.claimed", metadata: { winnerId: winner.id, productId: winner.rewardProductId } } });
+        await tx.predictionEntry.update({ where: { id: winner.entryId }, data: { status: "rewarded", rewardClaimedAt: claimedAt } });
+        return { alreadyClaimed: false, rewardType: "wallet" };
       }
 
-      await tx.predictionEntry.update({ where: { id: winner.entryId }, data: { status: "rewarded", rewardClaimedAt: claimedAt } });
-      return { alreadyClaimed: false };
+      if (!winner.rewardProductId) throw new Error("محصول جایزه پیدا نشد.");
+      if (winner.deliveredOrderId || winner.deliveredOrderItemId || winner.deliveredXrayClientId || winner.deliveredProductAccountId)
+        return { alreadyClaimed: true, rewardType: "product" };
+      const reserved = await tx.predictionWinner.updateMany({
+        where: { id: winner.id, status: { in: ["selected", "notified"] } },
+        data: { status: "manual_review", failureReason: null, deliveryMetadata: { source: "prediction_reward", step: "delivery_started" } },
+      });
+      if (reserved.count !== 1) return { alreadyClaimed: true, rewardType: "product" };
+      return {
+        alreadyClaimed: false,
+        rewardType: "product",
+        winnerId: winner.id,
+        userId: winner.userId,
+        productId: winner.rewardProductId,
+        entryId: winner.entryId,
+        contestId: winner.contestId,
+      };
     });
+    if (initial.alreadyClaimed || initial.rewardType !== "product") return initial;
+
+    try {
+      const delivered = await prisma.$transaction((tx) =>
+        PaymentService.purchaseProduct(tx, {
+          userId: initial.userId,
+          productId: initial.productId,
+          method: "PREDICTION_REWARD",
+          source: "prediction_reward",
+          sourceId: initial.winnerId,
+        }),
+      );
+      const createdDelivery = assertProductDeliverySuccess(delivered);
+      const finalDelivery: ProductDeliverySuccess = createdDelivery.xrayClient
+        ? (await PaymentService.provisionXrayClient(createdDelivery.order.id) as ProductDeliverySuccess)
+        : createdDelivery;
+      const claimedAt = new Date();
+      await prisma.$transaction(async (tx) => {
+        const claimed = await tx.predictionWinner.updateMany({
+          where: { id: initial.winnerId, status: { not: "claimed" } },
+          data: {
+            status: "claimed",
+            claimedAt,
+            failureReason: null,
+            deliveredOrderId: finalDelivery.order.id,
+            deliveredOrderItemId: finalDelivery.orderItem?.id ?? null,
+            deliveredXrayClientId: finalDelivery.xrayClient?.id ?? null,
+            deliveredProductAccountId: finalDelivery.orderItem?.productAccountId ?? null,
+            deliveryMetadata: {
+              source: "prediction_reward",
+              note: "prediction reward",
+              productId: initial.productId,
+              orderId: finalDelivery.order.id,
+            },
+          },
+        });
+        if (claimed.count !== 1) return;
+        await tx.predictionEntry.update({ where: { id: initial.entryId }, data: { status: "rewarded", rewardClaimedAt: claimedAt } });
+        await tx.predictionAuditLog.create({
+          data: {
+            contestId: initial.contestId,
+            userId: initial.userId,
+            action: "reward.product.delivered",
+            metadata: { winnerId: initial.winnerId, productId: initial.productId, orderId: finalDelivery.order.id, orderItemId: finalDelivery.orderItem?.id, xrayClientId: finalDelivery.xrayClient?.id },
+          },
+        });
+      });
+      return { alreadyClaimed: false, rewardType: "product", delivered: finalDelivery };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("PREDICTION_PRODUCT_REWARD_DELIVERY_FAILED", { winnerId: initial.winnerId, userId: initial.userId, productId: initial.productId, error: message });
+      await prisma.predictionWinner.update({
+        where: { id: initial.winnerId },
+        data: { status: "manual_review", failureReason: message, deliveryMetadata: { source: "prediction_reward", note: "prediction reward delivery failed", error: message } },
+      });
+      await prisma.predictionAuditLog.create({ data: { contestId: initial.contestId, userId: initial.userId, action: "reward.product.delivery_failed", metadata: { winnerId: initial.winnerId, productId: initial.productId, error: message } } });
+      throw new Error("⚠️ جایزه شما ثبت شد، اما فعال‌سازی سرویس نیاز به بررسی پشتیبانی دارد.");
+    }
   }
 
   static async claimReferralRewards(userId: string) {

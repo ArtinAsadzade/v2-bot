@@ -11,7 +11,7 @@ export type PaymentGatewayInput = {
 
 export type TxClient = Prisma.TransactionClient;
 export type AuditData = { userId?: string | null; invoiceId?: string | null; action: string; metadata?: Record<string, unknown>; actorId?: string };
-export type PurchaseMethod = "WALLET" | "GATEWAY";
+export type PurchaseMethod = "WALLET" | "GATEWAY" | "PREDICTION_REWARD";
 
 export type DeliveredAccount = {
   id: string;
