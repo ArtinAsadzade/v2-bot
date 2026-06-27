@@ -348,6 +348,13 @@ export class PredictionService {
     return { text: "🔮 پیش‌بینی‌های باز", view: "prediction" as const };
   }
 
+  static winnerNotificationButtons() {
+    return [
+      [{ text: "🎁 جوایز من", view: "account.rewards" as const, tone: "success" as const }],
+      [{ ...this.resultNotificationButton(), tone: "primary" as const }],
+    ];
+  }
+
   static buildResultNotification(args: { contestTitle: string; userOptionTitle?: string | null; correctOptionTitle: string; outcome: "winner" | "correct" | "wrong"; rewardLabel?: string }) {
     const userOption = args.userOptionTitle || "ثبت‌شده";
     if (args.outcome === "winner") return `🎉 تبریک! شما برنده شدید

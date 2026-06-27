@@ -22,11 +22,18 @@ const makeText = (outcome: "winner" | "correct" | "wrong", rewardLabel = "💰 �
   PredictionService.buildResultNotification({ contestTitle, userOptionTitle: userOption, correctOptionTitle: correctOption, outcome, rewardLabel });
 
 describe("prediction result notification copy", () => {
-  it("every user notification has exactly one open predictions button", () => {
+  it("non-winner notification has exactly one open predictions button", () => {
     const keyboard = [[PredictionService.resultNotificationButton()]];
     expect(keyboard.flat()).toHaveLength(1);
     expect(keyboard.flat()[0].text).toBe("🔮 پیش‌بینی‌های باز");
     expect(keyboard.flat()[0].view).toBe("prediction");
+  });
+
+  it("winner notification includes rewards and open predictions buttons", () => {
+    const keyboard = PredictionService.winnerNotificationButtons();
+    expect(keyboard).toHaveLength(2);
+    expect(keyboard[0][0]).toMatchObject({ text: "🎁 جوایز من", view: "account.rewards", tone: "success" });
+    expect(keyboard[1][0]).toMatchObject({ text: "🔮 پیش‌بینی‌های باز", view: "prediction", tone: "primary" });
   });
 
   it("winner notification includes contest title, user option, correct option and reward label", () => {

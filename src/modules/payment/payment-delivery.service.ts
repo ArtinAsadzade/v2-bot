@@ -36,6 +36,8 @@ export class PaymentDeliveryService {
       productId: string;
       couponCode?: string | null;
       method: PurchaseMethod;
+      source?: "prediction_reward";
+      sourceId?: string;
       invoice?: Pick<
         PaymentInvoice,
         "id" | "amount" | "originalAmount" | "discountAmount" | "couponId" | "couponCode" | "productId" | "userId" | "status"
@@ -52,7 +54,10 @@ export class PaymentDeliveryService {
     const originalAmount = product.price;
     let totalAmount = originalAmount;
 
-    if (data.invoice) {
+    if (data.method === "PREDICTION_REWARD") {
+      discountAmount = originalAmount;
+      totalAmount = 0;
+    } else if (data.invoice) {
       if (data.invoice.userId !== data.userId || data.invoice.productId !== data.productId) throw new Error("فاکتور با خرید همخوانی ندارد");
       if (data.invoice.originalAmount !== originalAmount) throw new Error("مبلغ اصلی فاکتور با محصول همخوانی ندارد");
       if (data.invoice.status !== "PAID") throw new Error("پرداخت تایید نشده است");
@@ -297,6 +302,8 @@ export class PaymentDeliveryService {
         accountId: account?.id,
         xrayClientId: xrayClient?.id,
         method: data.method,
+        source: data.source,
+        sourceId: data.sourceId,
         originalAmount,
         discountAmount,
         finalAmount: totalAmount,

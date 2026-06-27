@@ -875,6 +875,7 @@ enum PredictionWinnerStatus {
   notified
   claimed
   failed
+  manual_review
 }
 
 model PredictionContest {
@@ -954,6 +955,11 @@ model PredictionWinner {
   notifiedAt         DateTime?
   claimedAt          DateTime?
   failureReason      String?
+  deliveredOrderId   String?                @db.ObjectId
+  deliveredOrderItemId String?              @db.ObjectId
+  deliveredXrayClientId String?             @db.ObjectId
+  deliveredProductAccountId String?         @db.ObjectId
+  deliveryMetadata   Json?
 
   contest PredictionContest @relation(fields: [contestId], references: [id])
   entry PredictionEntry @relation(fields: [entryId], references: [id])
