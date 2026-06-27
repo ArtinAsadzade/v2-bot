@@ -34,7 +34,6 @@ export function registerFreeAccountViews() {
           `⏳ دریافت بعدی: ${formatFreeAccountDate(e.nextAvailableAt && e.nextAvailableAt > new Date() ? e.nextAvailableAt : undefined)}`,
         ]),
         section(sectionTitles.serviceSpecs, [
-          `${uiIcons.product} موجودی: ${cfg.available.toLocaleString("fa-IR")} از ${cfg.stockLimit.toLocaleString("fa-IR")}`,
           `${sectionTitles.traffic}: ${formatXrayBytes(cfg.trafficBytes)}`,
           `${sectionTitles.duration}: ${cfg.durationDays.toLocaleString("fa-IR")} روز`,
         ]),
