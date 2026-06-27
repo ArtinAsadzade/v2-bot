@@ -135,7 +135,7 @@ export async function notifyUser(bot: AppBot, result: unknown) {
             {
               reply_markup: {
                 inline_keyboard: [
-                  [{ text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") }],
+                  [{ text: "📦 سرویس های من", callback_data: callbackFor("services") }],
                   [{ text: "🏠 خانه", callback_data: callbackFor("home") }],
                 ],
               },
@@ -167,7 +167,7 @@ export async function notifyUser(bot: AppBot, result: unknown) {
                   { text: "⚙️ دریافت کانفیگ‌ها", callback_data: `xray:configs:${client.id}` },
                 ],
                 [
-                  { text: "📦 اکانت‌های من", callback_data: callbackFor("account.details") },
+                  { text: "📦 سرویس های من", callback_data: callbackFor("services") },
                   { text: "🏠 خانه", callback_data: callbackFor("home") },
                 ],
               ],

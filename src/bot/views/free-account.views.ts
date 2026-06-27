@@ -40,12 +40,7 @@ export function registerFreeAccountViews() {
         ]),
       ]),
       keyboard: blocked
-        ? [
-            [
-              { text: "📦 سرویس های من", action: callbackFor("account.details") },
-              { text: "🎫 پشتیبانی", action: callbackFor("support") },
-            ],
-          ]
+        ? [[{ text: "📦 سرویس های من", action: callbackFor("services") }], [{ text: "🎫 پشتیبانی", action: callbackFor("support"), tone: "warning" }]]
         : [[{ text: "✅ دریافت اکانت تست", action: "freeAccount:claim" }]],
     };
   });

@@ -10,7 +10,7 @@ export function homeKeyboard(isAdmin = false) {
       { text: "🎁 دریافت تست", action: callbackFor("freeAccount"), tone: "success" as const },
     ],
     [
-      { text: "📦 سرویس‌های من", action: callbackFor("account.details"), tone: "primary" as const },
+      { text: labels.orders, action: callbackFor("services"), tone: "primary" as const },
       { text: "💳 کیف پول", action: callbackFor("wallet"), tone: "primary" as const },
     ],
     [

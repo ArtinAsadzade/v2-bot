@@ -1,7 +1,8 @@
+import { labels } from "../../bot/keyboards/design-system";
 import type { ProductDeliverySuccess } from "../payment/payment.types";
 
 export const productRewardClaimKeyboard = [
-  [{ text: "📦 سرویس‌های من", callback_data: "nav:services" }],
+  [{ text: labels.orders, callback_data: "nav:services" }],
   [{ text: "🎁 جوایز من", callback_data: "nav:account.rewards" }],
 ];
 

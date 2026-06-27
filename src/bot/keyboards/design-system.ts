@@ -187,7 +187,7 @@ export function InvoiceActionKeyboard(paymentLink: string, backAction: string) {
 export function paymentSuccessKeyboard(_type: "wallet" | "product") {
   return buildInlineKeyboard([
     [
-      { text: labels.orders, action: callbackFor("account.details"), tone: "success" },
+      { text: labels.orders, action: callbackFor("services"), tone: "success" },
       { text: labels.buyAgain, action: callbackFor("shop"), tone: "primary" },
     ],
     [{ text: labels.home, action: callbackFor("home") }],

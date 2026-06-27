@@ -52,6 +52,7 @@ import { uiIcons } from "../ui/icons";
 import { MonitoringService } from "../../services/monitoring.service";
 import { prisma } from "../../services/prisma";
 import { withTimeout } from "../../utils/async";
+import { labels } from "../keyboards/design-system";
 
 const money = formatToman;
 const page = getPageParam;
@@ -86,7 +87,7 @@ export function registerAccountViews() {
         section(sectionTitles.quickActions, ["از گزینه‌های زیر برای مدیریت حساب، کیف پول و سرویس‌های خود استفاده کنید."]),
       ]),
       keyboard: [
-        navRow({ text: "👤 اطلاعات حساب", view: "account.profile" }, { text: "📦 سرویس‌های من", view: "services" }),
+        navRow({ text: "👤 اطلاعات حساب", view: "account.profile" }, { text: labels.orders, view: "services" }),
         navRow(
           { text: "♻️ تمدید سرویس", view: "services.renew", tone: "success" },
           { text: "🎁 جوایز من", view: "account.rewards", tone: "success" },
@@ -166,7 +167,7 @@ export function registerAccountViews() {
         ]),
       ]),
       keyboard: [
-        navRow({ text: "💰 کیف پول", view: "wallet", tone: "primary" }, { text: "📦 سرویس‌های من", view: "services", tone: "primary" }),
+        navRow({ text: "💰 کیف پول", view: "wallet", tone: "primary" }, { text: labels.orders, view: "services", tone: "primary" }),
         navRow(
           { text: "🎁 جوایز من", view: "account.rewards", tone: "success" },
           { text: "🧾 تاریخچه خرید", view: "account.history", tone: "success" },
@@ -277,7 +278,7 @@ export function registerAccountViews() {
   registerView("account.details", renderServicesActive);
   registerView("services.active", renderServicesActive);
   registerView("services", async () => ({
-    text: joinSections([card("📦 سرویس‌های من", ["بخش موردنظر سرویس‌ها را انتخاب کنید."])]),
+    text: joinSections([card(labels.orders, ["بخش موردنظر سرویس‌ها را انتخاب کنید."])]),
     keyboard: [
       navRow({ text: "✅ سرویس‌های فعال", view: "services.active", tone: "success" }, { text: "⛔ سرویس‌های منقضی", view: "services.expired" }),
       navRow({ text: "♻️ تمدید سرویس", view: "services.renew", tone: "success" }, { text: "🛒 خرید سرویس جدید", view: "shop" }),
