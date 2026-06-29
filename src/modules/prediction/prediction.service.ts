@@ -236,8 +236,9 @@ export class PredictionService {
     const existing = await db.predictionEntry.findUnique({
       where: { contestId_userId: { contestId, userId: user.id } },
     });
+    if (existing && existing.optionId === optionId) return existing;
     if (existing && !contest.allowUserEdit)
-      throw new Error("پیش‌بینی شما قبلاً ثبت شده است.");
+      return existing;
     if (existing)
       return db.predictionEntry.update({
         where: { id: existing.id },

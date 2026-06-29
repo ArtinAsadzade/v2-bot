@@ -98,6 +98,7 @@ export interface SessionData {
 
 export interface AppContext extends Context {
   session: SessionData;
+  state: Context["state"] & { userId?: string; userRole?: "user" | "admin" | "superadmin" };
   startPayload?: string;
 }
 
