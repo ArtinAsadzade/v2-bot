@@ -35,6 +35,7 @@ bot.use(async (ctx, next) => {
   if (ctx.from) {
     const user = await UserService.findOrCreateUser(ctx);
     ctx.state.userId = user.id;
+    ctx.state.userRole = user.role;
   }
   await next();
 });
