@@ -255,6 +255,63 @@ export class PredictionService {
     });
   }
 
+
+  static listPredictionOptions(contestId: string) {
+    return db.predictionOption.findMany({
+      where: { contestId },
+      orderBy: { order: "asc" },
+      include: { _count: { select: { entries: true } } },
+    });
+  }
+
+  static async updatePredictionOptionText(contestId: string, optionId: string, text: string) {
+    const title = text.trim();
+    if (!title || title.length > 64) throw new Error("عنوان گزینه باید بین ۱ تا ۶۴ کاراکتر باشد.");
+    const contest = await db.predictionContest.findUnique({ where: { id: contestId }, select: { status: true } });
+    if (!contest) throw new Error("پیش‌بینی پیدا نشد.");
+    if (["resulted", "announced", "archived", "deleted"].includes(contest.status)) throw new Error("ویرایش گزینه پس از نهایی شدن پیش‌بینی مجاز نیست.");
+    const option = await db.predictionOption.findFirst({ where: { id: optionId, contestId } });
+    if (!option) throw new Error("گزینه پیدا نشد.");
+    return db.predictionOption.update({
+      where: { id: optionId },
+      data: { title },
+    });
+  }
+
+  static async deletePredictionOption(contestId: string, optionId: string, adminTelegramId?: number | string) {
+    return db.$transaction(async (tx: any) => {
+      const contest = await tx.predictionContest.findUnique({
+        where: { id: contestId },
+        include: { options: true },
+      });
+      if (!contest) throw new Error("پیش‌بینی پیدا نشد.");
+      if (["resulted", "announced", "archived", "deleted"].includes(contest.status)) throw new Error("حذف گزینه پس از نهایی شدن پیش‌بینی مجاز نیست.");
+      const option = contest.options.find((o: any) => o.id === optionId);
+      if (!option) throw new Error("گزینه پیدا نشد.");
+      if (contest.options.length <= 2) throw new Error("حداقل دو گزینه باید باقی بماند.");
+      const affectedEntries = await tx.predictionEntry.findMany({
+        where: { contestId, optionId },
+        select: { id: true },
+      });
+      const affectedEntryIds = affectedEntries.map((entry: any) => entry.id);
+      if (affectedEntryIds.length) await tx.predictionWinner.deleteMany({ where: { entryId: { in: affectedEntryIds } } });
+      const deleted = await tx.predictionEntry.deleteMany({ where: { contestId, optionId } });
+      await tx.predictionOption.delete({ where: { id: optionId } });
+      if (contest.resultOptionId === optionId) {
+        await tx.predictionContest.update({ where: { id: contestId }, data: { resultOptionId: null, status: contest.status === "resulted" ? "closed" : contest.status, resultedAt: null } });
+      }
+      await tx.predictionAuditLog.create({
+        data: {
+          contestId,
+          adminTelegramId: adminTelegramId ? String(adminTelegramId) : null,
+          action: "PREDICTION_OPTION_DELETED",
+          metadata: { optionId, optionTitle: option.title, deletedVotesCount: deleted.count },
+        },
+      });
+      return { deletedVotesCount: deleted.count };
+    });
+  }
+
   static async setResult(
     contestId: string,
     optionId: string,
