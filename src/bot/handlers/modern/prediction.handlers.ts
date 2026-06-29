@@ -9,6 +9,7 @@ import {
 } from "../../navigation/callback-tokens";
 import { UserService } from "../../../modules/user/user.service";
 import { PredictionService, canSubmitPrediction } from "../../../modules/prediction/prediction.service";
+import { startFlow } from "../../flows/flow-engine";
 import { RewardService } from "../../../modules/reward/reward.service";
 import { productRewardAlreadyClaimedMessage, productRewardClaimKeyboard, productRewardFailedKeyboard, productRewardSuccessMessage } from "../../../modules/reward/reward-messages";
 import { prisma } from "../../../services/prisma";
@@ -131,6 +132,37 @@ export function registerPredictionHandlers(bot: AppBot) {
       await renderPanel(ctx, { id: "account.rewards" }, "replace");
     } catch (error) {
       await ctx.reply(error instanceof Error ? error.message : "❌ دریافت جایزه انجام نشد.");
+    }
+  });
+
+
+  bot.action(/^(?:admin:prediction:options|ap:opts):([^:]+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return void (await ctx.reply("دسترسی غیرمجاز"));
+    await renderPanel(ctx, { id: "admin.predictionOptions", params: { contestId: ctx.match[1] } }, "replace");
+  });
+
+  bot.action(/^(?:admin:prediction:option:edit|ap:ope):([^:]+):([^:]+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return void (await ctx.reply("دسترسی غیرمجاز"));
+    await startFlow(ctx, "prediction_option_edit", { contestId: ctx.match[1], optionId: ctx.match[2] });
+  });
+
+  bot.action(/^(?:admin:prediction:option:delete_confirm|ap:opdc):([^:]+):([^:]+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return void (await ctx.reply("دسترسی غیرمجاز"));
+    await renderPanel(ctx, { id: "admin.predictionOptionDeleteConfirm", params: { contestId: ctx.match[1], optionId: ctx.match[2] } }, "replace");
+  });
+
+  bot.action(/^(?:admin:prediction:option:delete|ap:opd):([^:]+):([^:]+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!ctx.from || !(await isAdminByTelegramId(ctx.from.id))) return void (await ctx.reply("دسترسی غیرمجاز"));
+    try {
+      const result = await PredictionService.deletePredictionOption(ctx.match[1], ctx.match[2], ctx.from.id);
+      await ctx.reply(`✅ گزینه حذف شد. تعداد پیش‌بینی‌های حذف‌شده: ${result.deletedVotesCount.toLocaleString("fa-IR")}`);
+      await renderPanel(ctx, { id: "admin.predictionOptions", params: { contestId: ctx.match[1] } }, "replace");
+    } catch (error) {
+      await ctx.reply(error instanceof Error ? error.message : "❌ حذف گزینه انجام نشد.");
     }
   });
 

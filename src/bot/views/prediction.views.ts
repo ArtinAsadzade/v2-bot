@@ -335,8 +335,8 @@ export function registerPredictionViews() {
             tone: "success",
           },
           {
-            text: "✏️ مدیریت گزینه‌ها",
-            action: callbackFor("admin.predictionStats", { contestId: c.id }),
+            text: "⚙️ مدیریت گزینه‌ها",
+            action: `ap:opts:${c.id}`,
             tone: "primary",
           },
         ],
@@ -499,6 +499,56 @@ export function registerPredictionViews() {
         ]),
       ]),
       keyboard: [],
+    };
+  });
+
+
+  registerView("admin.predictionOptions", async (_ctx, params) => {
+    const c = await db.predictionContest.findUnique({
+      where: { id: params.contestId },
+      include: { options: { orderBy: { order: "asc" }, include: { _count: { select: { entries: true } } } } },
+    });
+    if (!c || c.status === "deleted") return { text: "❌ این پیش‌بینی در دسترس نیست.", keyboard: [] };
+    const finalized = ["resulted", "announced", "archived", "deleted"].includes(c.status);
+    const fa = (n: number) => Number(n ?? 0).toLocaleString("fa-IR");
+    const lines = [
+      `پیش‌بینی: ${c.title}`,
+      `وضعیت: ${predictionDisplayStatusFa[getPredictionDisplayStatus(c)]}`,
+      finalized ? "🔒 پس از نهایی/آرشیو شدن، ویرایش یا حذف گزینه‌ها مجاز نیست." : "برای هر گزینه می‌توانید متن را ویرایش یا گزینه را حذف کنید.",
+      "",
+      ...(c.options.length ? c.options.map((o: any, index: number) => `${fa(index + 1)}. ${o.title} · ${fa(o._count?.entries ?? 0)} رأی`) : ["گزینه‌ای وجود ندارد."]),
+    ];
+    const keyboard: UiKeyboard = [];
+    for (const o of c.options) {
+      keyboard.push([
+        { text: `✏️ ویرایش: ${o.title}`, action: `ap:ope:${c.id}:${o.id}`, tone: finalized ? "neutral" : "primary" },
+        { text: `🗑 حذف`, action: `ap:opdc:${c.id}:${o.id}`, tone: finalized ? "neutral" : "danger" },
+      ]);
+    }
+    keyboard.push([{ text: "📊 آمار پیش‌بینی", action: callbackFor("admin.predictionStats", { contestId: c.id }), tone: "primary" }]);
+    keyboard.push([{ text: "🔙 بازگشت", action: callbackFor("admin.predictionDetail", { contestId: c.id }), tone: "neutral" }]);
+    return { text: joinSections([card("⚙️ مدیریت گزینه‌ها", lines)]), keyboard };
+  });
+
+  registerView("admin.predictionOptionDeleteConfirm", async (_ctx, params) => {
+    const c = await db.predictionContest.findUnique({
+      where: { id: params.contestId },
+      include: { options: true },
+    });
+    const option = c?.options.find((o: any) => o.id === params.optionId);
+    if (!c || !option) return { text: "❌ گزینه پیدا نشد.", keyboard: [] };
+    const votes = await db.predictionEntry.count({ where: { contestId: c.id, optionId: option.id } });
+    const finalized = ["resulted", "announced", "archived", "deleted"].includes(c.status);
+    return {
+      text: joinSections([card("⚠️ تأیید حذف گزینه", [
+        `گزینه: ${option.title}`,
+        `Deleting this option will also remove ${votes.toLocaleString("fa-IR")} user predictions. Continue?`,
+        finalized ? "🔒 حذف گزینه پس از نهایی/آرشیو شدن مجاز نیست." : "فقط رأی‌های همین گزینه حذف می‌شوند و کاربران affected می‌توانند دوباره رأی بدهند.",
+      ])]),
+      keyboard: finalized ? [[{ text: "🔙 بازگشت", action: `ap:opts:${c.id}`, tone: "neutral" }]] : [
+        [{ text: "✅ بله، حذف کن", action: `ap:opd:${c.id}:${option.id}`, tone: "danger" }],
+        [{ text: "🔙 انصراف", action: `ap:opts:${c.id}`, tone: "neutral" }],
+      ],
     };
   });
 
