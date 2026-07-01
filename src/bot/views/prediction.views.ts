@@ -165,11 +165,12 @@ export function registerPredictionViews() {
         ]),
       ]),
       keyboard: [
-        navRow({
-          text: "🟢 پیش‌بینی‌های باز 🟢",
-          view: "prediction",
-          tone: "success",
-        }),
+        entry &&
+          navRow({
+            text: "🟢 پیش‌بینی‌های باز 🟢",
+            view: "prediction",
+            tone: "success",
+          }),
         ...optionRows,
       ],
     };
