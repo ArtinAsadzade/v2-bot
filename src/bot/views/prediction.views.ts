@@ -10,6 +10,7 @@ import {
   predictionDisplayStatusFa,
 } from "../../modules/prediction/prediction.service";
 import { PredictionDateService } from "../../modules/prediction/prediction-date.service";
+import { navRow } from "../keyboards/panel-keyboard.helpers";
 
 const db = prisma as any;
 const fmt = (d: Date) => PredictionDateService.formatPredictionDateTime(d);
@@ -164,13 +165,11 @@ export function registerPredictionViews() {
         ]),
       ]),
       keyboard: [
-        [
-          {
-            text: "🟢 پیش‌بینی‌های باز 🟢",
-            view: "prediction",
-            tone: "success",
-          },
-        ],
+        navRow({
+          text: "🟢 پیش‌بینی‌های باز 🟢",
+          view: "prediction",
+          tone: "success",
+        }),
         ...optionRows,
       ],
     };
@@ -511,7 +510,6 @@ export function registerPredictionViews() {
     };
   });
 
-
   registerView("admin.predictionOptions", async (_ctx, params) => {
     const c = await db.predictionContest.findUnique({
       where: { id: params.contestId },
@@ -525,7 +523,9 @@ export function registerPredictionViews() {
       `وضعیت: ${predictionDisplayStatusFa[getPredictionDisplayStatus(c)]}`,
       finalized ? "🔒 پس از نهایی/آرشیو شدن، ویرایش یا حذف گزینه‌ها مجاز نیست." : "برای هر گزینه می‌توانید متن را ویرایش یا گزینه را حذف کنید.",
       "",
-      ...(c.options.length ? c.options.map((o: any, index: number) => `${fa(index + 1)}. ${o.title} · ${fa(o._count?.entries ?? 0)} رأی`) : ["گزینه‌ای وجود ندارد."]),
+      ...(c.options.length
+        ? c.options.map((o: any, index: number) => `${fa(index + 1)}. ${o.title} · ${fa(o._count?.entries ?? 0)} رأی`)
+        : ["گزینه‌ای وجود ندارد."]),
     ];
     const keyboard: UiKeyboard = [];
     for (const o of c.options) {
@@ -549,15 +549,21 @@ export function registerPredictionViews() {
     const votes = await db.predictionEntry.count({ where: { contestId: c.id, optionId: option.id } });
     const finalized = ["resulted", "announced", "archived", "deleted"].includes(c.status);
     return {
-      text: joinSections([card("⚠️ تأیید حذف گزینه", [
-        `گزینه: ${option.title}`,
-        `Deleting this option will also remove ${votes.toLocaleString("fa-IR")} user predictions. Continue?`,
-        finalized ? "🔒 حذف گزینه پس از نهایی/آرشیو شدن مجاز نیست." : "فقط رأی‌های همین گزینه حذف می‌شوند و کاربران affected می‌توانند دوباره رأی بدهند.",
-      ])]),
-      keyboard: finalized ? [[{ text: "🔙 بازگشت", action: `ap:opts:${c.id}`, tone: "neutral" }]] : [
-        [{ text: "✅ بله، حذف کن", action: `ap:opd:${c.id}:${option.id}`, tone: "danger" }],
-        [{ text: "🔙 انصراف", action: `ap:opts:${c.id}`, tone: "neutral" }],
-      ],
+      text: joinSections([
+        card("⚠️ تأیید حذف گزینه", [
+          `گزینه: ${option.title}`,
+          `Deleting this option will also remove ${votes.toLocaleString("fa-IR")} user predictions. Continue?`,
+          finalized
+            ? "🔒 حذف گزینه پس از نهایی/آرشیو شدن مجاز نیست."
+            : "فقط رأی‌های همین گزینه حذف می‌شوند و کاربران affected می‌توانند دوباره رأی بدهند.",
+        ]),
+      ]),
+      keyboard: finalized
+        ? [[{ text: "🔙 بازگشت", action: `ap:opts:${c.id}`, tone: "neutral" }]]
+        : [
+            [{ text: "✅ بله، حذف کن", action: `ap:opd:${c.id}:${option.id}`, tone: "danger" }],
+            [{ text: "🔙 انصراف", action: `ap:opts:${c.id}`, tone: "neutral" }],
+          ],
     };
   });
 
