@@ -45,7 +45,8 @@ export type FlowName =
   | "payment_gateway_setup"
   | "xray_panel_setup"
   | "prediction_create"
-  | "prediction_edit";
+  | "prediction_edit"
+  | "prediction_option_edit";
 
 export interface ActiveFlow {
   name: FlowName;
@@ -98,6 +99,7 @@ export interface SessionData {
 
 export interface AppContext extends Context {
   session: SessionData;
+  state: Context["state"] & { userId?: string; userRole?: "user" | "admin" | "superadmin" };
   startPayload?: string;
 }
 

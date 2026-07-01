@@ -87,6 +87,8 @@ export type PanelViewId =
   | "admin.predictionResult"
   | "admin.predictionWinners"
   | "admin.predictionStats"
+  | "admin.predictionOptions"
+  | "admin.predictionOptionDeleteConfirm"
   | "admin.predictionParticipants"
   | "admin.users"
   | "admin.user"
@@ -321,6 +323,8 @@ export const PANEL_VIEW_IDS = new Set<string>([
   "admin.predictionResult",
   "admin.predictionWinners",
   "admin.predictionStats",
+  "admin.predictionOptions",
+  "admin.predictionOptionDeleteConfirm",
   "admin.predictionParticipants",
   "admin.users",
   "admin.user",

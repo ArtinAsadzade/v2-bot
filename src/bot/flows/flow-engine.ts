@@ -725,6 +725,19 @@ const definitions: Record<FlowName, FlowDefinition> = {
     },
   },
 
+
+  prediction_option_edit: {
+    firstStep: "value",
+    prompt: "✏️ متن جدید گزینه را ارسال کنید.",
+    async handleText(ctx, text) {
+      const contestId = String(ctx.session.flow?.data.contestId ?? "");
+      const optionId = String(ctx.session.flow?.data.optionId ?? "");
+      if (!contestId || !optionId) return { done: true, text: "⚠️ ویرایش گزینه معتبر نیست.", returnTo: { id: "admin.predictions" } };
+      await PredictionService.updatePredictionOptionText(contestId, optionId, text);
+      return { done: true, text: "✅ متن گزینه با موفقیت به‌روزرسانی شد. رأی‌های کاربران بدون تغییر باقی ماند.", returnTo: { id: "admin.predictionOptions", params: { contestId } } };
+    },
+  },
+
   prediction_edit: {
     firstStep: "value",
     prompt: async (ctx) => {
@@ -2301,12 +2314,14 @@ export function registerFlowEngine(bot: AppBot) {
       "free_test_config",
       "prediction_create",
       "prediction_edit",
+      "prediction_option_edit",
     ];
     if (adminOnlyFlows.includes(name) && (!ctx.from || !(await isAdminByTelegramId(ctx.from.id)))) {
       await ctx.answerCbQuery("دسترسی غیرمجاز");
       return;
     }
     if (name === "prediction_edit") return startFlow(ctx, "prediction_edit", { contestId: ctx.match[2], field: ctx.match[3] });
+    if (name === "prediction_option_edit") return startFlow(ctx, "prediction_option_edit", { contestId: ctx.match[2], optionId: ctx.match[3] });
     if (name === "product_guide_edit") return startFlow(ctx, "product_guide_edit", { sectionId: ctx.match[2] });
     if (name === "payment_gateway_update") return startFlow(ctx, "payment_gateway_update", { field: ctx.match[2] });
     if (name === "payment_gateway_setup") return startFlow(ctx, "payment_gateway_setup");
