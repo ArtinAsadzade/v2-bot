@@ -163,7 +163,16 @@ export function registerPredictionViews() {
                   : predictionDisplayStatusFa[displayStatus],
         ]),
       ]),
-      keyboard: [...optionRows],
+      keyboard: [
+        [
+          {
+            text: "🟢 پیش‌بینی‌های باز 🟢",
+            view: "prediction",
+            tone: "success",
+          },
+        ],
+        ...optionRows,
+      ],
     };
   });
 
